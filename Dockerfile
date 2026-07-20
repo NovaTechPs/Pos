@@ -22,4 +22,4 @@ COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
-CMD php artisan key:generate --force && php artisan migrate --force && service nginx start && php-fpm
+CMD php artisan migrate --force && service nginx start && php-fpm
