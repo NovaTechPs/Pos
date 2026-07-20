@@ -1,10 +1,11 @@
 FROM php:8.4-fpm
 
-# تثبيت الملحقات المطلوبة لتشغيل لارافل وقاعدة البيانات
+# تثبيت الملحقات المطلوبة (تم إضافة libpq-dev للـ Postgres)
 RUN apt-get update && apt-get install -y \
-    git curl libpng-dev libonig-dev libxml2-dev zip unzip nginx
+    git curl libpng-dev libonig-dev libxml2-dev libpq-dev zip unzip nginx
 
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+# تثبيت تعريفات قواعد البيانات pdo_mysql و pdo_pgsql
+RUN docker-php-ext-install pdo_mysql pdo_pgsql pgsql mbstring exif pcntl bcmath gd
 
 # تثبيت Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
