@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -33,7 +34,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes , TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -58,5 +59,44 @@ class User extends Authenticatable implements PasskeyUser
         return Str::length($initials) > 1
             ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
             : $initials;
+    }
+
+    // ... باقي إعدادات النموذج
+
+    public function role()
+    {
+        return $this->belongsTo(Role::class);
+    }
+
+    public function isBranchManager(): bool
+    {
+        return ! $this->is_owner && $this->role?->name === 'Branch Manager';
+    }
+
+    /**
+     * فحص هل المستخدم كاشير
+     */
+    public function isCashier(): bool
+    {
+        return ! $this->is_owner && $this->role?->name === 'Cashier';
+    }
+
+    /**
+     * التحقق مما إذا كان المستخدم يمتلك صلاحية معينة
+     */
+    public function hasPermission(string $permissionName): bool
+    {
+        // صاحب المتجر (Owner) يملك جميع الصلاحيات
+        if ($this->is_owner) {
+            return true;
+        }
+
+        // التحقق من وجود علاقة Role (عبر استدعاء الدالة للتأكد من أنها Eloquent Relation)
+        if (! $this->role()->exists()) {
+            return false;
+        }
+
+        // فحص وجود الصلاحية من خلال كائن الـ Role
+        return $this->role->permissions->contains('name', $permissionName);
     }
 }
