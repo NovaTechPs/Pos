@@ -23,4 +23,10 @@ COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
+CMD php artisan migrate --force && \
+    php artisan config:cache && \
+    php artisan route:cache && \
+    php artisan view:cache && \
+    service nginx start && php-fpm
+
 CMD php artisan migrate --force && service nginx start && php-fpm
