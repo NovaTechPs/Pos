@@ -29,7 +29,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'type', 'is_active',
+    'tenant_id', 'branch_id', 'is_owner', 'role_id'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -46,6 +47,8 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'is_owner' => 'boolean',
         ];
     }
 
@@ -61,6 +64,29 @@ class User extends Authenticatable implements PasskeyUser
             : $initials;
     }
 
+    public function ownedTenants()
+    {
+        return $this->hasMany(Tenant::class, 'user_id');
+    }
+
+    // المتجر الذي يعمل به حالياً (سواء كان موظف أو المالك في الجلسة الحالية)
+  public function tenants()
+{
+    return $this->hasMany(Tenant::class,'owner_id');
+}
+
+    /**
+     * 1. هل المستخدم مدير المنصة بالكامل (SaaS Admin)؟
+     */
+    public function isSaaSAdmin(): bool
+    {
+        return $this->type === 'saas_admin';
+    }
+
+    public function isTenantOwner(): bool
+    {
+        return $this->type === 'tenant_user' && $this->is_owner;
+    }
     // ... باقي إعدادات النموذج
 
     public function role()
@@ -73,6 +99,11 @@ class User extends Authenticatable implements PasskeyUser
         return ! $this->is_owner && $this->role?->name === 'Branch Manager';
     }
 
+    public function isTenantEmployee(): bool
+    {
+        return ! is_null($this->tenant_id) && $this->is_owner === false;
+    }
+
     /**
      * فحص هل المستخدم كاشير
      */
@@ -81,22 +112,34 @@ class User extends Authenticatable implements PasskeyUser
         return ! $this->is_owner && $this->role?->name === 'Cashier';
     }
 
+    public function branch()
+    {
+
+        return $this->belongsTo(Branch::class);
+    }
+
     /**
      * التحقق مما إذا كان المستخدم يمتلك صلاحية معينة
      */
     public function hasPermission(string $permissionName): bool
     {
-        // صاحب المتجر (Owner) يملك جميع الصلاحيات
-        if ($this->is_owner) {
+        // 1. SaaS Admin لديه كل الصلاحيات
+        if ($this->isSaaSAdmin()) {
             return true;
         }
 
-        // التحقق من وجود علاقة Role (عبر استدعاء الدالة للتأكد من أنها Eloquent Relation)
-        if (! $this->role()->exists()) {
-            return false;
+        // 2. مالك المتجر لديه كل صلاحيات متجره
+        if ($this->isTenantOwner()) {
+            return true;
         }
 
-        // فحص وجود الصلاحية من خلال كائن الـ Role
-        return $this->role->permissions->contains('name', $permissionName);
+        // 3. الموظف العادي: يتم الفحص عبر role_id و جدول الصلاحيات المربوط به
+        if (! $this->relationLoaded('role')) {
+            $this->load('role.permissions');
+        }
+
+        return $this->role
+            ? $this->role->permissions->contains('name', $permissionName)
+            : false;
     }
 }

@@ -36,6 +36,29 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (User $user, string $ability) {
             return $user->hasPermission($ability) ? true : null;
         });
+
+        Gate::define('access-pos', function (User $user) {
+            return $user->tenant && $user->tenant->hasFeature('pos_system');
+        });
+
+        // Gate للتحقق من إمكانية إضافة منتج جديد بناءً على الحد الأقصى للمتجر
+        Gate::define('create-product', function (User $user) {
+            $tenant = $user->tenant;
+            if (!$tenant || !$tenant->hasFeature('products_limit')) {
+                return false;
+            }
+
+            $maxProducts = (int) $tenant->getLimit('products_limit', 0);
+
+            // إذا كان الحد -1 أو unlimited نتيح الإضافة دائماً
+            if ($maxProducts === -1) {
+                return true;
+            }
+
+            $currentProductCount = Product::where('tenant_id', $tenant->id)->count();
+
+            return $currentProductCount < $maxProducts;
+        });
     }
 
     /**

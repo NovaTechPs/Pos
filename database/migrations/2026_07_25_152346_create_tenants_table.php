@@ -11,11 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::disableForeignKeyConstraints();
         Schema::create('tenants', function (Blueprint $table) {
-         $table->id();
+            $table->id();
             $table->string('name');
-            $table->string('plan')->default('basic');
+          $table->foreignId('plan_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('domain');
             $table->boolean('is_active')->default(true);
+            $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
         });
     }

@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('phone')->nullable();
             $table->text('address')->nullable();
+            $table->enum('type', ['branch', 'warehouse'])->default('branch'); // هل هو فرع بيع أم مخزن؟
             $table->timestamps();
             $table->softDeletes();
             $table->index('tenant_id');

@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('products', function (Blueprint $table) {
-          $table->id();
+            $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('barcode')->nullable();
@@ -20,8 +20,10 @@ return new class extends Migration
             $table->decimal('retail_price', 12, 2);
             $table->decimal('wholesale_price', 12, 2);
             $table->integer('min_wholesale_quantity')->default(1);
+            $table->integer('offer_quantity')->nullable(); // عدد الحبات المطلوب للعرض
+            $table->decimal('offer_price', 10, 2)->nullable(); // سعر المجموعة كاملة
             $table->timestamps();
-$table->softDeletes();
+            $table->softDeletes();
             // الفهرس المركب لسرعة قراءة الباركود لكل تاجر
             $table->index(['tenant_id', 'barcode']);
         });
