@@ -1,8 +1,8 @@
 <?php
 
 use Livewire\Component;
+use Livewire\Attributes\On;
 use App\Models\Branch;
-use Illuminate\Support\Facades\Auth;
 
 new class extends Component {
     public $branches;
@@ -19,10 +19,10 @@ new class extends Component {
     protected function rules()
     {
         return [
-            'name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20',
+            'name'    => 'required|string|max:255',
+            'phone'   => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
-            'type' => 'required|in:branch,warehouse',
+            'type'    => 'required|in:branch,warehouse',
         ];
     }
 
@@ -31,12 +31,18 @@ new class extends Component {
         $this->loadBranches();
     }
 
+    // الاستماع لحدث تغيير المتجر لإعادة جلب البيانات فوراً
+    #[On('tenant-changed')]
     public function loadBranches()
     {
-        // جلب الفروع والمخازن التابعة لمتجر المالك الحالي فقط
-        $tenantId = Auth::user()->tenant_id;
+        // جلب معرف المتجر النشط حالياً من Session
+        $tenantId = session('active_tenant_id');
 
-        $this->branches = Branch::where('tenant_id', $tenantId)->get();
+        if ($tenantId) {
+            $this->branches = Branch::where('tenant_id', $tenantId)->get();
+        } else {
+            $this->branches = collect();
+        }
     }
 
     public function openCreateModal()
@@ -48,13 +54,14 @@ new class extends Component {
 
     public function edit($id)
     {
-        $branch = Branch::where('tenant_id', Auth::user()->tenant_id)->findOrFail($id);
+        $tenantId = session('active_tenant_id');
+        $branch   = Branch::where('tenant_id', $tenantId)->findOrFail($id);
 
         $this->branch_id = $branch->id;
-        $this->name = $branch->name;
-        $this->phone = $branch->phone ?? '';
-        $this->address = $branch->address ?? '';
-        $this->type = $branch->type;
+        $this->name      = $branch->name;
+        $this->phone     = $branch->phone ?? '';
+        $this->address   = $branch->address ?? '';
+        $this->type      = $branch->type;
 
         $this->isEditing = true;
         $this->showModal = true;
@@ -64,16 +71,23 @@ new class extends Component {
     {
         $this->validate();
 
+        $tenantId = session('active_tenant_id');
+
+        if (!$tenantId) {
+            session()->flash('message', 'يرجى اختيار متجر أولاً لتتمكن من الإضافة.');
+            return;
+        }
+
         Branch::updateOrCreate(
             [
-                'id' => $this->branch_id,
-                'tenant_id' => Auth::user()->tenant_id,
+                'id'        => $this->branch_id,
+                'tenant_id' => $tenantId, // الحفظ برقم المتجر النشط
             ],
             [
-                'name' => $this->name,
-                'phone' => $this->phone,
+                'name'    => $this->name,
+                'phone'   => $this->phone,
                 'address' => $this->address,
-                'type' => $this->type,
+                'type'    => $this->type,
             ]
         );
 
@@ -85,7 +99,9 @@ new class extends Component {
 
     public function delete($id)
     {
-        Branch::where('tenant_id', Auth::user()->tenant_id)->findOrFail($id)->delete();
+        $tenantId = session('active_tenant_id');
+
+        Branch::where('tenant_id', $tenantId)->findOrFail($id)->delete();
         session()->flash('message', 'تم حذف الموقع بنجاح.');
         $this->loadBranches();
     }
@@ -99,26 +115,27 @@ new class extends Component {
     private function resetInputFields()
     {
         $this->branch_id = null;
-        $this->name = '';
-        $this->phone = '';
-        $this->address = '';
-        $this->type = 'branch';
+        $this->name      = '';
+        $this->phone     = '';
+        $this->address   = '';
+        $this->type      = 'branch';
         $this->resetValidation();
     }
-
-    public function render()
+     public function render()
     {
         return $this->view()->layout('layouts::tenant');
     }
 };
+
 ?>
 
 <flux:main class="space-y-6">
     <!-- الهيدر العلوي -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
+    <div
+        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
         <div>
             <flux:heading size="xl" level="1">إدارة الفروع والمخازن</flux:heading>
-            <flux:subheading>إضافة وتعديل نقاط البيع والمخازن التابعة لمتجرك</flux:subheading>
+            <flux:subheading>إضافة وتعديل نقاط البيع والمخازن التابعة لمتجرك الحالي</flux:subheading>
         </div>
         <div>
             <flux:button variant="primary" icon="plus" wire:click="openCreateModal">
@@ -152,7 +169,7 @@ new class extends Component {
                         </flux:table.cell>
 
                         <flux:table.cell>
-                            @if($branch->type === 'branch')
+                            @if ($branch->type === 'branch')
                                 <flux:badge size="sm" color="emerald" variant="solid">فرع بيع</flux:badge>
                             @else
                                 <flux:badge size="sm" color="indigo" variant="solid">مخزن رئيسي</flux:badge>
@@ -181,7 +198,7 @@ new class extends Component {
                 @empty
                     <flux:table.row>
                         <flux:table.cell colspan="5" align="center" class="py-8 text-zinc-500">
-                            لا يوجد فروع أو مخازن مضافة بعد. يمكنك البدء بإضافة أول موقع.
+                            لا يوجد فروع أو مخازن مضافة لهذا المتجر بعد.
                         </flux:table.cell>
                     </flux:table.row>
                 @endforelse
@@ -189,11 +206,12 @@ new class extends Component {
         </flux:table>
     </flux:card>
 
-    <!-- المودال المتوافق مع Flux -->
+    <!-- مودال الإضافة والتعديل -->
     <flux:modal wire:model="showModal" class="md:w-160 space-y-6">
         <div>
-            <flux:heading size="lg">{{ $isEditing ? 'تعديل بيانات الموقع' : 'إضافة فرع / مخزن جديد' }}</flux:heading>
-            <flux:subheading>حدد نوع الموقع وتفاصيل التواصل والارتباط</flux:subheading>
+            <flux:heading size="lg">{{ $isEditing ? 'تعديل بيانات الموقع' : 'إضافة فرع / مخزن جديد' }}
+            </flux:heading>
+            <flux:subheading>حدد نوع الموقع وتفاصيل التواصل والارتباط بالمتجر النشط</flux:subheading>
         </div>
 
         <form wire:submit.prevent="save" class="space-y-4">

@@ -1,9 +1,9 @@
 <?php
 
 use Livewire\Component;
+use Livewire\Attributes\On;
 use App\Models\Role;
 use App\Models\Permission;
-use Illuminate\Support\Facades\Auth;
 
 new class extends Component {
     public ?int $role_id = null;
@@ -26,6 +26,14 @@ new class extends Component {
         ];
     }
 
+    // الاستماع لحدث تغيير المتجر لتحديث واجهة الأدوار فوراً
+    #[On('tenant-changed')]
+    public function refreshRoles()
+    {
+        // إعادة التعيين أو تحديث الحالة عند تغيير المتجر
+        $this->resetInputFields();
+    }
+
     public function openCreateModal()
     {
         $this->resetInputFields();
@@ -35,7 +43,9 @@ new class extends Component {
 
     public function edit($id)
     {
-        $role = Role::where('tenant_id', Auth::user()->tenant_id)
+        $tenantId = session('active_tenant_id');
+
+        $role = Role::where('tenant_id', $tenantId)
             ->with('permissions')
             ->findOrFail($id);
 
@@ -67,15 +77,22 @@ new class extends Component {
     {
         $this->validate();
 
+        $tenantId = session('active_tenant_id');
+
+        if (!$tenantId) {
+            session()->flash('message', 'يرجى اختيار متجر أولاً لتتمكن من التعديل أو الإضافة.');
+            return;
+        }
+
         if ($this->isEditing && $this->role_id) {
-            $role = Role::where('tenant_id', Auth::user()->tenant_id)->findOrFail($this->role_id);
+            $role = Role::where('tenant_id', $tenantId)->findOrFail($this->role_id);
             $role->update([
                 'name' => $this->name,
                 'description' => $this->description,
             ]);
         } else {
             $role = Role::create([
-                'tenant_id' => Auth::user()->tenant_id,
+                'tenant_id' => $tenantId,
                 'name' => $this->name,
                 'description' => $this->description,
             ]);
@@ -91,7 +108,9 @@ new class extends Component {
 
     public function delete($id)
     {
-        Role::where('tenant_id', Auth::user()->tenant_id)->findOrFail($id)->delete();
+        $tenantId = session('active_tenant_id');
+
+        Role::where('tenant_id', $tenantId)->findOrFail($id)->delete();
         session()->flash('message', 'تم حذف الدور بنجاح.');
     }
 
@@ -113,6 +132,13 @@ new class extends Component {
 
     public function render()
     {
+        $tenantId = session('active_tenant_id');
+
+        // جلب الأدوار التابعة للمتجر النشط
+        $roles = $tenantId
+            ? Role::where('tenant_id', $tenantId)->with('permissions')->get()
+            : collect();
+
         // فلترة الصلاحيات حسب كلمة البحث إن وجدت
         $permissionsQuery = Permission::query();
         if (!empty($this->searchPermission)) {
@@ -123,18 +149,19 @@ new class extends Component {
         }
 
         return $this->view([
-            'roles' => Role::where('tenant_id', Auth::user()->tenant_id)->with('permissions')->get(),
+            'roles' => $roles,
             'permissionsGrouped' => $permissionsQuery->get()->groupBy('group'),
         ])->layout('layouts::tenant');
     }
 };
 ?>
-
 <flux:main class="space-y-6">
+
+<div>
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
         <div>
             <flux:heading size="xl" level="1">إدارة الأدوار والصلاحيات</flux:heading>
-            <flux:subheading>تعريف أدوار العمل وتخصيص صلاحيات الموظفين داخل المتجر</flux:subheading>
+            <flux:subheading>تعريف أدوار العمل وتخصيص صلاحيات الموظفين داخل المتجر الحالي</flux:subheading>
         </div>
         <div>
             <flux:button variant="primary" icon="plus" wire:click="openCreateModal">
@@ -144,12 +171,12 @@ new class extends Component {
     </div>
 
     @if (session()->has('message'))
-        <flux:badge variant="success" class="w-full justify-start p-3 text-sm">
+        <flux:badge variant="success" class="w-full justify-start p-3 text-sm my-4">
             {{ session('message') }}
         </flux:badge>
     @endif
 
-    <flux:card class="p-0 overflow-hidden">
+    <flux:card class="p-0 overflow-hidden mt-6">
         <flux:table>
             <flux:table.columns>
                 <flux:table.column>اسم الدور</flux:table.column>
@@ -189,7 +216,7 @@ new class extends Component {
                 @empty
                     <flux:table.row>
                         <flux:table.cell colspan="4" align="center" class="py-8 text-zinc-500">
-                            لا يوجد أدوار مضافة بعد.
+                            لا يوجد أدوار مضافة لمتجرك الحالي بعد.
                         </flux:table.cell>
                     </flux:table.row>
                 @endforelse
@@ -272,6 +299,7 @@ new class extends Component {
                         <div class="text-center py-6 text-zinc-500 border rounded-xl dark:border-zinc-800">
                             لا توجد صلاحيات تطابق بحثك.
                         </div>
+
                     @endforelse
                 </div>
             </div>
@@ -283,4 +311,5 @@ new class extends Component {
             </div>
         </form>
     </flux:modal>
+</div>
 </flux:main>

@@ -16,4 +16,8 @@ use BelongsToTenant, SoftDeletes;
     {
         return $this->hasMany(BranchProduct::class);
     }
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
 }

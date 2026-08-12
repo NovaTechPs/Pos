@@ -37,6 +37,8 @@ Route::livewire('dashboard/role', 'pages::tenant.role')->name('role');
 Route::livewire('dashboard/employees', 'pages::tenant.employees')->name('employees');
 Route::livewire('dashboard/product', 'pages::tenant.product')->name('product');
 Route::livewire('dashboard/pos', 'pages::tenant.pos')->name('pos');
+    Route::livewire('/dashboard/analytics', 'pages::tenant.analytics')->name('analytics');;
+
 
     Route::livewire('/post/create', 'pages::post.create');
 

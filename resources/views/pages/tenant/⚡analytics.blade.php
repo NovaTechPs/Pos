@@ -44,10 +44,20 @@ new class extends Component {
     // فتح تفاصيل الفاتورة
     public function viewOrderDetails($orderId)
     {
-        $this->selectedOrder = Order::with(['items.product', 'user'])
-            ->where('tenant_id', Auth::user()->tenant_id)
-            ->findOrFail($orderId);
+        $tenantId = session('active_tenant_id');
 
+        $query = Order::with(['items.product', 'user'])
+            ->where('tenant_id', $tenantId);
+
+        // إذا لم يكن أدمن/صاحب المتجر، تقييد العرض بالفواتير الخاصة به فقط
+        $user = Auth::user();
+        $isOwnerOrAdmin = $user->is_admin || $user->role === 'admin' || $user->role === 'owner';
+
+        if (!$isOwnerOrAdmin) {
+            $query->where('user_id', $user->id);
+        }
+
+        $this->selectedOrder = $query->findOrFail($orderId);
         $this->showDetailsModal = true;
     }
 
@@ -60,15 +70,25 @@ new class extends Component {
     public function render()
     {
         $user = Auth::user();
+        $tenantId = session('active_tenant_id');
 
-        // تحديد الفرع الخاص بالمستخدم أو الفرع الأول للشركة
+        // تحديد الفرع الخاص بالمستخدم أو الفرع الأول للمتجر النشط
         $branchId = $user->branch_id
-            ?? Branch::where('tenant_id', $user->tenant_id)->value('id');
+            ?? Branch::where('tenant_id', $tenantId)->value('id');
 
-        // بناء الاستعلام الديناميكي بناءً على الفلاتر
-        $baseQuery = Order::where('tenant_id', $user->tenant_id)
+        // تحديد هل المستخدم هو صاحب المتجر / أدمن
+        $isOwnerOrAdmin = $user->is_admin || $user->role === 'admin' || $user->role === 'owner';
+
+        // بناء الاستعلام الديناميكي بناءً على الفلاتر والمتجر النشط
+        $baseQuery = Order::where('tenant_id', $tenantId)
             ->where('branch_id', $branchId)
             ->where('type', 'pos')
+
+            // إذا لم يكن أدمن/مالك المتجر، جلب مبيعاته الشخصية فقط
+            ->when(!$isOwnerOrAdmin, function ($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })
+
             // فلتر البحث (برقم الفاتورة أو اسم الكاشير)
             ->when($this->search !== '', function ($query) {
                 $query->where(function ($q) {
@@ -105,6 +125,7 @@ new class extends Component {
             'totalSales'    => $totalSales,
             'ordersCount'   => $ordersCount,
             'avgOrderValue' => $avgOrderValue,
+            'isOwnerOrAdmin'=> $isOwnerOrAdmin,
         ])->layout('layouts::tenant');
     }
 };
@@ -116,7 +137,13 @@ new class extends Component {
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl font-black text-slate-900">سجل ومبيعات نقاط البيع</h1>
-            <p class="text-xs text-slate-500 mt-1">عرض وتحليل الفواتير بناءً على الفلاتر المحددة</p>
+            <p class="text-xs text-slate-500 mt-1">
+                @if($isOwnerOrAdmin)
+                    عرض وتحليل جميع مبيعات المتجر
+                @else
+                    عرض وتحليل مبيعاتك الشخصية
+                @endif
+            </p>
         </div>
         <div class="flex items-center gap-2">
             <button wire:click="resetFilters" type="button"
@@ -170,7 +197,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- بطاقات الإحصائيات السريعة (تتحدث ديناميكياً مع الفلترة) -->
+    <!-- بطاقات الإحصائيات السريعة -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
 
         <!-- إجمالي المبيعات -->
@@ -281,7 +308,7 @@ new class extends Component {
                             <td colspan="7" class="py-16 text-center text-slate-400">
                                 <div class="flex flex-col items-center justify-center space-y-2">
                                     <flux:icon icon="document-magnifying-glass" class="w-12 h-12 stroke-1 text-slate-300" />
-                                    <p class="font-semibold text-slate-500">لا توجد مبيعات تتطابق مع شروط البحث الفلترة</p>
+                                    <p class="font-semibold text-slate-500">لا توجد مبيعات تتطابق مع شروط البحث والفلترة</p>
                                 </div>
                             </td>
                         </tr>
