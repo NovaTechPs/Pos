@@ -14,32 +14,46 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained(); // الكاشير أو الموظف
-            $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete(); // اختياري في POS، إجباري في الجملة
+
+            // الفرع اختياري في طلبات أونلاين (أو يحدد فرع رئيسي لاحقاً)
+            $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
+
+            // الكاشير/الموظف اختياري لأن أوردر المتجر ينشئه الزبون بنفسه
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+
+            // اختياري في POS وأونلاين، إجباري في الجملة (إن وجد حساب زبون مسجل)
+            $table->foreignId('customer_id')->nullable()->constrained()->nullOnDelete();
+
+            // بيانات الزبون الشاحن المباشرة (خاصة بطلبات أونلاين / Zibn Direct)
+            $table->string('customer_name')->nullable();
+            $table->string('customer_phone')->nullable();
+            $table->text('customer_address')->nullable();
 
             $table->string('invoice_number');
 
-            // تمييز نوع الفاتورة
-            $table->enum('type', ['pos', 'wholesale'])->default('pos');
+            // تمييز نوع الفاتورة: كاشير (pos)، جملة (wholesale)، أو متجر إلكتروني (online)
+            $table->enum('type', ['pos', 'wholesale', 'online'])->default('pos');
+
+            // حالة الطلب للطلبات الإلكترونية (معلقة، قيد التجهيز، مكتملة...)
+            $table->enum('status', ['pending', 'processing', 'completed', 'cancelled'])->default('completed');
 
             $table->decimal('subtotal', 12, 2);
             $table->decimal('discount', 12, 2)->default(0.00);
             $table->decimal('total', 12, 2);
 
-            // 💡 حقول التكلفة والربح المضافة
-            $table->decimal('total_cost', 12, 2)->default(0.00);   // مجموع تكلفة جميع منتجات الفاتورة
-            $table->decimal('total_profit', 12, 2)->default(0.00); // صافي ربح الفاتورة الفعلي
+            // حقول التكلفة والربح
+            $table->decimal('total_cost', 12, 2)->default(0.00);
+            $table->decimal('total_profit', 12, 2)->default(0.00);
 
-            $table->decimal('paid_amount', 12, 2);
+            $table->decimal('paid_amount', 12, 2)->default(0.00);
             $table->enum('payment_status', ['paid', 'partial', 'unpaid'])->default('paid');
-
             $table->timestamps();
             $table->softDeletes();
 
+            // الفهارس تحسّن سرعة الاستعلامات حسب النوع والتاجر
             $table->index(['tenant_id', 'branch_id', 'type']);
-            // 💡 إضافة فهارس إضافية للسرعة الفائقة في تقارير المبيعات والأرباح
-            $table->index(['tenant_id', 'created_at']);
+            $table->index(['tenant_id', 'type', 'created_at']);
         });
     }
 

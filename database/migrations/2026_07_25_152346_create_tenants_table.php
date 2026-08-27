@@ -15,9 +15,9 @@ return new class extends Migration
         Schema::create('tenants', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-          $table->foreignId('plan_id')->nullable()->constrained()->nullOnDelete();
-            $table->string('domain');
-            $table->boolean('is_active')->default(true);
+            $table->string('phone')->nullable();
+            $table->foreignId('plan_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('domain')->unique(); // يضمن عدم تكرار رابط/دومين المتجر            $table->boolean('is_active')->default(true);
             $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
         });

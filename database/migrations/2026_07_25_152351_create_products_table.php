@@ -31,6 +31,9 @@ return new class extends Migration
             $table->integer('min_wholesale_quantity')->default(1);
             $table->integer('offer_quantity')->nullable(); // عدد الحبات المطلوب للعرض
             $table->decimal('offer_price', 10, 2)->nullable(); // سعر المجموعة كاملة
+            $table->boolean('show_in_website')->default(false); // أو false حسب رغبتك بالافتراضي
+          $table->string('image')->nullable();
+          $table->json('images')->nullable();
             $table->timestamps();
             $table->softDeletes();
 

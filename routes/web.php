@@ -37,7 +37,18 @@ Route::livewire('dashboard/role', 'pages::tenant.role')->name('role');
 Route::livewire('dashboard/employees', 'pages::tenant.employees')->name('employees');
 Route::livewire('dashboard/product', 'pages::tenant.product')->name('product');
 Route::livewire('dashboard/pos', 'pages::tenant.pos')->name('pos');
-    Route::livewire('/dashboard/analytics', 'pages::tenant.analytics')->name('analytics');;
+    Route::livewire('/dashboard/analytics', 'pages::tenant.analytics')->name('analytics');
+        Route::livewire('/dashboard/store/{slug}', 'pages::tenant.store')->name('store');;
+             Route::livewire('/dashboard/online', 'pages::tenant.online-orders')->name('storeORDEE');
+             Route::livewire('/dashboard/Wholesale', 'pages::tenant.wholesale-interface')->name('wholesaleinterface');
+             Route::livewire('/dashboard/orders', 'pages::tenant.wholesale-orders')->name('wholesaleorders');
+             Route::livewire('/dashboard/DailySettlementComponent', 'pages::tenant.daily-settlement-component')->name('DailySettlementComponent');
+
+
+
+
+
+
 
 
     Route::livewire('/post/create', 'pages::post.create');

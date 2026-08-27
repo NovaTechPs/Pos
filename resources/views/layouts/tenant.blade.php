@@ -13,7 +13,7 @@
             <flux:sidebar.collapse class="lg:hidden" />
         </flux:sidebar.header>
 
-<livewire:pages::tenant.tenant-switcher />
+        <livewire:pages::tenant.tenant-switcher />
         <flux:sidebar.nav>
             <flux:sidebar.group :heading="__('Platform')" class="grid">
                 <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')"
@@ -54,9 +54,34 @@
                     {{ __('فواتير المشتريات') }}
                 </flux:sidebar.item>
                 <flux:sidebar.item icon="chart-bar" :href="route('analytics')"
-    :current="request()->routeIs('analytics')" wire:navigate>
-    {{ __('الاحصائيات') }}
-</flux:sidebar.item>
+                    :current="request()->routeIs('analytics')" wire:navigate>
+                    {{ __('الاحصائيات') }}
+                </flux:sidebar.item>
+                  <flux:sidebar.item icon="chart-bar" :href="route('DailySettlementComponent')"
+                    :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
+                    {{ __('DailySettlementComponent') }}
+                </flux:sidebar.item>
+                 <flux:sidebar.item icon="shopping-bag"
+                    :href="route('storeORDEE')"
+                    :current="request()->routeIs('storeORDEE')" wire:navigate>
+                    {{ __('store order') }}
+                </flux:sidebar.item>
+                <flux:sidebar.item icon="shopping-bag"
+                    :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])"
+                    :current="request()->routeIs('store')" wire:navigate>
+                    {{ __('store') }}
+                </flux:sidebar.item>
+                  <flux:sidebar.item icon="shopping-bag"
+                    :href="route('wholesaleinterface')"
+                    :current="request()->routeIs('wholesaleinterface')" wire:navigate>
+                    {{ __('جملة') }}
+                </flux:sidebar.item>
+                     <flux:sidebar.item icon="shopping-bag"
+                    :href="route('wholesaleorders')"
+                    :current="request()->routeIs('wholesaleorders')" wire:navigate>
+                    {{ __('باص') }}
+                </flux:sidebar.item>
+
 
                 <!-- Customers -->
                 {{-- <flux:sidebar.item icon="users" :href="route('customers')"

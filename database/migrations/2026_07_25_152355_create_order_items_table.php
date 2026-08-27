@@ -11,6 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::disableForeignKeyConstraints();
+
         Schema::create('order_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
@@ -18,14 +20,14 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained();
 
             $table->decimal('quantity', 10, 2);
-            $table->decimal('unit_price', 12, 2); // سعر البيع للقطعة
-            $table->decimal('total_price', 12, 2); // إجمالي البيع = الكمية * سعر البيع
+            $table->decimal('unit_price', 12, 2);
+            $table->decimal('total_price', 12, 2);
 
-            // 💡 الحقول المضافة لحساب الربح والتكلفة:
-            $table->decimal('cost_price', 12, 2)->default(0); // سعر شراء/تكلفة القطعة الواحدة وقت البيع
-            $table->decimal('total_cost', 12, 2)->default(0); // إجمالي تكلفة السطر = الكمية * سعر التكلفة
+            // حقول الربح والتكلفة للقطعة والسطر
+            $table->decimal('cost_price', 12, 2)->default(0.00);
+            $table->decimal('total_cost', 12, 2)->default(0.00);
 
-            $table->timestamps(); // يُفضل دائماً وجود التواريخ
+            $table->timestamps();
         });
     }
 

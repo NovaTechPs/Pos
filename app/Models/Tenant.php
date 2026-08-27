@@ -8,7 +8,7 @@ class Tenant extends Model
 {
     protected $guarded = [];
 
-    protected $fillable = ['name', 'plan_id', 'is_active', 'domain', 'owner_id'];
+    protected $fillable = ['name','phone', 'plan_id', 'is_active', 'domain', 'owner_id'];
 
     protected $casts = [
         'is_active' => 'boolean',
