@@ -338,7 +338,7 @@ new class extends Component {
         $this->category_id = null;
         $this->name = '';
         $this->barcode = '';
-        $this->cost_price = '0.00';
+        $this->cost_price = '';
         $this->retail_price = '';
         $this->wholesale_price = '';
         $this->min_wholesale_quantity = 1;

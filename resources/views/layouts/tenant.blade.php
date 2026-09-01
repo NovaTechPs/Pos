@@ -43,16 +43,9 @@
                     {{ __('نقطة البيع (POS)') }}
                 </flux:sidebar.item>
                 <!-- Wholesale -->
-                <flux:sidebar.item icon="shopping-bag" :href="route('wholesale')"
-                    :current="request()->routeIs('wholesale')" wire:navigate>
-                    {{ __('مبيعات الجملة') }}
-                </flux:sidebar.item>
 
-                <!-- Purchases -->
-                <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')"
-                    :current="request()->routeIs('purchases')" wire:navigate>
-                    {{ __('فواتير المشتريات') }}
-                </flux:sidebar.item>
+
+
                 <flux:sidebar.item icon="chart-bar" :href="route('analytics')"
                     :current="request()->routeIs('analytics')" wire:navigate>
                     {{ __('الاحصائيات') }}
@@ -74,14 +67,23 @@
                   <flux:sidebar.item icon="shopping-bag"
                     :href="route('wholesaleinterface')"
                     :current="request()->routeIs('wholesaleinterface')" wire:navigate>
-                    {{ __('جملة') }}
+                    {{ __('بيع جملة ') }}
                 </flux:sidebar.item>
                      <flux:sidebar.item icon="shopping-bag"
                     :href="route('wholesaleorders')"
                     :current="request()->routeIs('wholesaleorders')" wire:navigate>
-                    {{ __('باص') }}
+                    {{ __('مبيعات الباص') }}
+                </flux:sidebar.item>
+<flux:sidebar.item icon="shopping-bag" :href="route('wholesale')"
+                    :current="request()->routeIs('wholesale')" wire:navigate>
+                    {{ __('فواتير مبيغات') }}
                 </flux:sidebar.item>
 
+                <!-- Purchases -->
+                <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')"
+                    :current="request()->routeIs('purchases')" wire:navigate>
+                    {{ __('فواتير المشتريات') }}
+                </flux:sidebar.item>
 
                 <!-- Customers -->
                 {{-- <flux:sidebar.item icon="users" :href="route('customers')"
