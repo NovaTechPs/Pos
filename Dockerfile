@@ -25,3 +25,10 @@ EXPOSE 80
 
 
 CMD php artisan migrate --force && service nginx start && php-fpm
+# في نهاية ملف Dockerfile الخاص بك:
+
+# مثال عند استخدام الممر المباشر
+CMD php artisan migrate --seed --force && php-fpm
+
+# أو إذا كنت تستخدم سيرفر Apache/Nginx داخلي
+CMD php artisan migrate --seed --force && apache2-foreground
