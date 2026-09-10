@@ -17,7 +17,7 @@ return new class extends Migration
 
             // الفرع اختياري في طلبات أونلاين (أو يحدد فرع رئيسي لاحقاً)
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('shift_id')->nullable()->nullOnDelete();
 
             // الكاشير/الموظف اختياري لأن أوردر المتجر ينشئه الزبون بنفسه
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
