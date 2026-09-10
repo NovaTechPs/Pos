@@ -22,6 +22,11 @@ new class extends Component {
     public $retail_price = '';
     public $wholesale_price = '';
     public int $min_wholesale_quantity = 1;
+
+    // --- حقول العروض الجديدة ---
+    public $offer_price = null;
+    public ?int $offer_quantity = null;
+
     public bool $show_in_website = true;
 
     // --- الصورة الأساسية ($product->image) ---
@@ -66,6 +71,8 @@ new class extends Component {
             'retail_price' => 'required|numeric|min:0',
             'wholesale_price' => 'required|numeric|min:0',
             'min_wholesale_quantity' => 'required|integer|min:1',
+            'offer_price' => 'nullable|numeric|min:0',
+            'offer_quantity' => 'nullable|integer|min:1',
             'show_in_website' => 'boolean',
             'image' => 'nullable|image|max:2048',        // الصورة الأساسية
             'images.*' => 'nullable|image|max:2048',      // الصور الإضافية
@@ -80,6 +87,8 @@ new class extends Component {
         'retail_price' => 'سعر التجزئة (القطعي)',
         'wholesale_price' => 'سعر الجملة',
         'min_wholesale_quantity' => 'أقل كمية للجملة',
+        'offer_price' => 'سعر العرض',
+        'offer_quantity' => 'كمية العرض',
         'show_in_website' => 'العرض في الموقع',
         'image' => 'الصورة الأساسية',
         'images.*' => 'الصور الإضافية',
@@ -136,6 +145,8 @@ new class extends Component {
         $this->retail_price = $product->retail_price;
         $this->wholesale_price = $product->wholesale_price;
         $this->min_wholesale_quantity = $product->min_wholesale_quantity;
+        $this->offer_price = $product->offer_price;
+        $this->offer_quantity = $product->offer_quantity;
         $this->show_in_website = (bool) ($product->show_in_website ?? true);
 
         // جلب الصورة الأساسية بشكل مستقل
@@ -217,7 +228,6 @@ new class extends Component {
         // 1. معالجة الصورة الأساسية (image)
         $mainImagePath = $this->existing_image;
         if ($this->image) {
-            // إن وجِدت صورة سابقة، نقوم بحذفها أولاً
             if ($this->existing_image) {
                 Storage::disk('public')->delete($this->existing_image);
             }
@@ -241,9 +251,11 @@ new class extends Component {
             'retail_price' => $this->retail_price,
             'wholesale_price' => $this->wholesale_price,
             'min_wholesale_quantity' => $this->min_wholesale_quantity,
+            'offer_price' => $this->offer_price !== '' && $this->offer_price !== null ? $this->offer_price : null,
+            'offer_quantity' => $this->offer_quantity !== '' && $this->offer_quantity !== null ? $this->offer_quantity : null,
             'show_in_website' => $this->show_in_website,
-            'image' => $mainImagePath, // يتم حفظ الصورة الأساسية هنا
-            'images' => array_values(array_unique($additionalImagePaths)), // الصور الإضافية
+            'image' => $mainImagePath,
+            'images' => array_values(array_unique($additionalImagePaths)),
         ];
 
         if ($this->isEditing && $this->product_id) {
@@ -309,12 +321,10 @@ new class extends Component {
 
         $product = Product::where('tenant_id', $tenantId)->findOrFail($id);
 
-        // حذف الصورة الأساسية
         if ($product->image) {
             Storage::disk('public')->delete($product->image);
         }
 
-        // حذف الصور الإضافية
         $images = is_array($product->images) ? $product->images : json_decode($product->images ?? '[]', true);
         if (!empty($images)) {
             foreach ($images as $path) {
@@ -342,6 +352,8 @@ new class extends Component {
         $this->retail_price = '';
         $this->wholesale_price = '';
         $this->min_wholesale_quantity = 1;
+        $this->offer_price = null;
+        $this->offer_quantity = null;
         $this->show_in_website = true;
         $this->image = null;
         $this->existing_image = null;
@@ -397,7 +409,7 @@ new class extends Component {
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
             <flux:heading size="xl" level="1">إدارة المنتجات</flux:heading>
-            <flux:subheading>عرض وإدارة كافة المنتجات وتفاصيل الأسعار والعرض في الموقع الإلكتروني</flux:subheading>
+            <flux:subheading>عرض وإدارة كافة المنتجات وتفاصيل الأسعار والعروض والعرض في الموقع الإلكتروني</flux:subheading>
         </div>
         <div class="flex items-center gap-2">
             <flux:button variant="primary" icon="plus" wire:click="openCreateModal">إضافة منتج جديد</flux:button>
@@ -435,6 +447,7 @@ new class extends Component {
                         <th class="p-4">التكلفة</th>
                         <th class="p-4">التجزئة</th>
                         <th class="p-4">الجملة (أقل كمية)</th>
+                        <th class="p-4">سعر العرض (الكمية)</th>
                         <th class="p-4">العرض بالموقع</th>
                         <th class="p-4 text-center">الإجراءات</th>
                     </tr>
@@ -442,7 +455,6 @@ new class extends Component {
                 <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
                     @forelse($products as $product)
                         @php
-                            // جلب الصورة الأساسية مباشرة من حقل image
                             $mainImg = $product->image ?? null;
                         @endphp
                         <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
@@ -474,6 +486,16 @@ new class extends Component {
                                 {{ number_format($product->wholesale_price, 2) }}
                                 <span class="text-xs text-zinc-400">({{ $product->min_wholesale_quantity }}+)</span>
                             </td>
+                            <td class="p-4 text-zinc-600 dark:text-zinc-400">
+                                @if($product->offer_price)
+                                    <span class="font-semibold text-amber-600 dark:text-amber-400">
+                                        {{ number_format($product->offer_price, 2) }}
+                                    </span>
+                                    <span class="text-xs text-zinc-400">({{ $product->offer_quantity ?? 1 }}+)</span>
+                                @else
+                                    <span class="text-xs text-zinc-400">-</span>
+                                @endif
+                            </td>
                             <td class="p-4">
                                 <button type="button" wire:click="toggleWebsiteStatus({{ $product->id }})" class="px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-colors {{ $product->show_in_website ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' }}">
                                     {{ $product->show_in_website ? 'معروض' : 'مخفي' }}
@@ -488,7 +510,7 @@ new class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="p-8 text-center text-zinc-500 dark:text-zinc-400">
+                            <td colspan="10" class="p-8 text-center text-zinc-500 dark:text-zinc-400">
                                 لا توجد منتجات مطابقة للبحث.
                             </td>
                         </tr>
@@ -505,7 +527,7 @@ new class extends Component {
     <flux:modal wire:model="showModal" class="w-full max-w-2xl space-y-6">
         <div>
             <flux:heading size="lg">{{ $isEditing ? 'تعديل المنتج' : 'إضافة منتج جديد' }}</flux:heading>
-            <flux:subheading>أدخل بيانات المنتج والصور والتصنيف والأسعار مع تحديد حالة العرض بصفحة المتجر</flux:subheading>
+            <flux:subheading>أدخل بيانات المنتج والصور والتصنيف والأسعار والعروض مع تحديد حالة العرض بصفحة المتجر</flux:subheading>
         </div>
 
         <form wire:submit.prevent="save" class="space-y-4">
@@ -645,6 +667,27 @@ new class extends Component {
                         <flux:checkbox wire:model="show_in_website" label="عرض المنتج في الموقع الإلكتروني" />
                     </div>
                     <flux:error name="show_in_website" />
+                </div>
+            </div>
+
+            <!-- قسم حقول العروض الخاصة (Offer) -->
+            <div class="p-4 border border-amber-200 dark:border-amber-800/50 rounded-xl bg-amber-50/50 dark:bg-amber-950/10 space-y-3">
+                <div class="flex items-center gap-2 text-amber-800 dark:text-amber-400 font-semibold text-sm">
+                    <flux:icon name="tag" class="w-4 h-4" />
+                    <span>تفاصيل العرض الخاص (اختياري)</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <flux:field>
+                        <flux:label>سعر العرض (سعر التخفيض)</flux:label>
+                        <flux:input type="number" step="0.01" wire:model="offer_price" placeholder="اتركه فارغاً إن لم يوجد عرض" />
+                        <flux:error name="offer_price" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>الكمية المطلوبة لتطبيق سعر العرض</flux:label>
+                        <flux:input type="number" wire:model="offer_quantity" min="1" placeholder="مثال: 1 أو 3..." />
+                        <flux:error name="offer_quantity" />
+                    </flux:field>
                 </div>
             </div>
 

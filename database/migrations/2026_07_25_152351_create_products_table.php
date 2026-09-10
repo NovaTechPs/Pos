@@ -15,12 +15,11 @@ return new class extends Migration
 
         Schema::create('products', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->cascadeOnDelete();
 
             // ربط القسم / التصنيف (Category)
             $table->foreignId('category_id')
                 ->nullable()
-                ->constrained('categories')
                 ->nullOnDelete(); // في حال حذف التصنيف، يتم تعيين القيمة إلى NULL بدلاً من حذف المنتج
 
             $table->string('name');
