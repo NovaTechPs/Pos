@@ -16,7 +16,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('phone')->nullable();
-            $table->foreignId('plan_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('plan_id')->nullable()->nullOnDelete();
             $table->string('domain')->unique(); // يضمن عدم تكرار رابط/دومين المتجر            $table->boolean('is_active')->default(true);
             $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
