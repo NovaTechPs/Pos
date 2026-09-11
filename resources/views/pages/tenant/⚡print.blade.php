@@ -37,33 +37,36 @@ new class extends Component
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // 1. بناء نص الفاتورة المنسق
-        let receipt = "";
-        receipt += "================================\n";
-        receipt += "        " + inv.store_name + "        \n";
-        receipt += "================================\n";
-        receipt += "رقم الفاتورة: " + inv.invoice_no + "\n";
-        receipt += "التاريخ     : " + inv.date + "\n";
-        receipt += "--------------------------------\n";
-        receipt += "الصنف          الكمية     السعر \n";
-        receipt += "--------------------------------\n";
+        // 1. بناء نص الفاتورة المنظم
+        let text = "";
+        text += "       " + inv.store_name + "       \n";
+        text += "==============================\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ     : " + inv.date + "\n";
+        text += "------------------------------\n";
 
         inv.items.forEach(item => {
-            let name = item.name.padEnd(14, ' ');
-            let qty = (item.qty + "x").padEnd(8, ' ');
-            let price = (item.price * item.qty).toFixed(2);
-            receipt += `${name} ${qty} ${price}\n`;
+            text += `${item.name}\n`;
+            text += `   ${item.qty} x ${item.price.toFixed(2)} = ${(item.price * item.qty).toFixed(2)}\n`;
         });
 
-        receipt += "--------------------------------\n";
-        receipt += "الإجمالي النهائي: " + inv.total.toFixed(2) + "\n";
-        receipt += "================================\n\n\n\n";
+        text += "------------------------------\n";
+        text += "الإجمالي النهائي: " + inv.total.toFixed(2) + " شيكل\n";
+        text += "==============================\n\n\n\n";
 
-        // 2. إرسال النص مباشرة إلى تطبيق RawBT باستخدام اسم الحزمة الصحيح
+        // 2. تحويل النص العربي إلى ترميز Base64 آمن تماماً
+        function utf8ToBase64(str) {
+            return window.btoa(unescape(encodeURIComponent(str)));
+        }
+
+        const base64Data = utf8ToBase64(text);
+
+        // 3. إرسال البيانات باستخدام بروتوكول RawBT اليدوي المخصص للطباعة الجرافيكية
         const intentUrl = "intent:#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
-            "S.text=" + encodeURIComponent(receipt) + ";" +
+            "S.data=" + encodeURIComponent(base64Data) + ";" +
+            "S.type=text/plain;" +
             "end;";
 
         window.location.href = intentUrl;
