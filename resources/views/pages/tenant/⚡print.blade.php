@@ -7,7 +7,7 @@ new class extends Component
     public function printThermal()
     {
         $invoiceData = [
-            'store_name' => 'متجر الوحدة',
+            'store_name' => 'مستودع الوحدة',
             'invoice_no' => 'INV-2026-001',
             'date'       => date('Y-m-d H:i'),
             'items'      => [
@@ -37,36 +37,77 @@ new class extends Component
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // 1. بناء نص الفاتورة المنظم
-        let text = "";
-        text += "       " + inv.store_name + "       \n";
-        text += "==============================\n";
-        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
-        text += "التاريخ     : " + inv.date + "\n";
-        text += "------------------------------\n";
+        // 1. إنشاء عنصر Canvas افتراضي في الذاكرة لتجميع الفاتورة كصورة
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
+        // عرض الورقة الحرارية (58mm تعادل تقريباً 384 بكسل)
+        canvas.width = 384;
+
+        // حساب الارتفاع الديناميكي
+        const lineHeight = 30;
+        const totalLines = 8 + inv.items.length;
+        canvas.height = totalLines * lineHeight + 60;
+
+        // خلفية بيضاء ونص أسود
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#000000';
+        ctx.direction = 'rtl';
+        ctx.textAlign = 'center';
+
+        let y = 35;
+
+        // الهيدر
+        ctx.font = 'bold 22px Tahoma, Arial';
+        ctx.fillText(inv.store_name, canvas.width / 2, y);
+        y += lineHeight;
+
+        ctx.font = '16px Tahoma, Arial';
+        ctx.fillText("رقم الفاتورة: " + inv.invoice_no, canvas.width / 2, y);
+        y += lineHeight;
+        ctx.fillText("التاريخ: " + inv.date, canvas.width / 2, y);
+        y += lineHeight;
+
+        // خط فاصل
+        ctx.beginPath();
+        ctx.moveTo(10, y);
+        ctx.lineTo(374, y);
+        ctx.stroke();
+        y += 25;
+
+        // الأصناف
+        ctx.textAlign = 'right';
+        ctx.font = '15px Tahoma, Arial';
         inv.items.forEach(item => {
-            text += `${item.name}\n`;
-            text += `   ${item.qty} x ${item.price.toFixed(2)} = ${(item.price * item.qty).toFixed(2)}\n`;
+            const totalItemPrice = (item.price * item.qty).toFixed(2);
+            ctx.fillText(`${item.name} x${item.qty}`, 370, y);
+            ctx.textAlign = 'left';
+            ctx.fillText(`${totalItemPrice} شيكل`, 10, y);
+            ctx.textAlign = 'right';
+            y += lineHeight;
         });
 
-        text += "------------------------------\n";
-        text += "الإجمالي النهائي: " + inv.total.toFixed(2) + " شيكل\n";
-        text += "==============================\n\n\n\n";
+        // خط فاصل
+        ctx.beginPath();
+        ctx.moveTo(10, y);
+        ctx.lineTo(374, y);
+        ctx.stroke();
+        y += 25;
 
-        // 2. تحويل النص العربي إلى ترميز Base64 آمن تماماً
-        function utf8ToBase64(str) {
-            return window.btoa(unescape(encodeURIComponent(str)));
-        }
+        // الإجمالي
+        ctx.font = 'bold 18px Tahoma, Arial';
+        ctx.fillText("الإجمالي النهائي:", 370, y);
+        ctx.textAlign = 'left';
+        ctx.fillText(`${inv.total.toFixed(2)} شيكل`, 10, y);
 
-        const base64Data = utf8ToBase64(text);
+        // 2. تحويل الـ Canvas إلى Base64 ورَفعه عبر Intent إلى RawBT
+        const base64Image = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, "");
 
-        // 3. إرسال البيانات باستخدام بروتوكول RawBT اليدوي المخصص للطباعة الجرافيكية
         const intentUrl = "intent:#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
-            "S.data=" + encodeURIComponent(base64Data) + ";" +
-            "S.type=text/plain;" +
+            "S.base64=" + base64Image + ";" +
             "end;";
 
         window.location.href = intentUrl;
