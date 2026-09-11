@@ -37,7 +37,11 @@ new class extends Component {
         return [
             'name' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
-            'slug' => 'required|string|max:255|unique:plans,slug,' . $this->plan_id,
+            'slug' => [
+    'required',
+    Rule::unique('plans', 'slug')->ignore($this->plan_id ?? null), // استخدام null بدلاً من النص الفارغ
+],
+            // 'slug' => 'required|string|max:255|unique:plans,slug,' . $this->plan_id,
             'invoice_period' => 'required|in:daily,weekly,monthly,yearly',
             'invoice_interval' => 'required|integer|min:1',
             'description' => 'nullable|string',
