@@ -1,27 +1,35 @@
 FROM php:8.4-fpm
 
-# تثبيت الملحقات المطلوبة (تم إضافة libpq-dev للـ Postgres)
+# 1. تثبيت الملحقات المطلوبة والأدوات اللازمة
 RUN apt-get update && apt-get install -y \
-    git curl libpng-dev libonig-dev libxml2-dev libpq-dev zip unzip nginx
+    git curl libpng-dev libonig-dev libxml2-dev libpq-dev zip unzip nginx \
+    && apt-get clean && rm -rf /var/var/lib/apt/lists/*
 
-# تثبيت تعريفات قواعد البيانات pdo_mysql و pdo_pgsql
+# 2. تثبيت تعريفات PHP وقواعد البيانات (PostgreSQL & MySQL)
 RUN docker-php-ext-install pdo_mysql pdo_pgsql pgsql mbstring exif pcntl bcmath gd
 
-# تثبيت Composer
+# 3. نسخ Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# نسخ ملفات المشروع إلى السيرفر
+# 4. تحديد مجلد العمل
 WORKDIR /var/www
+
+# 5. نسخ ملفات Composer أولاً لتسريع عملية البناء (Docker Layer Caching)
+COPY composer.json composer.lock ./
+
+# 6. تثبيت الحزم وتجاوز فحص المتطلبات أثناء الـ Build
+RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs
+
+# 7. نسخ باقي ملفات المشروع بالكامل
 COPY . .
 
-# تثبيت حزم Laravel وتجهيز الصلاحيات
-RUN composer install --no-interaction --optimize-autoloader --no-dev
+# 8. ضبط صلاحيات مجلدات Storage و Cache
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# إعداد خادم Nginx
+# 9. إعداد Nginx
 COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
-
-CMD php artisan migrate --force && service nginx start && php-fpm
+# 10. تشغيل الـ Migration والـ Seed ثم تشغيل PHP-FPM و Nginx معاً
+CMD php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
