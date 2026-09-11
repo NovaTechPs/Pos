@@ -1,35 +1,32 @@
 FROM php:8.4-fpm
 
-# 1. تثبيت الملحقات المطلوبة والأدوات اللازمة
+# 1. تثبيت الأدوات والملحقات المطلوبة
 RUN apt-get update && apt-get install -y \
     git curl libpng-dev libonig-dev libxml2-dev libpq-dev zip unzip nginx \
-    && apt-get clean && rm -rf /var/var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. تثبيت تعريفات PHP وقواعد البيانات (PostgreSQL & MySQL)
+# 2. تثبيت امتدادات PHP لقواعد البيانات
 RUN docker-php-ext-install pdo_mysql pdo_pgsql pgsql mbstring exif pcntl bcmath gd
 
-# 3. نسخ Composer
+# 3. تثبيت Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # 4. تحديد مجلد العمل
 WORKDIR /var/www
 
-# 5. نسخ ملفات Composer أولاً لتسريع عملية البناء (Docker Layer Caching)
-COPY composer.json composer.lock ./
-
-# 6. تثبيت الحزم وتجاوز فحص المتطلبات أثناء الـ Build
-RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs
-
-# 7. نسخ باقي ملفات المشروع بالكامل
+# 5. نسخ كافة ملفات المشروع أولاً (لتوفير ملف artisan وبقية السكربتات)
 COPY . .
 
-# 8. ضبط صلاحيات مجلدات Storage و Cache
+# 6. تثبيت الحزم مع إضافة خيار --no-scripts لتجنب المشاكل أثناء الـ Build
+RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs --no-scripts
+
+# 7. ضبط صلاحيات مجلدات Laravel
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# 9. إعداد Nginx
+# 8. إعداد خادم Nginx
 COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
-# 10. تشغيل الـ Migration والـ Seed ثم تشغيل PHP-FPM و Nginx معاً
-CMD php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
+# 9. تشغيل أمر package:discover ثم الـ Migrations و Nginx عند بدء الحاوية
+CMD php artisan package:discover --ansi && php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
