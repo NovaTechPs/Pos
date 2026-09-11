@@ -6,62 +6,41 @@ new class extends Component
 {
     public function printThermal()
     {
-        // إطلاق حدث للـ JavaScript لتنفيذ الطباعة المخفية
         $this->dispatch('do-silent-print', text: 'أهلاً بك في عالمنا');
     }
 };
 ?>
 
-<div class="p-4">
-    <!-- زر الطباعة -->
+<div class="p-6">
     <button
         wire:click="printThermal"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+        class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition shadow">
         طباعة حرارية
     </button>
-
-    <!-- عنصر iframe مخفي للطباعة الصامتة -->
-    <iframe id="thermalFrame" style="display:none;"></iframe>
-
-    <!-- سكربت استقبال الحدث وطباعته -->
-    <script>
-        document.addEventListener('livewire:initialized', () => {
-            Livewire.on('do-silent-print', (data) => {
-                const printText = data.text;
-                const iframe = document.getElementById('thermalFrame');
-                const doc = iframe.contentWindow.document;
-
-                // التنسيق الخاص بالحراري (عرض 80mm أو 58mm)
-                doc.open();
-                doc.write(`
-                    <html>
-                        <head>
-                            <style>
-                                @page { size: auto; margin: 0; }
-                                body {
-                                    font-family: monospace, sans-serif;
-                                    width: 80mm;
-                                    margin: 0;
-                                    padding: 10px;
-                                    text-align: center;
-                                    direction: rtl;
-                                }
-                                h2 { font-size: 16px; margin: 0; }
-                            </style>
-                        </head>
-                        <body>
-                            <h2>${printText}</h2>
-                        </body>
-                    </html>
-                `);
-                doc.close();
-
-                // تنفيذ الطباعة
-                setTimeout(() => {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                }, 200);
-            });
-        });
-    </script>
 </div>
+
+@script
+<script>
+    $wire.on('do-silent-print', (data) => {
+        const text = data.text || 'أهلاً بك في عالمنا';
+
+        let iframe = document.getElementById('thermalFrame');
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = 'thermalFrame';
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+        }
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write('<html><head><style>@page { size: auto; margin: 0; } body { font-family: monospace, sans-serif; width: 80mm; margin: 0; padding: 10px; text-align: center; direction: rtl; } h2 { font-size: 16px; margin: 0; }</style></head><body><h2>' + text + '</h2></body></html>');
+        doc.close();
+
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }, 300);
+    });
+</script>
+@endscript
