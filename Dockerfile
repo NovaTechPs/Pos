@@ -25,4 +25,4 @@ EXPOSE 80
 
 
 CMD php artisan migrate --force && service nginx start && php-fpm
-CMD php artisan migrate --seed --force && php-fpm
+CMD php artisan migrate --seed --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}
