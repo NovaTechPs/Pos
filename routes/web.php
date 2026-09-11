@@ -45,6 +45,7 @@ Route::livewire('dashboard/pos', 'pages::tenant.pos')->name('pos');
              Route::livewire('/dashboard/DailySettlementComponent', 'pages::tenant.daily-settlement-component')->name('DailySettlementComponent');
 
 
+             Route::livewire('/dashboard/print', 'pages::tenant.print')->name('print');
 
 
 
