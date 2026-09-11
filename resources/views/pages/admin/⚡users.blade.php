@@ -147,7 +147,7 @@ new class extends Component {
                     'name'      => $this->tenant_name,
                     'domain'    => $this->domain,
                     'plan_id'   => $this->plan_id, // ربط المتجر بالباقة المختارة
-                    'is_active' => true,
+                    // 'is_active' => $this->is_active,
                     'owner_id'  => $ownerId,
                 ]);
             }
