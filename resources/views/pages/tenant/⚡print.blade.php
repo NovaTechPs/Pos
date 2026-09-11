@@ -19,31 +19,13 @@ new class extends Component
             'total'      => 55.00,
         ];
 
-        $this->dispatch('do-direct-print', data: $invoiceData);
+        $this->dispatch('do-kiosk-print', data: $invoiceData);
     }
 };
 ?>
 
-<div class="p-6" x-data="{ port: null }">
-    <!-- زر الربط بالطابعة المباشرة (يُضغط مرة واحدة فقط للربط) -->
-    <button
-        @click="
-            if ('serial' in navigator) {
-                navigator.serial.requestPort().then(p => {
-                    port = p;
-                    alert('تم الربط بالطابعة بنجاح!');
-                }).catch(e => alert('خطأ في الاتصال: ' + e));
-            } else {
-                alert('المتصفح لا يدعم Web Serial API');
-            }
-        "
-        class="px-4 py-2 bg-gray-700 text-white font-medium rounded-lg hover:bg-gray-800 transition mb-3">
-        ربط الطابعة الداخلية (مرة واحدة)
-    </button>
-
-    <br>
-
-    <!-- زر الطباعة الصامتة المباشرة -->
+<div class="p-6">
+    <!-- زر الطباعة -->
     <button
         wire:click="printThermal"
         class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition shadow">
@@ -53,58 +35,58 @@ new class extends Component
 
 @script
 <script>
-    let activePort = null;
-
-    $wire.on('do-direct-print', async (event) => {
+    $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // تجهيز بيانات الفاتورة
-        let text = "================================\n";
-        text += "        " + inv.store_name + "        \n";
-        text += "   أهلاً بك في عالمنا - POS   \n";
-        text += "================================\n";
-        text += "رقم الفاتورة : " + inv.invoice_no + "\n";
-        text += "التاريخ      : " + inv.date + "\n";
-        text += "--------------------------------\n";
-        text += "الصنف          الكمية     السعر \n";
-        text += "--------------------------------\n";
-
-        inv.items.forEach(item => {
-            let name = item.name.padEnd(14, ' ');
-            let qty = (item.qty + "x").padEnd(8, ' ');
-            let price = (item.price * item.qty).toFixed(2);
-            text += `${name} ${qty} ${price}\n`;
-        });
-
-        text += "--------------------------------\n";
-        text += "الإجمالي النهائي: " + inv.total.toFixed(2) + "\n";
-        text += "================================\n\n\n\n"; // مسافة لقص الورق
-
-        try {
-            // استخدام المنفذ المربوط سابقاً أو طلب المنفذ
-            if (!activePort) {
-                const ports = await navigator.serial.getPorts();
-                if (ports.length > 0) {
-                    activePort = ports[0];
-                } else {
-                    activePort = await navigator.serial.requestPort();
-                }
-            }
-
-            // فتح المنفذ وإرسال البيانات مباشرة
-            if (!activePort.readable) {
-                await activePort.open({ baudRate: 9600 }); // معدل السرعة الافتراضي لأجهزة POS
-            }
-
-            const encoder = new TextEncoder();
-            const writer = activePort.writable.getWriter();
-            await writer.write(encoder.encode(text));
-            writer.releaseLock();
-
-        } catch (error) {
-            console.error("فشلت الطباعة المباشرة:", error);
-            alert("تعذر الاتصال بالطابعة المباشرة. تأكد من تفعيل Web Serial أو اضغط زر الربط.");
+        // 1. إنشاء أو جلب الـ iframe المخفي
+        let iframe = document.getElementById('silentPrintFrame');
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = 'silentPrintFrame';
+            iframe.style.position = 'absolute';
+            iframe.style.width = '0px';
+            iframe.style.height = '0px';
+            iframe.style.border = 'none';
+            document.body.appendChild(iframe);
         }
+
+        // 2. بناء هيكل الفاتورة للطباعة الحرارية (58mm)
+        const doc = iframe.contentWindow.document;
+        doc.open();
+
+        let htmlContent = '<html><head><style>';
+        htmlContent += '@page { size: 58mm auto; margin: 0; }';
+        htmlContent += 'body { font-family: monospace, sans-serif; width: 58mm; margin: 0; padding: 5px; direction: rtl; text-align: center; font-size: 12px; }';
+        htmlContent += 'table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }';
+        htmlContent += 'th, td { text-align: right; padding: 2px 0; }';
+        htmlContent += '.divider { border-top: 1px dashed #000; margin: 5px 0; }';
+        htmlContent += '.total-box { font-weight: bold; font-size: 13px; margin-top: 5px; }';
+        htmlContent += '</style></head><body>';
+
+        htmlContent += '<h3>' + inv.store_name + '</h3>';
+        htmlContent += '<div>رقم الفاتورة: ' + inv.invoice_no + '</div>';
+        htmlContent += '<div>التاريخ: ' + inv.date + '</div>';
+        htmlContent += '<div class="divider"></div>';
+
+        htmlContent += '<table><thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead><tbody>';
+        inv.items.forEach(item => {
+            htmlContent += '<tr><td>' + item.name + '</td><td>' + item.qty + '</td><td>' + (item.price * item.qty).toFixed(2) + '</td></tr>';
+        });
+        htmlContent += 'tbody></table>';
+
+        htmlContent += '<div class="divider"></div>';
+        htmlContent += '<div class="total-box">الإجمالي: ' + inv.total.toFixed(2) + '</div>';
+        htmlContent += '<br><br>'; // مسافة لقص الورق
+        htmlContent += '</body></html>';
+
+        doc.write(htmlContent);
+        doc.close();
+
+        // 3. استدعاء أمر الطباعة التلقائي
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }, 300);
     });
 </script>
 @endscript
