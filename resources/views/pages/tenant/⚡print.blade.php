@@ -28,7 +28,7 @@ new class extends Component
     <button
         wire:click="printThermal"
         class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition shadow">
-        Print Thermal Invoice (EN)
+        Print Thermal Invoice Direct
     </button>
 </div>
 
@@ -37,9 +37,8 @@ new class extends Component
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // 1. بناء الفاتورة باللغة الإنجليزية
-        let text = "";
-        text += "==============================\n";
+        // 1. بناء نص الفاتورة
+        let text = "==============================\n";
         text += "         " + inv.store_name + "        \n";
         text += "==============================\n";
         text += "Invoice No: " + inv.invoice_no + "\n";
@@ -59,14 +58,8 @@ new class extends Component
         text += "TOTAL     : " + inv.total.toFixed(2) + " NIS\n";
         text += "==============================\n\n\n\n";
 
-        // 2. إرسال النص إلى RawBT بروابط المباشرة
-        const intentUrl = "intent:#Intent;" +
-            "scheme=rawbt;" +
-            "package=ru.a402d.rawbtprinter;" +
-            "S.text=" + encodeURIComponent(text) + ";" +
-            "end;";
-
-        window.location.href = intentUrl;
+        // 2. إرسال النص عبر البروتوكول المباشر (rawbt:text)
+        window.location.href = "rawbt:text/" + encodeURIComponent(text);
     });
 </script>
 @endscript
