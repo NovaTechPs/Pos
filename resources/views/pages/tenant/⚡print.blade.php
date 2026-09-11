@@ -37,19 +37,15 @@ new class extends Component
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // 1. إنشاء Canvas افتراضي برسم عالي الدقة للطباعة الحرارية 58mm
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // عرض 384 بكسل يتطابق تماماً مع رأس الطباعة الحرارية (58mm)
         canvas.width = 384;
 
-        // حساب الارتفاع المطلوب ديناميكياً
         const lineHeight = 32;
         const totalLines = 8 + inv.items.length;
         canvas.height = totalLines * lineHeight + 80;
 
-        // خلفية بيضاء ونصوص سوداء حادة
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#000000';
@@ -57,20 +53,20 @@ new class extends Component
 
         let y = 40;
 
-        // --- اسم المتجر (عنوان بارز) ---
+        // العنوان
         ctx.textAlign = 'center';
         ctx.font = 'bold 24px Arial, sans-serif';
         ctx.fillText(inv.store_name, canvas.width / 2, y);
         y += lineHeight + 5;
 
-        // --- تفاصيل الفاتورة ---
+        // تفاصيل الفاتورة
         ctx.font = '16px Arial, sans-serif';
         ctx.fillText("رقم الفاتورة: " + inv.invoice_no, canvas.width / 2, y);
         y += lineHeight;
         ctx.fillText("التاريخ: " + inv.date, canvas.width / 2, y);
         y += lineHeight;
 
-        // --- خط فاصل ---
+        // فاصل
         ctx.beginPath();
         ctx.lineWidth = 2;
         ctx.moveTo(10, y);
@@ -78,7 +74,7 @@ new class extends Component
         ctx.stroke();
         y += 25;
 
-        // --- الأصناف (الاسم محاذاة لليمين والسعر لليسار) ---
+        // الأصناف
         ctx.font = '16px Arial, sans-serif';
         inv.items.forEach(item => {
             const itemTotal = (item.price * item.qty).toFixed(2);
@@ -92,7 +88,7 @@ new class extends Component
             y += lineHeight;
         });
 
-        // --- خط فاصل ---
+        // فاصل
         ctx.beginPath();
         ctx.lineWidth = 2;
         ctx.moveTo(10, y);
@@ -100,7 +96,7 @@ new class extends Component
         ctx.stroke();
         y += 30;
 
-        // --- الإجمالي النهائي ---
+        // الإجمالي
         ctx.font = 'bold 20px Arial, sans-serif';
         ctx.textAlign = 'right';
         ctx.fillText("الإجمالي النهائي:", 374, y);
@@ -108,12 +104,12 @@ new class extends Component
         ctx.textAlign = 'left';
         ctx.fillText(`${inv.total.toFixed(2)} شيكل`, 10, y);
 
-        // 2. استخراج صورة PNG بصيغة Base64
+        // تحويل الصورة مع بادئة MIME Type الخاصة بـ PNG
         const dataUrl = canvas.toDataURL('image/png');
         const base64Image = dataUrl.replace(/^data:image\/png;base64,/, "");
 
-        // 3. إرسال الصورة مباشرة إلى RawBT لطباعتها صامتاً وبدقة عالية
-        window.location.href = "rawbt:base64," + base64Image;
+        // إرسال البيانات المحددة كـ image/png
+        window.location.href = "rawbt:base64,image/png;" + base64Image;
     });
 </script>
 @endscript
