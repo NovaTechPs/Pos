@@ -37,7 +37,7 @@ new class extends Component
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // 1. بناء نص الفاتورة المنسق كـ ESC/POS
+        // 1. بناء نص الفاتورة المنسق
         let receipt = "";
         receipt += "================================\n";
         receipt += "        " + inv.store_name + "        \n";
@@ -59,10 +59,10 @@ new class extends Component
         receipt += "الإجمالي النهائي: " + inv.total.toFixed(2) + "\n";
         receipt += "================================\n\n\n\n";
 
-        // 2. إرسال النص مباشرة إلى تطبيق RawBT لطباعته صامتاً
+        // 2. إرسال النص مباشرة إلى تطبيق RawBT باستخدام اسم الحزمة الصحيح
         const intentUrl = "intent:#Intent;" +
             "scheme=rawbt;" +
-            "package=ru.a404m.a200.a411;" +
+            "package=ru.a402d.rawbtprinter;" +
             "S.text=" + encodeURIComponent(receipt) + ";" +
             "end;";
 
