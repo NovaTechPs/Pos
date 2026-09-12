@@ -35,81 +35,11 @@ new class extends Component
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
-        const inv = event.data;
+        // نص بسيط جداً للتجربة
+        let text = "اهلا بك\n\n\n";
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        canvas.width = 384;
-
-        const lineHeight = 32;
-        const totalLines = 8 + inv.items.length;
-        canvas.height = totalLines * lineHeight + 80;
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#000000';
-        ctx.direction = 'rtl';
-
-        let y = 40;
-
-        // العنوان
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 24px Arial, sans-serif';
-        ctx.fillText(inv.store_name, canvas.width / 2, y);
-        y += lineHeight + 5;
-
-        // تفاصيل الفاتورة
-        ctx.font = '16px Arial, sans-serif';
-        ctx.fillText("رقم الفاتورة: " + inv.invoice_no, canvas.width / 2, y);
-        y += lineHeight;
-        ctx.fillText("التاريخ: " + inv.date, canvas.width / 2, y);
-        y += lineHeight;
-
-        // فاصل
-        ctx.beginPath();
-        ctx.lineWidth = 2;
-        ctx.moveTo(10, y);
-        ctx.lineTo(374, y);
-        ctx.stroke();
-        y += 25;
-
-        // الأصناف
-        ctx.font = '16px Arial, sans-serif';
-        inv.items.forEach(item => {
-            const itemTotal = (item.price * item.qty).toFixed(2);
-
-            ctx.textAlign = 'right';
-            ctx.fillText(`${item.name} (x${item.qty})`, 374, y);
-
-            ctx.textAlign = 'left';
-            ctx.fillText(`${itemTotal} شيكل`, 10, y);
-
-            y += lineHeight;
-        });
-
-        // فاصل
-        ctx.beginPath();
-        ctx.lineWidth = 2;
-        ctx.moveTo(10, y);
-        ctx.lineTo(374, y);
-        ctx.stroke();
-        y += 30;
-
-        // الإجمالي
-        ctx.font = 'bold 20px Arial, sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText("الإجمالي النهائي:", 374, y);
-
-        ctx.textAlign = 'left';
-        ctx.fillText(`${inv.total.toFixed(2)} شيكل`, 10, y);
-
-        // تحويل الصورة مع بادئة MIME Type الخاصة بـ PNG
-        const dataUrl = canvas.toDataURL('image/png');
-        const base64Image = dataUrl.replace(/^data:image\/png;base64,/, "");
-
-        // إرسال البيانات المحددة كـ image/png
-        window.location.href = "rawbt:base64,image/png;" + base64Image;
+        // إرسال النص مباشرة إلى RawBT
+        window.location.href = "rawbt:text/" + encodeURIComponent(text);
     });
 </script>
 @endscript
