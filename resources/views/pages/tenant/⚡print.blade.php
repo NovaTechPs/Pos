@@ -35,11 +35,36 @@ new class extends Component
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
-        // نص بسيط جداً للتجربة
-        let text = "اهلا بك\n\n\n";
+        const inv = event.data;
 
-        // إرسال النص مباشرة إلى RawBT
-        window.location.href = "rawbt:text/" + encodeURIComponent(text);
+        // تنسيق الفاتورة كنص
+        let text = "";
+        text += "--------------------------------\n";
+        text += "        " + inv.store_name + "        \n";
+        text += "--------------------------------\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ: " + inv.date + "\n";
+        text += "--------------------------------\n";
+
+        inv.items.forEach(item => {
+            let total = (item.price * item.qty).toFixed(2);
+            text += item.name + "\n";
+            text += "   " + item.qty + " x " + item.price + " = " + total + " شيكل\n";
+        });
+
+        text += "--------------------------------\n";
+        text += "الإجمالي: " + inv.total.toFixed(2) + " شيكل\n";
+        text += "--------------------------------\n\n\n\n";
+
+        // إرسال النص الصافي للطابعة
+        const intentUrl = "intent:" + encodeURIComponent(text) +
+            "#Intent;" +
+            "scheme=rawbt;" +
+            "package=ru.a402d.rawbtprinter;" +
+            "S.type=text/plain;" +
+            "end;";
+
+        window.location.href = intentUrl;
     });
 </script>
 @endscript
