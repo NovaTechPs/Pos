@@ -11,6 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
+                        Schema::disableForeignKeyConstraints();
+
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
