@@ -18,6 +18,12 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
             $table->decimal('stock_quantity', 10, 2)->default(0.00);
             $table->decimal('alert_quantity', 10, 2)->default(5.00);
+            $table->decimal('retail_price', 12, 2)->default(0.00);
+            $table->decimal('wholesale_price', 12, 2)->default(0.00);
+            $table->integer('offer_quantity')->nullable();
+            $table->decimal('offer_price', 10, 2)->nullable();
+                        $table->integer('min_wholesale_quantity')->default(1);
+
             $table->timestamps();
 
             $table->unique(['branch_id', 'product_id']);

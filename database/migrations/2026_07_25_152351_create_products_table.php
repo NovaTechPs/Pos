@@ -20,16 +20,10 @@ return new class extends Migration
             // ربط القسم / التصنيف (Category)
             $table->foreignId('category_id')
                 ->nullable()
-                ->nullOnDelete(); // في حال حذف التصنيف، يتم تعيين القيمة إلى NULL بدلاً من حذف المنتج
-
+                ->nullOnDelete();
             $table->string('name');
-            $table->string('barcode')->nullable();
             $table->decimal('cost_price', 12, 2)->default(0.00);
-            $table->decimal('retail_price', 12, 2);
-            $table->decimal('wholesale_price', 12, 2);
-            $table->integer('min_wholesale_quantity')->default(1);
-            $table->integer('offer_quantity')->nullable(); // عدد الحبات المطلوب للعرض
-            $table->decimal('offer_price', 10, 2)->nullable(); // سعر المجموعة كاملة
+            $table->boolean('is_price_unified')->default(true)->after('min_wholesale_quantity');
             $table->boolean('show_in_website')->default(false); // أو false حسب رغبتك بالافتراضي
           $table->string('image')->nullable();
           $table->json('images')->nullable();
@@ -37,7 +31,6 @@ return new class extends Migration
             $table->softDeletes();
 
             // الفهارس
-            $table->index(['tenant_id', 'barcode']);
             $table->index(['tenant_id', 'category_id']);
         });
     }

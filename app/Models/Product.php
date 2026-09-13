@@ -31,4 +31,24 @@ class Product extends Model
     {
         return $this->belongsTo(Category::class);
     }
+    public function branchProducts()
+{
+    return $this->hasMany(BranchProduct::class);
+}
+
+// جلب سعر المنتج لفرع محدد
+public function priceForBranch($branchId)
+{
+    return $this->branchProducts()->where('branch_id', $branchId)->first();
+}
+public function barcodes()
+{
+    return $this->hasMany(ProductBarcode::class);
+}
+public function branches()
+    {
+        return $this->belongsToMany(Branch::class, 'branch_products')
+                    ->withPivot('stock_quantity')
+                    ->withTimestamps();
+    }
 }

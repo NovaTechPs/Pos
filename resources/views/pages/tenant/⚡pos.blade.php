@@ -1,6 +1,7 @@
 <?php
 use Livewire\Component;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -15,6 +16,16 @@ new class extends Component {
     public string $barcode = '';
     public array $cart = [];
     public $paid_amount = 0;
+    public string $notes = ''; // حقل الملاحظات
+
+    // --- حقل البحث عن الفاتورة ---
+    public string $searchInvoiceQuery = '';
+
+    // --- حقل البحث عن الأصناف (بالاسم أو الباركود) ---
+    public string $productSearchQuery = '';
+
+    // --- تحديد الفرع الخاص بالأدمن والمستخدم ---
+    public ?int $selectedBranchId = null;
 
     // --- إضافات الخصم والتعديل على السعر الإجمالي ---
     public $discount_amount = 0;
@@ -36,6 +47,10 @@ new class extends Component {
     // --- ميزة استطلاع تكلفة وأرباح الأصناف ---
     public bool $showCostModal = false;
 
+    // --- ميزة التنبيه عند البيع تحت التكلفة ---
+    public bool $showBelowCostModal = false;
+    public string $pendingCheckoutMode = 'checkout';
+
     // --- ميزة وضع المرتجع المباشر ---
     public bool $isReturnMode = false;
 
@@ -50,10 +65,25 @@ new class extends Component {
     // --- الدورات والأحداث ---
     public function mount()
     {
+        $user = Auth::user();
+        $this->selectedBranchId = $user->branch_id ?? session('active_branch_id');
+
         $tenantId = session('active_tenant_id');
         $this->categories = Category::where('tenant_id', $tenantId)->get();
         $this->loadQuickProducts();
         $this->checkActiveShift();
+    }
+
+    public function updatedSelectedBranchId($value)
+    {
+        session(['active_branch_id' => $value]);
+        $this->loadQuickProducts();
+        $this->checkActiveShift();
+    }
+
+    public function updatedProductSearchQuery()
+    {
+        $this->loadQuickProducts();
     }
 
     public function selectCategory(?int $categoryId = null)
@@ -65,11 +95,41 @@ new class extends Component {
     public function loadQuickProducts()
     {
         $tenantId = session('active_tenant_id');
+        $branchId = $this->getActiveBranchId();
+
         $query = Product::where('tenant_id', $tenantId);
+
         if ($this->selectedCategoryId) {
             $query->where('category_id', $this->selectedCategoryId);
         }
-        $this->quickProducts = $query->take(30)->get();
+
+        $search = trim($this->productSearchQuery);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search, $tenantId) {
+                $q->where('name', 'like', '%' . $search . '%')
+                  ->orWhereHas('barcodes', function ($bQuery) use ($search, $tenantId) {
+                      $bQuery->where('tenant_id', $tenantId)
+                             ->where('barcode', 'like', '%' . $search . '%');
+                  });
+            });
+        }
+
+        $products = $query->take(30)->get();
+
+        $this->quickProducts = $products->map(function ($product) use ($branchId) {
+            $branchData = BranchProduct::where('branch_id', $branchId)
+                ->where('product_id', $product->id)
+                ->first();
+
+            $product->retail_price = $branchData?->retail_price ?? $product->retail_price ?? 0;
+            return $product;
+        });
+    }
+
+    private function getActiveBranchId(): ?int
+    {
+        $user = Auth::user();
+        return $user->branch_id ?? $this->selectedBranchId;
     }
 
     // --- وظائف الشيفت والصندوق ---
@@ -78,10 +138,7 @@ new class extends Component {
         $tenantId = session('active_tenant_id');
         $userId = Auth::id();
 
-        $this->activeShift = Shift::where('tenant_id', $tenantId)
-            ->where('user_id', $userId)
-            ->where('status', 'open')
-            ->first();
+        $this->activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $userId)->where('status', 'open')->first();
     }
 
     public function triggerOpenShiftModal(): void
@@ -100,7 +157,12 @@ new class extends Component {
             return;
         }
 
-        $branchId = $user->branch_id ?? Branch::where('tenant_id', $tenantId)->value('id');
+        $branchId = $this->getActiveBranchId();
+
+        if (!$branchId) {
+            $this->errorMessage = 'يرجى اختيار الفرع أولاً لفتح الشيفت!';
+            return;
+        }
 
         $this->activeShift = Shift::create([
             'tenant_id' => $tenantId,
@@ -125,13 +187,8 @@ new class extends Component {
             }
         }
 
-        $cashSales = Order::where('shift_id', $this->activeShift->id)
-            ->where('type', 'pos')
-            ->sum('paid_amount');
-
-        $cashReturns = Order::where('shift_id', $this->activeShift->id)
-            ->where('type', 'return')
-            ->sum('paid_amount');
+        $cashSales = Order::where('shift_id', $this->activeShift->id)->where('type', 'pos')->sum('paid_amount');
+        $cashReturns = Order::where('shift_id', $this->activeShift->id)->where('type', 'return')->sum('paid_amount');
 
         $this->activeShift->total_sales = $cashSales;
         $this->activeShift->total_returns = abs($cashReturns);
@@ -143,7 +200,9 @@ new class extends Component {
 
     public function closeShift(): void
     {
-        if (!$this->activeShift) return;
+        if (!$this->activeShift) {
+            return;
+        }
 
         $actual = (float) $this->actual_cash;
         $expected = (float) $this->activeShift->expected_cash;
@@ -160,16 +219,14 @@ new class extends Component {
         $this->showCloseShiftModal = false;
         $this->showOpenShiftModal = false;
         $this->clearCartState();
-        $this->successMessage = 'تم إغلاق الشيفت وتسوية الصندوق بنجاح. يمكنك الآن اعتماد اليومية أو فتح شيفت جديد عند الحاجة.';
+        $this->successMessage = 'تم إغلاق الشيفت وتسوية الصندوق بنجاح.';
     }
 
-    // --- تبديل وضع المرتجع ---
     public function toggleReturnMode(): void
     {
         $this->isReturnMode = !$this->isReturnMode;
     }
 
-    // --- وظيفة فتح مودال استطلاع التكلفة ---
     public function openCostModal(): void
     {
         if (empty($this->cart)) {
@@ -180,7 +237,6 @@ new class extends Component {
         $this->showCostModal = true;
     }
 
-    // --- وظائف تعليق واسترجاع الفواتير ---
     public function holdInvoice(): void
     {
         if (empty($this->cart)) {
@@ -196,6 +252,7 @@ new class extends Component {
             'discount_type' => $this->discount_type,
             'custom_final_total' => $this->custom_final_total,
             'is_return_mode' => $this->isReturnMode,
+            'notes' => $this->notes,
             'time' => now()->format('H:i:s Y-m-d'),
             'total' => $this->total,
         ];
@@ -218,6 +275,7 @@ new class extends Component {
         $this->discount_type = $held['discount_type'] ?? 'fixed';
         $this->custom_final_total = $held['custom_final_total'] ?? null;
         $this->isReturnMode = $held['is_return_mode'] ?? false;
+        $this->notes = $held['notes'] ?? '';
         $this->currentInvoiceId = null;
 
         unset($this->heldInvoices[$index]);
@@ -233,7 +291,32 @@ new class extends Component {
         $this->heldInvoices = array_values($this->heldInvoices);
     }
 
-    // --- وظائف التنقل بين الفواتير المحفوظة ---
+    public function searchInvoice()
+    {
+        $query = trim($this->searchInvoiceQuery);
+
+        if ($query === '') {
+            $this->errorMessage = 'يرجى إدخال رقم الفاتورة للبحث.';
+            return;
+        }
+
+        $tenantId = session('active_tenant_id');
+        $invoice = Order::where('tenant_id', $tenantId)
+            ->where(function ($q) use ($query) {
+                $q->where('invoice_number', $query)
+                  ->orWhere('invoice_number', 'like', '%' . $query . '%')
+                  ->orWhere('id', $query);
+            })
+            ->first();
+
+        if ($invoice) {
+            $this->loadInvoice($invoice->id);
+            $this->searchInvoiceQuery = '';
+        } else {
+            $this->errorMessage = "لم يتم العثور على أي فاتورة مطابقة للبحث: {$query}";
+        }
+    }
+
     public function loadInvoice(int $invoiceId)
     {
         $tenantId = session('active_tenant_id');
@@ -252,11 +335,9 @@ new class extends Component {
             $this->cart[$item->product_id] = [
                 'id' => $item->product_id,
                 'name' => $product->name ?? 'منتج غير محدد',
-                'barcode' => $product->barcode ?? '',
+                'barcode' => '',
                 'price' => (float) $item->unit_price,
-                'cost_price' => (float) ($item->cost_price ?? $product->cost_price ?? 0),
-                'offer_quantity' => $product->offer_quantity ?? null,
-                'offer_price' => $product->offer_price ?? null,
+                'cost_price' => (float) ($item->cost_price ?? ($product->cost_price ?? 0)),
                 'quantity' => (int) $item->quantity,
                 'subtotal' => (float) $item->total_price,
                 'has_offer' => false,
@@ -267,8 +348,9 @@ new class extends Component {
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = 'fixed';
         $this->custom_final_total = null;
+        $this->notes = $invoice->notes ?? '';
         $this->errorMessage = null;
-        $this->successMessage = "تم عرض الفاتورة رقم #{$invoice->id}";
+        $this->successMessage = "تم عرض الفاتورة رقم #{$invoice->id} ({$invoice->invoice_number})";
     }
 
     public function previousInvoice()
@@ -295,10 +377,7 @@ new class extends Component {
             return;
         }
 
-        $next = Order::where('tenant_id', $tenantId)
-            ->where('id', '>', $this->currentInvoiceId)
-            ->orderBy('id', 'asc')
-            ->first();
+        $next = Order::where('tenant_id', $tenantId)->where('id', '>', $this->currentInvoiceId)->orderBy('id', 'asc')->first();
 
         if ($next) {
             $this->loadInvoice($next->id);
@@ -308,7 +387,6 @@ new class extends Component {
         }
     }
 
-    // --- العمليات على السلة ---
     public function scanBarcode()
     {
         $this->errorMessage = null;
@@ -326,10 +404,10 @@ new class extends Component {
         }
 
         $tenantId = session('active_tenant_id');
-        $product = Product::where('tenant_id', $tenantId)->where('barcode', $trimmedBarcode)->first();
+        $barcodeRecord = ProductBarcode::where('tenant_id', $tenantId)->where('barcode', $trimmedBarcode)->first();
 
-        if ($product) {
-            $this->addToCart($product);
+        if ($barcodeRecord && $barcodeRecord->product) {
+            $this->addToCart($barcodeRecord->product, $trimmedBarcode);
             $this->barcode = '';
         } else {
             $this->errorMessage = 'عذراً، لم يتم العثور على منتج بهذا الباركود!';
@@ -337,7 +415,7 @@ new class extends Component {
         }
     }
 
-    public function addToCart(Product $product)
+    public function addToCart(Product $product, string $scannedBarcode = '')
     {
         if (!$this->activeShift) {
             $this->errorMessage = 'يرجى فتح شيفت أولاً لإضافة منتجات!';
@@ -345,9 +423,18 @@ new class extends Component {
             return;
         }
 
+        $branchId = $this->getActiveBranchId();
+        if (!$branchId) {
+            $this->errorMessage = 'يرجى اختيار الفرع أولاً!';
+            return;
+        }
+
         if ($this->currentInvoiceId) {
             $this->currentInvoiceId = null;
         }
+
+        $branchProduct = BranchProduct::where('branch_id', $branchId)->where('product_id', $product->id)->first();
+        $retailPrice = $branchProduct ? (float) $branchProduct->retail_price : (float) ($product->retail_price ?? 0);
 
         $productId = $product->id;
         $changeQty = $this->isReturnMode ? -1 : 1;
@@ -368,18 +455,17 @@ new class extends Component {
             $this->cart[$productId] = [
                 'id' => $product->id,
                 'name' => $product->name,
-                'barcode' => $product->barcode,
-                'price' => (float) $product->retail_price,
+                'barcode' => $scannedBarcode,
+                'price' => $retailPrice,
                 'cost_price' => (float) ($product->cost_price ?? 0),
-                'offer_quantity' => $product->offer_quantity ? (int) $product->offer_quantity : null,
-                'offer_price' => $product->offer_price ? (float) $product->offer_price : null,
                 'quantity' => $changeQty,
-                'subtotal' => (float) $product->retail_price * $changeQty,
+                'subtotal' => $retailPrice * $changeQty,
                 'has_offer' => false,
             ];
         }
 
         $this->recalculatePrices();
+        $this->loadQuickProducts();
     }
 
     public function updateUnitPrice($productId, $newPrice)
@@ -387,7 +473,15 @@ new class extends Component {
         $price = (float) $newPrice;
         if ($price >= 0 && isset($this->cart[$productId])) {
             $this->cart[$productId]['price'] = $price;
-            $this->cart[$productId]['offer_quantity'] = null;
+            $this->recalculatePrices();
+        }
+    }
+
+    public function updateCostPrice($productId, $newCost)
+    {
+        $cost = (float) $newCost;
+        if ($cost >= 0 && isset($this->cart[$productId])) {
+            $this->cart[$productId]['cost_price'] = $cost;
             $this->recalculatePrices();
         }
     }
@@ -424,7 +518,6 @@ new class extends Component {
 
     private function clearCartState()
     {
-
         $this->cart = [];
         $this->paid_amount = 0;
         $this->discount_amount = 0;
@@ -432,13 +525,17 @@ new class extends Component {
         $this->custom_final_total = null;
         $this->currentInvoiceId = null;
         $this->isReturnMode = false;
+        $this->notes = '';
+        $this->searchInvoiceQuery = '';
+        $this->productSearchQuery = '';
         $this->total = 0;
         $this->calculated_discount = 0;
         $this->subtotal = 0;
+        $this->showBelowCostModal = false;
 
-
-
-
+        $user = Auth::user();
+        $this->selectedBranchId = $user->branch_id ?? session('active_branch_id');
+        $this->loadQuickProducts();
     }
 
     public function appendNumpad(string $val)
@@ -466,26 +563,11 @@ new class extends Component {
     private function recalculatePrices()
     {
         foreach ($this->cart as $id => $item) {
-            $qty = $item['quantity'];
-            $absQty = abs($qty);
-            $unitPrice = $item['price'];
-            $offerQty = $item['offer_quantity'];
-            $offerPrice = $item['offer_price'];
-
-            if ($offerQty && $offerPrice && $offerQty > 0 && $absQty >= $offerQty) {
-                $unitOfferPrice = $offerPrice / $offerQty;
-                $rawSubtotal = $qty * $unitOfferPrice;
-                $this->cart[$id]['has_offer'] = true;
-            } else {
-                $rawSubtotal = $qty * $unitPrice;
-                $this->cart[$id]['has_offer'] = false;
-            }
-
+            $rawSubtotal = $item['quantity'] * $item['price'];
             $this->cart[$id]['subtotal'] = $this->roundUpToNearestHalf($rawSubtotal);
         }
     }
 
-    // --- المراقبة التلقائية لتعديل الخصم والسعر النهائي ---
     public function updatedDiscountAmount()
     {
         $this->custom_final_total = null;
@@ -518,7 +600,6 @@ new class extends Component {
         }
     }
 
-    // --- Computed Properties ---
     public function getSubtotalProperty(): float
     {
         if (empty($this->cart)) {
@@ -590,8 +671,58 @@ new class extends Component {
         return $paid - $this->total;
     }
 
-    // --- إتمام وحفظ الفاتورة ---
-    public function checkout(): void
+    // --- الفحص الذاتي للبيع تحت التكلفة ---
+    public function getHasBelowCostItemProperty(): bool
+    {
+        foreach ($this->cart as $item) {
+            if ($item['quantity'] > 0 && (float)$item['price'] < (float)($item['cost_price'] ?? 0)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function checkout(): ?Order
+    {
+        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+            $this->pendingCheckoutMode = 'checkout';
+            $this->showBelowCostModal = true;
+            return null;
+        }
+
+        $this->showBelowCostModal = false;
+        return $this->processCheckout();
+    }
+
+    public function checkoutAndPrint()
+    {
+        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+            $this->pendingCheckoutMode = 'checkoutAndPrint';
+            $this->showBelowCostModal = true;
+            return;
+        }
+
+        $this->showBelowCostModal = false;
+        $order = $this->processCheckout();
+        if ($order) {
+            $this->dispatch('print-receipt', ['orderId' => $order->id]);
+        }
+    }
+
+    public function confirmBelowCostCheckout()
+    {
+        $this->showBelowCostModal = false;
+        if ($this->pendingCheckoutMode === 'checkoutAndPrint') {
+            $order = $this->processCheckout();
+            if ($order) {
+                $this->dispatch('print-receipt', ['orderId' => $order->id]);
+            }
+        } else {
+            $this->processCheckout();
+        }
+    }
+
+    private function processCheckout(): ?Order
     {
         $this->errorMessage = null;
         $this->successMessage = null;
@@ -599,26 +730,26 @@ new class extends Component {
         if (!$this->activeShift) {
             $this->errorMessage = 'لا يمكنك إجراء عملية بيع بدون فتح شيفت أولاً!';
             $this->showOpenShiftModal = true;
-            return;
+            return null;
         }
 
         if (empty($this->cart)) {
             $this->errorMessage = 'الفاتورة فارغة حالياً!';
-            return;
+            return null;
         }
 
         $tenantId = session('active_tenant_id');
         if (!$tenantId) {
             $this->errorMessage = 'يرجى اختيار متجر أولاً لتتمكن من إتمام الفاتورة!';
-            return;
+            return null;
         }
 
         $user = Auth::user();
-        $branchId = $user->branch_id ?? Branch::where('tenant_id', $tenantId)->value('id');
+        $branchId = $this->getActiveBranchId();
 
         if (!$branchId) {
-            $this->errorMessage = 'تعذر إتمام العملية: لا يوجد فرع مرتبط بهذا المتجر!';
-            return;
+            $this->errorMessage = 'تعذر إتمام العملية: يرجى تحديد الفرع أولاً!';
+            return null;
         }
 
         $subtotal = $this->subtotal;
@@ -629,7 +760,8 @@ new class extends Component {
         $prefix = $invoiceType === 'return' ? 'RET-' : 'POS-';
 
         try {
-            DB::transaction(function () use ($user, $tenantId, $branchId, $subtotal, $discount, $total, $invoiceType, $prefix) {
+            $order = null;
+            DB::transaction(function () use ($user, $tenantId, $branchId, $subtotal, $discount, $total, $invoiceType, $prefix, &$order) {
                 $order = Order::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
@@ -643,6 +775,8 @@ new class extends Component {
                     'total' => $total,
                     'paid_amount' => (float) $this->paid_amount != 0 ? (float) $this->paid_amount : $total,
                     'payment_status' => 'paid',
+                    'notes' => $this->notes,
+                    'created_at' => now(),
                 ]);
 
                 foreach ($this->cart as $item) {
@@ -656,22 +790,30 @@ new class extends Component {
                         'total_price' => $item['subtotal'],
                     ]);
 
-                    BranchProduct::where('branch_id', $branchId)
-                        ->where('product_id', $item['id'])
-                        ->decrement('stock_quantity', $item['quantity']);
+                    BranchProduct::where('branch_id', $branchId)->where('product_id', $item['id'])->decrement('stock_quantity', $item['quantity']);
                 }
             });
 
             $this->clearCartState();
+            $this->loadQuickProducts();
+            $this->checkActiveShift();
+
             $this->successMessage = $invoiceType === 'return' ? 'تمت عملية الإرجاع وحفظ الفاتورة بنجاح!' : 'تمت عملية البيع وحفظ الفاتورة بنجاح!';
+            return $order;
         } catch (\Exception $e) {
             $this->errorMessage = 'خطأ في العملية: ' . $e->getMessage();
+            return null;
         }
     }
 
     public function render()
     {
-        return $this->view()->layout('layouts::tenant');
+        $tenantId = session('active_tenant_id');
+        $branches = !Auth::user()->branch_id ? Branch::where('tenant_id', $tenantId)->get() : [];
+
+        return $this->view([
+            'branches' => $branches,
+        ])->layout('layouts::tenant');
     }
 };
 ?>
@@ -679,11 +821,37 @@ new class extends Component {
 <flux:main class="h-[calc(100vh-4rem)] p-2 bg-slate-100 font-sans select-none overflow-hidden">
     <div x-data x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
         x-on:keydown.window.f2.prevent="$wire.holdInvoice()" x-on:keydown.window.f3.prevent="$wire.checkout()"
-        x-on:keydown.window.f4.prevent="$wire.clearCart()" class="h-full">
+        x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
+        class="h-full">
         <div class="grid grid-cols-12 gap-2 h-full">
             <div class="col-span-12 lg:col-span-7 flex flex-col h-full space-y-2 min-h-0">
                 <div
-                    class="bg-white border border-slate-300 rounded-xl p-2 flex items-center justify-between shadow-sm shrink-0">
+                    class="bg-white border border-slate-300 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm shrink-0">
+
+                    @if (!Auth::user()->branch_id)
+                        <div class="flex items-center gap-2" wire:key="branch-selector-container">
+                            <span class="text-xs font-bold text-slate-700">الفرع:</span>
+                            <select wire:model.live="selectedBranchId" wire:key="branch-select-input"
+                                class="bg-slate-50 border border-slate-300 text-xs font-bold rounded-lg p-1.5 focus:outline-indigo-600">
+                                <option value="">-- اختر الفرع --</option>
+                                @foreach ($branches as $b)
+                                    <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
+
+                    <!-- نموذج البحث عن فاتورة -->
+                    <form wire:submit.prevent="searchInvoice" class="flex items-center gap-1">
+                        <input type="text" wire:model="searchInvoiceQuery"
+                            placeholder="رقم الفاتورة أو ID..."
+                            class="w-36 bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-xs font-bold focus:outline-indigo-600">
+                        <button type="submit"
+                            class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold active:scale-95 transition-all">
+                            بحث 🔍
+                        </button>
+                    </form>
+
                     <div class="flex items-center gap-2">
                         <button type="button" wire:click="previousInvoice"
                             class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all">
@@ -771,6 +939,16 @@ new class extends Component {
                     </div>
                 @endif
 
+                <!-- تنبيه مبكر في الواجهة عند البيع تحت التكلفة -->
+                @if ($this->has_below_cost_item)
+                    <div class="bg-rose-100 border-l-4 border-rose-600 text-rose-900 p-2 rounded-lg text-xs font-bold flex items-center justify-between shadow-sm animate-pulse">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm">⚠️</span>
+                            <span>تنبيه: يوجد منتج (أو أكثر) بسعر بيع أقل من سعر التكلفة!</span>
+                        </div>
+                    </div>
+                @endif
+
                 <div
                     class="flex-1 bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm flex flex-col min-h-0">
                     <div class="overflow-y-auto flex-1">
@@ -779,21 +957,27 @@ new class extends Component {
                                 <tr>
                                     <th class="p-2">اسم المنتج</th>
                                     <th class="p-2 text-center">الكمية</th>
-                                    <th class="p-2 text-center">سعر الوحدة</th>
+                                    <th class="p-2 text-center">التكلفة</th>
+                                    <th class="p-2 text-center">سعر البيع</th>
                                     <th class="p-2 text-center">الإجمالي</th>
                                     <th class="p-2 text-center">حذف</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 @forelse($cart as $item)
-                                    <tr class="{{ $item['quantity'] < 0 ? 'bg-rose-50/80 hover:bg-rose-100' : 'hover:bg-indigo-50/50' }}" wire:key="cart-item-{{ $item['id'] }}">
+                                    @php
+                                        $isBelowCost = $item['quantity'] > 0 && (float)$item['price'] < (float)($item['cost_price'] ?? 0);
+                                    @endphp
+                                    <tr class="{{ $item['quantity'] < 0 ? 'bg-rose-50/80 hover:bg-rose-100' : ($isBelowCost ? 'bg-rose-100/50 hover:bg-rose-100' : 'hover:bg-indigo-50/50') }}"
+                                        wire:key="cart-item-{{ $item['id'] }}">
                                         <td class="p-2 font-bold text-slate-900">
                                             {{ $item['name'] }}
                                             @if ($item['quantity'] < 0)
-                                                <span class="inline-block bg-rose-200 text-rose-800 text-[10px] px-1.5 py-0.5 rounded font-bold mr-1">مرتجع</span>
-                                            @endif
-                                            @if ($item['has_offer'])
-                                                <span class="inline-block text-[10px] text-amber-600 mr-1">سعر عرض 🔥</span>
+                                                <span
+                                                    class="inline-block bg-rose-200 text-rose-800 text-[10px] px-1.5 py-0.5 rounded font-bold mr-1">مرتجع</span>
+                                            @elseif ($isBelowCost)
+                                                <span
+                                                    class="inline-block bg-rose-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold mr-1 animate-bounce">تحت التكلفة</span>
                                             @endif
                                         </td>
                                         <td class="p-2 text-center">
@@ -810,11 +994,17 @@ new class extends Component {
                                             </div>
                                         </td>
                                         <td class="p-2 text-center">
+                                            <input type="number" step="0.01" value="{{ $item['cost_price'] ?? 0 }}"
+                                                wire:change="updateCostPrice({{ $item['id'] }}, $event.target.value)"
+                                                class="w-20 text-center font-mono font-bold bg-rose-50/50 border border-rose-200 text-rose-700 rounded p-1 text-xs focus:bg-white focus:outline-rose-600">
+                                        </td>
+                                        <td class="p-2 text-center">
                                             <input type="number" step="0.01" value="{{ $item['price'] }}"
                                                 wire:change="updateUnitPrice({{ $item['id'] }}, $event.target.value)"
-                                                class="w-20 text-center font-mono font-bold bg-slate-50 border border-slate-300 rounded p-1 text-xs focus:bg-white focus:outline-indigo-600">
+                                                class="w-20 text-center font-mono font-bold {{ $isBelowCost ? 'bg-rose-200 text-rose-900 border-rose-500' : 'bg-slate-50 border-slate-300' }} border rounded p-1 text-xs focus:bg-white focus:outline-indigo-600">
                                         </td>
-                                        <td class="p-2 text-center font-mono font-black {{ $item['subtotal'] < 0 ? 'text-rose-600' : 'text-indigo-700' }}">
+                                        <td
+                                            class="p-2 text-center font-mono font-black {{ $item['subtotal'] < 0 ? 'text-rose-600' : 'text-indigo-700' }}">
                                             {{ number_format($item['subtotal'], 2) }}</td>
                                         <td class="p-2 text-center">
                                             <button wire:click="removeFromCart({{ $item['id'] }})"
@@ -823,7 +1013,7 @@ new class extends Component {
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="py-20 text-center text-slate-400 font-semibold">
+                                        <td colspan="6" class="py-20 text-center text-slate-400 font-semibold">
                                             الفاتورة فارغة.. اختر منتجات من القائمة أو امسح الباركود
                                         </td>
                                     </tr>
@@ -857,6 +1047,13 @@ new class extends Component {
                                     placeholder="{{ number_format($this->total, 2) }}"
                                     class="w-full bg-white border border-slate-300 rounded p-1 font-mono font-black text-indigo-700">
                             </div>
+
+                            <div class="col-span-12 flex items-center gap-1">
+                                <span class="font-bold text-slate-700 whitespace-nowrap">ملاحظات:</span>
+                                <input type="text" wire:model.live="notes"
+                                    placeholder="أضف أي ملاحظات إضافية للفاتورة..."
+                                    class="w-full bg-white border border-slate-300 rounded p-1 text-xs font-semibold text-slate-800 focus:outline-indigo-600">
+                            </div>
                         </div>
                     </div>
                     <div class="bg-slate-900 text-white p-2.5 flex items-center justify-between text-xs font-bold">
@@ -870,18 +1067,20 @@ new class extends Component {
                         </div>
                         <div>
                             <span>{{ $this->total < 0 ? 'المسترد للزبون:' : 'المطلوب:' }}</span>
-                            <span class="{{ $this->total < 0 ? 'text-rose-400' : 'text-amber-400' }} font-mono text-lg mr-1">
+                            <span
+                                class="{{ $this->total < 0 ? 'text-rose-400' : 'text-amber-400' }} font-mono text-lg mr-1">
                                 {{ number_format(abs($this->total), 2) }}
                             </span>
                         </div>
                         <div>المتبقي: <span
-                                class="text-emerald-400 font-mono text-lg mr-1">{{ number_format($this->change, 2) }}</span></div>
+                                class="text-emerald-400 font-mono text-lg mr-1">{{ number_format($this->change, 2) }}</span>
+                        </div>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-12 gap-2 shrink-0">
                     <div
-                        class="col-span-7 bg-white p-2.5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between">
+                        class="col-span-6 bg-white p-2.5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between">
                         <div class="mb-1.5">
                             <label class="text-[11px] font-bold text-slate-600">المبلغ المدفوع (نقداً):</label>
                             <input type="number" wire:model.live="paid_amount"
@@ -896,16 +1095,25 @@ new class extends Component {
                             @endforeach
                         </div>
                     </div>
-                    <div class="col-span-5 flex flex-col justify-between gap-2">
+                    <div class="col-span-6 flex flex-col justify-between gap-2">
                         <button wire:click="checkout" @if (count($cart) === 0 || $currentInvoiceId) disabled @endif
-                            class="flex-1 {{ $this->total < 0 ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-extrabold flex flex-col items-center justify-center p-2 shadow active:scale-95 transition-all text-center">
-                            <span class="text-base">{{ $this->total < 0 ? 'حفظ المرتجع' : 'إتمام وحفظ' }}</span>
+                            class="flex-1 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-extrabold flex flex-col items-center justify-center p-2 shadow active:scale-95 transition-all text-center">
+                            <span class="text-sm">حفظ فقط (بدون طباعة)</span>
                             <span
-                                class="text-[10px] {{ $this->total < 0 ? 'bg-rose-800' : 'bg-emerald-800' }} text-white px-2 py-0.5 rounded font-mono mt-1">F3</span>
+                                class="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded font-mono mt-1">F3</span>
                         </button>
+
+                        <button wire:click="checkoutAndPrint" @if (count($cart) === 0 || $currentInvoiceId) disabled @endif
+                            class="flex-1 {{ $this->total < 0 ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-extrabold flex flex-col items-center justify-center p-2 shadow active:scale-95 transition-all text-center">
+                            <span class="text-base">🖨️
+                                {{ $this->total < 0 ? 'حفظ وطباعة المرتجع' : 'حفظ وطباعة' }}</span>
+                            <span
+                                class="text-[10px] {{ $this->total < 0 ? 'bg-rose-800' : 'bg-emerald-800' }} text-white px-2 py-0.5 rounded font-mono mt-1">F6</span>
+                        </button>
+
                         <button wire:click="clearCart" @if (count($cart) === 0) disabled @endif
-                            class="bg-slate-600 hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-bold p-2.5 shadow active:scale-95 transition-all text-xs text-center">
-                            <span>فاتورة جديدة / تنظيف (F4)</span>
+                            class="bg-slate-500 hover:bg-slate-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-bold p-2 shadow active:scale-95 transition-all text-xs text-center">
+                            <span>تنظيف السلة (F4)</span>
                         </button>
                     </div>
                 </div>
@@ -913,10 +1121,30 @@ new class extends Component {
 
             <div
                 class="col-span-12 lg:col-span-5 flex flex-col h-full bg-white border border-slate-300 rounded-xl p-2.5 shadow-sm min-h-0 space-y-2">
+
+                <!-- حقل المباشرة لمسح الباركود بالأجهزة -->
                 <form wire:submit.prevent="scanBarcode" class="shrink-0">
-                    <input wire:model="barcode" placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه...' : 'امسح الباركود هنا...' }}" autofocus
+                    <input wire:model="barcode"
+                        placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه...' : 'امسح الباركود هنا لإضافته المباشرة...' }}"
+                        autofocus
                         class="w-full bg-slate-50 border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-slate-300 focus:outline-indigo-600' }} rounded-lg p-2 text-xs font-semibold">
                 </form>
+
+                <!-- حقل البحث في الأصناف (بالاسم أو الباركود) -->
+                <div class="relative shrink-0">
+                    <input type="text"
+                        wire:model.live.debounce.250ms="productSearchQuery"
+                        placeholder="بحث في الأصناف (بالاسم أو الباركود)... 🔍"
+                        class="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg p-2 text-xs font-bold text-indigo-900 focus:outline-indigo-600 focus:bg-white placeholder-indigo-400">
+                    @if(!empty($productSearchQuery))
+                        <button type="button" wire:click="$set('productSearchQuery', '')"
+                            class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
+                            ✕
+                        </button>
+                    @endif
+                </div>
+
+                <!-- أزرار الأقسام -->
                 <div class="flex gap-1 overflow-x-auto pb-1 shrink-0 scrollbar-none">
                     <button wire:click="selectCategory(null)"
                         class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ is_null($selectedCategoryId) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
@@ -929,6 +1157,8 @@ new class extends Component {
                         </button>
                     @endforeach
                 </div>
+
+                <!-- شبكة الأصناف السريعة -->
                 <div class="flex-1 overflow-y-auto min-h-0 border border-slate-200 rounded-lg p-2 bg-slate-50">
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         @forelse($quickProducts as $p)
@@ -940,7 +1170,7 @@ new class extends Component {
                             </button>
                         @empty
                             <div class="col-span-full text-center py-16 text-slate-400 text-xs font-semibold">
-                                لا توجد منتجات ضمن هذه المجموعة
+                                لا توجد منتجات مطابقة لنتيجة البحث
                             </div>
                         @endforelse
                     </div>
@@ -954,11 +1184,13 @@ new class extends Component {
                 <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-300">
                     <div class="bg-indigo-900 text-white p-3.5 flex justify-between items-center font-bold text-sm">
                         <span>🔓 فتح شِفت جديد / بداية الدوام</span>
-                        <button wire:click="$set('showOpenShiftModal', false)" class="text-slate-300 hover:text-white font-bold">✕</button>
+                        <button wire:click="$set('showOpenShiftModal', false)"
+                            class="text-slate-300 hover:text-white font-bold">✕</button>
                     </div>
                     <div class="p-4 space-y-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">الرصيد الافتتاحي في الدرج (الفكة):</label>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">الرصيد الافتتاحي في الدرج
+                                (الفكة):</label>
                             <input type="number" step="0.01" wire:model="opening_cash"
                                 class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-lg font-black font-mono text-center focus:outline-indigo-600">
                         </div>
@@ -980,21 +1212,31 @@ new class extends Component {
                             <span>🔒</span>
                             <span>إغلاق الشيفت ومطابقة الصندوق</span>
                         </h3>
-                        <button wire:click="$set('showCloseShiftModal', false)" class="text-slate-400 hover:text-white font-bold">✕</button>
+                        <button wire:click="$set('showCloseShiftModal', false)"
+                            class="text-slate-400 hover:text-white font-bold">✕</button>
                     </div>
 
                     <div class="p-4 space-y-3 text-xs">
-                        <div class="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 font-bold">
-                            <div>الرصيد الافتتاحي: <span class="font-mono text-indigo-700">{{ number_format($activeShift->opening_cash ?? 0, 2) }}</span></div>
-                            <div>المبيعات النقدية: <span class="font-mono text-emerald-600">{{ number_format($activeShift->total_sales ?? 0, 2) }}</span></div>
-                            <div>المرتجعات النقدية: <span class="font-mono text-rose-600">{{ number_format($activeShift->total_returns ?? 0, 2) }}</span></div>
+                        <div
+                            class="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 font-bold">
+                            <div>الرصيد الافتتاحي: <span
+                                    class="font-mono text-indigo-700">{{ number_format($activeShift->opening_cash ?? 0, 2) }}</span>
+                            </div>
+                            <div>المبيعات النقدية: <span
+                                    class="font-mono text-emerald-600">{{ number_format($activeShift->total_sales ?? 0, 2) }}</span>
+                            </div>
+                            <div>المرتجعات النقدية: <span
+                                    class="font-mono text-rose-600">{{ number_format($activeShift->total_returns ?? 0, 2) }}</span>
+                            </div>
                             <div class="col-span-2 border-t pt-2 text-sm text-slate-900">
-                                المتوقع بالدرج: <span class="font-mono font-black text-amber-600">{{ number_format($activeShift->expected_cash ?? 0, 2) }}</span>
+                                المتوقع بالدرج: <span
+                                    class="font-mono font-black text-amber-600">{{ number_format($activeShift->expected_cash ?? 0, 2) }}</span>
                             </div>
                         </div>
 
                         <div>
-                            <label class="block font-bold text-slate-700 mb-1">المبلغ الفعلي الموجود بالدرج بعد العدّ:</label>
+                            <label class="block font-bold text-slate-700 mb-1">المبلغ الفعلي الموجود بالدرج بعد
+                                العدّ:</label>
                             <input type="number" step="0.01" wire:model.live="actual_cash"
                                 class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-lg font-black font-mono text-center focus:outline-indigo-600">
                         </div>
@@ -1003,8 +1245,9 @@ new class extends Component {
                             $diff = (float) $actual_cash - (float) ($activeShift->expected_cash ?? 0);
                         @endphp
 
-                        <div class="p-2.5 rounded-lg text-center font-bold text-xs {{ $diff == 0 ? 'bg-emerald-100 text-emerald-800' : ($diff < 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800') }}">
-                            @if($diff == 0)
+                        <div
+                            class="p-2.5 rounded-lg text-center font-bold text-xs {{ $diff == 0 ? 'bg-emerald-100 text-emerald-800' : ($diff < 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800') }}">
+                            @if ($diff == 0)
                                 الصندوق مطابق تماماً 👌
                             @elseif($diff < 0)
                                 يوجد عجز بمقدار: {{ number_format(abs($diff), 2) }} ⚠️
@@ -1015,7 +1258,8 @@ new class extends Component {
 
                         <div>
                             <label class="block font-bold text-slate-700 mb-1">ملاحظات الإغلاق (اختياري):</label>
-                            <textarea wire:model="shift_notes" rows="2" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs focus:outline-indigo-600"></textarea>
+                            <textarea wire:model="shift_notes" rows="2"
+                                class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs focus:outline-indigo-600"></textarea>
                         </div>
 
                         <button wire:click="closeShift"
@@ -1045,6 +1289,9 @@ new class extends Component {
                                     <div class="text-[10px] text-slate-500 font-mono">{{ $held['time'] }}</div>
                                     <div class="text-xs font-bold text-indigo-700 font-mono mt-0.5">المجموع:
                                         {{ number_format($held['total'], 2) }}</div>
+                                    @if (!empty($held['notes']))
+                                        <div class="text-[10px] text-slate-600">ملاحظة: {{ $held['notes'] }}</div>
+                                    @endif
                                 </div>
                                 <div class="flex gap-2">
                                     <button wire:click="restoreHeldInvoice({{ $index }})"
@@ -1094,17 +1341,21 @@ new class extends Component {
                             <tbody class="divide-y divide-slate-100">
                                 @foreach ($cart as $id => $item)
                                     @php
-                                        $itemCost = (float)($item['cost_price'] ?? 0);
+                                        $itemCost = (float) ($item['cost_price'] ?? 0);
                                         $totalItemCost = $itemCost * $item['quantity'];
                                         $itemProfit = $item['subtotal'] - $totalItemCost;
                                     @endphp
                                     <tr>
                                         <td class="p-2 font-bold text-slate-800">{{ $item['name'] }}</td>
                                         <td class="p-2 text-center font-mono">{{ $item['quantity'] }}</td>
-                                        <td class="p-2 text-center font-mono text-slate-700">{{ number_format($item['price'], 2) }}</td>
-                                        <td class="p-2 text-center font-mono text-rose-600 font-semibold">{{ number_format($itemCost, 2) }}</td>
-                                        <td class="p-2 text-center font-mono font-bold text-rose-700">{{ number_format($totalItemCost, 2) }}</td>
-                                        <td class="p-2 text-center font-mono font-bold {{ $itemProfit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                                        <td class="p-2 text-center font-mono text-slate-700">
+                                            {{ number_format($item['price'], 2) }}</td>
+                                        <td class="p-2 text-center font-mono text-rose-600 font-semibold">
+                                            {{ number_format($itemCost, 2) }}</td>
+                                        <td class="p-2 text-center font-mono font-bold text-rose-700">
+                                            {{ number_format($totalItemCost, 2) }}</td>
+                                        <td
+                                            class="p-2 text-center font-mono font-bold {{ $itemProfit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
                                             {{ number_format($itemProfit, 2) }}
                                         </td>
                                     </tr>
@@ -1116,11 +1367,13 @@ new class extends Component {
                         <div class="flex gap-4 font-bold">
                             <div>
                                 <span class="text-slate-600">إجمالي التكلفة:</span>
-                                <span class="font-mono text-rose-700 font-black text-sm mr-1">{{ number_format($this->total_cost, 2) }}</span>
+                                <span
+                                    class="font-mono text-rose-700 font-black text-sm mr-1">{{ number_format($this->total_cost, 2) }}</span>
                             </div>
                             <div>
                                 <span class="text-slate-600">إجمالي الربح:</span>
-                                <span class="font-mono {{ $this->expected_profit >= 0 ? 'text-emerald-600' : 'text-rose-600' }} font-black text-sm mr-1">
+                                <span
+                                    class="font-mono {{ $this->expected_profit >= 0 ? 'text-emerald-600' : 'text-rose-600' }} font-black text-sm mr-1">
                                     {{ number_format($this->expected_profit, 2) }}
                                 </span>
                             </div>
@@ -1134,5 +1387,66 @@ new class extends Component {
             </div>
         @endif
 
+        <!-- مودال التنبيه عند البيع تحت التكلفة -->
+        @if ($showBelowCostModal)
+            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-300">
+                    <div class="bg-rose-600 text-white p-4 flex justify-between items-center font-bold text-sm">
+                        <span class="flex items-center gap-2">
+                            <span class="text-lg">⚠️</span>
+                            <span>تنبيه: السعر أقل من التكلفة</span>
+                        </span>
+                        <button wire:click="$set('showBelowCostModal', false)" class="text-rose-100 hover:text-white font-bold">✕</button>
+                    </div>
+
+                    <div class="p-4 space-y-3">
+                        <p class="text-xs font-bold text-slate-700 leading-relaxed">
+                            تحذير! تحتوي الفاتورة على منتجات يتم بيعها بأسعار أقل من التكلفة:
+                        </p>
+
+                        <div class="max-h-48 overflow-y-auto space-y-2">
+                            @foreach($cart as $item)
+                                @if($item['quantity'] > 0 && (float)$item['price'] < (float)($item['cost_price'] ?? 0))
+                                    <div class="bg-rose-50 border border-rose-200 p-2 rounded-lg text-xs flex justify-between items-center font-bold">
+                                        <div>
+                                            <div class="text-slate-900">{{ $item['name'] }}</div>
+                                            <div class="text-[10px] text-rose-700">التكلفة: {{ number_format($item['cost_price'], 2) }}</div>
+                                        </div>
+                                        <div class="text-rose-700 font-mono text-sm">
+                                            سعر البيع: {{ number_format($item['price'], 2) }}
+                                        </div>
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+
+                        <p class="text-xs text-slate-600 font-semibold">هل تريد الاستمرار وإتمام الفاتورة بهذا السعر؟</p>
+
+                        <div class="flex items-center gap-2 pt-2">
+                            <button wire:click="confirmBelowCostCheckout"
+                                class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow transition-all active:scale-95">
+                                نعم، استمرار
+                            </button>
+                            <button wire:click="$set('showBelowCostModal', false)"
+                                class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 px-3 rounded-xl text-xs transition-all">
+                                إلغاء لتعديل السعر
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
     </div>
 </flux:main>
+
+<script>
+    document.addEventListener('livewire:initialized', () => {
+        Livewire.on('print-receipt', (event) => {
+            const orderId = event.orderId || (event[0] ? event[0].orderId : null);
+            if (orderId) {
+                window.open(`/orders/${orderId}/print`, '_blank', 'width=400,height=600');
+            }
+        });
+    });
+</script>

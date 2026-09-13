@@ -17,7 +17,7 @@ return new class extends Migration
 
             // الفرع اختياري في طلبات أونلاين (أو يحدد فرع رئيسي لاحقاً)
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('shift_id')->nullable()->nullOnDelete();
+            $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
 
             // الكاشير/الموظف اختياري لأن أوردر المتجر ينشئه الزبون بنفسه
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
@@ -48,6 +48,7 @@ return new class extends Migration
 
             $table->decimal('paid_amount', 12, 2)->default(0.00);
             $table->enum('payment_status', ['paid', 'partial', 'unpaid'])->default('paid');
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
 
