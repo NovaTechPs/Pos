@@ -14,10 +14,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # 4. تحديد مجلد العمل
 WORKDIR /var/www
 
-# 5. نسخ كافة ملفات المشروع
+# 5. نسخ كافة ملفات المشروع أولاً (لتوفير ملف artisan وبقية السكربتات)
 COPY . .
 
-# 6. تثبيت الحزم بدون تشغيل السكربتات التلقائية
+# 6. تثبيت الحزم مع إضافة خيار --no-scripts لتجنب المشاكل أثناء الـ Build
 RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs --no-scripts
 
 # 7. ضبط صلاحيات مجلدات Laravel
@@ -28,5 +28,5 @@ COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
-# 9. التعديل هنا: حذف الجدول وإنشاؤها من جديد مع زرع البيانات
-CMD php artisan package:discover --ansi && php artisan migrate:fresh --seed --force && php-fpm -D && nginx -g 'daemon off;'
+# 9. تشغيل أمر package:discover ثم الـ Migrations و Nginx عند بدء الحاوية
+CMD php artisan package:discover --ansi && php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
