@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-                        Schema::disableForeignKeyConstraints();
+        Schema::disableForeignKeyConstraints();
 
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
@@ -19,8 +19,11 @@ return new class extends Migration
 
             // الفرع اختياري في طلبات أونلاين (أو يحدد فرع رئيسي لاحقاً)
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
+// بدلاً من:
+// $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
 
+// استخدم هذا السطر:
+$table->foreignId('shift_id')->nullable();
             // الكاشير/الموظف اختياري لأن أوردر المتجر ينشئه الزبون بنفسه
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
 
