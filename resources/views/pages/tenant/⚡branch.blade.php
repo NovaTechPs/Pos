@@ -19,10 +19,10 @@ new class extends Component {
     protected function rules()
     {
         return [
-            'name'    => 'required|string|max:255',
-            'phone'   => 'nullable|string|max:20',
+            'name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
-            'type'    => 'required|in:branch,warehouse',
+            'type' => 'required|in:branch,warehouse',
         ];
     }
 
@@ -55,47 +55,54 @@ new class extends Component {
     public function edit($id)
     {
         $tenantId = session('active_tenant_id');
-        $branch   = Branch::where('tenant_id', $tenantId)->findOrFail($id);
+        $branch = Branch::where('tenant_id', $tenantId)->findOrFail($id);
 
         $this->branch_id = $branch->id;
-        $this->name      = $branch->name;
-        $this->phone     = $branch->phone ?? '';
-        $this->address   = $branch->address ?? '';
-        $this->type      = $branch->type;
+        $this->name = $branch->name;
+        $this->phone = $branch->phone ?? '';
+        $this->address = $branch->address ?? '';
+        $this->type = $branch->type;
 
         $this->isEditing = true;
         $this->showModal = true;
     }
 
-    public function save()
-    {
-        $this->validate();
+  public function save()
+{
+    $this->validate();
 
-        $tenantId = session('active_tenant_id');
+    $tenantId = session('active_tenant_id');
 
-        if (!$tenantId) {
-            session()->flash('message', 'يرجى اختيار متجر أولاً لتتمكن من الإضافة.');
-            return;
-        }
-
-        Branch::updateOrCreate(
-            [
-                'id'        => $this->branch_id,
-                'tenant_id' => $tenantId, // الحفظ برقم المتجر النشط
-            ],
-            [
-                'name'    => $this->name,
-                'phone'   => $this->phone,
-                'address' => $this->address,
-                'type'    => $this->type,
-            ]
-        );
-
-        session()->flash('message', $this->isEditing ? 'تم تحديث بيانات الفرع/المخزن بنجاح.' : 'تم إضافة الفرع/المخزن بنجاح.');
-
-        $this->closeModal();
-        $this->loadBranches();
+    if (!$tenantId) {
+        session()->flash('message', 'يرجى اختيار متجر أولاً لتتمكن من الإضافة.');
+        return;
     }
+
+    $data = [
+        'tenant_id' => $tenantId,
+        'name'      => $this->name,
+        'phone'     => $this->phone,
+        'address'   => $this->address,
+        'type'      => $this->type,
+    ];
+
+    if ($this->isEditing && $this->branch_id) {
+        // حالة التعديل: البحث عن الفرع المحدد وتحديثه
+        Branch::where('tenant_id', $tenantId)
+            ->findOrFail($this->branch_id)
+            ->update($data);
+
+        session()->flash('message', 'تم تحديث بيانات الفرع/المخزن بنجاح.');
+    } else {
+        // حالة الإضافة: إنشاء سجل جديد دائماً
+        Branch::create($data);
+
+        session()->flash('message', 'تم إضافة الفرع/المخزن بنجاح.');
+    }
+
+    $this->closeModal();
+    $this->loadBranches();
+}
 
     public function delete($id)
     {
@@ -115,13 +122,13 @@ new class extends Component {
     private function resetInputFields()
     {
         $this->branch_id = null;
-        $this->name      = '';
-        $this->phone     = '';
-        $this->address   = '';
-        $this->type      = 'branch';
+        $this->name = '';
+        $this->phone = '';
+        $this->address = '';
+        $this->type = 'branch';
         $this->resetValidation();
     }
-     public function render()
+    public function render()
     {
         return $this->view()->layout('layouts::tenant');
     }

@@ -23,7 +23,7 @@ return new class extends Migration
                 ->nullOnDelete();
             $table->string('name');
             $table->decimal('cost_price', 12, 2)->default(0.00);
-            $table->boolean('is_price_unified')->default(true)->after('min_wholesale_quantity');
+            $table->boolean('is_price_unified')->default(true);
             $table->boolean('show_in_website')->default(false); // أو false حسب رغبتك بالافتراضي
           $table->string('image')->nullable();
           $table->json('images')->nullable();
