@@ -13,12 +13,16 @@ return new class extends Migration
     {
         Schema::create('customers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->unsignedBigInteger('tenant_id');
             $table->string('name');
             $table->string('phone')->nullable();
-            $table->enum('type', ['retail', 'wholesale'])->default('retail');
-            $table->decimal('credit_limit', 12, 2)->default(0.00);
-            $table->decimal('balance', 12, 2)->default(0.00);
+            $table->string('email')->nullable();
+
+            // حقل النص البسيط للموقع والعنوان
+            $table->string('address')->nullable();
+
+            $table->decimal('opening_balance', 15, 2)->default(0.00);
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
             $table->index('tenant_id');

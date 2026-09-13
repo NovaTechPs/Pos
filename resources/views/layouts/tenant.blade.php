@@ -86,16 +86,16 @@
                 </flux:sidebar.item>
 
                 <!-- Customers -->
-                {{-- <flux:sidebar.item icon="users" :href="route('customers')"
-                    :current="request()->routeIs('customers')" wire:navigate>
+                <flux:sidebar.item icon="users" :href="route('customer')"
+                    :current="request()->routeIs('customer')" wire:navigate>
                     {{ __('إدارة العملاء') }}
                 </flux:sidebar.item>
 
-                <!-- Suppliers -->
-                <flux:sidebar.item icon="building-office" :href="route('suppliers')"
-                    :current="request()->routeIs('suppliers')" wire:navigate>
+                <!-- supplier -->
+                <flux:sidebar.item icon="building-office" :href="route('supplier')"
+                    :current="request()->routeIs('supplier')" wire:navigate>
                     {{ __('إدارة الموردين') }}
-                </flux:sidebar.item> --}}
+                </flux:sidebar.item>
             </flux:sidebar.group>
         </flux:sidebar.nav>
 

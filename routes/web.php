@@ -58,9 +58,9 @@ Route::livewire('dashboard/pos', 'pages::tenant.pos')->name('pos');
 
 Route::livewire('dashboard/purchases', 'pages::tenant.purchase')->name('purchases');
 Route::livewire('dashboard/wholesale', 'pages::tenant.wholesale')->name('wholesale');
+Route::livewire('dashboard/customer', 'pages::tenant.customer')->name('customer');
+Route::livewire('dashboard/supplier', 'pages::tenant.supplier')->name('supplier');
 // Route::livewire('dashboard/purchases', 'pages::tenant.')->name('purchases');
-// Route::livewire('dashboard/customers', 'pages::tenant.customers')->name('customers');
-// Route::livewire('dashboard/suppliers', 'pages::tenant.suppliers')->name('suppliers');
 
 
 

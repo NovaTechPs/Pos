@@ -11,6 +11,17 @@ class Supplier extends Model
     use BelongsToTenant, SoftDeletes;
 
     protected $guarded = [];
+    protected $fillable = [
+        'tenant_id',
+        'name',
+        'company_name',
+        'phone',
+        'email',
+        'tax_number',
+        'address',
+        'opening_balance',
+        'notes',
+    ];
 
     public function purchases()
     {
