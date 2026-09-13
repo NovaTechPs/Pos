@@ -19,9 +19,6 @@ new class extends Component {
     public ?int $selectedCustomerId = null;
     public ?string $notes = '';
 
-    // بيانات الفاتورة المكتملة للطباعة
-    public ?array $printableOrder = null;
-
     private function getTenantId(): ?int
     {
         $user = auth()->user();
@@ -119,8 +116,9 @@ new class extends Component {
         });
 
         if ($shouldPrint && $order) {
-            $this->printableOrder = [
-                'invoice_number' => $order->invoice_number,
+            $printableOrder = [
+                'store_name' => auth()->user()->name ?? 'مبيعات الجملة',
+                'invoice_no' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
                 'customer_phone' => $order->customer_phone,
                 'date' => $order->created_at->format('Y-m-d H:i'),
@@ -129,7 +127,8 @@ new class extends Component {
                 'notes' => $this->notes,
             ];
 
-            $this->js('setTimeout(() => { window.print(); }, 300);');
+            // إرسال البيانات إلى السكريبت للطباعة عبر RawBT
+            $this->dispatch('do-kiosk-print', data: $printableOrder);
         }
 
         $this->cart = [];
@@ -158,56 +157,9 @@ new class extends Component {
 };
 ?>
 
-<div class="h-[calc(100vh-4rem)] flex flex-col p-4 bg-zinc-50 dark:bg-zinc-950 print:bg-white print:p-0" dir="rtl">
+<div class="h-[calc(100vh-4rem)] flex flex-col p-4 bg-zinc-50 dark:bg-zinc-950" dir="rtl">
 
-    <!-- قسم الطباعة الخفي عند العرض والعادي عند الطباعة -->
-    @if($printableOrder)
-        <div class="hidden print:block p-6 font-sans">
-            <div class="text-center border-b pb-4 mb-4">
-                <h2 class="text-2xl font-bold">فاتورة مبيعات جملة</h2>
-                <p class="text-sm text-gray-600">رقم الفاتورة: {{ $printableOrder['invoice_number'] }}</p>
-                <p class="text-sm text-gray-600">التاريخ: {{ $printableOrder['date'] }}</p>
-            </div>
-
-            <div class="mb-4 text-sm">
-                <p><strong>اسم العميل:</strong> {{ $printableOrder['customer_name'] }}</p>
-                @if($printableOrder['customer_phone'])
-                    <p><strong>رقم الهاتف:</strong> {{ $printableOrder['customer_phone'] }}</p>
-                @endif
-                @if($printableOrder['notes'])
-                    <p><strong>ملاحظات:</strong> {{ $printableOrder['notes'] }}</p>
-                @endif
-            </div>
-
-            <table class="w-full border-collapse border border-gray-300 text-right text-xs mb-4">
-                <thead>
-                    <tr class="bg-gray-100 border-b border-gray-300">
-                        <th class="p-2 border border-gray-300">المنتج</th>
-                        <th class="p-2 border border-gray-300">الكمية</th>
-                        <th class="p-2 border border-gray-300">السعر</th>
-                        <th class="p-2 border border-gray-300">المجموع</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($printableOrder['items'] as $item)
-                        <tr class="border-b border-gray-200">
-                            <td class="p-2 border border-gray-300">{{ $item['name'] }}</td>
-                            <td class="p-2 border border-gray-300">{{ $item['quantity'] }}</td>
-                            <td class="p-2 border border-gray-300">{{ number_format($item['price'], 2) }}</td>
-                            <td class="p-2 border border-gray-300">{{ number_format($item['price'] * $item['quantity'], 2) }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-
-            <div class="text-left font-bold text-lg border-t pt-2">
-                الإجمالي: {{ number_format($printableOrder['total'], 2) }}
-            </div>
-        </div>
-    @endif
-
-    <!-- الواجهة العادية الخفية عند الطباعة -->
-    <div class="print:hidden h-full flex flex-col space-y-3">
+    <div class="h-full flex flex-col space-y-3">
         <!-- التنبيهات -->
         @if (session()->has('error'))
             <flux:badge variant="danger" class="mb-3 w-full justify-start p-2.5 text-xs">
@@ -255,7 +207,7 @@ new class extends Component {
                             </div>
                         </button>
                     @empty
-                        <div class="col-span-full text-center py-12 text-zinc-400 text-sm">لا توجد منتجات مطابقة.</div>
+                        <div class="col-span-full text-center py-12 text-zinc-400 text-xs">لا توجد منتجات مطابقة.</div>
                     @endforelse
                 </div>
 
@@ -334,3 +286,47 @@ new class extends Component {
         </div>
     </div>
 </div>
+
+@script
+<script>
+    $wire.on('do-kiosk-print', (event) => {
+        const inv = event.data;
+
+        // بناء قالب الفاتورة الحرارية
+        let text = "";
+        text += "--------------------------------\n";
+        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "--------------------------------\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ: " + inv.date + "\n";
+        text += "العميل: " + inv.customer_name + "\n";
+        if (inv.customer_phone) {
+            text += "الهاتف: " + inv.customer_phone + "\n";
+        }
+        text += "--------------------------------\n";
+
+        inv.items.forEach(item => {
+            let total = (item.price * item.quantity).toFixed(2);
+            text += item.name + "\n";
+            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+        });
+
+        text += "--------------------------------\n";
+        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
+        if (inv.notes) {
+            text += "ملاحظات: " + inv.notes + "\n";
+        }
+        text += "--------------------------------\n\n\n\n";
+
+        // إرسال البيانات لطابعة RawBT عبر Android Intent
+        const intentUrl = "intent:" + encodeURIComponent(text) +
+            "#Intent;" +
+            "scheme=rawbt;" +
+            "package=ru.a402d.rawbtprinter;" +
+            "S.type=text/plain;" +
+            "end;";
+
+        window.location.href = intentUrl;
+    });
+</script>
+@endscript
