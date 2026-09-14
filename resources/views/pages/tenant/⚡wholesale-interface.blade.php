@@ -148,52 +148,51 @@ new class extends Component {
 
         $cartTotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
 
-      return $this->view([
-              'products' => $products,
+        return $this->view([
+            'products' => $products,
             'customers' => $customers,
             'cartTotal' => $cartTotal,
         ])->layout('layouts::tenant');
-
     }
 };
 ?>
-<flux:main class="space-y-6">
+<flux:main class="p-2 sm:p-4">
 
-<div class="h-[calc(100vh-4rem)] flex flex-col p-4 bg-zinc-50 dark:bg-zinc-950" dir="rtl">
+<div class="min-h-screen lg:h-[calc(100vh-4rem)] flex flex-col bg-zinc-50 dark:bg-zinc-950" dir="rtl">
 
     <div class="h-full flex flex-col space-y-3">
         <!-- التنبيهات -->
         @if (session()->has('error'))
-            <flux:badge variant="danger" class="mb-3 w-full justify-start p-2.5 text-xs">
+            <flux:badge variant="danger" class="mb-2 w-full justify-start p-2 text-xs">
                 {{ session('error') }}
             </flux:badge>
         @endif
 
         @if (session()->has('message'))
-            <flux:badge variant="success" class="mb-3 w-full justify-start p-2.5 text-xs">
+            <flux:badge variant="success" class="mb-2 w-full justify-start p-2 text-xs">
                 {{ session('message') }}
             </flux:badge>
         @endif
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 overflow-hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 lg:overflow-hidden">
             <!-- قسم المنتجات (يمين) -->
-            <div class="lg:col-span-8 flex flex-col space-y-3 h-full overflow-hidden">
+            <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3 lg:h-full lg:overflow-hidden">
                 <!-- شريط البحث -->
                 <div class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                     <flux:input wire:model.live.debounce.200ms="search" placeholder="بحث باسم المنتج أو الباركود..." icon="magnifying-glass" class="w-full" />
                 </div>
 
                 <!-- شبكة المنتجات -->
-                <div class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-0.5 content-start">
+                <div class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
                     @forelse($products as $product)
                         <button wire:click="addToCart({{ $product->id }})"
-                                class="flex flex-col h-56 justify-between p-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
+                                class="flex flex-col h-40 sm:h-48 justify-between p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
 
-                            <div class="w-full h-28 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg overflow-hidden flex items-center justify-center p-1 border border-zinc-100 dark:border-zinc-800">
+                            <div class="w-full h-20 sm:h-24 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg overflow-hidden flex items-center justify-center p-1 border border-zinc-100 dark:border-zinc-800">
                                 @if($product->image)
                                     <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-contain group-hover:scale-105 transition duration-200">
                                 @else
-                                    <flux:icon icon="photo" class="w-7 h-7 text-zinc-300 dark:text-zinc-600" />
+                                    <flux:icon icon="photo" class="w-6 h-6 text-zinc-300 dark:text-zinc-600" />
                                 @endif
                             </div>
 
@@ -201,15 +200,15 @@ new class extends Component {
                                 {{ $product->name }}
                             </div>
 
-                            <div class="flex justify-between items-center w-full pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                                <span class="text-[10px] text-zinc-400">سعر الجملة</span>
-                                <span class="font-bold text-indigo-600 dark:text-indigo-400 text-sm">
+                            <div class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
+                                <span class="text-[9px] text-zinc-400">سعر الجملة</span>
+                                <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm">
                                     {{ number_format($product->wholesale_price ?? $product->retail_price, 2) }}
                                 </span>
                             </div>
                         </button>
                     @empty
-                        <div class="col-span-full text-center py-12 text-zinc-400 text-xs">لا توجد منتجات مطابقة.</div>
+                        <div class="col-span-full text-center py-8 text-zinc-400 text-xs">لا توجد منتجات مطابقة.</div>
                     @endforelse
                 </div>
 
@@ -217,14 +216,14 @@ new class extends Component {
             </div>
 
             <!-- قسم الفاتورة والسلة (يسار) -->
-            <div class="lg:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm h-full overflow-hidden">
-                <div class="flex flex-col h-full justify-between space-y-3">
-                    <div class="space-y-3 flex-1 flex flex-col overflow-hidden">
+            <div class="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm min-h-[350px] lg:h-full lg:overflow-hidden">
+                <div class="flex flex-col h-full justify-between space-y-2">
+                    <div class="space-y-2 flex-1 flex flex-col lg:overflow-hidden">
                         <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">فاتورة مبيعات باص</flux:heading>
 
                         <!-- قائمة اختيار العميل -->
                         <div>
-                            <select wire:model="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <select wire:model="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                 <option value="">-- اختر العميل (اختياري: زبون عابر) --</option>
                                 @foreach($customers as $customer)
                                     <option value="{{ $customer->id }}">{{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }}</option>
@@ -237,11 +236,11 @@ new class extends Component {
                             <flux:input wire:model="notes" placeholder="ملاحظات الفاتورة..." size="sm" />
                         </div>
 
-                        <!-- السلة -->
-                        <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
+                        <!-- السلة - قائمة الأصناف -->
+                        <div class="flex-1 min-h-[140px] max-h-[220px] lg:max-h-none overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
                             @forelse($cart as $id => $item)
                                 <div class="py-2 flex justify-between items-center text-xs gap-2">
-                                    <div class="w-8 h-8 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
+                                    <div class="w-7 h-7 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
                                         @if(!empty($item['image']))
                                             <img src="{{ Storage::url($item['image']) }}" alt="{{ $item['name'] }}" class="w-full h-full object-contain">
                                         @else
@@ -261,24 +260,24 @@ new class extends Component {
                                     </div>
                                 </div>
                             @empty
-                                <div class="text-center py-12 text-zinc-400 text-xs">السلة فارغة</div>
+                                <div class="text-center py-6 text-zinc-400 text-xs">السلة فارغة</div>
                             @endforelse
                         </div>
                     </div>
 
                     <!-- المجموع وخيارات الحفظ والطباعة -->
-                    <div class="pt-3 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
-                        <div class="flex justify-between items-center font-bold text-base">
+                    <div class="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+                        <div class="flex justify-between items-center font-bold text-sm">
                             <span class="text-zinc-700 dark:text-zinc-300">المجموع:</span>
-                            <span class="text-lg text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
+                            <span class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
                         </div>
 
                         <div class="grid grid-cols-2 gap-2">
-                            <flux:button variant="filled" class="w-full py-2.5 text-xs" wire:click="completeSale(false)" :disabled="empty($cart)">
+                            <flux:button variant="filled" class="w-full py-2 text-xs" wire:click="completeSale(false)" :disabled="empty($cart)">
                                 حفظ فقط
                             </flux:button>
 
-                            <flux:button variant="primary" icon="printer" class="w-full py-2.5 text-xs" wire:click="completeSale(true)" :disabled="empty($cart)">
+                            <flux:button variant="primary" icon="printer" class="w-full py-2 text-xs" wire:click="completeSale(true)" :disabled="empty($cart)">
                                 حفظ وطباعة
                             </flux:button>
                         </div>
