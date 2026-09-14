@@ -12,7 +12,7 @@ new class extends Component
 {
     use WithPagination;
 
-    public $type = 'payment'; // payment (دفع) أو receipt (قبض)
+    public $type = 'payment'; // payment (دفع لمورد) أو receipt (قبض من عميل)
     public $payable_type = 'supplier';
     public $payable_id;
     public $amount;
@@ -58,6 +58,7 @@ new class extends Component
 
         $user = auth()->user();
 
+        // جلب الوردية المفتوحة
         $activeShift = Shift::where('tenant_id', $user->tenant_id)
             ->where('branch_id', $user->branch_id)
             ->where('user_id', $user->id)
@@ -89,7 +90,7 @@ new class extends Component
 
         session()->flash('message', 'تم حفظ السند بنجاح برقم: ' . $voucherNumber);
 
-        // تجهيز بيانات الطباعة المباشرة RawBT
+        // طباعة السند فور الحفظ
         $this->printVoucher($payment->id);
 
         $this->reset(['amount', 'notes', 'payable_id']);
@@ -123,17 +124,22 @@ new class extends Component
 
     public function render()
     {
-        $tenantId = auth()->user()->tenant_id;
+        $tenantId = auth()->user()?->tenant_id;
 
+        // جلب الموردين والعملاء المباشرين
+        $suppliers = Supplier::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))->get();
+        $customers = Customer::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))->get();
 
-          return $this->view([
-           'suppliers' => Supplier::where('tenant_id', $tenantId)->get(),
-            'customers' => Customer::where('tenant_id', $tenantId)->get(),
-            'payments'  => Payment::with(['payable', 'user'])
-                ->where('tenant_id', $tenantId)
-                ->where('type', $this->type)
-                ->latest('payment_date')
-                ->paginate(10),
+        $payments = Payment::with(['payable', 'user'])
+            ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+            ->where('type', $this->type)
+            ->latest('payment_date')
+            ->paginate(10);
+
+              return $this->view([
+                  'suppliers' => $suppliers,
+            'customers' => $customers,
+            'payments'  => $payments,
         ])->layout('layouts::tenant');
 
     }
@@ -152,11 +158,11 @@ new class extends Component
 
         <!-- أزرار التنقل (Tabs) -->
         <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl p-2 gap-2">
-            <button wire:click="setType('payment')"
+            <button wire:click="setType('payment')" type="button"
                 class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'payment' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
                 سندات الدفع (صرف لمورد)
             </button>
-            <button wire:click="setType('receipt')"
+            <button wire:click="setType('receipt')" type="button"
                 class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'receipt' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
                 سندات القبض (تحصيل من عميل)
             </button>
@@ -170,34 +176,42 @@ new class extends Component
 
             <form wire:submit="savePayment" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                    <!-- اختيار الجهة -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                             {{ $type === 'payment' ? 'اختر المورد' : 'اختر العميل' }}
                         </label>
-                        <select wire:model="payable_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white">
+                        <select wire:model="payable_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
                             <option value="">-- اختر --</option>
                             @if($type === 'payment')
                                 @foreach($suppliers as $supplier)
-                                    <option value="{{ $supplier->id }}">{{ $supplier->name }} {{ $supplier->company_name ? "({$supplier->company_name})" : '' }}</option>
+                                    <option value="{{ $supplier->id }}">
+                                        {{ $supplier->name }} {{ data_get($supplier, 'company_name') ? '('.$supplier->company_name.')' : '' }}
+                                    </option>
                                 @endforeach
                             @else
                                 @foreach($customers as $customer)
-                                    <option value="{{ $customer->id }}">{{ $customer->name }} ({{ $customer->phone }})</option>
+                                    <option value="{{ $customer->id }}">
+                                        {{ $customer->name }} {{ data_get($customer, 'phone') ? '('.$customer->phone.')' : '' }}
+                                    </option>
                                 @endforeach
                             @endif
                         </select>
                         @error('payable_id') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
+                    <!-- المبلغ -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">المبلغ</label>
-                        <input type="number" step="0.01" wire:model="amount" placeholder="0.00" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white">
+                        <input type="number" step="0.01" wire:model="amount" placeholder="0.00" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
                         @error('amount') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
+                    <!-- طريقة الدفع -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">طريقة الدفع</label>
-                        <select wire:model="payment_method" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white">
+                        <select wire:model="payment_method" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
                             <option value="cash">نقداً (كاش)</option>
                             <option value="card">بطاقة / فيزا</option>
                             <option value="bank_transfer">تحويل بنكي</option>
@@ -206,20 +220,22 @@ new class extends Component
                         @error('payment_method') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
+                    <!-- التاريخ والوقت -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">التاريخ والوقت</label>
-                        <input type="datetime-local" wire:model="payment_date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white">
+                        <input type="datetime-local" wire:model="payment_date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
                         @error('payment_date') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
                 </div>
 
+                <!-- ملاحظات -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">ملاحظات / البيان</label>
-                    <textarea wire:model="notes" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white" placeholder="تفاصيل العملية..."></textarea>
+                    <textarea wire:model="notes" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500" placeholder="تفاصيل العملية..."></textarea>
                 </div>
 
                 <div class="flex justify-end">
-                    <button type="submit" class="px-6 py-2 {{ $type === 'payment' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white rounded-md shadow font-medium">
+                    <button type="submit" class="px-6 py-2 {{ $type === 'payment' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white rounded-md shadow font-medium transition">
                         {{ $type === 'payment' ? 'حفظ وطباعة سند الدفع' : 'حفظ وطباعة سند القبض' }}
                     </button>
                 </div>
@@ -257,7 +273,7 @@ new class extends Component
                                 <td class="px-4 py-3">{{ $payment->payment_date->format('Y-m-d H:i') }}</td>
                                 <td class="px-4 py-3">{{ $payment->user?->name }}</td>
                                 <td class="px-4 py-3 text-center">
-                                    <button wire:click="printVoucher({{ $payment->id }})" class="px-3 py-1 bg-gray-700 text-white rounded text-xs hover:bg-gray-900">
+                                    <button wire:click="printVoucher({{ $payment->id }})" type="button" class="px-3 py-1 bg-gray-700 text-white rounded text-xs hover:bg-gray-900 transition">
                                         طباعة
                                     </button>
                                 </td>
@@ -278,7 +294,9 @@ new class extends Component
 
     </div>
 </div>
+
 </flux:main>
+
 @script
 <script>
     $wire.on('do-voucher-print', (event) => {
