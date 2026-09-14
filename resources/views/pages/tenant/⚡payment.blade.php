@@ -12,7 +12,7 @@ new class extends Component
 {
     use WithPagination;
 
-    public $type = 'payment'; // payment (دفع لمورد) أو receipt (قبض من عميل)
+    public $type = 'payment';
     public $payable_type = 'supplier';
     public $payable_id;
     public $amount;
@@ -38,6 +38,17 @@ new class extends Component
         $this->payment_date = now()->format('Y-m-d\TH:i');
     }
 
+    private function getTenantId(): ?int
+    {
+        $user = auth()->user();
+
+        if (!$user) return null;
+        if (!empty($user->tenant_id)) return (int) $user->tenant_id;
+        if (method_exists($user, 'tenants')) return $user->tenants()->first()?->id;
+
+        return session('active_tenant_id') ? (int) session('active_tenant_id') : null;
+    }
+
     public function setType($newType)
     {
         $this->type = $newType;
@@ -57,29 +68,36 @@ new class extends Component
         $this->validate();
 
         $user = auth()->user();
+        $tenantId = $this->getTenantId();
 
-        // جلب الوردية المفتوحة
-        $activeShift = Shift::where('tenant_id', $user->tenant_id)
-            ->where('branch_id', $user->branch_id)
+        // حماية إضافية في حال عدم التمكن من تحديد Tenant
+        if (!$tenantId) {
+            session()->flash('error', 'تعذر تحديد حساب المستأجر (Tenant ID)، يرجى إعادة تسجيل الدخول.');
+            return;
+        }
+
+        $payableClass = $this->payable_type === 'supplier' ? Supplier::class : Customer::class;
+
+        // جلب الوردية المفتوحة إن وجدت
+        $activeShift = Shift::where('tenant_id', $tenantId)
             ->where('user_id', $user->id)
             ->where('status', 'open')
             ->first();
 
-        $payableModel = $this->payable_type === 'supplier' ? Supplier::class : Customer::class;
         $prefix = $this->type === 'payment' ? 'PAY-' : 'RCV-';
         $voucherNumber = $prefix . strtoupper(uniqid());
 
         $payment = null;
 
-        DB::transaction(function () use ($user, $activeShift, $payableModel, $voucherNumber, &$payment) {
+        DB::transaction(function () use ($user, $tenantId, $activeShift, $payableClass, $voucherNumber, &$payment) {
             $payment = Payment::create([
-                'tenant_id'      => $user->tenant_id,
-                'branch_id'      => $user->branch_id,
+                'tenant_id'      => $tenantId,
+                'branch_id'      => $user->branch_id ?? $activeShift?->branch_id,
                 'shift_id'       => $activeShift?->id,
                 'user_id'        => $user->id,
                 'type'           => $this->type,
                 'voucher_number' => $voucherNumber,
-                'payable_type'   => $payableModel,
+                'payable_type'   => $payableClass,
                 'payable_id'     => $this->payable_id,
                 'amount'         => $this->amount,
                 'payment_method' => $this->payment_method,
@@ -90,7 +108,6 @@ new class extends Component
 
         session()->flash('message', 'تم حفظ السند بنجاح برقم: ' . $voucherNumber);
 
-        // طباعة السند فور الحفظ
         $this->printVoucher($payment->id);
 
         $this->reset(['amount', 'notes', 'payable_id']);
@@ -102,7 +119,7 @@ new class extends Component
         $payment = Payment::with(['payable', 'user'])->findOrFail($paymentId);
 
         $voucherData = [
-            'store_name'     => auth()->user()->tenant->name ?? 'المتجر',
+            'store_name'     => auth()->user()?->tenant?->name ?? 'المتجر',
             'voucher_no'     => $payment->voucher_number,
             'type'           => $payment->type === 'receipt' ? 'سند قبض' : 'سند دفع',
             'party_name'     => $payment->payable?->name ?? 'غير محدد',
@@ -124,9 +141,8 @@ new class extends Component
 
     public function render()
     {
-        $tenantId = auth()->user()?->tenant_id;
+        $tenantId = $this->getTenantId();
 
-        // جلب الموردين والعملاء المباشرين
         $suppliers = Supplier::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))->get();
         $customers = Customer::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))->get();
 
@@ -136,12 +152,11 @@ new class extends Component
             ->latest('payment_date')
             ->paginate(10);
 
-              return $this->view([
+         return $this->view([
                   'suppliers' => $suppliers,
             'customers' => $customers,
             'payments'  => $payments,
         ])->layout('layouts::tenant');
-
     }
 };
 ?>
@@ -153,6 +168,12 @@ new class extends Component
         @if (session()->has('message'))
             <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50 dark:bg-gray-800 dark:text-green-400">
                 {{ session('message') }}
+            </div>
+        @endif
+
+        @if (session()->has('error'))
+            <div class="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 dark:bg-gray-800 dark:text-red-400">
+                {{ session('error') }}
             </div>
         @endif
 
@@ -177,7 +198,6 @@ new class extends Component
             <form wire:submit="savePayment" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                    <!-- اختيار الجهة -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                             {{ $type === 'payment' ? 'اختر المورد' : 'اختر العميل' }}
@@ -201,14 +221,12 @@ new class extends Component
                         @error('payable_id') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
-                    <!-- المبلغ -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">المبلغ</label>
                         <input type="number" step="0.01" wire:model="amount" placeholder="0.00" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
                         @error('amount') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
-                    <!-- طريقة الدفع -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">طريقة الدفع</label>
                         <select wire:model="payment_method" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
@@ -220,7 +238,6 @@ new class extends Component
                         @error('payment_method') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                     </div>
 
-                    <!-- التاريخ والوقت -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">التاريخ والوقت</label>
                         <input type="datetime-local" wire:model="payment_date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
@@ -228,7 +245,6 @@ new class extends Component
                     </div>
                 </div>
 
-                <!-- ملاحظات -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">ملاحظات / البيان</label>
                     <textarea wire:model="notes" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500" placeholder="تفاصيل العملية..."></textarea>
@@ -294,9 +310,7 @@ new class extends Component
 
     </div>
 </div>
-
 </flux:main>
-
 @script
 <script>
     $wire.on('do-voucher-print', (event) => {
