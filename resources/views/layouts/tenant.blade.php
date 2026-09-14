@@ -1,11 +1,29 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ app()->getLocale() == 'ar' ? 'rtl' : 'ltr' }}">
 
 <head>
     @include('partials.head')
+
+    <!-- حماية ثبات الوضع الليلي عند التحديث وتنقلات Livewire -->
+    <script>
+        function applyTheme() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        }
+
+        // تطبيق الوضع عند تحميل الصفحة لأول مرة
+        applyTheme();
+
+        // إعادة تطبيق الوضع فوراً بعد كل تنقل عبر wire:navigate أو تحديث Livewire
+        document.addEventListener('livewire:navigated', applyTheme);
+    </script>
 </head>
 
-<body class="min-h-screen bg-white dark:bg-zinc-800">
+<body class="min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
     <flux:sidebar sticky collapsible="mobile"
         class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:sidebar.header>
@@ -14,114 +32,121 @@
         </flux:sidebar.header>
 
         <livewire:pages::tenant.tenant-switcher />
+
         <flux:sidebar.nav>
             <flux:sidebar.group :heading="__('Platform')" class="grid">
-                <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')"
-                    wire:navigate>
+                <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Dashboard') }}
                 </flux:sidebar.item>
-                <flux:sidebar.item icon="building-storefront" :href="route('branch')"
-                    :current="request()->routeIs('branch')" wire:navigate>
-                    {{ __('branch') }}
+
+                <flux:sidebar.item icon="building-storefront" :href="route('branch')" :current="request()->routeIs('branch')" wire:navigate>
+                    {{ __('Branches') }}
                 </flux:sidebar.item>
 
-                <flux:sidebar.item icon="shield-check" :href="route('role')" :current="request()->routeIs('role')"
-                    wire:navigate>
-                    {{ __('role') }}
+                <flux:sidebar.item icon="shield-check" :href="route('role')" :current="request()->routeIs('role')" wire:navigate>
+                    {{ __('Roles') }}
                 </flux:sidebar.item>
 
-                <flux:sidebar.item icon="users" :href="route('employees')" :current="request()->routeIs('employees')"
-                    wire:navigate>
-                    {{ __('employees') }}
-                </flux:sidebar.item>
-                <flux:sidebar.item icon="shopping-bag" :href="route('product')"
-                    :current="request()->routeIs('product')" wire:navigate>
-                    {{ __('products') }}
-                </flux:sidebar.item>
-                <flux:sidebar.item icon="calculator" :href="route('pos')" :current="request()->routeIs('pos')"
-                    wire:navigate>
-                    {{ __('نقطة البيع (POS)') }}
-                </flux:sidebar.item>
-                <!-- Wholesale -->
-
-
-
-                <flux:sidebar.item icon="chart-bar" :href="route('analytics')"
-                    :current="request()->routeIs('analytics')" wire:navigate>
-                    {{ __('الاحصائيات') }}
-                </flux:sidebar.item>
-                  <flux:sidebar.item icon="chart-bar" :href="route('DailySettlementComponent')"
-                    :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
-                    {{ __('DailySettlementComponent') }}
-                </flux:sidebar.item>
-                 <flux:sidebar.item icon="shopping-bag"
-                    :href="route('storeORDEE')"
-                    :current="request()->routeIs('storeORDEE')" wire:navigate>
-                    {{ __('store order') }}
-                </flux:sidebar.item>
-                <flux:sidebar.item icon="shopping-bag"
-                    :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])"
-                    :current="request()->routeIs('store')" wire:navigate>
-                    {{ __('store') }}
-                </flux:sidebar.item>
-                  <flux:sidebar.item icon="shopping-bag"
-                    :href="route('wholesaleinterface')"
-                    :current="request()->routeIs('wholesaleinterface')" wire:navigate>
-                    {{ __('بيع جملة ') }}
-                </flux:sidebar.item>
-                     <flux:sidebar.item icon="shopping-bag"
-                    :href="route('wholesaleorders')"
-                    :current="request()->routeIs('wholesaleorders')" wire:navigate>
-                    {{ __('مبيعات الباص') }}
-                </flux:sidebar.item>
-<flux:sidebar.item icon="shopping-bag" :href="route('wholesale')"
-                    :current="request()->routeIs('wholesale')" wire:navigate>
-                    {{ __('فواتير مبيغات') }}
+                <flux:sidebar.item icon="user-group" :href="route('employees')" :current="request()->routeIs('employees')" wire:navigate>
+                    {{ __('Employees') }}
                 </flux:sidebar.item>
 
-                <!-- Purchases -->
-                <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')"
-                    :current="request()->routeIs('purchases')" wire:navigate>
-                    {{ __('فواتير المشتريات') }}
+                <flux:sidebar.item icon="cube" :href="route('product')" :current="request()->routeIs('product')" wire:navigate>
+                    {{ __('Products') }}
                 </flux:sidebar.item>
 
-                <!-- Customers -->
-                <flux:sidebar.item icon="users" :href="route('customer')"
-                    :current="request()->routeIs('customer')" wire:navigate>
-                    {{ __('إدارة العملاء') }}
+                <flux:sidebar.item icon="calculator" :href="route('pos')" :current="request()->routeIs('pos')" wire:navigate>
+                    {{ __('POS') }}
                 </flux:sidebar.item>
 
-                <!-- supplier -->
-                <flux:sidebar.item icon="building-office" :href="route('supplier')"
-                    :current="request()->routeIs('supplier')" wire:navigate>
-                    {{ __('إدارة الموردين') }}
+                <flux:sidebar.item icon="chart-bar-square" :href="route('analytics')" :current="request()->routeIs('analytics')" wire:navigate>
+                    {{ __('Analytics') }}
                 </flux:sidebar.item>
 
-                  <flux:sidebar.item icon="building-office" :href="route('payment')"
-                    :current="request()->routeIs('payment')" wire:navigate>
-                    {{ __('payment ') }}
+                <flux:sidebar.item icon="scale" :href="route('DailySettlementComponent')" :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
+                    {{ __('Daily Settlement') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="clipboard-document-list" :href="route('storeORDEE')" :current="request()->routeIs('storeORDEE')" wire:navigate>
+                    {{ __('Store Order') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="shopping-bag" :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])" :current="request()->routeIs('store')" wire:navigate>
+                    {{ __('Store') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="building-office-2" :href="route('wholesaleinterface')" :current="request()->routeIs('wholesaleinterface')" wire:navigate>
+                    {{ __('Wholesale Sales') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="truck" :href="route('wholesaleorders')" :current="request()->routeIs('wholesaleorders')" wire:navigate>
+                    {{ __('Van Sales') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="document-text" :href="route('wholesale')" :current="request()->routeIs('wholesale')" wire:navigate>
+                    {{ __('Sales Invoices') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')" :current="request()->routeIs('purchases')" wire:navigate>
+                    {{ __('Purchase Invoices') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="users" :href="route('customer')" :current="request()->routeIs('customer')" wire:navigate>
+                    {{ __('Customers') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="truck" :href="route('supplier')" :current="request()->routeIs('supplier')" wire:navigate>
+                    {{ __('Suppliers') }}
+                </flux:sidebar.item>
+
+                <flux:sidebar.item icon="credit-card" :href="route('payment')" :current="request()->routeIs('payment')" wire:navigate>
+                    {{ __('Vouchers') }}
                 </flux:sidebar.item>
             </flux:sidebar.group>
         </flux:sidebar.nav>
 
         <flux:spacer />
 
-        <flux:sidebar.nav>
-            <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit"
-                target="_blank">
-                {{ __('Repository') }}
-            </flux:sidebar.item>
+        <!-- أدوات التحكم باللغة والمظهر (Desktop Sidebar) -->
+        <div class="px-2 py-3 space-y-2 border-t border-zinc-200 dark:border-zinc-700">
+            <!-- تبديل اللغة باستخدام المكون Single File Component -->
+            <livewire:layouts::language-switcher />
 
-            <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire"
-                target="_blank">
-                {{ __('Documentation') }}
-            </flux:sidebar.item>
-        </flux:sidebar.nav>
+            <!-- تبديل الثيم الداكن / الفاتح -->
+            <div x-data="{
+                darkMode: localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches),
+                toggle() {
+                    this.darkMode = !this.darkMode;
+                    if (this.darkMode) {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('theme', 'dark');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('theme', 'light');
+                    }
+                }
+            }">
+                <flux:button @click="toggle()" variant="subtle" class="w-full justify-start">
+                    <template x-if="darkMode">
+                        <div class="flex items-center gap-2">
+                            <flux:icon name="sun" class="size-4" />
+                            <span>{{ __('Light Mode') }}</span>
+                        </div>
+                    </template>
+                    <template x-if="!darkMode">
+                        <div class="flex items-center gap-2">
+                            <flux:icon name="moon" class="size-4" />
+                            <span>{{ __('Dark Mode') }}</span>
+                        </div>
+                    </template>
+                </flux:button>
+            </div>
+        </div>
 
         <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
     </flux:sidebar>
 
-    <!-- Mobile User Menu -->
+    <!-- Mobile User Menu & Header -->
     <flux:header class="lg:hidden">
         <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
 
