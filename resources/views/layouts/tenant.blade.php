@@ -96,6 +96,11 @@
                     :current="request()->routeIs('supplier')" wire:navigate>
                     {{ __('إدارة الموردين') }}
                 </flux:sidebar.item>
+
+                  <flux:sidebar.item icon="building-office" :href="route('payment')"
+                    :current="request()->routeIs('payment')" wire:navigate>
+                    {{ __('payment ') }}
+                </flux:sidebar.item>
             </flux:sidebar.group>
         </flux:sidebar.nav>
 

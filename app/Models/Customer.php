@@ -23,4 +23,8 @@ class Customer extends Model
         'credit_limit',
         'balance',
     ];
+    public function payments()
+{
+    return $this->morphMany(Payment::class, 'payable');
+}
 }

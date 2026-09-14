@@ -60,6 +60,10 @@ Route::livewire('dashboard/purchases', 'pages::tenant.purchase')->name('purchase
 Route::livewire('dashboard/wholesale', 'pages::tenant.wholesale')->name('wholesale');
 Route::livewire('dashboard/customer', 'pages::tenant.customer')->name('customer');
 Route::livewire('dashboard/supplier', 'pages::tenant.supplier')->name('supplier');
+
+Route::livewire('dashboard/receipt', 'pages::tenant.receipt-vouchers')->name('receipt');
+Route::livewire('dashboard/payment', 'pages::tenant.payment')->name('payment');
+
 // Route::livewire('dashboard/purchases', 'pages::tenant.')->name('purchases');
 
 
