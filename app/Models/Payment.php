@@ -20,7 +20,7 @@ class Payment extends Model
 
     public function payable(): MorphTo
     {
-        return $table->morphTo();
+        return $this->morphTo();
     }
 
     public function branch(): BelongsTo
