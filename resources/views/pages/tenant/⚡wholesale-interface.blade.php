@@ -148,14 +148,16 @@ new class extends Component {
 
         $cartTotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
 
-        return $this->view([
-            'products' => $products,
+      return $this->view([
+              'products' => $products,
             'customers' => $customers,
             'cartTotal' => $cartTotal,
-        ]);
+        ])->layout('layouts::tenant');
+
     }
 };
 ?>
+<flux:main class="space-y-6">
 
 <div class="h-[calc(100vh-4rem)] flex flex-col p-4 bg-zinc-50 dark:bg-zinc-950" dir="rtl">
 
@@ -286,7 +288,7 @@ new class extends Component {
         </div>
     </div>
 </div>
-
+</flux:main>
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
