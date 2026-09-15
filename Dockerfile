@@ -26,13 +26,18 @@ RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-pl
 RUN npm ci || npm install
 RUN npm run build
 
-# 8. ضبط صلاحيات مجلدات Laravel
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public
+# 8. ضبط الملكية وصلاحيات المجلدات كاملة لـ www-data (تشمل المجلدات الفرعية)
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 # 9. إعداد خادم Nginx
 COPY ./nginx.conf /etc/nginx/sites-available/default
 
 EXPOSE 80
 
-# 10. تشغيل الخدمات عند بدء الحاوية
-CMD php artisan package:discover --ansi && php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
+# 10. تشغيل الأوامر الأساسية لـ Laravel وإنشاء الـ storage:link عند إقلاع الحاوية
+CMD php artisan storage:link --force && \
+    php artisan package:discover --ansi && \
+    php artisan migrate --seed --force && \
+    php-fpm -D && \
+    nginx -g 'daemon off;'
