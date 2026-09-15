@@ -359,13 +359,13 @@ INSERT INTO `products` (`id`, `tenant_id`, `category_id`, `name`, `cost_price`, 
 
     try {
         // تعطيل قيود المفاتيح الأجنبية لتجنب أي تعارض أثناء الإدخال المباشر
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        // DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
         // تنفيذ استعلام الـ INSERT
         DB::unprepared($sql);
 
         // إعادة تفعيل القيود
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        // DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         return "SQL Executed Successfully!";
     } catch (\Exception $e) {
