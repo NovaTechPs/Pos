@@ -17,13 +17,15 @@ new class extends Component
 
     public function import()
     {
+        // 1. التحقق من وجود الملف وصحته
         $this->validate([
-            'file' => 'required|file',
+            'file' => 'required|file|mimes:csv,txt|max:10240',
         ], [
             'file.required' => 'يرجى اختيار الملف أولاً.',
+            'file.mimes'    => 'يجب أن يكون الملف بصيغة CSV.',
         ]);
 
-        // 1. جلب جميع الفروع التابعة للمستأجر
+        // 2. جلب جميع الفروع التابعة للمستأجر
         $branches = Branch::where('tenant_id', $this->tenantId)->get();
 
         if ($branches->isEmpty()) {
@@ -33,7 +35,7 @@ new class extends Component
 
         $path = $this->file->getRealPath();
 
-        // 2. قراءة محتوى الملف مع المعالجة للغة العربية
+        // 3. قراءة محتوى الملف مع معالجة اللغة العربية و BOM
         $fileContent = file_get_contents($path);
         $fileContent = preg_replace('/\x{EF}\x{BB}\x{BF}/', '', $fileContent);
 
@@ -45,7 +47,7 @@ new class extends Component
         fwrite($tempStream, $fileContent);
         rewind($tempStream);
 
-        // 3. تحديد الفاصلة المعتمدة (, أو ;)
+        // 4. تحديد الفاصلة المعتمدة (, أو ;)
         $firstLine = fgets($tempStream);
         rewind($tempStream);
         $delimiter = (substr_count($firstLine, ';') > substr_count($firstLine, ',')) ? ';' : ',';
@@ -57,7 +59,8 @@ new class extends Component
 
         try {
             while (($data = fgetcsv($tempStream, 1000, $delimiter)) !== FALSE) {
-                $name           = trim($data[1] ?? '');
+                // مواءمة فهرس الأعمدة حسب ملف CSV
+                $name           = trim($data[1] ?? $data[0] ?? '');
                 $stockQty       = (float) str_replace(',', '.', $data[2] ?? 0);
                 $costPrice      = (float) str_replace(',', '.', $data[3] ?? 0);
                 $retailPrice    = (float) str_replace(',', '.', $data[4] ?? 0);
@@ -66,12 +69,12 @@ new class extends Component
 
                 if (empty($name)) continue;
 
-                // أ. إنشاء المنتج الأساسي مع تعيين is_price_unified إلى false
+                // أ. إنشاء المنتج الأساسي (متوافق مع PostgreSQL)
                 $product = Product::create([
                     'tenant_id'        => $this->tenantId,
                     'name'             => $name,
                     'cost_price'       => $costPrice,
-                    'show_in_website'  => 1,
+                    'show_in_website'  => true,
                     'is_price_unified' => false,
                     'images'           => json_encode([]),
                 ]);
@@ -89,7 +92,7 @@ new class extends Component
                     ]);
                 }
 
-                // ج. إضافة الباركود (مع تجاوز الباركود المكرر إن وجد)
+                // ج. إضافة الباركود (تجاوز المكرر)
                 if (!empty($barcode)) {
                     $exists = ProductBarcode::where('tenant_id', $this->tenantId)
                         ->where('barcode', $barcode)
@@ -138,12 +141,21 @@ new class extends Component
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">اختر الملف:</label>
             <input type="file" wire:model="file" class="w-full border border-gray-300 p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+            <!-- رسالة تنبيه أثناء تحميل الملف إلى السيرفر -->
+            <div wire:loading wire:target="file" class="text-blue-500 text-xs mt-1">
+                جاري رفع الملف المعاين...
+            </div>
+
             @error('file') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
         </div>
 
-        <button type="submit" wire:loading.attr="disabled" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-200">
-            <span wire:loading.remove>رفع واستيراد البيانات</span>
-            <span wire:loading>جاري الاستيراد...</span>
+        <button type="submit"
+                wire:loading.attr="disabled"
+                wire:target="file, import"
+                class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded-md transition duration-200">
+            <span wire:loading.remove wire:target="import">رفع واستيراد البيانات</span>
+            <span wire:loading wire:target="import">جاري الاستيراد والمعالجة...</span>
         </button>
     </form>
 </div>
