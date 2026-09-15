@@ -35,5 +35,4 @@ COPY ./nginx.conf /etc/nginx/sites-available/default
 EXPOSE 80
 
 # 10. تشغيل الخدمات عند بدء الحاوية
-CMD php artisan package:discover --ansi && php artisan migrate:fresh --seed --force && php-fpm -D && nginx -g 'daemon off;'
-#CMD php artisan package:discover --ansi && php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
+CMD php artisan package:discover --ansi && php artisan migrate --seed --force && php-fpm -D && nginx -g 'daemon off;'
