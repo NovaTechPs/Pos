@@ -366,6 +366,7 @@ new class extends Component {
     }
 };
 ?>
+<flux:main class="space-y-6">
 
 <div class="min-h-screen bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 p-2 font-mono text-xs" dir="rtl" x-data="gridNavigation()">
     <div class="max-w-7xl mx-auto space-y-2">
@@ -693,6 +694,7 @@ new class extends Component {
 
     </div>
 </div>
+</flux:main>
 
 @script
 <script>

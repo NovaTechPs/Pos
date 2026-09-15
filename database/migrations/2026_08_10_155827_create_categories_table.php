@@ -29,7 +29,10 @@ return new class extends Migration
 
             $table->timestamps();
             $table->softDeletes(); // للحذف المرن
-
+  $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
             // فهرس مركزي لسرعة جلب تصنيفات متجر معين مرتبة
             $table->index(['tenant_id', 'is_active', 'sort_order']);
         });

@@ -19,6 +19,10 @@ new class extends Component {
     public ?int $selectedCustomerId = null;
     public ?string $notes = '';
 
+    // متغيرات مودال سجل أسعار البيع
+    public bool $showPriceHistoryModal = false;
+    public ?array $selectedHistoryItem = null;
+
     private function getTenantId(): ?int
     {
         $user = auth()->user();
@@ -30,9 +34,60 @@ new class extends Component {
         return session('active_tenant_id') ? (int) session('active_tenant_id') : null;
     }
 
+    private function getUserBranchId(): ?int
+    {
+        return auth()->user()?->branch_id;
+    }
+
     public function updatedSearch()
     {
         $this->resetPage();
+    }
+
+    // جلب آخر 10 عمليات بيع للمنتج مع العميل المحدد
+    public function showLastPrice(int $productId): void
+    {
+        $tenantId = $this->getTenantId();
+
+        $product = Product::find($productId);
+        $customer = $this->selectedCustomerId ? Customer::find($this->selectedCustomerId) : null;
+
+        $history = [];
+
+        if ($this->selectedCustomerId) {
+            $historyItems = OrderItem::whereHas('order', function ($q) {
+                $q->where('customer_id', $this->selectedCustomerId)
+                  ->where('status', 'completed');
+            })
+            ->where('product_id', $productId)
+            ->where('tenant_id', $tenantId)
+            ->latest()
+            ->take(10)
+            ->get();
+
+            foreach ($historyItems as $item) {
+                $history[] = [
+                    'price' => (float) $item->unit_price,
+                    'quantity' => $item->quantity,
+                    'date' => $item->created_at ? $item->created_at->format('Y-m-d H:i') : '-',
+                ];
+            }
+        }
+
+        $this->selectedHistoryItem = [
+            'product_name' => $product?->name ?? '',
+            'customer_name' => $customer?->name ?? 'زبون عابر (لم يتم تحديد عميل)',
+            'history' => $history,
+            'has_history' => !empty($history)
+        ];
+
+        $this->showPriceHistoryModal = true;
+    }
+
+    public function closePriceHistoryModal(): void
+    {
+        $this->showPriceHistoryModal = false;
+        $this->selectedHistoryItem = null;
     }
 
     public function addToCart(int $productId): void
@@ -40,8 +95,31 @@ new class extends Component {
         $tenantId = $this->getTenantId();
         if (!$tenantId) return;
 
-        $product = Product::where('tenant_id', $tenantId)->find($productId);
+        $branchId = $this->getUserBranchId();
+
+        $product = Product::where('products.tenant_id', $tenantId)
+            ->leftJoin('branch_products', function ($join) use ($branchId) {
+                $join->on('products.id', '=', 'branch_products.product_id')
+                     ->where('branch_products.branch_id', '=', $branchId);
+            })
+            ->select(
+                'products.*',
+                'branch_products.retail_price as branch_retail_price',
+                'branch_products.wholesale_price as branch_wholesale_price'
+            )
+            ->where('products.id', $productId)
+            ->first();
+
         if (!$product) return;
+
+        $price = (float) (
+            $product->branch_wholesale_price
+            ?? $product->branch_retail_price
+            ?? $product->wholesale_price
+            ?? $product->retail_price
+            ?? $product->price
+            ?? 0
+        );
 
         if (isset($this->cart[$productId])) {
             $this->cart[$productId]['quantity']++;
@@ -50,7 +128,7 @@ new class extends Component {
                 'id' => $product->id,
                 'name' => $product->name,
                 'image' => $product->image,
-                'price' => (float) ($product->wholesale_price ?? $product->retail_price ?? 0),
+                'price' => $price,
                 'cost' => (float) ($product->cost_price ?? 0),
                 'quantity' => 1,
             ];
@@ -63,6 +141,15 @@ new class extends Component {
             unset($this->cart[$productId]);
         } else {
             $this->cart[$productId]['quantity'] = $qty;
+        }
+    }
+
+    // تعديل السعر المباشر للمنتج في السلة
+    public function updatePrice(int $productId, $newPrice): void
+    {
+        $price = (float) $newPrice;
+        if (isset($this->cart[$productId]) && $price >= 0) {
+            $this->cart[$productId]['price'] = $price;
         }
     }
 
@@ -86,6 +173,7 @@ new class extends Component {
         DB::transaction(function () use ($tenantId, $subtotal, $totalCost, $customer, &$order) {
             $order = Order::create([
                 'tenant_id' => $tenantId,
+                'branch_id' => $this->getUserBranchId(),
                 'customer_id' => $customer?->id,
                 'customer_name' => $customer?->name ?? 'زبون جملة عابر',
                 'customer_phone' => $customer?->phone,
@@ -127,7 +215,6 @@ new class extends Component {
                 'notes' => $this->notes,
             ];
 
-            // إرسال البيانات إلى السكريبت للطباعة عبر RawBT
             $this->dispatch('do-kiosk-print', data: $printableOrder);
         }
 
@@ -139,9 +226,30 @@ new class extends Component {
     public function render()
     {
         $tenantId = $this->getTenantId();
+        $branchId = $this->getUserBranchId();
 
-        $products = Product::where('tenant_id', $tenantId)
-            ->when($this->search, fn($q) => $q->where(fn($sub) => $sub->where('name', 'like', "%{$this->search}%")->orWhere('barcode', 'like', "%{$this->search}%")))
+        $products = Product::where('products.tenant_id', $tenantId)
+            ->leftJoin('branch_products', function ($join) use ($branchId) {
+                $join->on('products.id', '=', 'branch_products.product_id')
+                     ->where('branch_products.branch_id', '=', $branchId);
+            })
+            ->select(
+                'products.*',
+                'branch_products.retail_price as branch_retail_price',
+                'branch_products.wholesale_price as branch_wholesale_price'
+            )
+            ->when($this->search, function ($q) {
+                $term = "%{$this->search}%";
+                $q->where(function ($sub) use ($term) {
+                    $sub->where('products.name', 'like', $term)
+                        ->orWhereExists(function ($query) use ($term) {
+                            $query->select(DB::raw(1))
+                                  ->from('product_barcodes')
+                                  ->whereColumn('product_barcodes.product_id', 'products.id')
+                                  ->where('product_barcodes.barcode', 'like', $term);
+                        });
+                });
+            })
             ->paginate(12);
 
         $customers = Customer::where('tenant_id', $tenantId)->get(['id', 'name', 'phone']);
@@ -185,6 +293,14 @@ new class extends Component {
                 <!-- شبكة المنتجات -->
                 <div class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
                     @forelse($products as $product)
+                        @php
+                            $effectivePrice = $product->branch_wholesale_price
+                                ?? $product->branch_retail_price
+                                ?? $product->wholesale_price
+                                ?? $product->retail_price
+                                ?? $product->price
+                                ?? 0;
+                        @endphp
                         <button wire:click="addToCart({{ $product->id }})"
                                 class="flex flex-col h-40 sm:h-48 justify-between p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
 
@@ -203,7 +319,7 @@ new class extends Component {
                             <div class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
                                 <span class="text-[9px] text-zinc-400">سعر الجملة</span>
                                 <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm">
-                                    {{ number_format($product->wholesale_price ?? $product->retail_price, 2) }}
+                                    {{ number_format($effectivePrice, 2) }}
                                 </span>
                             </div>
                         </button>
@@ -223,7 +339,7 @@ new class extends Component {
 
                         <!-- قائمة اختيار العميل -->
                         <div>
-                            <select wire:model="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                 <option value="">-- اختر العميل (اختياري: زبون عابر) --</option>
                                 @foreach($customers as $customer)
                                     <option value="{{ $customer->id }}">{{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }}</option>
@@ -249,8 +365,26 @@ new class extends Component {
                                     </div>
 
                                     <div class="flex-1 truncate">
-                                        <div class="font-medium truncate text-zinc-800 dark:text-zinc-200">{{ $item['name'] }}</div>
-                                        <div class="text-[10px] text-zinc-400">{{ number_format($item['price'], 2) }} × {{ $item['quantity'] }}</div>
+                                        <div class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
+                                            <span>{{ $item['name'] }}</span>
+                                            <!-- زر رؤية آخر 10 عمليات بيع -->
+                                            <button type="button"
+                                                    wire:click="showLastPrice({{ $id }})"
+                                                    title="سجل آخر 10 عمليات بيع لهذا الزبون"
+                                                    class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition">
+                                                <flux:icon icon="clock" class="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+
+                                        <!-- تعديل السعر المباشر -->
+                                        <div class="flex items-center gap-1 mt-0.5">
+                                            <span class="text-[10px] text-zinc-400">السعر:</span>
+                                            <input type="number"
+                                                   step="0.01"
+                                                   wire:change="updatePrice({{ $id }}, $event.target.value)"
+                                                   value="{{ $item['price'] }}"
+                                                   class="w-16 px-1 py-0.5 text-[11px] font-mono border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                        </div>
                                     </div>
 
                                     <div class="flex items-center gap-1">
@@ -287,13 +421,80 @@ new class extends Component {
         </div>
     </div>
 </div>
+
+<!-- مودال عرض آخر 10 عمليات بيع -->
+@if($showPriceHistoryModal)
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
+        <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-4 space-y-4">
+            <div class="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                <h3 class="font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                    سجل آخر 10 عمليات بيع
+                </h3>
+                <button wire:click="closePriceHistoryModal" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                    ✕
+                </button>
+            </div>
+
+            <div class="space-y-2 text-xs">
+                <div>
+                    <span class="text-zinc-400">المنتج:</span>
+                    <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['product_name'] ?? '-' }}</span>
+                </div>
+                <div>
+                    <span class="text-zinc-400">الزبون:</span>
+                    <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['customer_name'] ?? '-' }}</span>
+                </div>
+
+                <div class="border-t border-zinc-100 dark:border-zinc-800 pt-3 max-h-60 overflow-y-auto">
+                    @if($selectedHistoryItem['has_history'])
+                        <table class="w-full text-right text-[11px] border-collapse">
+                            <thead>
+                                <tr class="border-b border-zinc-200 dark:border-zinc-700 text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
+                                    <th class="p-1.5">السعر</th>
+                                    <th class="p-1.5">الكمية</th>
+                                    <th class="p-1.5">التاريخ</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                @foreach($selectedHistoryItem['history'] as $row)
+                                    <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                        <td class="p-1.5 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                            {{ number_format($row['price'], 2) }}
+                                        </td>
+                                        <td class="p-1.5 text-zinc-700 dark:text-zinc-300 font-mono">
+                                            {{ $row['quantity'] }}
+                                        </td>
+                                        <td class="p-1.5 text-zinc-500 dark:text-zinc-400 text-[10px]">
+                                            {{ $row['date'] }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
+                        <div class="text-center py-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg text-zinc-400 text-xs">
+                            لا يوجد سجل بيع سابق لهذا المنتج مع العميل المحدد.
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <div class="pt-2">
+                <flux:button variant="subtle" class="w-full text-xs" wire:click="closePriceHistoryModal">
+                    إغلاق
+                </flux:button>
+            </div>
+        </div>
+    </div>
+@endif
+
 </flux:main>
+
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // بناء قالب الفاتورة الحرارية
         let text = "";
         text += "--------------------------------\n";
         text += "        " + (inv.store_name || "المتجر") + "        \n";
@@ -319,7 +520,6 @@ new class extends Component {
         }
         text += "--------------------------------\n\n\n\n";
 
-        // إرسال البيانات لطابعة RawBT عبر Android Intent
         const intentUrl = "intent:" + encodeURIComponent(text) +
             "#Intent;" +
             "scheme=rawbt;" +

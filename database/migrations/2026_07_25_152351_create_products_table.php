@@ -27,6 +27,10 @@ return new class extends Migration
             $table->boolean('show_in_website')->default(false); // أو false حسب رغبتك بالافتراضي
           $table->string('image')->nullable();
           $table->json('images')->nullable();
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
 

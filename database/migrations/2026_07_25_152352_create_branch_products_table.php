@@ -23,7 +23,10 @@ return new class extends Migration
             $table->integer('offer_quantity')->nullable();
             $table->decimal('offer_price', 10, 2)->nullable();
                         $table->integer('min_wholesale_quantity')->default(1);
-
+  $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
             $table->timestamps();
 
             $table->unique(['branch_id', 'product_id']);

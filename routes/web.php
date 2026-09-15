@@ -63,6 +63,7 @@ Route::livewire('dashboard/supplier', 'pages::tenant.supplier')->name('supplier'
 
 Route::livewire('dashboard/receipt', 'pages::tenant.receipt-vouchers')->name('receipt');
 Route::livewire('dashboard/payment', 'pages::tenant.payment')->name('payment');
+Route::livewire('dashboard/exsel', 'pages::tenant.exsel')->name('exsel');
 
 // Route::livewire('dashboard/purchases', 'pages::tenant.')->name('purchases');
 

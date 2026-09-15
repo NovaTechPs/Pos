@@ -28,7 +28,10 @@ return new class extends Migration
             $table->string('address')->nullable();       // العنوان
             $table->decimal('opening_balance', 12, 2)->default(0.00); // الرصيد الافتتاحي (ديون سابقة)
             $table->text('notes')->nullable();           // ملاحظات إضافية
-
+  $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
             $table->timestamps();
 
             // دعم الحذف المرن للحفاظ على تاريخ فواتير المشتريات القديمة

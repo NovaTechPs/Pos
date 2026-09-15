@@ -21,6 +21,10 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->index('tenant_id');
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
         });
     }
 
