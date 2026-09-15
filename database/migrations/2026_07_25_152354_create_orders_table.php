@@ -44,6 +44,7 @@ $table->foreignId('shift_id')->nullable();
             $table->enum('status', ['pending', 'processing', 'completed', 'cancelled'])->default('completed');
 
             $table->decimal('subtotal', 12, 2);
+            $table->decimal('tax_amount', 12, 2)->default(0);
             $table->decimal('discount', 12, 2)->default(0.00);
             $table->decimal('total', 12, 2);
 

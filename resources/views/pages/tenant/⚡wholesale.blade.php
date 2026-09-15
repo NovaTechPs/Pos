@@ -1,434 +1,783 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Product;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\BranchProduct;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 new class extends Component {
-    public string $barcode = '';
-    public ?int $customer_id = null;
+    use WithPagination;
+
+    // حقول السطر النشط للإدخال السريع
+    public string $rowSearch = '';
+    public ?int $selectedProductId = null;
+    public string $selectedProductName = '';
+    public float $selectedPrice = 0;
+    public float $selectedCost = 0;
+    public int $selectedQuantity = 1;
+
     public array $cart = [];
-    public float $discount = 0.0;
-    public float $paid_amount = 0.0;
 
-    public ?string $errorMessage = null;
-    public ?string $successMessage = null;
+    // بيانات الفاتورة
+    public ?int $currentOrderId = null;
+    public ?string $invoiceNumber = null;
+    public ?int $selectedCustomerId = null;
+    public ?string $notes = '';
+    public float $discount = 0;
+    public float $taxPercent = 16;
+    public string $searchInvoiceQuery = '';
 
-    public function scanBarcode()
+    // حالة المودال والبحث بداخله
+    public bool $showInvoicesModal = false;
+    public string $modalSearch = '';
+
+    private function getTenantId(): ?int
     {
-        $this->errorMessage = null;
-        $this->successMessage = null;
+        $user = auth()->user();
 
-        $trimmedBarcode = trim($this->barcode);
-        if ($trimmedBarcode === '') {
-            return;
-        }
+        if (!$user) return null;
+        if (!empty($user->tenant_id)) return (int) $user->tenant_id;
+        if (method_exists($user, 'tenants')) return $user->tenants()->first()?->id;
 
-        $product = Product::where('tenant_id', Auth::user()->tenant_id)
-            ->where('barcode', $trimmedBarcode)
-            ->first();
-
-        if ($product) {
-            $this->addToCart($product);
-            $this->barcode = '';
-        } else {
-            $this->errorMessage = 'عذراً، لم يتم العثور على منتج بهذا الباركود!';
-            $this->barcode = '';
-        }
+        return session('active_tenant_id') ? (int) session('active_tenant_id') : null;
     }
 
-    public function addToCart(Product $product)
+    // فتح وإغلاق مودال الاستعلام
+    public function openInvoicesModal(): void
     {
-        $productId = $product->id;
+        $this->showInvoicesModal = true;
+    }
 
-        if (isset($this->cart[$productId])) {
-            $this->cart[$productId]['quantity']++;
-        } else {
-            $this->cart[$productId] = [
-                'id' => $product->id,
-                'name' => $product->name,
-                'barcode' => $product->barcode,
-                'wholesale_price' => (float) ($product->wholesale_price ?? $product->retail_price),
-                'quantity' => 1,
+    public function closeInvoicesModal(): void
+    {
+        $this->showInvoicesModal = false;
+    }
+
+    // تحميل فاتورة محددة وعرضها في السلة
+    public function loadOrder(Order $order): void
+    {
+        $tenantId = $this->getTenantId();
+        if ($order->tenant_id != $tenantId) return;
+
+        $this->currentOrderId = $order->id;
+        $this->invoiceNumber = $order->invoice_number;
+        $this->selectedCustomerId = $order->customer_id;
+        $this->notes = $order->notes;
+        $this->discount = (float) $order->discount;
+
+        $this->cart = [];
+        foreach ($order->items as $item) {
+            $cartKey = $item->product_id . '_' . microtime(true);
+            $this->cart[$cartKey] = [
+                'id'        => $item->product_id,
+                'name'      => $item->product?->name ?? 'مادة محذوفة',
+                'price'     => (float) $item->unit_price,
+                'cost'      => (float) $item->cost_price,
+                'quantity'  => (int) $item->quantity,
+                'warehouse' => 'الرئيسي',
+                'unit'      => 'حبة',
+                'discount'  => (float) $item->discount,
             ];
         }
 
-        $this->recalculatePrices();
+        $this->closeInvoicesModal();
     }
 
-    public function updateQuantity($productId, $qty)
+    // البحث السريع عن فاتورة برقمها من الشريط العلوي
+    public function searchInvoice(): void
     {
-        $qty = (int) $qty;
-        if ($qty <= 0) {
-            $this->removeFromCart($productId);
+        if (trim($this->searchInvoiceQuery) === '') return;
+
+        $tenantId = $this->getTenantId();
+        $order = Order::where('tenant_id', $tenantId)
+            ->where('invoice_number', 'like', '%' . trim($this->searchInvoiceQuery) . '%')
+            ->latest()
+            ->first();
+
+        if ($order) {
+            $this->loadOrder($order);
+            $this->searchInvoiceQuery = '';
         } else {
-            if (isset($this->cart[$productId])) {
-                $this->cart[$productId]['quantity'] = $qty;
-                $this->recalculatePrices();
-            }
+            session()->flash('error', 'لم يتم العثور على فاتورة بهذا الرقم');
         }
     }
 
-    public function updatePrice($productId, $price)
+    public function previousInvoice(): void
     {
-        $price = (float) $price;
-        if (isset($this->cart[$productId])) {
-            $this->cart[$productId]['wholesale_price'] = max(0, $price);
-            $this->recalculatePrices();
+        $tenantId = $this->getTenantId();
+        $query = Order::where('tenant_id', $tenantId);
+
+        if ($this->currentOrderId) {
+            $query->where('id', '<', $this->currentOrderId);
+        }
+
+        $order = $query->orderBy('id', 'desc')->first();
+
+        if ($order) {
+            $this->loadOrder($order);
+        } else {
+            session()->flash('error', 'هذه هي أول فاتورة، لا توجد فاتورة سابقة.');
         }
     }
 
-    public function removeFromCart($productId)
+    public function nextInvoice(): void
     {
-        unset($this->cart[$productId]);
-        $this->recalculatePrices();
+        if (!$this->currentOrderId) return;
+
+        $tenantId = $this->getTenantId();
+        $order = Order::where('tenant_id', $tenantId)
+            ->where('id', '>', $this->currentOrderId)
+            ->orderBy('id', 'asc')
+            ->first();
+
+        if ($order) {
+            $this->loadOrder($order);
+        } else {
+            $this->resetInvoice();
+        }
     }
 
-    public function clearCart()
+    public function resetInvoice(): void
     {
+        $this->currentOrderId = null;
+        $this->invoiceNumber = null;
         $this->cart = [];
-        $this->customer_id = null;
-        $this->discount = 0.0;
-        $this->paid_amount = 0.0;
-        $this->errorMessage = null;
-        $this->successMessage = 'تم تنظيف محتويات فاتورة الجملة بنجاح.';
+        $this->reset(['selectedCustomerId', 'notes', 'discount', 'rowSearch', 'selectedProductId', 'selectedProductName', 'selectedPrice', 'selectedCost', 'selectedQuantity']);
+        $this->dispatch('focus-search');
     }
 
-    private function recalculatePrices()
+    public function selectProduct(int $productId): void
     {
-        foreach ($this->cart as $id => $item) {
-            $this->cart[$id]['subtotal'] = $item['wholesale_price'] * $item['quantity'];
-        }
+        $tenantId = $this->getTenantId();
+        if (!$tenantId) return;
+
+        $product = Product::where('tenant_id', $tenantId)->find($productId);
+        if (!$product) return;
+
+        $this->selectedProductId = $product->id;
+        $this->selectedProductName = $product->name;
+        $this->selectedPrice = (float) ($product->wholesale_price ?? $product->retail_price ?? 0);
+        $this->selectedCost = (float) ($product->cost_price ?? 0);
+        $this->selectedQuantity = 1;
+        $this->rowSearch = $product->name;
+
+        $this->dispatch('focus-quantity');
     }
 
-    public function getSubtotalProperty()
+    public function commitRowToCart(): void
     {
-        return array_sum(array_column($this->cart, 'subtotal'));
-    }
-
-    public function getTotalProperty()
-    {
-        return max(0, $this->subtotal - $this->discount);
-    }
-
-    public function getRemainingProperty()
-    {
-        return max(0, $this->total - $this->paid_amount);
-    }
-
-    public function checkout(): void
-    {
-        $this->errorMessage = null;
-        $this->successMessage = null;
-
-        if (empty($this->cart)) {
-            $this->errorMessage = 'سلة مبيعات الجملة فارغة حالياً!';
+        if (!$this->selectedProductId) {
+            $this->reset(['selectedProductId', 'selectedProductName', 'selectedPrice', 'selectedCost', 'selectedQuantity', 'rowSearch']);
+            $this->dispatch('focus-search');
             return;
         }
 
-        if (!$this->customer_id) {
-            $this->errorMessage = 'يجب اختيار عميل لتسجيل فاتورة الجملة!';
-            return;
+        $cartKey = $this->selectedProductId . '_' . microtime(true);
+
+        $this->cart[$cartKey] = [
+            'id'        => $this->selectedProductId,
+            'name'      => $this->selectedProductName,
+            'price'     => $this->selectedPrice,
+            'cost'      => $this->selectedCost,
+            'quantity'  => $this->selectedQuantity,
+            'warehouse' => 'الرئيسي',
+            'unit'      => 'حبة',
+            'discount'  => 0,
+        ];
+
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPrice = 0;
+        $this->selectedCost = 0;
+        $this->selectedQuantity = 1;
+        $this->rowSearch = '';
+
+        $this->dispatch('focus-search');
+    }
+
+    public function removeItem(string $cartKey): void
+    {
+        unset($this->cart[$cartKey]);
+    }
+
+    public function updateItemQuantity(string $cartKey, $quantity): void
+    {
+        $qty = (int) $quantity;
+        if ($qty <= 0) {
+            unset($this->cart[$cartKey]);
+        } else {
+            $this->cart[$cartKey]['quantity'] = $qty;
+        }
+    }
+
+    public function updateItemPrice(string $cartKey, $price): void
+    {
+        $this->cart[$cartKey]['price'] = max(0, (float) $price);
+    }
+
+    public function updateItemDiscount(string $cartKey, $discount): void
+    {
+        $this->cart[$cartKey]['discount'] = max(0, (float) $discount);
+    }
+
+    public function completeSale(bool $shouldPrint = false): void
+    {
+        if (empty($this->cart)) return;
+
+        $tenantId = $this->getTenantId();
+        if (!$tenantId) return;
+
+        $customer = null;
+        if ($this->selectedCustomerId) {
+            $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
         }
 
-        $user = Auth::user();
-        $customer = Customer::where('tenant_id', $user->tenant_id)->find($this->customer_id);
+        $subtotal = 0;
+        $totalCost = 0;
 
-        if (!$customer) {
-            $this->errorMessage = 'العميل المحدد غير موجود!';
-            return;
+        foreach ($this->cart as $item) {
+            $itemTotal = ($item['price'] * $item['quantity']) - $item['discount'];
+            $subtotal += $itemTotal;
+            $totalCost += ($item['cost'] * $item['quantity']);
         }
 
-        $totalAmount = $this->total;
-        $remaining = $totalAmount - $this->paid_amount;
+        $taxAmount = ($subtotal - $this->discount) * ($this->taxPercent / 100);
+        $grandTotal = ($subtotal - $this->discount) + $taxAmount;
 
-        // التحقق من الحد الائتماني
-        if ($remaining > 0 && ($customer->balance + $remaining) > $customer->credit_limit) {
-            $this->errorMessage = 'تنبيه: تتجاوز هذه الفاتورة الحد الائتماني المسموح به للعميل!';
-            return;
-        }
+        $order = null;
 
-        $paymentStatus = 'paid';
-        if ($this->paid_amount <= 0) {
-            $paymentStatus = 'unpaid';
-        } elseif ($this->paid_amount < $totalAmount) {
-            $paymentStatus = 'partial';
-        }
+        DB::transaction(function () use ($tenantId, $subtotal, $grandTotal, $taxAmount, $totalCost, $customer, &$order) {
+            $order = Order::updateOrCreate(
+                ['id' => $this->currentOrderId],
+                [
+                    'tenant_id'      => $tenantId,
+                    'customer_id'    => $customer?->id,
+                    'customer_name'  => $customer?->name ?? 'زبون عام',
+                    'customer_phone' => $customer?->phone,
+                    'invoice_number' => $this->invoiceNumber ?? ('INV-' . date('Ymd') . '-' . rand(100, 999)),
+                    'type'           => 'wholesale',
+                    'status'         => 'completed',
+                    'subtotal'       => $subtotal,
+                    'tax_amount'     => $taxAmount,
+                    'discount'       => $this->discount,
+                    'total'          => $grandTotal,
+                    'total_cost'     => $totalCost,
+                    'total_profit'   => $grandTotal - $totalCost,
+                    'paid_amount'    => $grandTotal,
+                    'payment_status' => 'paid',
+                    'notes'          => $this->notes,
+                ]
+            );
 
-        try {
-            DB::transaction(function () use ($user, $customer, $totalAmount, $paymentStatus, $remaining) {
-                $order = Order::create([
-                    'tenant_id' => $user->tenant_id,
-                    'branch_id' => $user->branch_id,
-                    'user_id' => $user->id,
-                    'customer_id' => $customer->id,
-                    'invoice_number' => 'INV-W-' . time(),
-                    'type' => 'wholesale',
-                    'subtotal' => $this->subtotal,
-                    'discount' => $this->discount,
-                    'total' => $totalAmount,
-                    'paid_amount' => $this->paid_amount,
-                    'payment_status' => $paymentStatus,
+            if ($this->currentOrderId) {
+                OrderItem::where('order_id', $order->id)->delete();
+            }
+
+            foreach ($this->cart as $item) {
+                OrderItem::create([
+                    'tenant_id'   => $tenantId,
+                    'order_id'    => $order->id,
+                    'product_id'  => $item['id'],
+                    'quantity'    => $item['quantity'],
+                    'unit_price'  => $item['price'],
+                    'discount'    => $item['discount'],
+                    'total_price' => ($item['price'] * $item['quantity']) - $item['discount'],
+                    'cost_price'  => $item['cost'],
+                    'total_cost'  => $item['cost'] * $item['quantity'],
                 ]);
+            }
+        });
 
-                foreach ($this->cart as $item) {
-                    OrderItem::create([
-                        'tenant_id' => $user->tenant_id,
-                        'order_id' => $order->id,
-                        'product_id' => $item['id'],
-                        'quantity' => $item['quantity'],
-                        'unit_price' => $item['wholesale_price'],
-                        'total_price' => $item['subtotal'],
-                    ]);
+        if ($shouldPrint && $order) {
+            $printableOrder = [
+                'store_name'     => auth()->user()->name ?? 'فاتورة مبيعات',
+                'invoice_no'     => $order->invoice_number,
+                'customer_name'  => $order->customer_name,
+                'date'           => $order->created_at->format('Y-m-d H:i'),
+                'items'          => array_values($this->cart),
+                'subtotal'       => $subtotal,
+                'tax'            => $taxAmount,
+                'discount'       => $this->discount,
+                'total'          => $grandTotal,
+                'notes'          => $this->notes,
+            ];
 
-                    BranchProduct::where('branch_id', $user->branch_id)
-                        ->where('product_id', $item['id'])
-                        ->decrement('stock_quantity', $item['quantity']);
-                }
-
-                if ($remaining > 0) {
-                    $customer->increment('balance', $remaining);
-                }
-            });
-
-            $this->successMessage = 'تمت عملية بيع الجملة وحفظ الفاتورة بنجاح!';
-            $this->clearCart();
-        } catch (\Exception $e) {
-            $this->errorMessage = 'خطأ في عملية بيع الجملة: ' . $e->getMessage();
+            $this->dispatch('do-kiosk-print', data: $printableOrder);
         }
+
+        $this->resetInvoice();
+        session()->flash('message', 'تم حفظ الفاتورة بنجاح!');
     }
 
     public function render()
     {
-        return $this->view()->layout('layouts::tenant');
+        $tenantId = $this->getTenantId();
+        $searchResults = collect();
+
+        if (trim($this->rowSearch) !== '' && !$this->selectedProductId) {
+            $search = trim($this->rowSearch);
+
+            $searchResults = Product::where('tenant_id', $tenantId)
+                ->where(function ($sub) use ($search) {
+                    $sub->where('name', 'like', "%{$search}%")
+                        ->orWhereHas('barcodes', function ($b) use ($search) {
+                            $b->where('barcode', 'like', "%{$search}%");
+                        });
+
+                    if (is_numeric($search)) {
+                        $sub->orWhere('id', (int) $search);
+                    }
+                })
+                ->limit(6)
+                ->get();
+        }
+
+        // جلب قائمة الفواتير للمودال مع البحث
+        $invoicesList = collect();
+        if ($this->showInvoicesModal) {
+            $q = Order::where('tenant_id', $tenantId);
+            if (trim($this->modalSearch) !== '') {
+                $term = trim($this->modalSearch);
+                $q->where(function($sub) use ($term) {
+                    $sub->where('invoice_number', 'like', "%{$term}%")
+                        ->orWhere('customer_name', 'like', "%{$term}%");
+                });
+            }
+            $invoicesList = $q->orderBy('id', 'desc')->limit(30)->get();
+        }
+
+        $customers = Customer::where('tenant_id', $tenantId)->get(['id', 'name', 'phone']);
+
+        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + (($item['price'] * $item['quantity']) - $item['discount']), 0);
+        $taxAmount = ($subtotal - $this->discount) * ($this->taxPercent / 100);
+        $grandTotal = ($subtotal - $this->discount) + $taxAmount;
+
+        return $this->view([
+            'searchResults' => $searchResults,
+            'customers'     => $customers,
+            'invoicesList'  => $invoicesList,
+            'subtotal'      => $subtotal,
+            'taxAmount'     => $taxAmount,
+            'grandTotal'    => $grandTotal,
+        ])->layout('layouts::tenant');
     }
 };
 ?>
 
-<flux:main class="h-[calc(100vh-4rem)] p-4 bg-slate-50 font-sans">
+<div class="min-h-screen bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 p-2 font-mono text-xs" dir="rtl" x-data="gridNavigation()">
+    <div class="max-w-7xl mx-auto space-y-2">
 
-    <!-- اختصارات الكيبورد الفعالة F3 و F4 -->
-    <div x-data x-on:keydown.window.f3.prevent="$wire.checkout()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
-        class="h-full">
+        @if (session()->has('message'))
+            <div class="p-2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded">
+                {{ session('message') }}
+            </div>
+        @endif
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full">
+        @if (session()->has('error'))
+            <div class="p-2 bg-red-100 text-red-800 border border-red-300 rounded">
+                {{ session('error') }}
+            </div>
+        @endif
 
-            <!-- ================= القسم الأيمن: جدول المبيعات والباركود (8 أعمدة) ================= -->
-            <div class="lg:col-span-8 flex flex-col h-full space-y-4">
-
-                <!-- رأس الصفحة ومسح الباركود -->
-                <div
-                    class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <form wire:submit.prevent="scanBarcode" class="flex-1 w-full flex items-center gap-2">
-                        <div class="relative w-full">
-                            <flux:input wire:model="barcode" id="wholesale-barcode-input" icon="qr-code"
-                                placeholder="امسح الباركود هنا لإضافة صنف بالجملة..." autofocus
-                                class="!text-lg !py-2.5 bg-slate-50 border-slate-300 focus:border-indigo-600 focus:bg-white text-slate-900 rounded-xl" />
-                        </div>
-                        <button type="submit"
-                            class="py-2.5 px-6 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-sm">
-                            إضافة
-                        </button>
-                    </form>
-
-                    <!-- أزرار الاختصارات -->
-                    <div class="flex items-center gap-2 border-r pr-3 border-slate-200 shrink-0">
-                        <button wire:click="checkout" type="button"
-                            class="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors text-xs font-bold">
-                            <span
-                                class="bg-emerald-600 text-white px-1.5 py-0.5 rounded font-mono text-[11px]">F3</span>
-                            <span>إتمام الفاتورة</span>
-                        </button>
-
-                        <button wire:click="clearCart" type="button"
-                            class="flex items-center gap-1.5 px-3 py-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl hover:bg-rose-100 transition-colors text-xs font-bold">
-                            <span class="bg-rose-600 text-white px-1.5 py-0.5 rounded font-mono text-[11px]">F4</span>
-                            <span>تنظيف</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- التنبيهات -->
-                @if ($errorMessage)
-                    <div
-                        class="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-xl text-sm font-semibold flex items-center justify-between shadow-sm">
-                        <span>{{ $errorMessage }}</span>
-                        <button wire:click="$set('errorMessage', null)"
-                            class="text-xs text-rose-500 hover:underline">إغلاق</button>
-                    </div>
+        <!-- شريط التحكم والتنقل بين الفواتير -->
+        <div class="bg-indigo-950 text-white p-2 rounded flex flex-wrap items-center justify-between gap-2 shadow">
+            <div class="flex items-center gap-2">
+                <span class="font-bold text-amber-400">
+                    {{ $currentOrderId ? "عرض/تعديل فاتورة رقم: {$invoiceNumber}" : "جديد: فاتورة مبيعات جديدة" }}
+                </span>
+                @if($currentOrderId)
+                    <button wire:click="resetInvoice" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[11px] font-bold">
+                        + فاتورة جديدة
+                    </button>
                 @endif
+            </div>
 
-                @if ($successMessage)
-                    <div
-                        class="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-xl text-sm font-semibold flex items-center justify-between shadow-sm">
-                        <span>{{ $successMessage }}</span>
-                        <button wire:click="$set('successMessage', null)"
-                            class="text-xs text-emerald-600 hover:underline">إغلاق</button>
+            <!-- البحث أونلاين والتنقل واستعلام -->
+            <div class="flex items-center gap-1.5">
+                <button wire:click="openInvoicesModal" class="bg-amber-500 hover:bg-amber-600 text-zinc-950 px-2.5 py-1 rounded font-bold text-[11px] flex items-center gap-1 shadow">
+                    🔍 استعلام الفواتير
+                </button>
+
+                <div class="h-4 w-px bg-indigo-700 mx-0.5"></div>
+
+                <form wire:submit.prevent="searchInvoice" class="flex items-center gap-1">
+                    <input type="text"
+                           wire:model="searchInvoiceQuery"
+                           placeholder="رقم الفاتورة..."
+                           class="bg-zinc-800 border border-zinc-700 text-white px-2 py-1 rounded text-xs focus:outline-none focus:border-amber-400 w-32" />
+                    <button type="submit" class="bg-indigo-700 hover:bg-indigo-600 px-2 py-1 rounded font-bold text-[11px]">بحث</button>
+                </form>
+
+                <div class="h-4 w-px bg-indigo-700 mx-0.5"></div>
+
+                <button wire:click="previousInvoice" title="الفاتورة السابقة" class="bg-zinc-800 hover:bg-zinc-700 text-white px-2.5 py-1 rounded border border-zinc-700 font-bold">
+                    ◀ السابقة
+                </button>
+                <button wire:click="nextInvoice" title="الفاتورة اللاحقة" class="bg-zinc-800 hover:bg-zinc-700 text-white px-2.5 py-1 rounded border border-zinc-700 font-bold">
+                    اللاحقة ▶
+                </button>
+            </div>
+        </div>
+
+        <!-- مودال (Modal) استعلام الفواتير -->
+        @if($showInvoicesModal)
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div class="bg-white dark:bg-zinc-900 border-2 border-indigo-600 rounded-lg shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[85vh]">
+
+                    <!-- الهيدر -->
+                    <div class="bg-indigo-950 text-white p-3 flex justify-between items-center">
+                        <h3 class="font-bold text-sm text-amber-400 flex items-center gap-2">
+                            <span>🔍</span> جدول استعلام الفواتير
+                        </h3>
+                        <button wire:click="closeInvoicesModal" class="text-zinc-400 hover:text-white font-bold text-base">✕</button>
                     </div>
-                @endif
 
-                <!-- جدول الاصناف -->
-                <div
-                    class="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                    <div class="overflow-y-auto flex-1">
-                        <table class="w-full text-right text-sm">
-                            <thead class="bg-slate-100 sticky top-0 font-bold text-slate-700 border-b border-slate-200">
-                                <tr>
-                                    <th class="p-4">اسم المنتج</th>
-                                    <th class="p-4">سعر الجملة</th>
-                                    <th class="p-4 text-center">الكمية</th>
-                                    <th class="p-4">الإجمالي</th>
-                                    <th class="p-4 text-center">إجراء</th>
+                    <!-- شريط البحث داخل المودال -->
+                    <div class="p-2 bg-zinc-100 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700">
+                        <input type="text"
+                               wire:model.live.debounce.200ms="modalSearch"
+                               placeholder="ابحث برقم الفاتورة أو اسم الزبون..."
+                               class="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 p-1.5 rounded text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                    </div>
+
+                    <!-- جدول عرض الفواتير -->
+                    <div class="overflow-y-auto p-2 flex-1">
+                        <table class="w-full text-right border-collapse">
+                            <thead>
+                                <tr class="bg-indigo-900 text-white text-[11px]">
+                                    <th class="p-2 border border-indigo-800 text-center w-12">#</th>
+                                    <th class="p-2 border border-indigo-800 text-center">رقم الفاتورة</th>
+                                    <th class="p-2 border border-indigo-800">اسم الزبون</th>
+                                    <th class="p-2 border border-indigo-800 text-center">التاريخ والوقت</th>
+                                    <th class="p-2 border border-indigo-800 text-center">القيمة الإجمالية</th>
+                                    <th class="p-2 border border-indigo-800 text-center w-16">إجراء</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                @forelse($cart as $item)
-                                    <tr class="hover:bg-indigo-50/40 transition-colors"
-                                        wire:key="wholesale-item-{{ $item['id'] }}">
-                                        <td class="p-4 font-semibold text-slate-900">
-                                            <div class="flex flex-col">
-                                                <span>{{ $item['name'] }}</span>
-                                                <span class="text-[11px] text-slate-400 font-mono">{{ $item['barcode'] }}</span>
-                                            </div>
+                            <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800 text-xs">
+                                @forelse($invoicesList as $inv)
+                                    <tr class="hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+                                        <td class="p-2 border text-center font-mono text-zinc-500">{{ $loop->iteration }}</td>
+                                        <td class="p-2 border text-center font-bold text-indigo-600 dark:text-indigo-400 font-mono">{{ $inv->invoice_number }}</td>
+                                        <td class="p-2 border font-semibold">{{ $inv->customer_name ?? 'زبون عام' }}</td>
+                                        <td class="p-2 border text-center dir-ltr text-zinc-500">{{ $inv->created_at->format('Y-m-d H:i') }}</td>
+                                        <td class="p-2 border text-center font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                                            {{ number_format($inv->total, 2) }}
                                         </td>
-                                        <td class="p-4 font-mono font-medium text-slate-700">
-                                            <input type="number" step="0.5" value="{{ $item['wholesale_price'] }}"
-                                                wire:change="updatePrice({{ $item['id'] }}, $event.target.value)"
-                                                class="w-24 p-1 bg-slate-50 border border-slate-200 rounded-lg text-center font-bold text-indigo-700 focus:border-indigo-600 focus:outline-none">
-                                        </td>
-                                        <td class="p-4">
-                                            <div
-                                                class="flex items-center justify-center gap-1.5 bg-slate-100 p-1 rounded-xl w-max mx-auto border border-slate-200">
-                                                <button
-                                                    wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] - 1 }})"
-                                                    class="w-7 h-7 flex items-center justify-center rounded-lg bg-white shadow-sm font-bold text-slate-700 hover:bg-slate-200">-</button>
-                                                <input type="number" value="{{ $item['quantity'] }}"
-                                                    wire:change="updateQuantity({{ $item['id'] }}, $event.target.value)"
-                                                    class="w-12 text-center bg-transparent font-extrabold font-mono text-indigo-700 focus:outline-none"
-                                                    min="1">
-                                                <button
-                                                    wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] + 1 }})"
-                                                    class="w-7 h-7 flex items-center justify-center rounded-lg bg-white shadow-sm font-bold text-slate-700 hover:bg-slate-200">+</button>
-                                            </div>
-                                        </td>
-                                        <td class="p-4 font-extrabold font-mono text-emerald-600 text-base">
-                                            {{ number_format($item['subtotal'], 2) }} ر.س
-                                        </td>
-                                        <td class="p-4 text-center">
-                                            <button wire:click="removeFromCart({{ $item['id'] }})"
-                                                class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
-                                                <flux:icon icon="trash" class="w-4 h-4" />
+                                        <td class="p-2 border text-center">
+                                            <button wire:click="loadOrder({{ $inv->id }})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded font-bold text-[10px]">
+                                                عرض
                                             </button>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="py-24 text-center">
-                                            <div
-                                                class="flex flex-col items-center justify-center text-slate-400 space-y-3">
-                                                <flux:icon icon="shopping-bag" class="w-14 h-14 stroke-1 text-slate-300" />
-                                                <p class="text-base font-semibold text-slate-500">سلة مبيعات الجملة فارغة، ادخل الاصناف للبدء</p>
-                                            </div>
-                                        </td>
+                                        <td colspan="6" class="p-4 text-center text-zinc-500">لا توجد فواتير مطابقة للبحث</td>
                                     </tr>
                                 @endforelse
                             </tbody>
                         </table>
                     </div>
-                </div>
 
+                    <!-- الفوتر -->
+                    <div class="p-2 bg-zinc-100 dark:bg-zinc-800/80 border-t border-zinc-200 dark:border-zinc-700 text-left">
+                        <button wire:click="closeInvoicesModal" class="bg-zinc-600 hover:bg-zinc-700 text-white px-3 py-1 rounded text-xs font-bold">
+                            إغلاق
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        @endif
+
+        <!-- هيدر الفاتورة ERP -->
+        <div class="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 p-2 grid grid-cols-1 md:grid-cols-4 gap-2">
+            <div>
+                <label class="block text-[11px] text-zinc-500 mb-0.5">العميل / الحساب</label>
+                <select wire:model="selectedCustomerId" class="w-full text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-1 rounded">
+                    <option value="">-- زبون نقدي عابر --</option>
+                    @foreach($customers as $customer)
+                        <option value="{{ $customer->id }}">{{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }}</option>
+                    @endforeach
+                </select>
             </div>
 
-            <!-- ================= القسم الأيسر: الحساب والعميل والمبالغ (4 أعمدة) ================= -->
-            <div
-                class="lg:col-span-4 flex flex-col justify-between bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-
-                <div class="space-y-4">
-                    <!-- عنوان القائمة -->
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                        <div class="flex items-center gap-2">
-                            <flux:icon icon="calculator" class="w-5 h-5 text-indigo-600" />
-                            <h3 class="text-lg font-bold text-slate-900">حساب فاتورة الجملة</h3>
-                        </div>
-                        <span class="text-xs bg-slate-100 text-slate-600 font-bold px-3 py-1 rounded-full">
-                            {{ count($cart) }} أصناف
-                        </span>
-                    </div>
-
-                    <!-- اختيار العميل (إجباري للجملة) -->
-                    <div>
-                        <label class="text-xs font-bold text-slate-700 block mb-1">العميل (مطلوب):</label>
-                        <select wire:model="customer_id" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:border-indigo-600 focus:outline-none">
-                            <option value="">-- اختر العميل --</option>
-                            @foreach(Customer::where('tenant_id', auth()->user()->tenant_id)->get() as $customer)
-                                <option value="{{ $customer->id }}">
-                                    {{ $customer->name }} (الرصيد: {{ number_format($customer->balance, 2) }})
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <!-- تفاصيل الحساب والإجمالي -->
-                    <div class="bg-indigo-50/70 border border-indigo-200 p-4 rounded-2xl space-y-3">
-                        <div class="flex justify-between text-xs font-bold text-slate-600">
-                            <span>المجموع الفرعي:</span>
-                            <span>{{ number_format($this->subtotal, 2) }} ر.س</span>
-                        </div>
-
-                        <div>
-                            <label class="text-xs font-bold text-slate-700 block mb-1">الخصم:</label>
-                            <input type="number" step="0.5" wire:model.live="discount" placeholder="0.00"
-                                class="w-full p-2 bg-white border border-slate-200 rounded-lg text-left font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-600">
-                        </div>
-
-                        <div class="pt-2 border-t border-indigo-200 flex items-baseline justify-between">
-                            <span class="text-xs text-indigo-800 font-bold">الإجمالي النهائي:</span>
-                            <span class="text-3xl font-black text-indigo-700 font-mono tracking-tight">
-                                {{ number_format($this->total, 2) }} <span class="text-xs text-indigo-600 font-bold">ر.س</span>
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- حقل المدفوع -->
-                    <div class="space-y-2">
-                        <label class="text-xs font-bold text-slate-700">المبلغ المدفوع (نقداً):</label>
-                        <input type="number" step="0.5" wire:model.live="paid_amount"
-                            class="w-full text-3xl font-black font-mono p-3 bg-slate-50 border-2 border-slate-200 focus:border-indigo-600 rounded-xl text-slate-900 focus:outline-none text-left tracking-wider"
-                            placeholder="0.00">
-                    </div>
-
-                    <!-- المتبقي على حساب العميل -->
-                    <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-600">المبلغ المتبقي (آجل على العميل):</span>
-                        <span
-                            class="text-2xl font-black font-mono {{ $this->remaining > 0 ? 'text-amber-600' : 'text-slate-400' }}">
-                            {{ number_format($this->remaining, 2) }} <span class="text-xs font-normal">ر.س</span>
-                        </span>
-                    </div>
-                </div>
-
-                <!-- أزرار العمليات الرئيسية -->
-                <div class="space-y-3 pt-6 border-t border-slate-100">
-                    <button wire:click="checkout" @if (count($cart) === 0) disabled @endif
-                        class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-100 disabled:text-slate-400 font-extrabold text-lg rounded-xl transition-all shadow-md text-white flex items-center justify-center gap-3">
-                        <span>إتمام وحفظ فاتورة الجملة</span>
-                        <span class="text-xs bg-emerald-700 text-white px-2 py-0.5 rounded font-mono">F3</span>
-                    </button>
-
-                    <button wire:click="clearCart" @if (count($cart) === 0) disabled @endif
-                        class="w-full py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:text-slate-300 rounded-xl flex items-center justify-center gap-2 transition-colors">
-                        <flux:icon icon="trash" class="w-4 h-4" />
-                        <span>إلغاء وتنظيف الفاتورة (F4)</span>
-                    </button>
-                </div>
-
+            <div>
+                <label class="block text-[11px] text-zinc-500 mb-0.5">مركز التكلفة / المخزن</label>
+                <input type="text" value="الفرع الرئيسي" disabled class="w-full text-xs bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-300 dark:border-zinc-700 p-1 rounded text-zinc-500" />
             </div>
 
+            <div>
+                <label class="block text-[11px] text-zinc-500 mb-0.5">نوع الفاتورة</label>
+                <select class="w-full text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-1 rounded">
+                    <option>فاتورة مبيعات جملة</option>
+                    <option>فاتورة نقدية</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-[11px] text-zinc-500 mb-0.5">التصنيف الضريبي</label>
+                <div class="flex items-center gap-1 pt-1">
+                    <input type="checkbox" checked disabled class="rounded border-zinc-300 text-indigo-600">
+                    <span>خاضع للضريبة (16%)</span>
+                </div>
+            </div>
         </div>
+
+        <!-- جدول الفاتورة ERP GRID -->
+        <div class="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 overflow-x-auto min-h-[350px]">
+            <table class="w-full text-right border-collapse min-w-[850px]">
+                <thead>
+                    <tr class="bg-indigo-900 text-white text-[11px]">
+                        <th class="p-1 border border-indigo-800 w-8 text-center">#</th>
+                        <th class="p-1 border border-indigo-800 w-24 text-center">رقم المادة</th>
+                        <th class="p-1 border border-indigo-800">اسم المادة / الباركود</th>
+                        <th class="p-1 border border-indigo-800 w-24 text-center">المخزن</th>
+                        <th class="p-1 border border-indigo-800 w-20 text-center">الوحدة</th>
+                        <th class="p-1 border border-indigo-800 w-20 text-center">الكمية</th>
+                        <th class="p-1 border border-indigo-800 w-24 text-center">السعر</th>
+                        <th class="p-1 border border-indigo-800 w-20 text-center">الخصم</th>
+                        <th class="p-1 border border-indigo-800 w-28 text-center">المجموع</th>
+                        <th class="p-1 border border-indigo-800 w-10 text-center">حذف</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+                    <!-- المواد المضافة مسبقاً -->
+                    @foreach($cart as $key => $item)
+                        @php
+                            $lineTotal = ($item['price'] * $item['quantity']) - $item['discount'];
+                        @endphp
+                        <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                            <td class="p-1 border text-center bg-zinc-50 dark:bg-zinc-800/50">{{ $loop->iteration }}</td>
+                            <td class="p-1 border text-center font-mono text-zinc-600 dark:text-zinc-400">{{ $item['id'] }}</td>
+                            <td class="p-1 border font-semibold text-zinc-800 dark:text-zinc-200">{{ $item['name'] }}</td>
+                            <td class="p-1 border text-center text-zinc-500">الرئيسي</td>
+                            <td class="p-1 border text-center text-zinc-500">حبة</td>
+                            <td class="p-1 border text-center">
+                                <input type="number" min="1"
+                                       value="{{ $item['quantity'] }}"
+                                       wire:change="updateItemQuantity('{{ $key }}', $event.target.value)"
+                                       class="w-16 text-center bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded p-0.5 font-bold" />
+                            </td>
+                            <td class="p-1 border text-center">
+                                <input type="number" step="0.01"
+                                       value="{{ $item['price'] }}"
+                                       wire:change="updateItemPrice('{{ $key }}', $event.target.value)"
+                                       class="w-20 text-center bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded p-0.5 font-bold text-indigo-600 dark:text-indigo-400" />
+                            </td>
+                            <td class="p-1 border text-center">
+                                <input type="number" step="0.01"
+                                       value="{{ $item['discount'] }}"
+                                       wire:change="updateItemDiscount('{{ $key }}', $event.target.value)"
+                                       class="w-16 text-center bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded p-0.5" />
+                            </td>
+                            <td class="p-1 border text-center font-bold bg-zinc-50/50 dark:bg-zinc-800/30">
+                                {{ number_format($lineTotal, 2) }}
+                            </td>
+                            <td class="p-1 border text-center">
+                                <button wire:click="removeItem('{{ $key }}')" class="text-red-600 hover:text-red-800 font-bold px-1">✕</button>
+                            </td>
+                        </tr>
+                    @endforeach
+
+                    <!-- سطر الإدخال التفاعلي السريع -->
+                    <tr class="bg-indigo-50/50 dark:bg-indigo-950/30 border-2 border-indigo-400 dark:border-indigo-700 relative">
+                        <td class="p-1 border text-center font-bold text-indigo-600">+</td>
+                        <td class="p-1 border text-center font-mono text-zinc-500">{{ $selectedProductId ?? '---' }}</td>
+                        <td class="p-1 border relative">
+                            <input type="text"
+                                   x-ref="searchInput"
+                                   wire:model.live.debounce.150ms="rowSearch"
+                                   @keydown.enter.prevent="selectFirstResultOrNext()"
+                                   placeholder="ابحث أو امسح الباركود واضغط Enter..."
+                                   class="w-full bg-white dark:bg-zinc-800 border border-indigo-400 dark:border-indigo-600 p-1 rounded text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                   autofocus />
+
+                            <!-- قائمة نتائج البحث المنسدلة -->
+                            @if(count($searchResults) > 0)
+                                <div class="absolute z-50 top-full right-0 left-0 bg-white dark:bg-zinc-900 border-2 border-indigo-500 shadow-xl max-h-52 overflow-y-auto rounded-b">
+                                    <table class="w-full text-right border-collapse">
+                                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+                                            @foreach($searchResults as $p)
+                                                <tr wire:click="selectProduct({{ $p->id }})"
+                                                    class="hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer border-b text-xs p-1">
+                                                    <td class="p-1 font-mono text-zinc-500">{{ $p->id }}</td>
+                                                    <td class="p-1 font-bold text-zinc-800 dark:text-zinc-200">{{ $p->name }}</td>
+                                                    <td class="p-1 font-bold text-indigo-600 text-left">{{ number_format($p->wholesale_price ?? $p->retail_price, 2) }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @endif
+                        </td>
+                        <td class="p-1 border text-center text-zinc-500">الرئيسي</td>
+                        <td class="p-1 border text-center text-zinc-500">حبة</td>
+
+                        <!-- حقل الكمية السريع -->
+                        <td class="p-1 border text-center">
+                            <input type="number"
+                                   min="1"
+                                   x-ref="qtyInput"
+                                   wire:model="selectedQuantity"
+                                   @keydown.enter.prevent="handleQtyEnter()"
+                                   class="w-16 text-center bg-white dark:bg-zinc-800 border border-indigo-400 dark:border-indigo-600 rounded p-1 font-bold" />
+                        </td>
+
+                        <!-- حقل السعر السريع -->
+                        <td class="p-1 border text-center">
+                            <input type="number"
+                                   step="0.01"
+                                   x-ref="priceInput"
+                                   wire:model="selectedPrice"
+                                   @keydown.enter.prevent="handlePriceEnter()"
+                                   class="w-20 text-center bg-white dark:bg-zinc-800 border border-indigo-400 dark:border-indigo-600 rounded p-1 font-bold text-indigo-600 dark:text-indigo-400" />
+                        </td>
+
+                        <td class="p-1 border text-center text-zinc-400">0.00</td>
+                        <td class="p-1 border text-center text-indigo-700 dark:text-indigo-300 font-bold">
+                            {{ number_format($selectedPrice * $selectedQuantity, 2) }}
+                        </td>
+                        <td class="p-1 border text-center">
+                            <button wire:click="commitRowToCart" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-0.5 rounded text-[10px]">+</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- أسفل الفاتورة - الخيارات والمجاميع -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-2">
+            <div class="md:col-span-6 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 p-2 flex flex-col justify-between space-y-2">
+                <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">ملاحظات الفاتورة:</label>
+                    <textarea wire:model="notes" rows="3" class="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 p-1 rounded text-xs" placeholder="أدخل الملاحظات هنا..."></textarea>
+                </div>
+
+                <div class="flex gap-2">
+                    <button wire:click="completeSale(false)" @disabled(empty($cart)) class="flex-1 bg-zinc-700 hover:bg-zinc-800 text-white py-2 rounded font-bold disabled:opacity-50">
+                        {{ $currentOrderId ? 'تحديث الفاتورة (F9)' : 'حفظ الفاتورة (F9)' }}
+                    </button>
+                    <button wire:click="completeSale(true)" @disabled(empty($cart)) class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded font-bold disabled:opacity-50">
+                        {{ $currentOrderId ? 'تحديث وطباعة (F10)' : 'حفظ وطباعة (F10)' }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="md:col-span-6 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 p-2">
+                <div class="space-y-1.5 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-zinc-600 dark:text-zinc-400">المجموع قبل الخصم والضريبة:</span>
+                        <span class="font-bold font-mono">{{ number_format($subtotal, 2) }}</span>
+                    </div>
+
+                    <div class="flex justify-between items-center">
+                        <span class="text-zinc-600 dark:text-zinc-400">خصم إضافي على الفاتورة:</span>
+                        <input type="number" step="0.01" wire:model.live="discount" class="w-24 text-center bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded p-0.5 font-bold" />
+                    </div>
+
+                    <div class="flex justify-between items-center">
+                        <span class="text-zinc-600 dark:text-zinc-400">قيمة الضريبة المضافة (16%):</span>
+                        <span class="font-bold font-mono text-amber-600">{{ number_format($taxAmount, 2) }}</span>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-2 bg-indigo-50 dark:bg-indigo-950/40 p-2 rounded mt-2 border border-indigo-200 dark:border-indigo-900">
+                    <span class="font-bold text-sm text-indigo-900 dark:text-indigo-200">المجموع النهائـي:</span>
+                    <span class="font-extrabold text-lg font-mono text-indigo-600 dark:text-indigo-400">{{ number_format($grandTotal, 2) }}</span>
+                </div>
+            </div>
+        </div>
+
     </div>
-</flux:main>
+</div>
+
+@script
+<script>
+    Alpine.data('gridNavigation', () => ({
+        selectFirstResultOrNext() {
+            let firstResult = document.querySelector('.absolute.z-50 tbody tr');
+            if (firstResult) {
+                firstResult.click();
+            } else if (this.$wire.selectedProductId) {
+                this.$refs.qtyInput.focus();
+                this.$refs.qtyInput.select();
+            } else {
+                this.$refs.searchInput.focus();
+            }
+        },
+        handleQtyEnter() {
+            if (!this.$wire.selectedProductId) {
+                this.$refs.searchInput.focus();
+                this.$refs.searchInput.select();
+            } else {
+                this.$refs.priceInput.focus();
+                this.$refs.priceInput.select();
+            }
+        },
+        handlePriceEnter() {
+            if (!this.$wire.selectedProductId) {
+                this.$refs.searchInput.focus();
+                this.$refs.searchInput.select();
+            } else {
+                this.$wire.commitRowToCart();
+            }
+        },
+        init() {
+            Livewire.on('focus-quantity', () => {
+                setTimeout(() => {
+                    this.$refs.qtyInput.focus();
+                    this.$refs.qtyInput.select();
+                }, 50);
+            });
+
+            Livewire.on('focus-search', () => {
+                setTimeout(() => {
+                    this.$refs.searchInput.focus();
+                    this.$refs.searchInput.select();
+                }, 50);
+            });
+        }
+    }));
+
+    $wire.on('do-kiosk-print', (event) => {
+        const inv = event.data;
+
+        let text = "";
+        text += "--------------------------------\n";
+        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "--------------------------------\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ: " + inv.date + "\n";
+        text += "العميل: " + inv.customer_name + "\n";
+        text += "--------------------------------\n";
+
+        inv.items.forEach(item => {
+            let total = ((item.price * item.quantity) - item.discount).toFixed(2);
+            text += item.name + "\n";
+            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+        });
+
+        text += "--------------------------------\n";
+        text += "المجموع: " + Number(inv.subtotal).toFixed(2) + " \n";
+        text += "الخصم: " + Number(inv.discount).toFixed(2) + " \n";
+        text += "الضريبة: " + Number(inv.tax).toFixed(2) + " \n";
+        text += "الإجمالي النهائي: " + Number(inv.total).toFixed(2) + " \n";
+        if (inv.notes) {
+            text += "ملاحظات: " + inv.notes + "\n";
+        }
+        text += "--------------------------------\n\n\n\n";
+
+        const intentUrl = "intent:" + encodeURIComponent(text) +
+            "#Intent;" +
+            "scheme=rawbt;" +
+            "package=ru.a402d.rawbtprinter;" +
+            "S.type=text/plain;" +
+            "end;";
+
+        window.location.href = intentUrl;
+    });
+</script>
+@endscript

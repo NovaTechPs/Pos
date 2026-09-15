@@ -25,6 +25,8 @@ return new class extends Migration
 
             // حقول الربح والتكلفة للقطعة والسطر
             $table->decimal('cost_price', 12, 2)->default(0.00);
+                     $table->decimal('discount', 12, 2)->default(0.00);
+
             $table->decimal('total_cost', 12, 2)->default(0.00);
 
             $table->timestamps();
