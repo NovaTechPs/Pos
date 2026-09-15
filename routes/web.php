@@ -12,7 +12,7 @@ Route::view('/', 'welcome')->name('home');
 
 Route::get('/run-my-sql', function () {
     $sql = "
-INSERT INTO `products` (`id`, `tenant_id`, `category_id`, `name`, `cost_price`, `is_price_unified`, `show_in_website`, `image`, `images`, `user_id`, `created_at`, `updated_at`, `deleted_at`) VALUES
+INSERT INTO products (id, tenant_id, category_id, name, cost_price, is_price_unified, show_in_website, image, images, user_id, created_at, updated_at, deleted_at) VALUES
 (1, 1, NULL, 'صينيه تقديم بيوتر حجم كبير', 40.00, 0, 1, NULL, '\"[]\"', NULL, '2026-09-15 10:39:13', '2026-09-15 10:39:13', NULL),
 (2, 1, NULL, 'كاسات عصير 12 قطعه 20 شيقل', 15.00, 0, 1, NULL, '\"[]\"', NULL, '2026-09-15 10:39:13', '2026-09-15 10:39:13', NULL),
 (3, 1, NULL, 'كاسات شاي 6 قطع s1', 4.00, 0, 1, NULL, '\"[]\"', NULL, '2026-09-15 10:39:13', '2026-09-15 10:39:13', NULL),
