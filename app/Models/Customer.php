@@ -27,4 +27,8 @@ class Customer extends Model
 {
     return $this->morphMany(Payment::class, 'payable');
 }
+public function invoices()
+    {
+        return $this->hasMany(order::class);
+    }
 }

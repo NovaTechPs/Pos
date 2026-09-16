@@ -18,10 +18,14 @@ new class extends Component {
     public $paid_amount = 0;
     public string $notes = ''; // حقل الملاحظات
 
+    // --- حقل البحث السريع المباشر فوق الجدول ---
+    public string $inlineSearchQuery = '';
+    public array $inlineSearchResults = [];
+
     // --- حقل البحث عن الفاتورة ---
     public string $searchInvoiceQuery = '';
 
-    // --- حقل البحث عن الأصناف (بالاسم أو الباركود) ---
+    // --- حقل البحث عن الأصناف في القائمة اليمينية ---
     public string $productSearchQuery = '';
 
     // --- تحديد الفرع الخاص بالأدمن والمستخدم ---
@@ -84,6 +88,48 @@ new class extends Component {
     public function updatedProductSearchQuery()
     {
         $this->loadQuickProducts();
+    }
+
+    // --- دالة البحث السريع المباشر فوق جدول السلة ---
+    public function updatedInlineSearchQuery()
+    {
+        $search = trim($this->inlineSearchQuery);
+        if ($search === '') {
+            $this->inlineSearchResults = [];
+            return;
+        }
+
+        $tenantId = session('active_tenant_id');
+        $branchId = $this->getActiveBranchId();
+
+        $this->inlineSearchResults = Product::where('tenant_id', $tenantId)
+            ->where(function ($q) use ($search, $tenantId) {
+                $q->where('name', 'like', '%' . $search . '%')
+                  ->orWhereHas('barcodes', function ($bQuery) use ($search, $tenantId) {
+                      $bQuery->where('tenant_id', $tenantId)
+                             ->where('barcode', 'like', '%' . $search . '%');
+                  });
+            })
+            ->take(7)
+            ->get()
+            ->map(function ($product) use ($branchId) {
+                $branchData = BranchProduct::where('branch_id', $branchId)
+                    ->where('product_id', $product->id)
+                    ->first();
+                $product->retail_price = $branchData?->retail_price ?? $product->retail_price ?? 0;
+                return $product;
+            })
+            ->toArray();
+    }
+
+    public function selectInlineProduct(int $productId)
+    {
+        $product = Product::find($productId);
+        if ($product) {
+            $this->addToCart($product);
+        }
+        $this->inlineSearchQuery = '';
+        $this->inlineSearchResults = [];
     }
 
     public function selectCategory(?int $categoryId = null)
@@ -528,6 +574,8 @@ new class extends Component {
         $this->notes = '';
         $this->searchInvoiceQuery = '';
         $this->productSearchQuery = '';
+        $this->inlineSearchQuery = '';
+        $this->inlineSearchResults = [];
         $this->total = 0;
         $this->calculated_discount = 0;
         $this->subtotal = 0;
@@ -824,6 +872,67 @@ new class extends Component {
         x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
         class="h-full">
         <div class="grid grid-cols-12 gap-2 h-full">
+
+            <!-- ==================== قسم الأصناف والأقسام (على اليمين) ==================== -->
+            <div
+                class="col-span-12 lg:col-span-5 flex flex-col h-full bg-white border border-slate-300 rounded-xl p-2.5 shadow-sm min-h-0 space-y-2">
+
+                <!-- حقل المباشرة لمسح الباركود بالأجهزة -->
+                <form wire:submit.prevent="scanBarcode" class="shrink-0">
+                    <input wire:model="barcode"
+                        placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه...' : 'امسح الباركود هنا لإضافته المباشرة...' }}"
+                        autofocus
+                        class="w-full bg-slate-50 border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-slate-300 focus:outline-indigo-600' }} rounded-lg p-2 text-xs font-semibold">
+                </form>
+
+                <!-- حقل البحث في الأصناف القائمة اليمينية -->
+                <div class="relative shrink-0">
+                    <input type="text"
+                        wire:model.live.debounce.250ms="productSearchQuery"
+                        placeholder="بحث في الأصناف (بالاسم أو الباركود)... 🔍"
+                        class="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg p-2 text-xs font-bold text-indigo-900 focus:outline-indigo-600 focus:bg-white placeholder-indigo-400">
+                    @if(!empty($productSearchQuery))
+                        <button type="button" wire:click="$set('productSearchQuery', '')"
+                            class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
+                            ✕
+                        </button>
+                    @endif
+                </div>
+
+                <!-- أزرار الأقسام -->
+                <div class="flex gap-1 overflow-x-auto pb-1 shrink-0 scrollbar-none">
+                    <button wire:click="selectCategory(null)"
+                        class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ is_null($selectedCategoryId) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
+                        الكل
+                    </button>
+                    @foreach ($categories as $cat)
+                        <button wire:click="selectCategory({{ $cat->id }})"
+                            class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ $selectedCategoryId === $cat->id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
+                            {{ $cat->name }}
+                        </button>
+                    @endforeach
+                </div>
+
+                <!-- شبكة الأصناف السريعة -->
+                <div class="flex-1 overflow-y-auto min-h-0 border border-slate-200 rounded-lg p-2 bg-slate-50">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        @forelse($quickProducts as $p)
+                            <button wire:click="addToCart({{ $p->id }})"
+                                class="{{ $isReturnMode ? 'bg-rose-700 hover:bg-rose-800 border-rose-900' : 'bg-indigo-700 hover:bg-indigo-800 border-indigo-900' }} text-white p-2 rounded-lg shadow-sm flex flex-col justify-between items-start text-right transition-all h-20 active:scale-95 border">
+                                <span class="text-xs font-bold line-clamp-2 leading-tight">{{ $p->name }}</span>
+                                <span
+                                    class="text-xs font-mono font-black text-amber-300 mt-1">{{ number_format($p->retail_price, 2) }}</span>
+                            </button>
+                        @empty
+                            <div class="col-span-full text-center py-16 text-slate-400 text-xs font-semibold">
+                                لا توجد منتجات مطابقة لنتيجة البحث
+                            </div>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== قسم الفاتورة والحسابات (على اليسار) ==================== -->
             <div class="col-span-12 lg:col-span-7 flex flex-col h-full space-y-2 min-h-0">
                 <div
                     class="bg-white border border-slate-300 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm shrink-0">
@@ -951,6 +1060,37 @@ new class extends Component {
 
                 <div
                     class="flex-1 bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm flex flex-col min-h-0">
+
+                    <!-- ==================== حقل البحث السريع المباشر فوق جدول الفاتورة ==================== -->
+                    <div class="p-2 bg-slate-50 border-b border-slate-200 relative shrink-0">
+                        <div class="relative">
+                            <input type="text"
+                                wire:model.live.debounce.200ms="inlineSearchQuery"
+                                placeholder="➕ إدخال سريع: اكتب اسم المنتج أو الباركود هنا لإضافته..."
+                                class="w-full bg-white border border-indigo-300 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-indigo-600 focus:ring-1 focus:ring-indigo-600 placeholder-slate-400">
+
+                            @if(!empty($inlineSearchQuery))
+                                <button type="button" wire:click="$set('inlineSearchQuery', '')" class="absolute left-2.5 top-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs">
+                                    ✕
+                                </button>
+                            @endif
+                        </div>
+
+                        <!-- قائمة النتائج المنسدلة للبحث السريع -->
+                        @if(!empty($inlineSearchResults))
+                            <div class="absolute right-2 left-2 top-full mt-1 bg-white border border-slate-300 rounded-lg shadow-xl z-30 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                @foreach($inlineSearchResults as $res)
+                                    <button type="button"
+                                        wire:click="selectInlineProduct({{ $res['id'] }})"
+                                        class="w-full text-right p-2 text-xs font-bold hover:bg-indigo-50 flex items-center justify-between transition-colors">
+                                        <span class="text-slate-800">{{ $res['name'] }}</span>
+                                        <span class="font-mono text-indigo-600 font-black">{{ number_format($res['retail_price'], 2) }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+
                     <div class="overflow-y-auto flex-1">
                         <table class="w-full text-right text-xs">
                             <thead class="bg-slate-200 sticky top-0 font-bold text-slate-800 border-b border-slate-300">
@@ -1115,64 +1255,6 @@ new class extends Component {
                             class="bg-slate-500 hover:bg-slate-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-bold p-2 shadow active:scale-95 transition-all text-xs text-center">
                             <span>تنظيف السلة (F4)</span>
                         </button>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                class="col-span-12 lg:col-span-5 flex flex-col h-full bg-white border border-slate-300 rounded-xl p-2.5 shadow-sm min-h-0 space-y-2">
-
-                <!-- حقل المباشرة لمسح الباركود بالأجهزة -->
-                <form wire:submit.prevent="scanBarcode" class="shrink-0">
-                    <input wire:model="barcode"
-                        placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه...' : 'امسح الباركود هنا لإضافته المباشرة...' }}"
-                        autofocus
-                        class="w-full bg-slate-50 border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-slate-300 focus:outline-indigo-600' }} rounded-lg p-2 text-xs font-semibold">
-                </form>
-
-                <!-- حقل البحث في الأصناف (بالاسم أو الباركود) -->
-                <div class="relative shrink-0">
-                    <input type="text"
-                        wire:model.live.debounce.250ms="productSearchQuery"
-                        placeholder="بحث في الأصناف (بالاسم أو الباركود)... 🔍"
-                        class="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg p-2 text-xs font-bold text-indigo-900 focus:outline-indigo-600 focus:bg-white placeholder-indigo-400">
-                    @if(!empty($productSearchQuery))
-                        <button type="button" wire:click="$set('productSearchQuery', '')"
-                            class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
-                            ✕
-                        </button>
-                    @endif
-                </div>
-
-                <!-- أزرار الأقسام -->
-                <div class="flex gap-1 overflow-x-auto pb-1 shrink-0 scrollbar-none">
-                    <button wire:click="selectCategory(null)"
-                        class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ is_null($selectedCategoryId) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
-                        الكل
-                    </button>
-                    @foreach ($categories as $cat)
-                        <button wire:click="selectCategory({{ $cat->id }})"
-                            class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ $selectedCategoryId === $cat->id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
-                            {{ $cat->name }}
-                        </button>
-                    @endforeach
-                </div>
-
-                <!-- شبكة الأصناف السريعة -->
-                <div class="flex-1 overflow-y-auto min-h-0 border border-slate-200 rounded-lg p-2 bg-slate-50">
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        @forelse($quickProducts as $p)
-                            <button wire:click="addToCart({{ $p->id }})"
-                                class="{{ $isReturnMode ? 'bg-rose-700 hover:bg-rose-800 border-rose-900' : 'bg-indigo-700 hover:bg-indigo-800 border-indigo-900' }} text-white p-2 rounded-lg shadow-sm flex flex-col justify-between items-start text-right transition-all h-20 active:scale-95 border">
-                                <span class="text-xs font-bold line-clamp-2 leading-tight">{{ $p->name }}</span>
-                                <span
-                                    class="text-xs font-mono font-black text-amber-300 mt-1">{{ number_format($p->retail_price, 2) }}</span>
-                            </button>
-                        @empty
-                            <div class="col-span-full text-center py-16 text-slate-400 text-xs font-semibold">
-                                لا توجد منتجات مطابقة لنتيجة البحث
-                            </div>
-                        @endforelse
                     </div>
                 </div>
             </div>
