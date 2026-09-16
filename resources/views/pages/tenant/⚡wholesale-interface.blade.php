@@ -495,55 +495,36 @@ new class extends Component {
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        const html = `<!DOCTYPE html>
-        <html dir="rtl" lang="ar">
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body { font-family: sans-serif; font-size: 11px; margin: 0; padding: 2px; }
-                .text-center { text-align: center; }
-                .bold { font-weight: bold; }
-                table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-                th, td { border-bottom: 1px dashed #000; padding: 3px 1px; text-align: center; font-size: 10px; }
-                .divider { border-top: 1px dashed #000; margin: 5px 0; }
-            </style>
-        </head>
-        <body>
-            <div class="text-center bold" style="font-size: 14px;">${inv.store_name || ''}</div>
-            <div class="divider"></div>
-            <div>رقم الفاتورة: ${inv.invoice_no}</div>
-            <div>التاريخ: ${inv.date}</div>
-            <div class="divider"></div>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="text-align: right;">الصنف</th>
-                        <th>العدد</th>
-                        <th>السعر</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${inv.items.map(item => `
-                        <tr>
-                            <td style="text-align: right;">${item.name}</td>
-                            <td>${item.quantity}</td>
-                            <td>${item.price}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-            <div class="divider"></div>
-            <div class="bold" style="text-align: left;">المجموع: ${inv.total}</div>
-        </body>
-        </html>`;
+        let text = "";
+        text += "--------------------------------\n";
+        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "--------------------------------\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ: " + inv.date + "\n";
+        text += "العميل: " + inv.customer_name + "\n";
+        if (inv.customer_phone) {
+            text += "الهاتف: " + inv.customer_phone + "\n";
+        }
+        text += "--------------------------------\n";
 
-        // إرسال البيانات كـ text/html ليعالجها RawBT كصفحة مصممة
-        const intentUrl = "intent:" + encodeURIComponent(html) +
+        inv.items.forEach(item => {
+            let total = (item.price * item.quantity).toFixed(2);
+            text += item.name + "\n";
+            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+        });
+
+        text += "--------------------------------\n";
+        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
+        if (inv.notes) {
+            text += "ملاحظات: " + inv.notes + "\n";
+        }
+        text += "--------------------------------\n\n\n\n";
+
+        const intentUrl = "intent:" + encodeURIComponent(text) +
             "#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
-            "type=text/html;" +
-            "S.type=text/html;" +
+            "S.type=text/plain;" +
             "end;";
 
         window.location.href = intentUrl;
