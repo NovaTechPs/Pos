@@ -31,12 +31,19 @@ new class extends Component
 
 <div class="p-6" x-data>
 
-    {{-- زر الطباعة --}}
-    <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
-        طباعة صامتة (RawBT) 🖨️
-    </button>
+    <div class="flex gap-3">
+        {{-- زر الطباعة الرئيسي --}}
+        <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
+            طباعة صامتة (RawBT) 🖨️
+        </button>
 
-    {{-- قالب الفاتورة الحرارية (مخفي من العرض العادي ومصمم بحدود سوداء واضحة) --}}
+        {{-- زر للاختبار المباشر لتأكد من تثبيت وتجاوب RawBT --}}
+        <a href="intent:#Intent;scheme=rawbt;package=ru.a404m.rawbtprinter;end;" class="px-4 py-2.5 bg-gray-600 text-white font-medium rounded-lg shadow hover:bg-gray-700 text-sm flex items-center">
+            اختبار فتح RawBT
+        </a>
+    </div>
+
+    {{-- قالب الفاتورة الحرارية --}}
     <div id="receipt-content" class="hidden">
         <div style="width: 58mm; padding: 2mm 0; font-family: Arial, sans-serif; font-size: 11px; color: #000; direction: rtl; text-align: center;">
 
@@ -96,25 +103,44 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Script الخاص بـ RawBT Silent Print --}}
+    {{-- Script المعالج لطباعة أندرويد والكمبيوتر --}}
     <script>
         document.addEventListener('livewire:init', () => {
             Livewire.on('trigger-rawbt-print', () => {
                 const element = document.getElementById('receipt-content');
+                if (!element) return;
+
                 element.classList.remove('hidden');
 
-                // تحويل المكون إلى HTML نصي صافي
-                const htmlContent = element.innerHTML;
-                element.classList.add('hidden');
+                const isAndroid = /android/i.test(navigator.userAgent);
 
-                // ترميز الـ HTML إلى Base64 لمنع مشاكل الحروف العربية في RawBT
-                const base64Html = btoa(unescape(encodeURIComponent(htmlContent)));
+                if (isAndroid) {
+                    try {
+                        const htmlContent = element.innerHTML;
 
-                // رابط الـ Intent المباشر الخاص بـ RawBT للطباعة الصامتة
-                const rawbtIntent = `intent:${base64Html}#Intent;scheme=rawbt;type=text/html;base64=true;package=ru.a404m.rawbtprinter;S.txt=;end;`;
+                        // معالجة الأحرف العربية وتحويلها بأمان إلى Base64
+                        const base64Html = btoa(encodeURIComponent(htmlContent).replace(/%([0-9A-F]{2})/g,
+                            function toSolidBytes(match, p1) {
+                                return String.fromCharCode('0x' + p1);
+                            }
+                        ));
 
-                // إرسال الأمر صامتاً
-                window.location.href = rawbtIntent;
+                        const rawbtIntent = `intent:${base64Html}#Intent;scheme=rawbt;type=text/html;base64=true;package=ru.a404m.rawbtprinter;S.txt=;end;`;
+
+                        element.classList.add('hidden');
+
+                        // توجيه الأمر لـ RawBT
+                        window.location.href = rawbtIntent;
+                    } catch (e) {
+                        console.error('خطأ في تحويل الفاتورة لـ RawBT:', e);
+                        window.print();
+                        element.classList.add('hidden');
+                    }
+                } else {
+                    // إذا كنت تعمل من متصفح كمبيوتر للتجربة
+                    window.print();
+                    setTimeout(() => element.classList.add('hidden'), 500);
+                }
             });
         });
     </script>
