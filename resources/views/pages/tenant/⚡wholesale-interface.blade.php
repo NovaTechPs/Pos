@@ -514,7 +514,7 @@ new class extends Component {
                     <td style="width: 22%; text-align: center; font-weight: bold;">${itemTotal}</td>
                     <td style="width: 18%; text-align: center;">${itemPrice}</td>
                     <td style="width: 12%; text-align: center;">${itemQty}</td>
-                    <td style="width: 40%; text-align: right; font-weight: bold; word-break: break-all;">${itemName}</td>
+                    <td style="width: 40%; text-align: right; font-weight: bold;">${itemName}</td>
                     <td style="width: 8%; text-align: center;">${index + 1}</td>
                 </tr>
             `;
@@ -528,7 +528,7 @@ new class extends Component {
         @page { margin: 0; size: auto; }
         * { box-sizing: border-box; }
         body {
-            font-family: Arial, sans-serif;
+            font-family: sans-serif;
             width: 100%;
             max-width: 58mm;
             margin: 0 auto;
@@ -647,14 +647,12 @@ new class extends Component {
 </body>
 </html>`;
 
-        // تحويل الـ HTML إلى Base64 لمنع مشاكل الترميز ومُعاملة RawBT لها كـ HTML صريح
-        const base64Html = btoa(unescape(encodeURIComponent(htmlTemplate)));
-
-        const intentUrl = "intent:data:text/html;charset=utf-8;base64," + base64Html +
-            "#Intent;" +
-            "scheme=rawbt;" +
+        // صياغة Intent الخاصة بـ RawBT لعرض الـ HTML مباشرة
+        const intentUrl = "intent:#Intent;" +
+            "action=ru.a402d.rawbtprinter.PRINT;" +
             "package=ru.a402d.rawbtprinter;" +
-            "S.type=text/html;" +
+            "type=text/html;" +
+            "S.text=" + encodeURIComponent(htmlTemplate) + ";" +
             "end;";
 
         window.location.href = intentUrl;
