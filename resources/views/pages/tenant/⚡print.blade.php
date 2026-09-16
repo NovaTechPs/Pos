@@ -24,24 +24,17 @@ new class extends Component
 
     public function printInvoice()
     {
-        $this->dispatch('trigger-rawbt-print');
+        $this->dispatch('trigger-rawbt-http');
     }
 };
 ?>
 
 <div class="p-6" x-data>
 
-    <div class="flex gap-3">
-        {{-- زر الطباعة الرئيسي --}}
-        <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
-            طباعة صامتة (RawBT) 🖨️
-        </button>
-
-        {{-- زر للاختبار المباشر لتأكد من تثبيت وتجاوب RawBT --}}
-        <a href="intent:#Intent;scheme=rawbt;package=ru.a404m.rawbtprinter;end;" class="px-4 py-2.5 bg-gray-600 text-white font-medium rounded-lg shadow hover:bg-gray-700 text-sm flex items-center">
-            اختبار فتح RawBT
-        </a>
-    </div>
+    {{-- زر الطباعة --}}
+    <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
+        طباعة صامتة عبر RawBT Server 🖨️
+    </button>
 
     {{-- قالب الفاتورة الحرارية --}}
     <div id="receipt-content" class="hidden">
@@ -103,43 +96,35 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Script المعالج لطباعة أندرويد والكمبيوتر --}}
+    {{-- Script الاتصال المباشر بـ RawBT Local Web Server --}}
     <script>
         document.addEventListener('livewire:init', () => {
-            Livewire.on('trigger-rawbt-print', () => {
+            Livewire.on('trigger-rawbt-http', async () => {
                 const element = document.getElementById('receipt-content');
                 if (!element) return;
 
                 element.classList.remove('hidden');
+                const htmlData = element.innerHTML;
+                element.classList.add('hidden');
 
-                const isAndroid = /android/i.test(navigator.userAgent);
+                // إرسال الطلب عبر HTTP POST لسيرفر RawBT الداخلي على الجهاز
+                try {
+                    const response = await fetch('http://localhost:40213/print', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'text/html; charset=utf-8'
+                        },
+                        body: htmlData
+                    });
 
-                if (isAndroid) {
-                    try {
-                        const htmlContent = element.innerHTML;
-
-                        // معالجة الأحرف العربية وتحويلها بأمان إلى Base64
-                        const base64Html = btoa(encodeURIComponent(htmlContent).replace(/%([0-9A-F]{2})/g,
-                            function toSolidBytes(match, p1) {
-                                return String.fromCharCode('0x' + p1);
-                            }
-                        ));
-
-                        const rawbtIntent = `intent:${base64Html}#Intent;scheme=rawbt;type=text/html;base64=true;package=ru.a404m.rawbtprinter;S.txt=;end;`;
-
-                        element.classList.add('hidden');
-
-                        // توجيه الأمر لـ RawBT
-                        window.location.href = rawbtIntent;
-                    } catch (e) {
-                        console.error('خطأ في تحويل الفاتورة لـ RawBT:', e);
-                        window.print();
-                        element.classList.add('hidden');
+                    if (!response.ok) {
+                        throw new Error('فشل الاستجابة من سيرفر RawBT المحلي');
                     }
-                } else {
-                    // إذا كنت تعمل من متصفح كمبيوتر للتجربة
+                } catch (error) {
+                    console.warn('السيرفر المحلي 40213 غير متاح، جارٍ تجربة الخيار الاحتياطي...', error);
+
+                    // احتياطي: فتح النافذة العادية في حال عدم تشغيل Web Server داخل التطبيق
                     window.print();
-                    setTimeout(() => element.classList.add('hidden'), 500);
                 }
             });
         });
