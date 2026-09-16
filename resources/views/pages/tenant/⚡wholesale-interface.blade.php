@@ -647,15 +647,9 @@ new class extends Component {
 </body>
 </html>`;
 
-        // صياغة Intent الخاصة بـ RawBT لعرض الـ HTML مباشرة
-        const intentUrl = "intent:#Intent;" +
-            "action=ru.a402d.rawbtprinter.PRINT;" +
-            "package=ru.a402d.rawbtprinter;" +
-            "type=text/html;" +
-            "S.text=" + encodeURIComponent(htmlTemplate) + ";" +
-            "end;";
-
-        window.location.href = intentUrl;
+        // تحويل الـ HTML إلى Base64 واستخدام الرابط المباشر لـ RawBT
+        const base64Html = btoa(unescape(encodeURIComponent(htmlTemplate)));
+        window.location.href = "rawbt:base64," + base64Html;
     });
 </script>
 @endscript
