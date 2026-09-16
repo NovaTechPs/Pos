@@ -493,75 +493,169 @@ new class extends Component {
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
-        // استخراج البيانات القادمة من حدث Livewire
         const inv = event.data || event[0];
-
-        // دالة ضبط المسافات والمحاذاة للأعمدة
-        const pad = (str, len, align = 'right') => {
-            str = String(str || '');
-            if (str.length >= len) return str.substring(0, len);
-            const space = ' '.repeat(len - str.length);
-            return align === 'left' ? str + space : space + str;
-        };
 
         // حساب مجموع أعداد القطع/الكميات
         const totalQuantity = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
-        let text = "";
+        // تفكيك التاريخ والوقت
+        const fullDate = inv.date || '';
+        const dateParts = fullDate.split(' ');
+        const dateOnly = dateParts[0] || '';
+        const timeOnly = dateParts[1] || '';
 
-        // 1. الترويسة العليا (Header)
-        text += "                " + (inv.store_name || "فانوس") + "                \n";
-        text += "  راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض  \n";
-        text += "                 النسخة الأصلية                 \n\n";
-
-        // 2. تفاصيل الفاتورة (رقم الفاتورة، التاريخ، الوقت)
-        text += pad("رقم الفاتورة: " + (inv.invoice_no || ''), 48, 'left') + "\n";
-        text += pad("التاريخ والوقت: " + (inv.date || ''), 48, 'left') + "\n";
-        text += "------------------------------------------------\n";
-
-        // 3. رأس الجدول
-        // التقسيم: المبلغ (9) | السعر (9) | الكمية (6) | البيان (20) | # (4) = 48 حرفاً
-        text += pad("مبلغ", 9) + pad("سعر", 9) + pad("كمية", 6) + pad("البيان", 20) + pad("#", 4) + "\n";
-        text += "------------------------------------------------\n";
-
-        // 4. عناصر الفاتورة
+        // بناء صفوف المنتجات للجدول
+        let itemsHtml = '';
         (inv.items || []).forEach((item, index) => {
             let itemTotal = (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2);
             let itemPrice = Number(item.price || 0).toFixed(2);
-            let itemQty = String(item.quantity || 0);
+            let itemQty = item.quantity || 0;
             let itemName = item.name || '';
 
-            text += pad(itemTotal, 9) + pad(itemPrice, 9) + pad(itemQty, 6) + pad(itemName, 20) + pad(index + 1, 4) + "\n";
+            itemsHtml += `
+                <tr>
+                    <td style="width: 15%; text-align: center;">${itemTotal}</td>
+                    <td style="width: 15%; text-align: center;">${itemPrice}</td>
+                    <td style="width: 12%; text-align: center;">${itemQty}</td>
+                    <td style="width: 48%; text-align: right; font-weight: bold;">${itemName}</td>
+                    <td style="width: 10%; text-align: center;">${index + 1}</td>
+                </tr>
+            `;
         });
 
-        text += "------------------------------------------------\n";
+        // قوالب HTML كاملة محددة الأبعاد للطابعة الحرارية (80mm / 58mm)
+        const htmlTemplate = `
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                @page { margin: 0; }
+                body {
+                    font-family: Arial, sans-serif;
+                    width: 100%;
+                    max-width: 80mm;
+                    margin: 0 auto;
+                    padding: 5px;
+                    box-sizing: border-box;
+                    color: #000;
+                    font-size: 13px;
+                }
+                .text-center { text-align: center; }
+                .text-right { text-align: right; }
+                .text-left { text-align: left; }
 
-        // 5. مجموع الكميات والمجموع الكلي
-        text += " مجموع الكميات : " + totalQuantity + "\n";
-        text += "------------------------------------------------\n";
-        text += "       المجموع : " + Number(inv.total || 0).toFixed(2) + "\n";
-        text += "================================================\n";
+                .header-title { font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+                .header-sub { font-size: 12px; margin-bottom: 2px; }
 
-        // 6. الصافي للدفع
-        text += "   الصافي للدفع (ش.ض) : " + Number(inv.total || 0).toFixed(2) + "\n";
-        text += "================================================\n\n";
+                .meta-table { width: 100%; margin-top: 10px; margin-bottom: 5px; border-collapse: collapse; }
+                .meta-table td { padding: 2px 0; font-size: 12px; font-weight: bold; }
 
-        // 7. الملاحظات (إن وجدت)
-        if (inv.notes) {
-            text += "ملاحظات: " + inv.notes + "\n";
-            text += "------------------------------------------------\n";
-        }
+                .items-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 5px;
+                }
+                .items-table th, .items-table td {
+                    border: 1px solid #000;
+                    padding: 4px 2px;
+                    font-size: 11px;
+                }
+                .items-table th {
+                    background-color: #fff;
+                    font-weight: bold;
+                }
 
-        // 8. التذييل وتاريخ الطباعة
-        text += "               الشامل لايت للمحاسبة              \n";
-        text += "تاريخ ووقت الطباعة: " + (inv.print_date || inv.date || '') + "\n\n\n\n";
+                .box-container {
+                    border: 1px solid #000;
+                    margin-top: 6px;
+                    padding: 4px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
 
-        // 9. إنشاء Intent وإرساله لتطبيق RawBT
-        const intentUrl = "intent:" + encodeURIComponent(text) +
+                .double-box {
+                    border: 2px solid #000;
+                    margin-top: 8px;
+                    padding: 6px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    text-align: center;
+                }
+
+                .footer {
+                    margin-top: 15px;
+                    font-size: 11px;
+                }
+            </style>
+        </head>
+        <body>
+            <!-- الترويسة العليا -->
+            <div class="text-center">
+                <div class="header-title">${inv.store_name || "فانوس"}</div>
+                <div class="header-sub">راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض</div>
+                <div class="header-sub" style="font-weight: bold;">النسخة الأصلية</div>
+            </div>
+
+            <!-- معلومات الفاتورة: الوقت - التاريخ - رقم الفاتورة -->
+            <table class="meta-table">
+                <tr>
+                    <td style="width: 25%; text-align: right;">${timeOnly} م</td>
+                    <td style="width: 40%; text-align: center;">${dateOnly}</td>
+                    <td style="width: 35%; text-align: left;">${inv.invoice_no || ''}</td>
+                </tr>
+            </table>
+
+            <!-- جدول الأصناف بالإطار -->
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="width: 15%;">مبلغ</th>
+                        <th style="width: 15%;">سعر</th>
+                        <th style="width: 12%;">كمية</th>
+                        <th style="width: 48%;">البيان</th>
+                        <th style="width: 10%;">#</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemsHtml}
+                </tbody>
+            </table>
+
+            <!-- مجموع الكميات -->
+            <div class="box-container text-center">
+                مجموع الكميات : ${totalQuantity}
+            </div>
+
+            <!-- المجموع الكلي -->
+            <div class="box-container text-center">
+                المجموع : ${Number(inv.total || 0).toFixed(2)}
+            </div>
+
+            <!-- الصافي للدفع بالإطار العريض -->
+            <div class="double-box">
+                الصافي للدفع (ش.ض) : ${Number(inv.total || 0).toFixed(2)}
+            </div>
+
+            <!-- الملاحظات إن وجدت -->
+            ${inv.notes ? `<div class="box-container text-right">ملاحظات: ${inv.notes}</div>` : ''}
+
+            <!-- التذييل -->
+            <div class="footer text-center">
+                <div>الشامل لايت للمحاسبة</div>
+                <div>تاريخ ووقت الطباعة: ${inv.date || ''}</div>
+            </div>
+        </body>
+        </html>
+        `;
+
+        // إرسال كود HTML كـ Data URI عبر Intent إلى RawBT
+        const encodedHtml = encodeURIComponent(htmlTemplate);
+        const intentUrl = "intent:text/html;utf-8," + encodedHtml +
             "#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
-            "S.type=text/plain;" +
+            "S.type=text/html;" +
             "end;";
 
         window.location.href = intentUrl;
