@@ -39,8 +39,14 @@ new class extends Component {
         return auth()->user()?->branch_id;
     }
 
-    // معالجة البحث ومسح الباركود التلقائي
+    // إعادة ضبط الترقيم عند التعديل في البحث
     public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    // دالة معالجة الباركود المسحوب عبر Enter
+    public function searchBarcode(): void
     {
         $this->resetPage();
 
@@ -53,7 +59,7 @@ new class extends Component {
         $tenantId = $this->getTenantId();
         if (!$tenantId) return;
 
-        // التحقق مما إذا كان المدخل يطابق باركود منتج بشكل دقيق
+        // البحث عن منتج يطابق الباركود بشكل دقيق
         $matchedProduct = Product::where('products.tenant_id', $tenantId)
             ->whereExists(function ($query) use ($trimmedSearch) {
                 $query->select(DB::raw(1))
@@ -63,7 +69,7 @@ new class extends Component {
             })
             ->first();
 
-        // إضافة المنتج مباشرة وتفريغ حقل البحث عند مطابقة الباركود
+        // إضافة المنتج فوراً للسلة وتفريغ حقل البحث
         if ($matchedProduct) {
             $this->addToCart($matchedProduct->id);
             $this->search = '';
@@ -315,7 +321,7 @@ new class extends Component {
                 <div class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                     <flux:input
                         wire:model.live.debounce.150ms="search"
-                        wire:keydown.enter="updatedSearch"
+                        wire:keydown.enter="searchBarcode"
                         placeholder="بحث باسم المنتج أو الباركود..."
                         icon="magnifying-glass"
                         class="w-full"
@@ -526,7 +532,7 @@ new class extends Component {
 
 @script
 <script>
-    // إعادة التركيز التلقائي على حقل الباركود لضمان المسح المستمر
+    // إعادة التركيز التلقائي على حقل الباركود لضمان جاهزيته دائماً للمسح
     Livewire.hook('commit', ({ respond }) => {
         respond(() => {
             const input = document.getElementById('barcode-search-input');
