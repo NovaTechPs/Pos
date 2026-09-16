@@ -121,25 +121,28 @@ class User extends Authenticatable implements PasskeyUser
     /**
      * التحقق مما إذا كان المستخدم يمتلك صلاحية معينة
      */
-    public function hasPermission(string $permissionName): bool
-    {
-        // 1. SaaS Admin لديه كل الصلاحيات
-        if ($this->isSaaSAdmin()) {
-            return true;
-        }
-
-        // 2. مالك المتجر لديه كل صلاحيات متجره
-        if ($this->isTenantOwner()) {
-            return true;
-        }
-
-        // 3. الموظف العادي: يتم الفحص عبر role_id و جدول الصلاحيات المربوط به
-        if (! $this->relationLoaded('role')) {
-            $this->load('role.permissions');
-        }
-
-        return $this->role
-            ? $this->role->permissions->contains('name', $permissionName)
-            : false;
+ public function hasPermission(string $permissionName): bool
+{
+    // 1. SaaS Admin لديه كل الصلاحيات
+    if ($this->isSaaSAdmin()) {
+        return true;
     }
+
+    // 2. مالك المتجر لديه كل صلاحيات متجره
+    if ($this->isTenantOwner()) {
+        return true;
+    }
+
+    // 3. إذا لم يمتلك دوراً، ارفض مباشرة دون الاستعلام من قاعدة البيانات
+    if (!$this->role_id) {
+        return false;
+    }
+
+    // 4. الموظف العادي: فحص الصلاحية مع تحميل العلاقة إذا لم تكن محمّلة
+    if (!$this->relationLoaded('role') || !$this->role->relationLoaded('permissions')) {
+        $this->load('role.permissions');
+    }
+
+    return $this->role ? $this->role->permissions->contains('name', $permissionName) : false;
+}
 }

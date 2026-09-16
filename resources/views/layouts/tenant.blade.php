@@ -35,73 +35,109 @@
 
         <flux:sidebar.nav>
             <flux:sidebar.group :heading="__('Platform')" class="grid">
-                <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                    {{ __('Dashboard') }}
-                </flux:sidebar.item>
 
-                <flux:sidebar.item icon="building-storefront" :href="route('branch')" :current="request()->routeIs('branch')" wire:navigate>
-                    {{ __('Branches') }}
-                </flux:sidebar.item>
+                @can('dashboard.view')
+                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
+                        {{ __('Dashboard') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="shield-check" :href="route('role')" :current="request()->routeIs('role')" wire:navigate>
-                    {{ __('Roles') }}
-                </flux:sidebar.item>
+                @can('branches.view')
+                    <flux:sidebar.item icon="building-storefront" :href="route('branch')" :current="request()->routeIs('branch')" wire:navigate>
+                        {{ __('Branches') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="user-group" :href="route('employees')" :current="request()->routeIs('employees')" wire:navigate>
-                    {{ __('Employees') }}
-                </flux:sidebar.item>
+                @can('roles.view')
+                    <flux:sidebar.item icon="shield-check" :href="route('role')" :current="request()->routeIs('role')" wire:navigate>
+                        {{ __('Roles') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="cube" :href="route('product')" :current="request()->routeIs('product')" wire:navigate>
-                    {{ __('Products') }}
-                </flux:sidebar.item>
+                @can('employees.view')
+                    <flux:sidebar.item icon="user-group" :href="route('employees')" :current="request()->routeIs('employees')" wire:navigate>
+                        {{ __('Employees') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="calculator" :href="route('pos')" :current="request()->routeIs('pos')" wire:navigate>
-                    {{ __('POS') }}
-                </flux:sidebar.item>
+                @can('products.view')
+                    <flux:sidebar.item icon="cube" :href="route('product')" :current="request()->routeIs('product')" wire:navigate>
+                        {{ __('Products') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="chart-bar-square" :href="route('analytics')" :current="request()->routeIs('analytics')" wire:navigate>
-                    {{ __('Analytics') }}
-                </flux:sidebar.item>
+                @can('pos.view')
+                    <flux:sidebar.item icon="calculator" :href="route('pos')" :current="request()->routeIs('pos')" wire:navigate>
+                        {{ __('POS') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="scale" :href="route('DailySettlementComponent')" :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
-                    {{ __('Daily Settlement') }}
-                </flux:sidebar.item>
+                @can('analytics.view')
+                    <flux:sidebar.item icon="chart-bar-square" :href="route('analytics')" :current="request()->routeIs('analytics')" wire:navigate>
+                        {{ __('Analytics') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="clipboard-document-list" :href="route('storeORDEE')" :current="request()->routeIs('storeORDEE')" wire:navigate>
-                    {{ __('Store Order') }}
-                </flux:sidebar.item>
+                @can('daily_settlement.view')
+                    <flux:sidebar.item icon="scale" :href="route('DailySettlementComponent')" :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
+                        {{ __('Daily Settlement') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="shopping-bag" :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])" :current="request()->routeIs('store')" wire:navigate>
-                    {{ __('Store') }}
-                </flux:sidebar.item>
+                @can('store_order.view')
+                    <flux:sidebar.item icon="clipboard-document-list" :href="route('storeORDEE')" :current="request()->routeIs('storeORDEE')" wire:navigate>
+                        {{ __('Store Order') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="building-office-2" :href="route('wholesaleinterface')" :current="request()->routeIs('wholesaleinterface')" wire:navigate>
-                    {{ __('Wholesale Sales') }}
-                </flux:sidebar.item>
+                @can('store.view')
+                    <flux:sidebar.item icon="shopping-bag" :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])" :current="request()->routeIs('store')" wire:navigate>
+                        {{ __('Store') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="truck" :href="route('wholesaleorders')" :current="request()->routeIs('wholesaleorders')" wire:navigate>
-                    {{ __('Van Sales') }}
-                </flux:sidebar.item>
+                @can('wholesale_sales.view')
+                    <flux:sidebar.item icon="building-office-2" :href="route('wholesaleinterface')" :current="request()->routeIs('wholesaleinterface')" wire:navigate>
+                        {{ __('Wholesale Sales') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="document-text" :href="route('wholesale')" :current="request()->routeIs('wholesale')" wire:navigate>
-                    {{ __('Sales Invoices') }}
-                </flux:sidebar.item>
+                @can('van_sales.view')
+                    <flux:sidebar.item icon="truck" :href="route('wholesaleorders')" :current="request()->routeIs('wholesaleorders')" wire:navigate>
+                        {{ __('Van Sales') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')" :current="request()->routeIs('purchases')" wire:navigate>
-                    {{ __('Purchase Invoices') }}
-                </flux:sidebar.item>
+                @can('sales_invoices.view')
+                    <flux:sidebar.item icon="document-text" :href="route('wholesale')" :current="request()->routeIs('wholesale')" wire:navigate>
+                        {{ __('Sales Invoices') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="users" :href="route('customer')" :current="request()->routeIs('customer')" wire:navigate>
-                    {{ __('Customers') }}
-                </flux:sidebar.item>
+                @can('purchase_invoices.view')
+                    <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')" :current="request()->routeIs('purchases')" wire:navigate>
+                        {{ __('Purchase Invoices') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="truck" :href="route('supplier')" :current="request()->routeIs('supplier')" wire:navigate>
-                    {{ __('Suppliers') }}
-                </flux:sidebar.item>
+                @can('customers.view')
+                    <flux:sidebar.item icon="users" :href="route('customer')" :current="request()->routeIs('customer')" wire:navigate>
+                        {{ __('Customers') }}
+                    </flux:sidebar.item>
+                @endcan
 
-                <flux:sidebar.item icon="credit-card" :href="route('payment')" :current="request()->routeIs('payment')" wire:navigate>
-                    {{ __('Vouchers') }}
-                </flux:sidebar.item>
+                @can('suppliers.view')
+                    <flux:sidebar.item icon="truck" :href="route('supplier')" :current="request()->routeIs('supplier')" wire:navigate>
+                        {{ __('Suppliers') }}
+                    </flux:sidebar.item>
+                @endcan
+
+                @can('vouchers.view')
+                    <flux:sidebar.item icon="credit-card" :href="route('payment')" :current="request()->routeIs('payment')" wire:navigate>
+                        {{ __('Vouchers') }}
+                    </flux:sidebar.item>
+                @endcan
+
             </flux:sidebar.group>
         </flux:sidebar.nav>
 

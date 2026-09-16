@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Permission;
 use Carbon\CarbonImmutable;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
@@ -29,6 +30,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+
+    try {
+        Permission::all()->each(function ($permission) {
+            Gate::define($permission->name, function ($user) use ($permission) {
+                return $user->hasPermission($permission->name);
+            });
+        });
+    } catch (\Exception $e) {
+        // لتجنب المشاكل عند تشغيل الـ Migrations لأول مرة
+    }
 
         view()->composer('*', function () {
             if (Session::has('locale')) {
