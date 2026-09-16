@@ -495,9 +495,20 @@ new class extends Component {
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
+        // دالة لموازنة النص العربي والإنكليزي بأطوال محددة
+        function padRight(str, length) {
+            str = String(str || '');
+            return str + ' '.repeat(Math.max(0, length - str.length));
+        }
+
+        function padLeft(str, length) {
+            str = String(str || '');
+            return ' '.repeat(Math.max(0, length - str.length)) + str;
+        }
+
         let text = "";
         text += "--------------------------------\n";
-        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "       " + (inv.store_name || "المتجر") + "       \n";
         text += "--------------------------------\n";
         text += "رقم الفاتورة: " + inv.invoice_no + "\n";
         text += "التاريخ: " + inv.date + "\n";
@@ -505,17 +516,39 @@ new class extends Component {
         if (inv.customer_phone) {
             text += "الهاتف: " + inv.customer_phone + "\n";
         }
+        text += "================================\n";
+
+        // ترويسة الجدول
+        // العرض الإجمالي: 32 حرفاً (14 للصنف | 4 للكمية | 6 للسعر | 8 للمجموع)
+        text += "البيان         العدد  السعر   المجموع\n";
         text += "--------------------------------\n";
 
         inv.items.forEach(item => {
+            let name = item.name.trim();
+            let qty = String(item.quantity);
+            let price = Number(item.price).toFixed(2);
             let total = (item.price * item.quantity).toFixed(2);
-            text += item.name + "\n";
-            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+
+            // إذا كان اسم المنتج طويلاً، نطبع الاسم أولاً ثم تفاصيل السطر في سطر جديد
+            if (name.length > 14) {
+                text += name + "\n";
+                text += padRight("", 14) +
+                        padLeft(qty, 4) + " " +
+                        padLeft(price, 6) + " " +
+                        padLeft(total, 7) + "\n";
+            } else {
+                text += padRight(name, 14) + " " +
+                        padLeft(qty, 3) + " " +
+                        padLeft(price, 6) + " " +
+                        padLeft(total, 7) + "\n";
+            }
         });
 
-        text += "--------------------------------\n";
-        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
+        text += "================================\n";
+        text += padRight("الإجمالي:", 20) + padLeft(Number(inv.total).toFixed(2), 12) + "\n";
+
         if (inv.notes) {
+            text += "--------------------------------\n";
             text += "ملاحظات: " + inv.notes + "\n";
         }
         text += "--------------------------------\n\n\n\n";
