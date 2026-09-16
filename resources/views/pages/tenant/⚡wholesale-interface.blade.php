@@ -495,40 +495,31 @@ new class extends Component {
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // بناء الفاتورة بتنسيق HTML مضغوط ومناسب للطباعة الحرارية (80mm / 58mm)
-        let html = `
-        <!DOCTYPE html>
+        const html = `<!DOCTYPE html>
         <html dir="rtl" lang="ar">
         <head>
             <meta charset="UTF-8">
             <style>
-                body { font-family: sans-serif; font-size: 12px; margin: 0; padding: 5px; width: 100%; }
+                body { font-family: sans-serif; font-size: 11px; margin: 0; padding: 2px; }
                 .text-center { text-align: center; }
-                .text-left { text-align: left; }
-                .text-right { text-align: right; }
                 .bold { font-weight: bold; }
                 table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-                th, td { border-bottom: 1px solid #ddd; padding: 4px 2px; text-align: center; font-size: 11px; }
-                th { background-color: #f5f5f5; }
-                .divider { border-top: 1px dashed #000; margin: 6px 0; }
-                .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+                th, td { border-bottom: 1px dashed #000; padding: 3px 1px; text-align: center; font-size: 10px; }
+                .divider { border-top: 1px dashed #000; margin: 5px 0; }
             </style>
         </head>
         <body>
-            <div class="text-center bold" style="font-size: 16px;">${inv.store_name || "شركه النور للتجارة"}</div>
+            <div class="text-center bold" style="font-size: 14px;">${inv.store_name || ''}</div>
             <div class="divider"></div>
-            <div><b>رقم الفاتورة:</b> ${inv.invoice_no}</div>
-            <div><b>التاريخ:</b> ${inv.date}</div>
-            <div><b>العميل:</b> ${inv.customer_name}</div>
-            ${inv.customer_phone ? `<div><b>الهاتف:</b> ${inv.customer_phone}</div>` : ''}
-
+            <div>رقم الفاتورة: ${inv.invoice_no}</div>
+            <div>التاريخ: ${inv.date}</div>
+            <div class="divider"></div>
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 45%; text-align: right;">البيان</th>
-                        <th style="width: 15%;">العدد</th>
-                        <th style="width: 20%;">السعر</th>
-                        <th style="width: 20%;">المجموع</th>
+                        <th style="text-align: right;">الصنف</th>
+                        <th>العدد</th>
+                        <th>السعر</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -536,35 +527,22 @@ new class extends Component {
                         <tr>
                             <td style="text-align: right;">${item.name}</td>
                             <td>${item.quantity}</td>
-                            <td>${Number(item.price).toFixed(2)} ₪</td>
-                            <td>${(item.price * item.quantity).toFixed(2)} ₪</td>
+                            <td>${item.price}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
-
-            <div class="double-divider"></div>
-            <div style="display: flex; justify-content: space-between; font-size: 14px;" class="bold">
-                <span>الإجمالي:</span>
-                <span>${Number(inv.total).toFixed(2)} ₪</span>
-            </div>
-
-            ${inv.notes ? `
-                <div class="divider"></div>
-                <div><b>ملاحظات:</b> ${inv.notes}</div>
-            ` : ''}
-
             <div class="divider"></div>
-            <div class="text-center" style="margin-top: 10px;">شكراً لتعاملكم معنا</div>
+            <div class="bold" style="text-align: left;">المجموع: ${inv.total}</div>
         </body>
-        </html>
-        `;
+        </html>`;
 
-        // إرسال HTML إلى RawBT
+        // إرسال البيانات كـ text/html ليعالجها RawBT كصفحة مصممة
         const intentUrl = "intent:" + encodeURIComponent(html) +
             "#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
+            "type=text/html;" +
             "S.type=text/html;" +
             "end;";
 
