@@ -493,163 +493,41 @@ new class extends Component {
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
-        const inv = event.data || event[0];
+        const inv = event.data;
 
-        const totalQuantity = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        let text = "";
+        text += "--------------------------------\n";
+        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "--------------------------------\n";
+        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
+        text += "التاريخ: " + inv.date + "\n";
+        text += "العميل: " + inv.customer_name + "\n";
+        if (inv.customer_phone) {
+            text += "الهاتف: " + inv.customer_phone + "\n";
+        }
+        text += "--------------------------------\n";
 
-        const fullDate = inv.date || '';
-        const dateParts = fullDate.split(' ');
-        const dateOnly = dateParts[0] || '';
-        const timeOnly = dateParts[1] || '';
-
-        let itemsHtml = '';
-        (inv.items || []).forEach((item, index) => {
-            let itemTotal = (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2);
-            let itemPrice = Number(item.price || 0).toFixed(2);
-            let itemQty = item.quantity || 0;
-            let itemName = item.name || '';
-
-            itemsHtml += `
-                <tr>
-                    <td style="width: 22%; text-align: center; font-weight: bold;">${itemTotal}</td>
-                    <td style="width: 18%; text-align: center;">${itemPrice}</td>
-                    <td style="width: 12%; text-align: center;">${itemQty}</td>
-                    <td style="width: 40%; text-align: right; font-weight: bold;">${itemName}</td>
-                    <td style="width: 8%; text-align: center;">${index + 1}</td>
-                </tr>
-            `;
+        inv.items.forEach(item => {
+            let total = (item.price * item.quantity).toFixed(2);
+            text += item.name + "\n";
+            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
         });
 
-        const htmlTemplate = `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        @page { margin: 0; size: auto; }
-        * { box-sizing: border-box; }
-        body {
-            font-family: sans-serif;
-            width: 100%;
-            max-width: 58mm;
-            margin: 0 auto;
-            padding: 2px;
-            color: #000;
-            font-size: 11px;
-            line-height: 1.2;
+        text += "--------------------------------\n";
+        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
+        if (inv.notes) {
+            text += "ملاحظات: " + inv.notes + "\n";
         }
-        .text-center { text-align: center; }
-        .text-right { text-align: right; }
-        .header-title { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
-        .header-sub { font-size: 10px; margin-bottom: 2px; }
+        text += "--------------------------------\n\n\n\n";
 
-        .meta-table {
-            width: 100%;
-            margin-top: 6px;
-            margin-bottom: 4px;
-            border-collapse: collapse;
-            border: 1px solid #000;
-        }
-        .meta-table td {
-            padding: 3px 2px;
-            font-size: 10px;
-            font-weight: bold;
-            border: 1px solid #000;
-        }
+        const intentUrl = "intent:" + encodeURIComponent(text) +
+            "#Intent;" +
+            "scheme=rawbt;" +
+            "package=ru.a402d.rawbtprinter;" +
+            "S.type=text/plain;" +
+            "end;";
 
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 4px;
-        }
-        .items-table th, .items-table td {
-            border: 1px solid #000 !important;
-            padding: 3px 1px;
-            font-size: 10px;
-        }
-        .items-table th {
-            background-color: #f0f0f0;
-            font-weight: bold;
-        }
-
-        .box-container {
-            border: 1px solid #000;
-            margin-top: 4px;
-            padding: 3px;
-            font-size: 11px;
-            font-weight: bold;
-        }
-
-        .double-box {
-            border: 2px solid #000;
-            margin-top: 5px;
-            padding: 4px;
-            font-size: 13px;
-            font-weight: bold;
-            text-align: center;
-        }
-
-        .footer {
-            margin-top: 10px;
-            padding-top: 4px;
-            border-top: 1px dashed #000;
-            font-size: 9px;
-        }
-    </style>
-</head>
-<body>
-    <div class="text-center">
-        <div class="header-title">${inv.store_name || "فانوس"}</div>
-        <div class="header-sub">راجع فاتورتك قبل مغادرة المعرض</div>
-        <div class="header-sub" style="font-weight: bold;">النسخة الأصلية</div>
-    </div>
-
-    <table class="meta-table">
-        <tr>
-            <td style="width: 30%; text-align: center;">${timeOnly}</td>
-            <td style="width: 35%; text-align: center;">${dateOnly}</td>
-            <td style="width: 35%; text-align: center;">${inv.invoice_no || ''}</td>
-        </tr>
-    </table>
-
-    <table class="items-table">
-        <thead>
-            <tr>
-                <th style="width: 22%;">مبلغ</th>
-                <th style="width: 18%;">سعر</th>
-                <th style="width: 12%;">كمية</th>
-                <th style="width: 40%;">البيان</th>
-                <th style="width: 8%;">#</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${itemsHtml}
-        </tbody>
-    </table>
-
-    <div class="box-container text-center">
-        مجموع الكميات : ${totalQuantity}
-    </div>
-
-    <div class="box-container text-center">
-        المجموع : ${Number(inv.total || 0).toFixed(2)}
-    </div>
-
-    <div class="double-box">
-        الصافي للدفع (ش.ض) : ${Number(inv.total || 0).toFixed(2)}
-    </div>
-
-    ${inv.notes ? `<div class="box-container text-right">ملاحظات: ${inv.notes}</div>` : ''}
-
-    <div class="footer text-center">
-        <div>الشامل لايت للمحاسبة</div>
-        <div>تاريخ الطباعة: ${inv.date || ''}</div>
-    </div>
-</body>
-</html>`;
-
-        // تحويل الـ HTML إلى Base64 واستخدام الرابط المباشر لـ RawBT
-        const base64Html = btoa(unescape(encodeURIComponent(htmlTemplate)));
-        window.location.href = "rawbt:base64," + base64Html;
+        window.location.href = intentUrl;
     });
 </script>
 @endscript
