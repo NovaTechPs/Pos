@@ -85,7 +85,7 @@ new class extends Component {
     {
         $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
         $this->selectedCustomerForStatement = Customer::where('tenant_id', $tenantId)
-            ->with(['invoices', 'payments']) // افتراض وجود علاقات بالفواتير والدفعات
+            ->with(['invoices', 'payments'])
             ->findOrFail($id);
 
         $this->showStatementModal = true;
@@ -147,17 +147,17 @@ new class extends Component {
 ?>
 
 <flux:main class="space-y-6">
-<div class="p-6 bg-gray-50 min-h-screen space-y-6" dir="rtl" x-data="thermalPrinter()">
+<div class="p-3 sm:p-6 bg-gray-50 min-h-screen space-y-4 sm:space-y-6" dir="rtl" x-data="thermalPrinter()">
 
     <!-- الهيدر العلوي -->
-    <div class="flex justify-between items-start mb-6">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2 sm:mb-6">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">إدارة العملاء</h1>
-            <p class="text-sm text-gray-500 mt-1">عرض وإدارة العملاء وعناوينهم</p>
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800">إدارة العملاء</h1>
+            <p class="text-xs sm:text-sm text-gray-500 mt-1">عرض وإدارة العملاء وعناوينهم</p>
         </div>
 
         <button wire:click="openCreateModal"
-            class="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
+            class="w-full sm:w-auto justify-center bg-gray-900 hover:bg-black text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
             <span>إضافة عميل جديد</span>
             <span class="text-lg leading-none">+</span>
         </button>
@@ -165,55 +165,55 @@ new class extends Component {
 
     <!-- رسائل التنبيه -->
     @if (session()->has('message'))
-        <div class="p-4 mb-4 text-sm text-green-800 bg-green-100 rounded-lg border border-green-200">
+        <div class="p-4 text-sm text-green-800 bg-green-100 rounded-lg border border-green-200">
             {{ session('message') }}
         </div>
     @endif
 
-    <!-- شريط البحث -->
-    <div class="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div class="relative w-full md:w-1/3">
+    <!-- شريط البحث والتصفح -->
+    <div class="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="relative w-full sm:w-1/2 md:w-1/3">
             <input type="text" wire:model.live.debounce.300ms="search"
                 placeholder="ابحث بالاسم، الهاتف أو العنوان..."
                 class="w-full pl-4 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
             <span class="absolute right-3 top-2.5 text-gray-400">🔍</span>
         </div>
 
-        <select wire:model.live="perPage" class="border border-gray-200 rounded-lg text-sm p-2 text-gray-600 bg-white">
+        <select wire:model.live="perPage" class="w-full sm:w-auto border border-gray-200 rounded-lg text-sm p-2 text-gray-600 bg-white">
             <option value="10">10 لكل صفحة</option>
             <option value="25">25 لكل صفحة</option>
             <option value="50">50 لكل صفحة</option>
         </select>
     </div>
 
-    <!-- جدول عرض العملاء -->
-    <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-        <table class="w-full text-right border-collapse">
+    <!-- جدول عرض العملاء بالتجاوب الأصلي -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+        <table class="w-full text-right border-collapse min-w-[650px]">
             <thead>
                 <tr class="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <th class="p-4">#</th>
-                    <th class="p-4">اسم العميل</th>
-                    <th class="p-4">رقم الهاتف</th>
-                    <th class="p-4">البريد الإلكتروني</th>
-                    <th class="p-4">الموقع / العنوان</th>
-                    <th class="p-4">الرصيد الافتتاحي</th>
-                    <th class="p-4 text-center">الإجراءات</th>
+                    <th class="p-3 sm:p-4">#</th>
+                    <th class="p-3 sm:p-4">اسم العميل</th>
+                    <th class="p-3 sm:p-4">رقم الهاتف</th>
+                    <th class="p-3 sm:p-4 hidden md:table-cell">البريد الإلكتروني</th>
+                    <th class="p-3 sm:p-4 hidden sm:table-cell">الموقع / العنوان</th>
+                    <th class="p-3 sm:p-4">الرصيد الافتتاحي</th>
+                    <th class="p-3 sm:p-4 text-center">الإجراءات</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 text-sm">
+            <tbody class="divide-y divide-gray-100 text-xs sm:text-sm">
                 @forelse ($customers as $customer)
                     <tr class="hover:bg-gray-50/50 transition">
-                        <td class="p-4 text-gray-400">{{ $loop->iteration }}</td>
-                        <td class="p-4 font-semibold text-gray-800">{{ $customer->name }}</td>
-                        <td class="p-4 text-gray-600" dir="ltr">{{ $customer->phone ?? '-' }}</td>
-                        <td class="p-4 text-gray-500">{{ $customer->email ?? '-' }}</td>
-                        <td class="p-4 text-gray-700 font-medium">{{ $customer->address ?? '-' }}</td>
-                        <td class="p-4 font-medium text-gray-800">{{ number_format($customer->opening_balance, 2) }}</td>
-                        <td class="p-4 text-center">
-                            <div class="flex justify-center items-center gap-3">
-                                <button wire:click="openStatementModal({{ $customer->id }})" class="text-gray-400 hover:text-emerald-600 transition" title="كشف حساب">📜</button>
-                                <button wire:click="editCustomer({{ $customer->id }})" class="text-gray-400 hover:text-blue-600 transition" title="تعديل">✏️</button>
-                                <button wire:click="deleteCustomer({{ $customer->id }})" wire:confirm="هل أنت تأكد من حذف هذا العميل؟" class="text-gray-400 hover:text-red-600 transition" title="حذف">🗑️</button>
+                        <td class="p-3 sm:p-4 text-gray-400">{{ $loop->iteration }}</td>
+                        <td class="p-3 sm:p-4 font-semibold text-gray-800 whitespace-nowrap">{{ $customer->name }}</td>
+                        <td class="p-3 sm:p-4 text-gray-600 whitespace-nowrap" dir="ltr">{{ $customer->phone ?? '-' }}</td>
+                        <td class="p-3 sm:p-4 text-gray-500 hidden md:table-cell">{{ $customer->email ?? '-' }}</td>
+                        <td class="p-3 sm:p-4 text-gray-700 font-medium hidden sm:table-cell">{{ $customer->address ?? '-' }}</td>
+                        <td class="p-3 sm:p-4 font-medium text-gray-800 whitespace-nowrap">{{ number_format($customer->opening_balance, 2) }}</td>
+                        <td class="p-3 sm:p-4 text-center whitespace-nowrap">
+                            <div class="flex justify-center items-center gap-2 sm:gap-3">
+                                <button wire:click="openStatementModal({{ $customer->id }})" class="p-1 text-gray-400 hover:text-emerald-600 transition text-base" title="كشف حساب">📜</button>
+                                <button wire:click="editCustomer({{ $customer->id }})" class="p-1 text-gray-400 hover:text-blue-600 transition text-base" title="تعديل">✏️</button>
+                                <button wire:click="deleteCustomer({{ $customer->id }})" wire:confirm="هل أنت متأكد من حذف هذا العميل؟" class="p-1 text-gray-400 hover:text-red-600 transition text-base" title="حذف">🗑️</button>
                             </div>
                         </td>
                     </tr>
@@ -230,25 +230,25 @@ new class extends Component {
         {{ $customers->links() }}
     </div>
 
-    <!-- نافذة إضافة / تعديل عميل -->
+    <!-- نافذة إضافة / تعديل عميل المتجاوبة -->
     @if ($showModal)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl overflow-hidden border border-gray-100 animate-fadeIn">
-                <div class="flex justify-between items-center p-5 border-b border-gray-100">
-                    <h3 class="text-lg font-bold text-gray-800">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-auto overflow-hidden border border-gray-100 animate-fadeIn max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100">
+                    <h3 class="text-base sm:text-lg font-bold text-gray-800">
                         {{ $customerId ? 'تعديل بيانات العميل' : 'إضافة عميل جديد' }}
                     </h3>
-                    <button wire:click="closeModal" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+                    <button wire:click="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
                 </div>
 
-                <form wire:submit="save" class="p-6 space-y-4">
+                <form wire:submit="save" class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">اسم العميل <span class="text-red-500">*</span></label>
                         <input type="text" wire:model="name" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                         @error('name') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">رقم الهاتف</label>
                             <input type="text" wire:model="phone" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
@@ -264,7 +264,7 @@ new class extends Component {
                         <input type="text" wire:model="address" placeholder="مثال: نابلس - شارع سفيان" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">الرصيد الافتتاحي</label>
                             <input type="number" step="0.01" wire:model="opening_balance" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
@@ -287,53 +287,54 @@ new class extends Component {
         </div>
     @endif
 
-    <!-- مودال كشف الحساب -->
+    <!-- مودال كشف الحساب المتجاوب -->
     @if ($showStatementModal && $selectedCustomerForStatement)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden border border-gray-100">
-                <div class="flex justify-between items-center p-5 border-b border-gray-100">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden border border-gray-100 max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100">
                     <div>
-                        <h3 class="text-lg font-bold text-gray-800">كشف حساب العميل</h3>
+                        <h3 class="text-base sm:text-lg font-bold text-gray-800">كشف حساب العميل</h3>
                         <p class="text-xs text-gray-500">{{ $selectedCustomerForStatement->name }} ({{ $selectedCustomerForStatement->phone ?? 'بدون رقم' }})</p>
                     </div>
-                    <button wire:click="closeStatementModal" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+                    <button wire:click="closeStatementModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
                 </div>
 
-                <div class="p-6 space-y-4 max-h-[60vh] overflow-y-auto" id="statement-print-area">
-                    <div class="flex justify-between text-sm bg-gray-50 p-3 rounded-lg">
+                <div class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1" id="statement-print-area">
+                    <div class="flex justify-between text-xs sm:text-sm bg-gray-50 p-3 rounded-lg">
                         <span>الرصيد الافتتاحي:</span>
                         <span class="font-bold">{{ number_format($selectedCustomerForStatement->opening_balance, 2) }}</span>
                     </div>
 
-                    <table class="w-full text-right text-xs">
-                        <thead>
-                            <tr class="bg-gray-100 text-gray-600">
-                                <th class="p-2">التاريخ</th>
-                                <th class="p-2">البيان</th>
-                                <th class="p-2">مدين</th>
-                                <th class="p-2">دائن</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <tr>
-                                <td class="p-2">{{ $selectedCustomerForStatement->created_at->format('Y-m-d') }}</td>
-                                <td class="p-2">رصيد افتتاحي</td>
-                                <td class="p-2">{{ number_format($selectedCustomerForStatement->opening_balance, 2) }}</td>
-                                <td class="p-2">0.00</td>
-                            </tr>
-                            <!-- يضاف هنا حلقات تكرار الفواتير والدفعات (invoices / payments) -->
-                        </tbody>
-                    </table>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-right text-xs min-w-[300px]">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-600">
+                                    <th class="p-2">التاريخ</th>
+                                    <th class="p-2">البيان</th>
+                                    <th class="p-2">مدين</th>
+                                    <th class="p-2">دائن</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <tr>
+                                    <td class="p-2 whitespace-nowrap">{{ $selectedCustomerForStatement->created_at->format('Y-m-d') }}</td>
+                                    <td class="p-2">رصيد افتتاحي</td>
+                                    <td class="p-2 whitespace-nowrap">{{ number_format($selectedCustomerForStatement->opening_balance, 2) }}</td>
+                                    <td class="p-2 whitespace-nowrap">0.00</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <div class="flex justify-between gap-3 p-4 border-t border-gray-100 bg-gray-50">
-                    <button type="button" @click="connectPrinter()" class="px-4 py-2 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1">
+                <div class="flex flex-col sm:flex-row justify-between gap-3 p-4 border-t border-gray-100 bg-gray-50">
+                    <button type="button" @click="connectPrinter()" class="w-full sm:w-auto px-4 py-2 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1">
                         🔌 ربط الطابعة
                     </button>
-                    <div class="flex gap-2">
-                        <button type="button" wire:click="closeStatementModal" class="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">إغلاق</button>
-                        <button type="button" @click="printStatement({{ json_encode($selectedCustomerForStatement) }})" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center gap-2">
-                            <span>طباعة حرارية صامتة</span> 🖨️
+                    <div class="flex gap-2 w-full sm:w-auto">
+                        <button type="button" wire:click="closeStatementModal" class="flex-1 sm:flex-none px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 text-center">إغلاق</button>
+                        <button type="button" @click="printStatement({{ json_encode($selectedCustomerForStatement) }})" class="flex-1 sm:flex-none px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                            <span>طباعة حرارية</span> 🖨️
                         </button>
                     </div>
                 </div>
@@ -348,7 +349,6 @@ new class extends Component {
 document.addEventListener('alpine:init', () => {
     Alpine.data('thermalPrinter', () => ({
         port: null,
-        writer: null,
 
         async connectPrinter() {
             try {
@@ -370,32 +370,31 @@ document.addEventListener('alpine:init', () => {
             }
 
             try {
-                const textEncoder = new TextEncoder();
-                const writableStreamClosed = this.port.writable.getWriter();
+                const writer = this.port.writable.getWriter();
 
-                // أوامر ESC/POS للطباعة الحرارية
-                let esc = '\x1B';
-                let init = esc + '@'; // تهيئة الطابعة
-                let alignCenter = esc + 'a' + '\x01';
-                let alignRight = esc + 'a' + '\x02';
+                // تحضير أوامر ESC/POS
+                const esc = '\x1B';
+                const init = esc + '@';
+                const alignCenter = esc + 'a' + '\x01';
+                const alignRight = esc + 'a' + '\x02';
+                const cut = esc + 'i';
 
-                let receipt = init + alignCenter;
-                receipt += "==============================\n";
-                receipt += "        كشف حساب عميل        \n";
-                receipt += "==============================\n";
-                receipt += alignRight;
-                receipt += `الاسم: ${customer.name}\n`;
-                receipt += `الهاتف: ${customer.phone || '-'}\n`;
-                receipt += `التاريخ: ${new Date().toLocaleDateString('ar-EG')}\n`;
-                receipt += "------------------------------\n";
-                receipt += `الرصيد الافتتاحي: ${customer.opening_balance}\n`;
-                receipt += "------------------------------\n\n\n\n";
+                let rawText = init + alignCenter;
+                rawText += "==============================\n";
+                rawText += "         STATEMENT            \n";
+                rawText += "==============================\n";
+                rawText += alignRight;
+                rawText += `Name: ${customer.name}\n`;
+                rawText += `Phone: ${customer.phone || '-'}\n`;
+                rawText += `Date: ${new Date().toISOString().split('T')[0]}\n`;
+                rawText += "------------------------------\n";
+                rawText += `Opening Bal: ${customer.opening_balance}\n`;
+                rawText += "------------------------------\n\n\n\n";
+                rawText += cut;
 
-                // قطع الورق (Cut)
-                receipt += esc + 'i';
-
-                await writableStreamClosed.write(textEncoder.encode(receipt));
-                writableStreamClosed.releaseLock();
+                const encoder = new TextEncoder();
+                await writer.write(encoder.encode(rawText));
+                writer.releaseLock();
             } catch (e) {
                 alert('خطأ أثناء الطباعة: ' + e.message);
             }
