@@ -39,9 +39,35 @@ new class extends Component {
         return auth()->user()?->branch_id;
     }
 
-    public function updatedSearch()
+    // معالجة البحث ومسح الباركود التلقائي
+    public function updatedSearch(): void
     {
         $this->resetPage();
+
+        $trimmedSearch = trim($this->search);
+
+        if (empty($trimmedSearch)) {
+            return;
+        }
+
+        $tenantId = $this->getTenantId();
+        if (!$tenantId) return;
+
+        // التحقق مما إذا كان المدخل يطابق باركود منتج بشكل دقيق
+        $matchedProduct = Product::where('products.tenant_id', $tenantId)
+            ->whereExists(function ($query) use ($trimmedSearch) {
+                $query->select(DB::raw(1))
+                    ->from('product_barcodes')
+                    ->whereColumn('product_barcodes.product_id', 'products.id')
+                    ->where('product_barcodes.barcode', $trimmedSearch);
+            })
+            ->first();
+
+        // إضافة المنتج مباشرة وتفريغ حقل البحث عند مطابقة الباركود
+        if ($matchedProduct) {
+            $this->addToCart($matchedProduct->id);
+            $this->search = '';
+        }
     }
 
     // جلب آخر 10 عمليات بيع للمنتج مع العميل المحدد
@@ -287,7 +313,15 @@ new class extends Component {
             <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3 lg:h-full lg:overflow-hidden">
                 <!-- شريط البحث -->
                 <div class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                    <flux:input wire:model.live.debounce.200ms="search" placeholder="بحث باسم المنتج أو الباركود..." icon="magnifying-glass" class="w-full" />
+                    <flux:input
+                        wire:model.live.debounce.150ms="search"
+                        wire:keydown.enter="updatedSearch"
+                        placeholder="بحث باسم المنتج أو الباركود..."
+                        icon="magnifying-glass"
+                        class="w-full"
+                        autofocus
+                        id="barcode-search-input"
+                    />
                 </div>
 
                 <!-- شبكة المنتجات -->
@@ -492,6 +526,16 @@ new class extends Component {
 
 @script
 <script>
+    // إعادة التركيز التلقائي على حقل الباركود لضمان المسح المستمر
+    Livewire.hook('commit', ({ respond }) => {
+        respond(() => {
+            const input = document.getElementById('barcode-search-input');
+            if (input && document.activeElement !== input) {
+                input.focus();
+            }
+        });
+    });
+
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
