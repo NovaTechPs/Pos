@@ -493,33 +493,70 @@ new class extends Component {
 @script
 <script>
     $wire.on('do-kiosk-print', (event) => {
-        const inv = event.data;
+        // استخراج البيانات القادمة من حدث Livewire
+        const inv = event.data || event[0];
+
+        // دالة ضبط المسافات والمحاذاة للأعمدة
+        const pad = (str, len, align = 'right') => {
+            str = String(str || '');
+            if (str.length >= len) return str.substring(0, len);
+            const space = ' '.repeat(len - str.length);
+            return align === 'left' ? str + space : space + str;
+        };
+
+        // حساب مجموع أعداد القطع/الكميات
+        const totalQuantity = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
         let text = "";
-        text += "--------------------------------\n";
-        text += "        " + (inv.store_name || "المتجر") + "        \n";
-        text += "--------------------------------\n";
-        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
-        text += "التاريخ: " + inv.date + "\n";
-        text += "العميل: " + inv.customer_name + "\n";
-        if (inv.customer_phone) {
-            text += "الهاتف: " + inv.customer_phone + "\n";
-        }
-        text += "--------------------------------\n";
 
-        inv.items.forEach(item => {
-            let total = (item.price * item.quantity).toFixed(2);
-            text += item.name + "\n";
-            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+        // 1. الترويسة العليا (Header)
+        text += "                " + (inv.store_name || "فانوس") + "                \n";
+        text += "  راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض  \n";
+        text += "                 النسخة الأصلية                 \n\n";
+
+        // 2. تفاصيل الفاتورة (رقم الفاتورة، التاريخ، الوقت)
+        text += pad("رقم الفاتورة: " + (inv.invoice_no || ''), 48, 'left') + "\n";
+        text += pad("التاريخ والوقت: " + (inv.date || ''), 48, 'left') + "\n";
+        text += "------------------------------------------------\n";
+
+        // 3. رأس الجدول
+        // التقسيم: المبلغ (9) | السعر (9) | الكمية (6) | البيان (20) | # (4) = 48 حرفاً
+        text += pad("مبلغ", 9) + pad("سعر", 9) + pad("كمية", 6) + pad("البيان", 20) + pad("#", 4) + "\n";
+        text += "------------------------------------------------\n";
+
+        // 4. عناصر الفاتورة
+        (inv.items || []).forEach((item, index) => {
+            let itemTotal = (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2);
+            let itemPrice = Number(item.price || 0).toFixed(2);
+            let itemQty = String(item.quantity || 0);
+            let itemName = item.name || '';
+
+            text += pad(itemTotal, 9) + pad(itemPrice, 9) + pad(itemQty, 6) + pad(itemName, 20) + pad(index + 1, 4) + "\n";
         });
 
-        text += "--------------------------------\n";
-        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
+        text += "------------------------------------------------\n";
+
+        // 5. مجموع الكميات والمجموع الكلي
+        text += " مجموع الكميات : " + totalQuantity + "\n";
+        text += "------------------------------------------------\n";
+        text += "       المجموع : " + Number(inv.total || 0).toFixed(2) + "\n";
+        text += "================================================\n";
+
+        // 6. الصافي للدفع
+        text += "   الصافي للدفع (ش.ض) : " + Number(inv.total || 0).toFixed(2) + "\n";
+        text += "================================================\n\n";
+
+        // 7. الملاحظات (إن وجدت)
         if (inv.notes) {
             text += "ملاحظات: " + inv.notes + "\n";
+            text += "------------------------------------------------\n";
         }
-        text += "--------------------------------\n\n\n\n";
 
+        // 8. التذييل وتاريخ الطباعة
+        text += "               الشامل لايت للمحاسبة              \n";
+        text += "تاريخ ووقت الطباعة: " + (inv.print_date || inv.date || '') + "\n\n\n\n";
+
+        // 9. إنشاء Intent وإرساله لتطبيق RawBT
         const intentUrl = "intent:" + encodeURIComponent(text) +
             "#Intent;" +
             "scheme=rawbt;" +
