@@ -495,69 +495,77 @@ new class extends Component {
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
-        // دالة لموازنة النص العربي والإنكليزي بأطوال محددة
-        function padRight(str, length) {
-            str = String(str || '');
-            return str + ' '.repeat(Math.max(0, length - str.length));
-        }
+        // بناء الفاتورة بتنسيق HTML مضغوط ومناسب للطباعة الحرارية (80mm / 58mm)
+        let html = `
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: sans-serif; font-size: 12px; margin: 0; padding: 5px; width: 100%; }
+                .text-center { text-align: center; }
+                .text-left { text-align: left; }
+                .text-right { text-align: right; }
+                .bold { font-weight: bold; }
+                table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+                th, td { border-bottom: 1px solid #ddd; padding: 4px 2px; text-align: center; font-size: 11px; }
+                th { background-color: #f5f5f5; }
+                .divider { border-top: 1px dashed #000; margin: 6px 0; }
+                .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+            </style>
+        </head>
+        <body>
+            <div class="text-center bold" style="font-size: 16px;">${inv.store_name || "شركه النور للتجارة"}</div>
+            <div class="divider"></div>
+            <div><b>رقم الفاتورة:</b> ${inv.invoice_no}</div>
+            <div><b>التاريخ:</b> ${inv.date}</div>
+            <div><b>العميل:</b> ${inv.customer_name}</div>
+            ${inv.customer_phone ? `<div><b>الهاتف:</b> ${inv.customer_phone}</div>` : ''}
 
-        function padLeft(str, length) {
-            str = String(str || '');
-            return ' '.repeat(Math.max(0, length - str.length)) + str;
-        }
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 45%; text-align: right;">البيان</th>
+                        <th style="width: 15%;">العدد</th>
+                        <th style="width: 20%;">السعر</th>
+                        <th style="width: 20%;">المجموع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${inv.items.map(item => `
+                        <tr>
+                            <td style="text-align: right;">${item.name}</td>
+                            <td>${item.quantity}</td>
+                            <td>${Number(item.price).toFixed(2)} ₪</td>
+                            <td>${(item.price * item.quantity).toFixed(2)} ₪</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
 
-        let text = "";
-        text += "--------------------------------\n";
-        text += "       " + (inv.store_name || "المتجر") + "       \n";
-        text += "--------------------------------\n";
-        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
-        text += "التاريخ: " + inv.date + "\n";
-        text += "العميل: " + inv.customer_name + "\n";
-        if (inv.customer_phone) {
-            text += "الهاتف: " + inv.customer_phone + "\n";
-        }
-        text += "================================\n";
+            <div class="double-divider"></div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px;" class="bold">
+                <span>الإجمالي:</span>
+                <span>${Number(inv.total).toFixed(2)} ₪</span>
+            </div>
 
-        // ترويسة الجدول
-        // العرض الإجمالي: 32 حرفاً (14 للصنف | 4 للكمية | 6 للسعر | 8 للمجموع)
-        text += "البيان         العدد  السعر   المجموع\n";
-        text += "--------------------------------\n";
+            ${inv.notes ? `
+                <div class="divider"></div>
+                <div><b>ملاحظات:</b> ${inv.notes}</div>
+            ` : ''}
 
-        inv.items.forEach(item => {
-            let name = item.name.trim();
-            let qty = String(item.quantity);
-            let price = Number(item.price).toFixed(2);
-            let total = (item.price * item.quantity).toFixed(2);
+            <div class="divider"></div>
+            <div class="text-center" style="margin-top: 10px;">شكراً لتعاملكم معنا</div>
+        </body>
+        </html>
+        `;
 
-            // إذا كان اسم المنتج طويلاً، نطبع الاسم أولاً ثم تفاصيل السطر في سطر جديد
-            if (name.length > 14) {
-                text += name + "\n";
-                text += padRight("", 14) +
-                        padLeft(qty, 4) + " " +
-                        padLeft(price, 6) + " " +
-                        padLeft(total, 7) + "\n";
-            } else {
-                text += padRight(name, 14) + " " +
-                        padLeft(qty, 3) + " " +
-                        padLeft(price, 6) + " " +
-                        padLeft(total, 7) + "\n";
-            }
-        });
-
-        text += "================================\n";
-        text += padRight("الإجمالي:", 20) + padLeft(Number(inv.total).toFixed(2), 12) + "\n";
-
-        if (inv.notes) {
-            text += "--------------------------------\n";
-            text += "ملاحظات: " + inv.notes + "\n";
-        }
-        text += "--------------------------------\n\n\n\n";
-
-        const intentUrl = "intent:" + encodeURIComponent(text) +
+        // إرسال HTML إلى RawBT
+        const intentUrl = "intent:" + encodeURIComponent(html) +
             "#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
-            "S.type=text/plain;" +
+            "S.type=text/html;" +
             "end;";
 
         window.location.href = intentUrl;
