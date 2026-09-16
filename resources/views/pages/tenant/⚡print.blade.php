@@ -24,21 +24,21 @@ new class extends Component
 
     public function printInvoice()
     {
-        $this->dispatch('trigger-rawbt-http');
+        $this->dispatch('trigger-rawbt-direct');
     }
 };
 ?>
 
-<div class="p-6" x-data>
+<div class="p-6">
 
     {{-- زر الطباعة --}}
     <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
-        طباعة صامتة عبر RawBT Server 🖨️
+        طباعة الفاتورة صامتاً 🖨️
     </button>
 
     {{-- قالب الفاتورة الحرارية --}}
     <div id="receipt-content" class="hidden">
-        <div style="width: 58mm; padding: 2mm 0; font-family: Arial, sans-serif; font-size: 11px; color: #000; direction: rtl; text-align: center;">
+        <div style="width: 58mm; padding: 0; font-family: Arial, sans-serif; font-size: 11px; color: #000; direction: rtl; text-align: center;">
 
             <div style="margin-bottom: 5px;">
                 <div style="font-size: 16px; font-weight: bold;">{{ $order['store_name'] }}</div>
@@ -46,7 +46,7 @@ new class extends Component
                 <div style="font-size: 10px; font-weight: bold;">النسخة الأصلية</div>
             </div>
 
-            <div style="display: flex; justify-content: space-between; font-size: 10px; margin: 6px 0 4px 0;">
+            <div style="display: flex; justify-content: space-between; font-size: 10px; margin: 6px 0 4px 0; padding: 0 2px;">
                 <span>{{ $order['id'] }}</span>
                 <span>{{ $order['date'] }}</span>
                 <span>{{ $order['time'] }}</span>
@@ -96,36 +96,36 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Script الاتصال المباشر بـ RawBT Local Web Server --}}
+    {{-- Script إرسال بروتوكول rawbt: المباشر --}}
     <script>
         document.addEventListener('livewire:init', () => {
-            Livewire.on('trigger-rawbt-http', async () => {
+            Livewire.on('trigger-rawbt-direct', () => {
                 const element = document.getElementById('receipt-content');
                 if (!element) return;
 
-                element.classList.remove('hidden');
-                const htmlData = element.innerHTML;
-                element.classList.add('hidden');
+                const receiptHtml = element.innerHTML;
 
-                // إرسال الطلب عبر HTTP POST لسيرفر RawBT الداخلي على الجهاز
-                try {
-                    const response = await fetch('http://localhost:40213/print', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'text/html; charset=utf-8'
-                        },
-                        body: htmlData
-                    });
+                // تجهيز كود HTML كامل للفاتورة فقط
+                const cleanHtml = `
+                    <!DOCTYPE html>
+                    <html dir="rtl">
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { margin: 0; padding: 0; width: 58mm; font-family: Arial, sans-serif; }
+                        </style>
+                    </head>
+                    <body>
+                        ${receiptHtml}
+                    </body>
+                    </html>
+                `;
 
-                    if (!response.ok) {
-                        throw new Error('فشل الاستجابة من سيرفر RawBT المحلي');
-                    }
-                } catch (error) {
-                    console.warn('السيرفر المحلي 40213 غير متاح، جارٍ تجربة الخيار الاحتياطي...', error);
+                // استخدام بروتوكول rawbt:base64 المباشر
+                const base64Data = btoa(unescape(encodeURIComponent(cleanHtml)));
 
-                    // احتياطي: فتح النافذة العادية في حال عدم تشغيل Web Server داخل التطبيق
-                    window.print();
-                }
+                // توجيه المتصفح لـ rawbt مباشرة
+                window.location.href = `rawbt:base64,${base64Data}`;
             });
         });
     </script>
