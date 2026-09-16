@@ -495,16 +495,13 @@ new class extends Component {
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data || event[0];
 
-        // حساب مجموع أعداد القطع/الكميات
         const totalQuantity = (inv.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
-        // تفكيك التاريخ والوقت
         const fullDate = inv.date || '';
         const dateParts = fullDate.split(' ');
         const dateOnly = dateParts[0] || '';
         const timeOnly = dateParts[1] || '';
 
-        // بناء صفوف المنتجات للجدول المسطر
         let itemsHtml = '';
         (inv.items || []).forEach((item, index) => {
             let itemTotal = (Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2);
@@ -517,154 +514,143 @@ new class extends Component {
                     <td style="width: 22%; text-align: center; font-weight: bold;">${itemTotal}</td>
                     <td style="width: 18%; text-align: center;">${itemPrice}</td>
                     <td style="width: 12%; text-align: center;">${itemQty}</td>
-                    <td style="width: 40%; text-align: right; font-weight: bold; word-break: break-word;">${itemName}</td>
+                    <td style="width: 40%; text-align: right; font-weight: bold; word-break: break-all;">${itemName}</td>
                     <td style="width: 8%; text-align: center;">${index + 1}</td>
                 </tr>
             `;
         });
 
-        // قالب HTML محسن للطابعات الحرارية المقاس 58mm / 80mm
-        const htmlTemplate = `
-        <!DOCTYPE html>
-        <html dir="rtl" lang="ar">
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                @page { margin: 0; size: auto; }
-                * { box-sizing: border-box; }
-                body {
-                    font-family: Arial, sans-serif;
-                    width: 100%;
-                    max-width: 58mm; /* محاذاة العرض لجهاز POS المحمول */
-                    margin: 0 auto;
-                    padding: 2px;
-                    color: #000;
-                    font-size: 11px;
-                    line-height: 1.2;
-                }
-                .text-center { text-align: center; }
-                .text-right { text-align: right; }
-                .text-left { text-align: left; }
+        const htmlTemplate = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { margin: 0; size: auto; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            width: 100%;
+            max-width: 58mm;
+            margin: 0 auto;
+            padding: 2px;
+            color: #000;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .header-title { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
+        .header-sub { font-size: 10px; margin-bottom: 2px; }
 
-                .header-title { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
-                .header-sub { font-size: 10px; margin-bottom: 2px; }
+        .meta-table {
+            width: 100%;
+            margin-top: 6px;
+            margin-bottom: 4px;
+            border-collapse: collapse;
+            border: 1px solid #000;
+        }
+        .meta-table td {
+            padding: 3px 2px;
+            font-size: 10px;
+            font-weight: bold;
+            border: 1px solid #000;
+        }
 
-                /* جدول المعلومات العلوية بحدود مسطرة */
-                .meta-table {
-                    width: 100%;
-                    margin-top: 6px;
-                    margin-bottom: 4px;
-                    border-collapse: collapse;
-                    border: 1px solid #000;
-                }
-                .meta-table td {
-                    padding: 3px 2px;
-                    font-size: 10px;
-                    font-weight: bold;
-                    border: 1px solid #000;
-                }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+        }
+        .items-table th, .items-table td {
+            border: 1px solid #000 !important;
+            padding: 3px 1px;
+            font-size: 10px;
+        }
+        .items-table th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
 
-                /* جدول الأصناف الرئيسي المسطر بالكامل */
-                .items-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 4px;
-                }
-                .items-table th, .items-table td {
-                    border: 1px solid #000 !important;
-                    padding: 3px 1px;
-                    font-size: 10px;
-                }
-                .items-table th {
-                    background-color: #f0f0f0;
-                    font-weight: bold;
-                }
+        .box-container {
+            border: 1px solid #000;
+            margin-top: 4px;
+            padding: 3px;
+            font-size: 11px;
+            font-weight: bold;
+        }
 
-                /* صناديق المجاميع المسطرة */
-                .box-container {
-                    border: 1px solid #000;
-                    margin-top: 4px;
-                    padding: 3px;
-                    font-size: 11px;
-                    font-weight: bold;
-                }
+        .double-box {
+            border: 2px solid #000;
+            margin-top: 5px;
+            padding: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            text-align: center;
+        }
 
-                .double-box {
-                    border: 2px solid #000;
-                    margin-top: 5px;
-                    padding: 4px;
-                    font-size: 13px;
-                    font-weight: bold;
-                    text-align: center;
-                }
+        .footer {
+            margin-top: 10px;
+            padding-top: 4px;
+            border-top: 1px dashed #000;
+            font-size: 9px;
+        }
+    </style>
+</head>
+<body>
+    <div class="text-center">
+        <div class="header-title">${inv.store_name || "فانوس"}</div>
+        <div class="header-sub">راجع فاتورتك قبل مغادرة المعرض</div>
+        <div class="header-sub" style="font-weight: bold;">النسخة الأصلية</div>
+    </div>
 
-                .footer {
-                    margin-top: 10px;
-                    padding-top: 4px;
-                    border-top: 1px dashed #000;
-                    font-size: 9px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="text-center">
-                <div class="header-title">${inv.store_name || "فانوس"}</div>
-                <div class="header-sub">راجع فاتورتك قبل مغادرة المعرض</div>
-                <div class="header-sub" style="font-weight: bold;">النسخة الأصلية</div>
-            </div>
+    <table class="meta-table">
+        <tr>
+            <td style="width: 30%; text-align: center;">${timeOnly}</td>
+            <td style="width: 35%; text-align: center;">${dateOnly}</td>
+            <td style="width: 35%; text-align: center;">${inv.invoice_no || ''}</td>
+        </tr>
+    </table>
 
-            <!-- معلومات الفاتورة مسطرة -->
-            <table class="meta-table">
-                <tr>
-                    <td style="width: 30%; text-align: center;">${timeOnly}</td>
-                    <td style="width: 35%; text-align: center;">${dateOnly}</td>
-                    <td style="width: 35%; text-align: center;">${inv.invoice_no || ''}</td>
-                </tr>
-            </table>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 22%;">مبلغ</th>
+                <th style="width: 18%;">سعر</th>
+                <th style="width: 12%;">كمية</th>
+                <th style="width: 40%;">البيان</th>
+                <th style="width: 8%;">#</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${itemsHtml}
+        </tbody>
+    </table>
 
-            <!-- جدول الأصناف المسطر بالكامل -->
-            <table class="items-table">
-                <thead>
-                    <tr>
-                        <th style="width: 22%;">مبلغ</th>
-                        <th style="width: 18%;">سعر</th>
-                        <th style="width: 12%;">كمية</th>
-                        <th style="width: 40%;">البيان</th>
-                        <th style="width: 8%;">#</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${itemsHtml}
-                </tbody>
-            </table>
+    <div class="box-container text-center">
+        مجموع الكميات : ${totalQuantity}
+    </div>
 
-            <!-- مجموع الكميات -->
-            <div class="box-container text-center">
-                مجموع الكميات : ${totalQuantity}
-            </div>
+    <div class="box-container text-center">
+        المجموع : ${Number(inv.total || 0).toFixed(2)}
+    </div>
 
-            <!-- المجموع الكلي -->
-            <div class="box-container text-center">
-                المجموع : ${Number(inv.total || 0).toFixed(2)}
-            </div>
+    <div class="double-box">
+        الصافي للدفع (ش.ض) : ${Number(inv.total || 0).toFixed(2)}
+    </div>
 
-            <!-- الصافي للدفع -->
-            <div class="double-box">
-                الصافي للدفع (ش.ض) : ${Number(inv.total || 0).toFixed(2)}
-            </div>
+    ${inv.notes ? `<div class="box-container text-right">ملاحظات: ${inv.notes}</div>` : ''}
 
-            ${inv.notes ? `<div class="box-container text-right">ملاحظات: ${inv.notes}</div>` : ''}
+    <div class="footer text-center">
+        <div>الشامل لايت للمحاسبة</div>
+        <div>تاريخ الطباعة: ${inv.date || ''}</div>
+    </div>
+</body>
+</html>`;
 
-            <div class="footer text-center">
-                <div>الشامل لايت للمحاسبة</div>
-                <div>تاريخ الطباعة: ${inv.date || ''}</div>
-            </div>
-        </body>
-        </html>
-        `;
+        // تحويل الـ HTML إلى Base64 لمنع مشاكل الترميز ومُعاملة RawBT لها كـ HTML صريح
+        const base64Html = btoa(unescape(encodeURIComponent(htmlTemplate)));
 
-        const encodedHtml = encodeURIComponent(htmlTemplate);
-        const intentUrl = "intent:text/html;utf-8," + encodedHtml +
+        const intentUrl = "intent:data:text/html;charset=utf-8;base64," + base64Html +
             "#Intent;" +
             "scheme=rawbt;" +
             "package=ru.a402d.rawbtprinter;" +
