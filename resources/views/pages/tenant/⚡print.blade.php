@@ -4,129 +4,177 @@ use Livewire\Component;
 
 new class extends Component
 {
-    public array $order = [
-        'id' => '100035970',
-        'date' => '14/09/2026',
-        'time' => '5:33 م',
-        'store_name' => 'فانوس',
-        'items' => [
-            [
-                'name' => 'مج زجاج مع غطاء خشب + مصاصة s17/دج',
-                'qty' => 1,
-                'price' => 10,
-                'total' => 10,
-            ]
-        ],
-        'total_qty' => 1,
-        'subtotal' => 10,
-        'grand_total' => 10,
-    ];
+    public array $invoice = [];
 
-    public function printInvoice()
+    public function mount()
     {
-        $this->dispatch('trigger-rawbt-direct');
+        // بيانات الفاتورة
+        $this->invoice = [
+            'number' => '100035970',
+            'date' => '14/09/2026',
+            'time' => '05:33',
+            'items' => [
+                [
+                    'name' => 'مج زجاج مع غطاء خشب + حبه s17 مصاصة',
+                    'qty' => 1,
+                    'price' => 10,
+                    'total' => 10,
+                ]
+            ],
+            'total_qty' => 1,
+            'total_amount' => 10,
+        ];
     }
-};
-?>
+}; ?>
 
-<div class="p-6">
+<div>
+    <!-- مكتبة QZ Tray و RSVP -->
+    <script src="https://cdn.jsdelivr.net/npm/rsvp@4/dist/rsvp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.min.js"></script>
 
-    {{-- زر الطباعة --}}
-    <button wire:click="printInvoice" class="px-5 py-2.5 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition">
-        طباعة الفاتورة صامتاً 🖨️
-    </button>
+    <!-- أزرار التحكم -->
+    <div class="no-print p-4 flex gap-2">
+        <button type="button" onclick="printInvoiceSilent()" class="px-4 py-2 bg-green-600 text-white rounded-lg shadow hover:bg-green-700">
+            طباعة صامتة (QZ Tray)
+        </button>
+        <button type="button" onclick="window.print()" class="px-4 py-2 bg-gray-500 text-white rounded-lg shadow hover:bg-gray-600">
+            طباعة المتصفح العادية
+        </button>
+    </div>
 
-    {{-- قالب الفاتورة الحرارية --}}
-    <div id="receipt-content" class="hidden">
-        <div style="width: 58mm; padding: 0; font-family: Arial, sans-serif; font-size: 11px; color: #000; direction: rtl; text-align: center;">
+    <!-- قالب الفاتورة الحرارية -->
+    <div id="receipt" class="receipt-container">
+        <div class="header">
+            <h2>فانوس</h2>
+            <p>راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض</p>
+            <p><strong>النسخة الأصلية</strong></p>
+        </div>
 
-            <div style="margin-bottom: 5px;">
-                <div style="font-size: 16px; font-weight: bold;">{{ $order['store_name'] }}</div>
-                <div style="font-size: 10px; margin: 2px 0;">راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض</div>
-                <div style="font-size: 10px; font-weight: bold;">النسخة الأصلية</div>
-            </div>
+        <div class="meta-info">
+            <span>{{ $invoice['number'] }}</span>
+            <span>{{ $invoice['date'] }} {{ $invoice['time'] }}</span>
+        </div>
 
-            <div style="display: flex; justify-content: space-between; font-size: 10px; margin: 6px 0 4px 0; padding: 0 2px;">
-                <span>{{ $order['id'] }}</span>
-                <span>{{ $order['date'] }}</span>
-                <span>{{ $order['time'] }}</span>
-            </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">#</th>
+                    <th style="width: 50%;">البيان</th>
+                    <th style="width: 15%;">الكمية</th>
+                    <th style="width: 12%;">السعر</th>
+                    <th style="width: 13%;">المبلغ</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($invoice['items'] as $index => $item)
+                <tr>
+                    <td>{{ $index + 1 }}</td>
+                    <td>{{ $item['name'] }}</td>
+                    <td>{{ $item['qty'] }}</td>
+                    <td>{{ $item['price'] }}</td>
+                    <td>{{ $item['total'] }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
 
-            <table style="width: 100%; border-collapse: collapse; margin-top: 4px;">
-                <thead>
-                    <tr>
-                        <th style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; width: 8%;">#</th>
-                        <th style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; width: 50%;">البيان</th>
-                        <th style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; width: 12%;">كمية</th>
-                        <th style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; width: 15%;">سعر</th>
-                        <th style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; width: 15%;">مبلغ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($order['items'] as $index => $item)
-                        <tr>
-                            <td style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; text-align: center;">{{ $index + 1 }}</td>
-                            <td style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; text-align: right;">{{ $item['name'] }}</td>
-                            <td style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; text-align: center;">{{ $item['qty'] }}</td>
-                            <td style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; text-align: center;">{{ $item['price'] }}</td>
-                            <td style="border: 1px solid #000; padding: 3px 2px; font-size: 10px; text-align: center;">{{ $item['total'] }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+        <div class="summary">
+            <p><strong>مجموع الكميات:</strong> {{ $invoice['total_qty'] }}</p>
+            <p><strong>المجموع:</strong> {{ $invoice['total_amount'] }}</p>
+        </div>
 
-            <div style="border: 1px solid #000; padding: 4px; margin-top: 4px; font-size: 11px; font-weight: bold; text-align: right;">
-                مجموع الكميات : {{ $order['total_qty'] }}
-            </div>
+        <div class="grand-total">
+            الصافي للدفع (ش.ض): {{ $invoice['total_amount'] }}
+        </div>
 
-            <div style="border: 1px solid #000; padding: 4px; margin-top: 4px; font-size: 11px; font-weight: bold; text-align: right;">
-                المجموع : {{ $order['subtotal'] }}
-            </div>
-
-            <div style="border: 2px solid #000; padding: 6px; margin-top: 5px; font-size: 12px; font-weight: bold; text-align: center;">
-                الصافي للدفع (ش.ض) : {{ $order['grand_total'] }}
-            </div>
-
-            <div style="margin-top: 8px;">
-                <div style="font-size: 8px; margin-top: 4px;">
-                    تاريخ ووقت الطباعة {{ $order['date'] }} {{ $order['time'] }}
-                </div>
-            </div>
-
+        <div class="footer">
+            <p>الشامل لايت للمحاسبة</p>
+            <p>تاريخ ووقت الطباعة: {{ $invoice['date'] }} {{ $invoice['time'] }} م</p>
         </div>
     </div>
 
-    {{-- Script إرسال بروتوكول rawbt: المباشر --}}
+    <!-- تنسيقات CSS الخاصّة بالطابعة -->
+    <style>
+        .receipt-container {
+            width: 80mm;
+            padding: 5mm;
+            background: #fff;
+            color: #000;
+            font-family: Tahoma, 'Courier New', monospace;
+            font-size: 12px;
+            direction: rtl;
+            border: 1px solid #ccc;
+            margin: 10px auto;
+            box-sizing: border-box;
+        }
+
+        .receipt-container .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+        .receipt-container .header h2 { margin: 0; font-size: 18px; font-weight: bold; }
+        .receipt-container .header p { margin: 2px 0; font-size: 10px; }
+
+        .receipt-container .meta-info { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; font-size: 11px; }
+
+        .receipt-container table { width: 100%; border-collapse: collapse; text-align: center; margin-bottom: 5px; }
+        .receipt-container th, .receipt-container td { border: 1px solid #000; padding: 3px 1px; font-size: 10px; }
+
+        .receipt-container .summary { border-top: 1px dashed #000; padding-top: 5px; font-size: 11px; }
+        .receipt-container .summary p { margin: 2px 0; }
+
+        .receipt-container .grand-total { border: 2px solid #000; text-align: center; font-weight: bold; padding: 4px; font-size: 13px; margin: 5px 0; }
+
+        .receipt-container .footer { text-align: center; font-size: 9px; margin-top: 5px; }
+
+        @media print {
+            body * { visibility: hidden; }
+            .no-print { display: none !important; }
+            .receipt-container, .receipt-container * { visibility: visible; }
+            .receipt-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 80mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+            }
+            @page { size: 80mm auto; margin: 0mm; }
+        }
+    </style>
+
+    <!-- عزل السكربت تماماً لحل مشكلة قراءة Blade له كنص -->
+    @script
     <script>
-        document.addEventListener('livewire:init', () => {
-            Livewire.on('trigger-rawbt-direct', () => {
-                const element = document.getElementById('receipt-content');
-                if (!element) return;
+        window.printInvoiceSilent = async function() {
+            try {
+                if (!qz.websocket.isActive()) {
+                    await qz.websocket.connect();
+                }
 
-                const receiptHtml = element.innerHTML;
+                const printElement = document.getElementById('receipt');
+                const htmlContent = printElement.outerHTML;
+                const styleElement = document.querySelector('style');
+                const styleContent = styleElement ? styleElement.innerHTML : '';
 
-                // تجهيز كود HTML كامل للفاتورة فقط
-                const cleanHtml = `
-                    <!DOCTYPE html>
-                    <html dir="rtl">
-                    <head>
-                        <meta charset="utf-8">
-                        <style>
-                            body { margin: 0; padding: 0; width: 58mm; font-family: Arial, sans-serif; }
-                        </style>
-                    </head>
-                    <body>
-                        ${receiptHtml}
-                    </body>
-                    </html>
-                `;
+                const printer = await qz.printers.getDefault();
+                const config = qz.configs.create(printer, {
+                    size: { width: 80, mm: true },
+                    margins: 0
+                });
 
-                // استخدام بروتوكول rawbt:base64 المباشر
-                const base64Data = btoa(unescape(encodeURIComponent(cleanHtml)));
+                const data = [{
+                    type: 'pixel',
+                    format: 'html',
+                    flavor: 'plain',
+                    data: '<html><head><meta charset="UTF-8"><style>body { margin: 0; padding: 0; direction: rtl; } ' + styleContent + '</style></head><body>' + htmlContent + '</body></html>'
+                }];
 
-                // توجيه المتصفح لـ rawbt مباشرة
-                window.location.href = `rawbt:base64,${base64Data}`;
-            });
-        });
+                await qz.print(config, data);
+
+            } catch (err) {
+                console.error("خطأ في الطباعة الصامتة:", err);
+                alert("لم يتم الاتصال ببرنامج QZ Tray أو تعذر تحديد الطابعة.");
+            }
+        }
     </script>
+    @endscript
 </div>
