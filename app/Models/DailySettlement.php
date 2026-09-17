@@ -13,18 +13,15 @@ class DailySettlement extends Model
     protected $fillable = [
         'tenant_id',
         'branch_id',
-        'user_id',
-        'date',
+        'closed_by',
+        'settlement_date',
         'total_sales',
         'total_returns',
         'total_cash',
         'total_card',
-        'total_expenses',
-        'expected_cash',
-        'actual_cash',
-        'difference',
+        'total_shifts_count',
+        'closed_at',
         'notes',
-        'status',
     ];
 
     protected $casts = [
