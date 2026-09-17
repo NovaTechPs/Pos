@@ -34,6 +34,17 @@ new class extends Component {
 
     public function mount()
     {
+        $user = auth()->user();
+
+        // التحقق من الصلاحيات والتحويل التلقائي للنوع المتاح
+        if ($user && $user->can('Voucher.add')) {
+            $this->type = 'payment';
+            $this->payable_type = 'supplier';
+        } elseif ($user && $user->can('Receipt.add')) {
+            $this->type = 'receipt';
+            $this->payable_type = 'customer';
+        }
+
         $this->payment_date = now()->format('Y-m-d\TH:i');
     }
 
@@ -56,6 +67,14 @@ new class extends Component {
 
     public function setType($newType)
     {
+        // منع التحويل عبر السيرفر إذا كان المستخدم لا يمتلك الصلاحية
+        if ($newType === 'payment' && !auth()->user()?->can('Voucher.add')) {
+            return;
+        }
+        if ($newType === 'receipt' && !auth()->user()?->can('Receipt.add')) {
+            return;
+        }
+
         $this->type = $newType;
         $this->payable_type = $newType === 'payment' ? 'supplier' : 'customer';
         $this->payable_id = null;
@@ -64,9 +83,18 @@ new class extends Component {
 
     public function savePayment()
     {
+        $user = auth()->user();
+
+        // حماية على مستوى السيرفر لعملية الحفظ
+        if ($this->type === 'payment' && !$user?->can('Voucher.add')) {
+            abort(403, 'غير مصرح لك بإنشاء سند دفع.');
+        }
+        if ($this->type === 'receipt' && !$user?->can('Receipt.add')) {
+            abort(403, 'غير مصرح لك بإنشاء سند قبض.');
+        }
+
         $this->validate();
 
-        $user = auth()->user();
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -179,175 +207,173 @@ new class extends Component {
             @endif
 
             <!-- أزرار التنقل (Tabs) -->
-            <div
-                class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl p-2 gap-2">
-                @can('Voucher.add')
-                    <button wire:click="setType('payment')" type="button"
-                        class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'payment' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
-                        سندات الدفع (صرف لمورد)
-                    </button>
-                @endcan
+            @if (auth()->user()?->can('Voucher.add') || auth()->user()?->can('Receipt.add'))
+                <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl p-2 gap-2">
+                    @can('Voucher.add')
+                        <button wire:click="setType('payment')" type="button"
+                            class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'payment' ? 'bg-rose-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
+                            سندات الدفع (صرف لمورد)
+                        </button>
+                    @endcan
 
-                <button wire:click="setType('receipt')" type="button"
-                    class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'receipt' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
-                    سندات القبض (تحصيل من عميل)
-                </button>
-            </div>
+                    @can('Receipt.add')
+                        <button wire:click="setType('receipt')" type="button"
+                            class="px-6 py-2.5 rounded-lg font-bold transition-all {{ $type === 'receipt' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700' }}">
+                            سندات القبض (تحصيل من عميل)
+                        </button>
+                    @endcan
+                </div>
+            @endif
 
             <!-- نموذج الإضافة -->
-            <div
-                class="bg-white dark:bg-gray-800 p-6 rounded-b-xl shadow-md border border-gray-200 dark:border-gray-700">
-                <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-                    {{ $type === 'payment' ? 'إنشاء سند دفع جديد' : 'إنشاء سند قبض جديد' }}
-                </h2>
+            @if (auth()->user()?->can('Voucher.add') || auth()->user()?->can('Receipt.add'))
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-b-xl shadow-md border border-gray-200 dark:border-gray-700">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
+                        {{ $type === 'payment' ? 'إنشاء سند دفع جديد' : 'إنشاء سند قبض جديد' }}
+                    </h2>
 
-                <form wire:submit="savePayment" class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <form wire:submit="savePayment" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                        <!-- قائمة البحث والتحديد التفاعلية -->
-                        @php
-                            $list = $type === 'payment' ? $suppliers : $customers;
-                            $formattedList = $list
-                                ->map(function ($item) {
-                                    $bal = ($item->received_sum ?? 0) - ($item->paid_sum ?? 0);
-                                    return [
-                                        'id' => $item->id,
-                                        'name' => $item->name ?? 'بدون اسم',
-                                        'sub' => $item->company_name ?? ($item->phone ?? ''),
-                                        'balance' => number_format($bal, 2),
-                                        'raw_balance' => $bal,
-                                    ];
-                                })
-                                ->values()
-                                ->toArray();
-                        @endphp
+                            <!-- قائمة البحث والتحديد التفاعلية -->
+                            @php
+                                $list = $type === 'payment' ? $suppliers : $customers;
+                                $formattedList = $list
+                                    ->map(function ($item) {
+                                        $bal = ($item->received_sum ?? 0) - ($item->paid_sum ?? 0);
+                                        return [
+                                            'id' => $item->id,
+                                            'name' => $item->name ?? 'بدون اسم',
+                                            'sub' => $item->company_name ?? ($item->phone ?? ''),
+                                            'balance' => number_format($bal, 2),
+                                            'raw_balance' => $bal,
+                                        ];
+                                    })
+                                    ->values()
+                                    ->toArray();
+                            @endphp
 
-                        <div wire:key="select-party-{{ $type }}" x-data="{
-                            open: false,
-                            search: '',
-                            selectedId: @entangle('payable_id'),
-                            items: {{ json_encode($formattedList) }},
-                            get filteredItems() {
-                                if (!this.search) return this.items;
-                                return this.items.filter(i =>
-                                    (i.name && i.name.toLowerCase().includes(this.search.toLowerCase())) ||
-                                    (i.sub && i.sub.toLowerCase().includes(this.search.toLowerCase()))
-                                );
-                            },
-                            get selectedItem() {
-                                return this.items.find(i => i.id == this.selectedId);
-                            }
-                        }" class="relative">
+                            <div wire:key="select-party-{{ $type }}" x-data="{
+                                open: false,
+                                search: '',
+                                selectedId: @entangle('payable_id'),
+                                items: {{ json_encode($formattedList) }},
+                                get filteredItems() {
+                                    if (!this.search) return this.items;
+                                    return this.items.filter(i =>
+                                        (i.name && i.name.toLowerCase().includes(this.search.toLowerCase())) ||
+                                        (i.sub && i.sub.toLowerCase().includes(this.search.toLowerCase()))
+                                    );
+                                },
+                                get selectedItem() {
+                                    return this.items.find(i => i.id == this.selectedId);
+                                }
+                            }" class="relative">
 
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                {{ $type === 'payment' ? 'اختر/ابحث عن مورد' : 'اختر/ابحث عن عميل' }}
-                            </label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    {{ $type === 'payment' ? 'اختر/ابحث عن مورد' : 'اختر/ابحث عن عميل' }}
+                                </label>
 
-                            <!-- الزر الرئيسي لفتح القائمة -->
-                            <button type="button" @click="open = !open"
-                                class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm px-3 py-2 text-right cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 flex justify-between items-center text-sm dark:text-white">
-                                <span
-                                    x-text="selectedItem ? selectedItem.name + ' — [الرصيد: ' + selectedItem.balance + ']' : '-- اختر من القائمة --'"
-                                    class="truncate"></span>
-                                <span class="mr-2 text-gray-400">▼</span>
-                            </button>
+                                <button type="button" @click="open = !open"
+                                    class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm px-3 py-2 text-right cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 flex justify-between items-center text-sm dark:text-white">
+                                    <span
+                                        x-text="selectedItem ? selectedItem.name + ' — [الرصيد: ' + selectedItem.balance + ']' : '-- اختر من القائمة --'"
+                                        class="truncate"></span>
+                                    <span class="mr-2 text-gray-400">▼</span>
+                                </button>
 
-                            <!-- القائمة المنسدلة للبحث الاختياري -->
-                            <div x-show="open" @click.outside="open = false" x-transition
-                                class="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 shadow-xl max-h-60 rounded-md py-2 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200 dark:border-gray-700">
+                                <div x-show="open" @click.outside="open = false" x-transition
+                                    class="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 shadow-xl max-h-60 rounded-md py-2 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm border border-gray-200 dark:border-gray-700">
 
-                                <div class="px-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                                    <input x-model="search" type="text" placeholder="اكتب للبحث..." @click.stop
-                                        class="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:outline-none focus:border-indigo-500">
+                                    <div class="px-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                        <input x-model="search" type="text" placeholder="اكتب للبحث..." @click.stop
+                                            class="w-full text-xs p-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:outline-none focus:border-indigo-500">
+                                    </div>
+
+                                    <ul class="pt-1 max-h-40 overflow-y-auto">
+                                        <template x-for="item in filteredItems" :key="item.id">
+                                            <li @click="selectedId = item.id; open = false; search = ''"
+                                                class="cursor-pointer select-none relative py-2 pr-3 pl-4 hover:bg-indigo-50 dark:hover:bg-gray-700 dark:text-white flex justify-between items-center">
+                                                <div>
+                                                    <span x-text="item.name" class="font-bold"></span>
+                                                    <span x-text="item.sub ? ' (' + item.sub + ')' : ''"
+                                                        class="text-xs text-gray-400"></span>
+                                                </div>
+                                                <span x-text="item.balance"
+                                                    class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-600"></span>
+                                            </li>
+                                        </template>
+                                        <template x-if="filteredItems.length === 0">
+                                            <li class="p-3 text-xs text-center text-gray-400">لا توجد نتائج مطابقة</li>
+                                        </template>
+                                    </ul>
                                 </div>
 
-                                <ul class="pt-1 max-h-40 overflow-y-auto">
-                                    <template x-for="item in filteredItems" :key="item.id">
-                                        <li @click="selectedId = item.id; open = false; search = ''"
-                                            class="cursor-pointer select-none relative py-2 pr-3 pl-4 hover:bg-indigo-50 dark:hover:bg-gray-700 dark:text-white flex justify-between items-center">
-                                            <div>
-                                                <span x-text="item.name" class="font-bold"></span>
-                                                <span x-text="item.sub ? ' (' + item.sub + ')' : ''"
-                                                    class="text-xs text-gray-400"></span>
-                                            </div>
-                                            <span x-text="item.balance"
-                                                class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-600"></span>
-                                        </li>
-                                    </template>
-                                    <template x-if="filteredItems.length === 0">
-                                        <li class="p-3 text-xs text-center text-gray-400">لا توجد نتائج مطابقة</li>
-                                    </template>
-                                </ul>
+                                @error('payable_id')
+                                    <span class="text-red-500 text-xs">{{ $message }}</span>
+                                @enderror
+
+                                <template x-if="selectedItem">
+                                    <div
+                                        class="mt-2 text-xs p-2 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                                        <span class="text-gray-600 dark:text-gray-300">الرصيد الحالي:</span>
+                                        <span class="font-bold"
+                                            :class="selectedItem.raw_balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                                                'text-rose-600 dark:text-rose-400'"
+                                            x-text="selectedItem.balance + ' شيكل'"></span>
+                                    </div>
+                                </template>
                             </div>
 
-                            @error('payable_id')
-                                <span class="text-red-500 text-xs">{{ $message }}</span>
-                            @enderror
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">المبلغ</label>
+                                <input type="number" step="0.01" wire:model="amount" placeholder="0.00"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
+                                @error('amount')
+                                    <span class="text-red-500 text-xs">{{ $message }}</span>
+                                @enderror
+                            </div>
 
-                            <!-- عرض بطاقة الرصيد عند اختيار جهة -->
-                            <template x-if="selectedItem">
-                                <div
-                                    class="mt-2 text-xs p-2 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex justify-between items-center">
-                                    <span class="text-gray-600 dark:text-gray-300">الرصيد الحالي:</span>
-                                    <span class="font-bold"
-                                        :class="selectedItem.raw_balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                                            'text-rose-600 dark:text-rose-400'"
-                                        x-text="selectedItem.balance + ' شيكل'"></span>
-                                </div>
-                            </template>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">طريقة الدفع</label>
+                                <select wire:model="payment_method"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
+                                    <option value="cash">نقداً (كاش)</option>
+                                    <option value="card">بطاقة / فيزا</option>
+                                    <option value="bank_transfer">تحويل بنكي</option>
+                                    <option value="cheque">شيك</option>
+                                </select>
+                                @error('payment_method')
+                                    <span class="text-red-500 text-xs">{{ $message }}</span>
+                                @enderror
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">التاريخ والوقت</label>
+                                <input type="datetime-local" wire:model="payment_date"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
+                                @error('payment_date')
+                                    <span class="text-red-500 text-xs">{{ $message }}</span>
+                                @enderror
+                            </div>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">المبلغ</label>
-                            <input type="number" step="0.01" wire:model="amount" placeholder="0.00"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
-                            @error('amount')
-                                <span class="text-red-500 text-xs">{{ $message }}</span>
-                            @enderror
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">ملاحظات / البيان</label>
+                            <textarea wire:model="notes" rows="2"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="تفاصيل العملية..."></textarea>
                         </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">طريقة
-                                الدفع</label>
-                            <select wire:model="payment_method"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
-                                <option value="cash">نقداً (كاش)</option>
-                                <option value="card">بطاقة / فيزا</option>
-                                <option value="bank_transfer">تحويل بنكي</option>
-                                <option value="cheque">شيك</option>
-                            </select>
-                            @error('payment_method')
-                                <span class="text-red-500 text-xs">{{ $message }}</span>
-                            @enderror
+                        <div class="flex justify-end">
+                            <button type="submit"
+                                class="px-6 py-2 {{ $type === 'payment' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white rounded-md shadow font-medium transition">
+                                {{ $type === 'payment' ? 'حفظ وطباعة سند الدفع' : 'حفظ وطباعة سند القبض' }}
+                            </button>
                         </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">التاريخ
-                                والوقت</label>
-                            <input type="datetime-local" wire:model="payment_date"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500">
-                            @error('payment_date')
-                                <span class="text-red-500 text-xs">{{ $message }}</span>
-                            @enderror
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">ملاحظات /
-                            البيان</label>
-                        <textarea wire:model="notes" rows="2"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
-                            placeholder="تفاصيل العملية..."></textarea>
-                    </div>
-
-                    <div class="flex justify-end">
-                        <button type="submit"
-                            class="px-6 py-2 {{ $type === 'payment' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white rounded-md shadow font-medium transition">
-                            {{ $type === 'payment' ? 'حفظ وطباعة سند الدفع' : 'حفظ وطباعة سند القبض' }}
-                        </button>
-                    </div>
-                </form>
-            </div>
+                    </form>
+                </div>
+            @endif
 
             <!-- جدول السجلات -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
