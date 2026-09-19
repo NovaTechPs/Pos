@@ -197,130 +197,149 @@ new class extends Component {
         $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
     }
 
-    public function completeSale(bool $shouldPrint = false): void
-    {
-        if (empty($this->cart)) return;
+  public function completeSale(bool $shouldPrint = false): void
+{
+    if (empty($this->cart)) return;
 
-        $tenantId = $this->getTenantId();
-        if (!$tenantId) return;
+    $tenantId = $this->getTenantId();
+    if (!$tenantId) return;
 
-        $user = auth()->user();
-        $customer = null;
-        if ($this->selectedCustomerId) {
-            $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
-        }
+    $user = auth()->user();
+    $customer = null;
 
-        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
-        $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
+    // حساب الرصيد السابق للعميل
+    $previousBalance = 0;
+    if ($this->selectedCustomerId) {
+        $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
+        if ($customer) {
+            $party = Party::find($customer->id);
+            if ($party) {
+                $openingBalance = $party->opening_balance ?? 0;
+                $ordersSum = $party->orders()->where('status', 'completed')->sum('total');
+                $paidSum = $party->payments()->where('type', 'payment')->sum('amount');
+                $receivedSum = $party->payments()->where('type', 'receipt')->sum('amount');
 
-        // تحديد قيمة المبلغ المدفوع وحالة الدفع
-        $paid = is_null($this->paidAmount) ? $subtotal : (float) $this->paidAmount;
-
-        $paymentStatus = 'paid';
-        if ($paid <= 0) {
-            $paymentStatus = 'unpaid';
-        } elseif ($paid < $subtotal) {
-            $paymentStatus = 'partial';
-        }
-
-        $order = null;
-        $payment = null;
-
-        $activeShift = Shift::where('tenant_id', $tenantId)
-            ->where('user_id', $user?->id)
-            ->where('status', 'open')
-            ->first();
-
-        DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
-            $order = Order::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $this->getUserBranchId(),
-                'customer_id' => $customer?->id,
-                'customer_name' => $customer?->name ?? 'زبون جملة عابر',
-                'customer_phone' => $customer?->phone,
-                'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
-                'type' => 'wholesale',
-                'status' => 'completed',
-                'subtotal' => $subtotal,
-                'total' => $subtotal,
-                'total_cost' => $totalCost,
-                'total_profit' => $subtotal - $totalCost,
-                'paid_amount' => $paid,
-                'payment_status' => $paymentStatus,
-                'notes' => $this->notes,
-            ]);
-
-            foreach ($this->cart as $productId => $item) {
-                OrderItem::create([
-                    'tenant_id' => $tenantId,
-                    'order_id' => $order->id,
-                    'product_id' => $productId,
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['price'],
-                    'total_price' => $item['price'] * $item['quantity'],
-                    'cost_price' => $item['cost'],
-                    'total_cost' => $item['cost'] * $item['quantity'],
-                ]);
+                $previousBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
             }
-
-            // إنشاء سند قبض آلي إذا كان هناك مبلغ مدفوع وكان العميل مسجلاً في النظام
-            if ($paid > 0 && $customer) {
-                $payment = Payment::create([
-                    'tenant_id'      => $tenantId,
-                    'branch_id'      => $this->getUserBranchId() ?? $activeShift?->branch_id,
-                    'shift_id'       => $activeShift?->id,
-                    'user_id'        => $user?->id,
-                    'type'           => 'receipt',
-                    'voucher_number' => 'RCV-' . strtoupper(uniqid()),
-                    'payable_type'   => Party::class,
-                    'payable_id'     => $customer->id,
-                    'amount'         => $paid,
-                    'payment_method' => 'cash',
-                    'notes'          => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
-                    'payment_date'   => now(),
-                ]);
-            }
-        });
-
-        // طباعة فاتورة البيع عند طلب الطباعة
-        if ($shouldPrint && $order) {
-            $printableOrder = [
-                'store_name' => $user?->name ?? 'مبيعات الجملة',
-                'invoice_no' => $order->invoice_number,
-                'customer_name' => $order->customer_name,
-                'customer_phone' => $order->customer_phone,
-                'date' => $order->created_at->format('Y-m-d H:i'),
-                'items' => array_values($this->cart),
-                'total' => $subtotal,
-                'paid_amount' => $paid,
-                'remaining_amount' => $subtotal - $paid,
-                'notes' => $this->notes,
-            ];
-
-            $this->dispatch('do-kiosk-print', data: $printableOrder);
         }
-
-        // طباعة سند القبض تلقائياً عند إنشائه
-        if ($payment) {
-            $voucherData = [
-                'store_name'     => $user?->tenant?->name ?? 'المتجر',
-                'voucher_no'     => $payment->voucher_number,
-                'type'           => 'سند قبض',
-                'party_name'     => $customer?->name ?? 'عميل',
-                'amount'         => number_format($payment->amount, 2),
-                'payment_method' => 'نقداً (كاش)',
-                'date'           => $payment->payment_date->format('Y-m-d H:i'),
-                'user_name'      => $user?->name ?? 'النظام',
-                'notes'          => $payment->notes,
-            ];
-
-            $this->dispatch('do-voucher-print', data: $voucherData);
-        }
-
-        $this->cart = [];
-        $this->reset(['selectedCustomerId', 'notes', 'paidAmount']);
-        session()->flash('message', 'تم إصدار فاتورة الجملة بنجاح!');
     }
+
+    $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+    $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
+
+    $paid = is_null($this->paidAmount) ? $subtotal : (float) $this->paidAmount;
+
+    $paymentStatus = 'paid';
+    if ($paid <= 0) {
+        $paymentStatus = 'unpaid';
+    } elseif ($paid < $subtotal) {
+        $paymentStatus = 'partial';
+    }
+
+    $order = null;
+    $payment = null;
+
+    $activeShift = Shift::where('tenant_id', $tenantId)
+        ->where('user_id', $user?->id)
+        ->where('status', 'open')
+        ->first();
+
+    DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
+        $order = Order::create([
+            'tenant_id' => $tenantId,
+            'branch_id' => $this->getUserBranchId(),
+            'customer_id' => $customer?->id,
+            'customer_name' => $customer?->name ?? 'زبون',
+            'customer_phone' => $customer?->phone,
+            'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
+            'type' => 'wholesale',
+            'status' => 'completed',
+            'subtotal' => $subtotal,
+            'total' => $subtotal,
+            'total_cost' => $totalCost,
+            'total_profit' => $subtotal - $totalCost,
+            'paid_amount' => $paid,
+            'payment_status' => $paymentStatus,
+            'notes' => $this->notes,
+        ]);
+
+        foreach ($this->cart as $productId => $item) {
+            OrderItem::create([
+                'tenant_id' => $tenantId,
+                'order_id' => $order->id,
+                'product_id' => $productId,
+                'quantity' => $item['quantity'],
+                'unit_price' => $item['price'],
+                'total_price' => $item['price'] * $item['quantity'],
+                'cost_price' => $item['cost'],
+                'total_cost' => $item['cost'] * $item['quantity'],
+            ]);
+        }
+
+        if ($paid > 0 && $customer) {
+            $payment = Payment::create([
+                'tenant_id'      => $tenantId,
+                'branch_id'      => $this->getUserBranchId() ?? $activeShift?->branch_id,
+                'shift_id'       => $activeShift?->id,
+                'user_id'        => $user?->id,
+                'type'           => 'receipt',
+                'voucher_number' => 'RCV-' . strtoupper(uniqid()),
+                'payable_type'   => Party::class,
+                'payable_id'     => $customer->id,
+                'amount'         => $paid,
+                'payment_method' => 'cash',
+                'notes'          => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
+                'payment_date'   => now(),
+            ]);
+        }
+    });
+
+    // حساب الرصيد الحالي الجديد بعد إضافة الفاتورة والدفعة
+    $currentBalance = $previousBalance + $subtotal - $paid;
+
+    // طباعة الفاتورة
+    if ($shouldPrint && $order) {
+        $printableOrder = [
+            'header_title' => 'تسعيرة',
+            'invoice_no' => $order->invoice_number,
+            'customer_name' => $order->customer_name,
+            'customer_phone' => $order->customer_phone,
+            'date' => $order->created_at->format('Y-m-d H:i'),
+            'items' => array_values($this->cart),
+            'total' => $subtotal,
+            'paid_amount' => $paid,
+            'remaining_amount' => $subtotal - $paid,
+            'previous_balance' => $previousBalance,
+            'current_balance' => $currentBalance,
+            'notes' => $this->notes,
+        ];
+
+        $this->dispatch('do-kiosk-print', data: $printableOrder);
+    }
+
+    // طباعة سند القبض مع إضافة الأرصدة
+    if ($payment) {
+        $voucherData = [
+            'header_title'   => 'تسعيرة',
+            'voucher_no'     => $payment->voucher_number,
+            'type'           => 'سند قبض',
+            'party_name'     => $customer?->name ?? 'زبون',
+            'amount'         => number_format($payment->amount, 2),
+            'payment_method' => 'نقداً (كاش)',
+            'date'           => $payment->payment_date->format('Y-m-d H:i'),
+            'user_name'      => $user?->name ?? 'النظام',
+            'previous_balance' => $previousBalance,
+            'current_balance' => $currentBalance,
+            'notes'          => $payment->notes,
+        ];
+
+        $this->dispatch('do-voucher-print', data: $voucherData);
+    }
+
+    $this->cart = [];
+    $this->reset(['selectedCustomerId', 'notes', 'paidAmount']);
+    session()->flash('message', 'تم إصدار الفاتورة بنجاح!');
+}
 
     public function render()
     {
@@ -662,7 +681,6 @@ new class extends Component {
 
 @script
 <script>
-    // إعادة التركيز على حقل الباركود مع مراعاة الحقول النشطة
     Livewire.hook('commit', ({ respond }) => {
         respond(() => {
             const activeEl = document.activeElement;
@@ -677,17 +695,17 @@ new class extends Component {
         });
     });
 
-    // الاستماع لطباعة الفاتورة عبر RawBT
+    // طباعة الفاتورة عبر RawBT
     $wire.on('do-kiosk-print', (event) => {
         const inv = event.data;
 
         let text = "";
         text += "--------------------------------\n";
-        text += "        " + (inv.store_name || "المتجر") + "        \n";
+        text += "            " + (inv.header_title || "تسعيرة") + "            \n";
         text += "--------------------------------\n";
         text += "رقم الفاتورة: " + inv.invoice_no + "\n";
         text += "التاريخ: " + inv.date + "\n";
-        text += "العميل: " + inv.customer_name + "\n";
+        text += "الزبون: " + inv.customer_name + "\n";
         if (inv.customer_phone) {
             text += "الهاتف: " + inv.customer_phone + "\n";
         }
@@ -700,9 +718,16 @@ new class extends Component {
         });
 
         text += "--------------------------------\n";
-        text += "الإجمالي: " + Number(inv.total).toFixed(2) + " \n";
-        text += "المدفوع: " + Number(inv.paid_amount).toFixed(2) + " \n";
-        text += "المتبقي: " + Number(inv.remaining_amount).toFixed(2) + " \n";
+        text += "مجموع الفاتورة: " + Number(inv.total).toFixed(2) + " \n";
+
+        if (Number(inv.paid_amount) > 0) {
+            text += "الدفعة النقدية: " + Number(inv.paid_amount).toFixed(2) + " \n";
+            text += "صافي الفاتورة: " + Number(inv.remaining_amount).toFixed(2) + " \n";
+        }
+
+        text += "--------------------------------\n";
+        text += "الرصيد السابق: " + Number(inv.previous_balance).toFixed(2) + " \n";
+        text += "الرصيد الحالي: " + Number(inv.current_balance).toFixed(2) + " \n";
 
         if (inv.notes) {
             text += "ملاحظات: " + inv.notes + "\n";
@@ -719,22 +744,25 @@ new class extends Component {
         window.location.href = intentUrl;
     });
 
-    // الاستماع لطباعة سند القبض التلقائي عبر RawBT
+    // طباعة سند القبض عبر RawBT
     $wire.on('do-voucher-print', (event) => {
         const voucher = event.data;
 
         let text = "";
         text += "--------------------------------\n";
-        text += "        " + (voucher.store_name || "المتجر") + "        \n";
+        text += "            " + (voucher.header_title || "تسعيرة") + "            \n";
         text += "           " + voucher.type + "           \n";
         text += "--------------------------------\n";
         text += "رقم السند: " + voucher.voucher_no + "\n";
         text += "التاريخ: " + voucher.date + "\n";
-        text += "المستلم من: " + voucher.party_name + "\n";
+        text += "الزبون: " + voucher.party_name + "\n";
         text += "--------------------------------\n";
-        text += "المبلغ: " + voucher.amount + " \n";
+        text += "الدفعة الواصلة: " + voucher.amount + " \n";
         text += "طريقة الدفع: " + voucher.payment_method + "\n";
-        text += "المستخدم: " + voucher.user_name + "\n";
+        text += "--------------------------------\n";
+        text += "الرصيد السابق: " + Number(voucher.previous_balance).toFixed(2) + " \n";
+        text += "الرصيد الحالي: " + Number(voucher.current_balance).toFixed(2) + " \n";
+
         if (voucher.notes) {
             text += "ملاحظات: " + voucher.notes + "\n";
         }
