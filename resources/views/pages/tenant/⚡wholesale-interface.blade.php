@@ -23,7 +23,8 @@ new class extends Component {
     public ?string $notes = '';
 
     // المبلغ المدفوع (للدفع الجزئي أو الكلي)
-public ?float $paidAmount = 0;
+    public ?float $paidAmount = 0;
+
     // متغيرات مودال سجل أسعار البيع
     public bool $showPriceHistoryModal = false;
     public ?array $selectedHistoryItem = null;
@@ -44,13 +45,11 @@ public ?float $paidAmount = 0;
         return auth()->user()?->branch_id;
     }
 
-    // إعادة ضبط الترقيم عند التعديل في البحث
     public function updatedSearch(): void
     {
         $this->resetPage();
     }
 
-    // دالة معالجة الباركود المسحوب عبر Enter
     public function searchBarcode(): void
     {
         $this->resetPage();
@@ -64,7 +63,6 @@ public ?float $paidAmount = 0;
         $tenantId = $this->getTenantId();
         if (!$tenantId) return;
 
-        // البحث عن منتج يطابق الباركود بشكل دقيق
         $matchedProduct = Product::where('products.tenant_id', $tenantId)
             ->whereExists(function ($query) use ($trimmedSearch) {
                 $query->select(DB::raw(1))
@@ -74,14 +72,12 @@ public ?float $paidAmount = 0;
             })
             ->first();
 
-        // إضافة المنتج فوراً للسلة وتفريغ حقل البحث
         if ($matchedProduct) {
             $this->addToCart($matchedProduct->id);
             $this->search = '';
         }
     }
 
-    // جلب آخر 10 عمليات بيع للمنتج مع العميل المحدد
     public function showLastPrice(int $productId): void
     {
         $tenantId = $this->getTenantId();
@@ -181,7 +177,6 @@ public ?float $paidAmount = 0;
         }
     }
 
-    // تعديل السعر المباشر للمنتج في السلة
     public function updatePrice(int $productId, $newPrice): void
     {
         $price = (float) $newPrice;
@@ -190,158 +185,151 @@ public ?float $paidAmount = 0;
         }
     }
 
-    // زر سريع لتعيين دفع المبلغ كاملاً
-   public function setFullPayment(): void
-{
-    $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
-}
+    public function setFullPayment(): void
+    {
+        $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+    }
 
-public function completeSale(bool $shouldPrint = false): void
-{
-    if (empty($this->cart)) return;
+    public function completeSale(bool $shouldPrint = false): void
+    {
+        if (empty($this->cart)) return;
 
-    $tenantId = $this->getTenantId();
-    if (!$tenantId) return;
+        $tenantId = $this->getTenantId();
+        if (!$tenantId) return;
 
-    $user = auth()->user();
-    $customer = null;
+        $user = auth()->user();
+        $customer = null;
 
-    // حساب الرصيد السابق للزبون
-    $previousBalance = 0;
-    if ($this->selectedCustomerId) {
-        $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
-        if ($customer) {
-            $party = Party::find($customer->id);
-            if ($party) {
-                $openingBalance = $party->opening_balance ?? 0;
-                $ordersSum = $party->orders()->where('status', 'completed')->sum('total');
-                $paidSum = $party->payments()->where('type', 'payment')->sum('amount');
-                $receivedSum = $party->payments()->where('type', 'receipt')->sum('amount');
+        $previousBalance = 0;
+        if ($this->selectedCustomerId) {
+            $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
+            if ($customer) {
+                $party = Party::find($customer->id);
+                if ($party) {
+                    $openingBalance = $party->opening_balance ?? 0;
+                    $ordersSum = $party->orders()->where('status', 'completed')->sum('total');
+                    $paidSum = $party->payments()->where('type', 'payment')->sum('amount');
+                    $receivedSum = $party->payments()->where('type', 'receipt')->sum('amount');
 
-                $previousBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                    $previousBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                }
             }
         }
-    }
 
-    $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
-    $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
+        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+        $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
 
-    // إذا كان الحقل فارغاً يتم اعتباره 0
-    $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
+        $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
 
-    $paymentStatus = 'unpaid';
-    if ($paid >= $subtotal && $subtotal > 0) {
-        $paymentStatus = 'paid';
-    } elseif ($paid > 0) {
-        $paymentStatus = 'partial';
-    }
+        $paymentStatus = 'unpaid';
+        if ($paid >= $subtotal && $subtotal > 0) {
+            $paymentStatus = 'paid';
+        } elseif ($paid > 0) {
+            $paymentStatus = 'partial';
+        }
 
-    $order = null;
-    $payment = null;
+        $order = null;
+        $payment = null;
 
-    $activeShift = Shift::where('tenant_id', $tenantId)
-        ->where('user_id', $user?->id)
-        ->where('status', 'open')
-        ->first();
+        $activeShift = Shift::where('tenant_id', $tenantId)
+            ->where('user_id', $user?->id)
+            ->where('status', 'open')
+            ->first();
 
-    DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
-        $order = Order::create([
-            'tenant_id' => $tenantId,
-            'branch_id' => $this->getUserBranchId(),
-            'customer_id' => $customer?->id,
-            'customer_name' => $customer?->name ?? 'زبون',
-            'customer_phone' => $customer?->phone,
-            'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
-            'type' => 'wholesale',
-            'status' => 'completed',
-            'subtotal' => $subtotal,
-            'total' => $subtotal,
-            'total_cost' => $totalCost,
-            'total_profit' => $subtotal - $totalCost,
-            'paid_amount' => $paid,
-            'payment_status' => $paymentStatus,
-            'notes' => $this->notes,
-        ]);
-
-        foreach ($this->cart as $productId => $item) {
-            OrderItem::create([
+        DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
+            $order = Order::create([
                 'tenant_id' => $tenantId,
-                'order_id' => $order->id,
-                'product_id' => $productId,
-                'quantity' => $item['quantity'],
-                'unit_price' => $item['price'],
-                'total_price' => $item['price'] * $item['quantity'],
-                'cost_price' => $item['cost'],
-                'total_cost' => $item['cost'] * $item['quantity'],
+                'branch_id' => $this->getUserBranchId(),
+                'customer_id' => $customer?->id,
+                'customer_name' => $customer?->name ?? 'زبون',
+                'customer_phone' => $customer?->phone,
+                'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
+                'type' => 'wholesale',
+                'status' => 'completed',
+                'subtotal' => $subtotal,
+                'total' => $subtotal,
+                'total_cost' => $totalCost,
+                'total_profit' => $subtotal - $totalCost,
+                'paid_amount' => $paid,
+                'payment_status' => $paymentStatus,
+                'notes' => $this->notes,
             ]);
+
+            foreach ($this->cart as $productId => $item) {
+                OrderItem::create([
+                    'tenant_id' => $tenantId,
+                    'order_id' => $order->id,
+                    'product_id' => $productId,
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['price'],
+                    'total_price' => $item['price'] * $item['quantity'],
+                    'cost_price' => $item['cost'],
+                    'total_cost' => $item['cost'] * $item['quantity'],
+                ]);
+            }
+
+            if ($paid > 0 && $customer) {
+                $payment = Payment::create([
+                    'tenant_id'      => $tenantId,
+                    'branch_id'      => $this->getUserBranchId() ?? $activeShift?->branch_id,
+                    'shift_id'       => $activeShift?->id,
+                    'user_id'        => $user?->id,
+                    'type'           => 'receipt',
+                    'voucher_number' => 'RCV-' . strtoupper(uniqid()),
+                    'payable_type'   => Party::class,
+                    'payable_id'     => $customer->id,
+                    'amount'         => $paid,
+                    'payment_method' => 'cash',
+                    'notes'          => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
+                    'payment_date'   => now(),
+                ]);
+            }
+        });
+
+        $currentBalance = $previousBalance + $subtotal - $paid;
+
+        if ($shouldPrint && $order) {
+            $printableOrder = [
+                'header_title' => 'تسعيرة',
+                'invoice_no' => $order->invoice_number,
+                'customer_name' => $order->customer_name,
+                'customer_phone' => $order->customer_phone,
+                'date' => $order->created_at->format('Y-m-d H:i'),
+                'items' => array_values($this->cart),
+                'total' => $subtotal,
+                'paid_amount' => $paid,
+                'remaining_amount' => $subtotal - $paid,
+                'previous_balance' => $previousBalance,
+                'current_balance' => $currentBalance,
+                'notes' => $this->notes,
+            ];
+
+            $this->dispatch('do-kiosk-print', data: $printableOrder);
         }
 
-        // إنشاء سند قبض تلقائي في حال وجود مبلغ مدفوع وزبون محدد
-        if ($paid > 0 && $customer) {
-            $payment = Payment::create([
-                'tenant_id'      => $tenantId,
-                'branch_id'      => $this->getUserBranchId() ?? $activeShift?->branch_id,
-                'shift_id'       => $activeShift?->id,
-                'user_id'        => $user?->id,
-                'type'           => 'receipt',
-                'voucher_number' => 'RCV-' . strtoupper(uniqid()),
-                'payable_type'   => Party::class,
-                'payable_id'     => $customer->id,
-                'amount'         => $paid,
-                'payment_method' => 'cash',
-                'notes'          => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
-                'payment_date'   => now(),
-            ]);
+        if ($payment) {
+            $voucherData = [
+                'header_title'   => 'تسعيرة',
+                'voucher_no'     => $payment->voucher_number,
+                'type'           => 'سند قبض',
+                'party_name'     => $customer?->name ?? 'زبون',
+                'amount'         => number_format($payment->amount, 2),
+                'payment_method' => 'نقداً (كاش)',
+                'date'           => $payment->payment_date->format('Y-m-d H:i'),
+                'user_name'      => $user?->name ?? 'النظام',
+                'previous_balance' => $previousBalance,
+                'current_balance' => $currentBalance,
+                'notes'          => $payment->notes,
+            ];
+
+            $this->dispatch('do-voucher-print', data: $voucherData);
         }
-    });
 
-    // حساب الرصيد الحالي بعد الفاتورة والنزول
-    $currentBalance = $previousBalance + $subtotal - $paid;
-
-    // طباعة الفاتورة
-    if ($shouldPrint && $order) {
-        $printableOrder = [
-            'header_title' => 'تسعيرة',
-            'invoice_no' => $order->invoice_number,
-            'customer_name' => $order->customer_name,
-            'customer_phone' => $order->customer_phone,
-            'date' => $order->created_at->format('Y-m-d H:i'),
-            'items' => array_values($this->cart),
-            'total' => $subtotal,
-            'paid_amount' => $paid,
-            'remaining_amount' => $subtotal - $paid,
-            'previous_balance' => $previousBalance,
-            'current_balance' => $currentBalance,
-            'notes' => $this->notes,
-        ];
-
-        $this->dispatch('do-kiosk-print', data: $printableOrder);
+        $this->cart = [];
+        $this->reset(['selectedCustomerId', 'notes']);
+        $this->paidAmount = 0;
+        session()->flash('message', 'تم إصدار الفاتورة بنجاح!');
     }
-
-    // طباعة سند القبض
-    if ($payment) {
-        $voucherData = [
-            'header_title'   => 'تسعيرة',
-            'voucher_no'     => $payment->voucher_number,
-            'type'           => 'سند قبض',
-            'party_name'     => $customer?->name ?? 'زبون',
-            'amount'         => number_format($payment->amount, 2),
-            'payment_method' => 'نقداً (كاش)',
-            'date'           => $payment->payment_date->format('Y-m-d H:i'),
-            'user_name'      => $user?->name ?? 'النظام',
-            'previous_balance' => $previousBalance,
-            'current_balance' => $currentBalance,
-            'notes'          => $payment->notes,
-        ];
-
-        $this->dispatch('do-voucher-print', data: $voucherData);
-    }
-
-    $this->cart = [];
-    $this->reset(['selectedCustomerId', 'notes']);
-    $this->paidAmount = 0; // إعادة تعيين المبلغ المدفوع لـ 0 بعد كل عملية
-    session()->flash('message', 'تم إصدار الفاتورة بنجاح!');
-}
 
     public function render()
     {
@@ -372,7 +360,6 @@ public function completeSale(bool $shouldPrint = false): void
             })
             ->paginate(12);
 
-        // جلب العملاء مع استعلام الرصيد المطابق تماماً لصفحة السندات (Party)
         $customers = Party::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
             ->where(function($query) {
                 $query->where('type', 'customer')->orWhere('type', 'both');
@@ -473,68 +460,42 @@ public function completeSale(bool $shouldPrint = false): void
                     <div class="space-y-2 flex-1 flex flex-col lg:overflow-hidden">
                         <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">فاتورة مبيعات باص</flux:heading>
 
-                        <!-- قائمة اختيار العميل مع عرض الرصيد المطابق تماماً -->
                         <!-- قائمة اختيار الزبون -->
-<div class="space-y-1.5">
-    <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        <option value="">-- اختر الزبون (اختياري: زبون عابر) --</option>
-        @foreach($customers as $customer)
-            @php
-                $openingBalance = $customer->opening_balance ?? 0;
-                $ordersSum = $customer->orders_sum ?? 0;
-                $paidSum = $customer->paid_sum ?? 0;
-                $receivedSum = $customer->received_sum ?? 0;
+                        <div class="space-y-1.5">
+                            <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="">-- اختر الزبون (اختياري: زبون عابر) --</option>
+                                @foreach($customers as $customer)
+                                    @php
+                                        $openingBalance = $customer->opening_balance ?? 0;
+                                        $ordersSum = $customer->orders_sum ?? 0;
+                                        $paidSum = $customer->paid_sum ?? 0;
+                                        $receivedSum = $customer->received_sum ?? 0;
 
-                $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-            @endphp
-            <option value="{{ $customer->id }}">
-                {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }} — [الرصيد: {{ number_format($bal, 2) }}]
-            </option>
-        @endforeach
-    </select>
+                                        $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                                    @endphp
+                                    <option value="{{ $customer->id }}">
+                                        {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }} — [الرصيد: {{ number_format($bal, 2) }}]
+                                    </option>
+                                @endforeach
+                            </select>
 
-    @if($selectedCustomerId && $selectedCustomer = $customers->firstWhere('id', $selectedCustomerId))
-        @php
-            $openingBalance = $selectedCustomer->opening_balance ?? 0;
-            $ordersSum = $selectedCustomer->orders_sum ?? 0;
-            $paidSum = $selectedCustomer->paid_sum ?? 0;
-            $receivedSum = $selectedCustomer->received_sum ?? 0;
+                            @if($selectedCustomerId && $selectedCustomer = $customers->firstWhere('id', $selectedCustomerId))
+                                @php
+                                    $openingBalance = $selectedCustomer->opening_balance ?? 0;
+                                    $ordersSum = $selectedCustomer->orders_sum ?? 0;
+                                    $paidSum = $selectedCustomer->paid_sum ?? 0;
+                                    $receivedSum = $selectedCustomer->received_sum ?? 0;
 
-            $currentBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-        @endphp
-        <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
-            <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للزبون:</span>
-            <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
-                {{ number_format($currentBalance, 2) }} شيكل
-            </span>
-        </div>
-    @endif
-</div>
-
-<!-- حقل المبلغ المدفوع ومفتاح الدفع بالكامل -->
-<div class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-    <div class="flex items-center justify-between">
-        <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ المدفوع:</label>
-        <button type="button"
-                wire:click="setFullPayment"
-                class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
-            دفع كامل
-        </button>
-    </div>
-
-    <input type="number"
-           step="0.01"
-           wire:model.live="paidAmount"
-           placeholder="0.00"
-           class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
-
-    @if(!is_null($paidAmount) && $paidAmount < $cartTotal)
-        <div class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
-            <span>المتبقي (دين):</span>
-            <span class="font-mono">{{ number_format($cartTotal - (float)$paidAmount, 2) }}</span>
-        </div>
-    @endif
-</div>
+                                    $currentBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                                @endphp
+                                <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
+                                    <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للزبون:</span>
+                                    <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
+                                        {{ number_format($currentBalance, 2) }} شيكل
+                                    </span>
+                                </div>
+                            @endif
+                        </div>
 
                         <!-- حقل الملاحظات -->
                         <div>
@@ -556,7 +517,6 @@ public function completeSale(bool $shouldPrint = false): void
                                     <div class="flex-1 truncate">
                                         <div class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
                                             <span>{{ $item['name'] }}</span>
-                                            <!-- زر رؤية آخر 10 عمليات بيع -->
                                             <button type="button"
                                                     wire:click="showLastPrice({{ $id }})"
                                                     title="سجل آخر 10 عمليات بيع لهذا الزبون"
@@ -565,7 +525,6 @@ public function completeSale(bool $shouldPrint = false): void
                                             </button>
                                         </div>
 
-                                        <!-- تعديل السعر المباشر -->
                                         <div class="flex items-center gap-1 mt-0.5">
                                             <span class="text-[10px] text-zinc-400">السعر:</span>
                                             <input type="number"
@@ -595,8 +554,8 @@ public function completeSale(bool $shouldPrint = false): void
                             <span class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
                         </div>
 
-                        <!-- حقل الدفع الجزئي / الكلي -->
-                        <div class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                        <!-- قسم المبلغ المدفوع بدعم Alpine.js للمنع الفوري للتهنيج -->
+                        <div x-data="{ paid: @entangle('paidAmount').live }" class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
                             <div class="flex items-center justify-between">
                                 <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ المدفوع:</label>
                                 <button type="button"
@@ -608,17 +567,16 @@ public function completeSale(bool $shouldPrint = false): void
 
                             <input type="number"
                                    step="0.01"
-                                   wire:model.blur="paidAmount"
-                                   placeholder="{{ number_format($cartTotal, 2) }}"
+                                   x-model.number="paid"
+                                   placeholder="0.00"
                                    class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
 
-                            <!-- عرض المتبقي في حال كان هناك دفع جزئي -->
-                            @if(!is_null($paidAmount) && $paidAmount < $cartTotal)
+                            <template x-if="paid !== null && paid !== '' && parseFloat(paid) < {{ $cartTotal }}">
                                 <div class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
                                     <span>المتبقي (دين):</span>
-                                    <span class="font-mono">{{ number_format($cartTotal - (float)$paidAmount, 2) }}</span>
+                                    <span class="font-mono" x-text="({{ $cartTotal }} - parseFloat(paid || 0)).toFixed(2)"></span>
                                 </div>
-                            @endif
+                            </template>
                         </div>
 
                         <div class="grid grid-cols-2 gap-2 pt-1">
