@@ -18,7 +18,7 @@ class Payment extends Model
         'amount' => 'decimal:2',
     ];
 
-    public function payable(): MorphTo
+    public function payable()
     {
         return $this->morphTo();
     }
@@ -37,4 +37,5 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class);
     }
+
 }

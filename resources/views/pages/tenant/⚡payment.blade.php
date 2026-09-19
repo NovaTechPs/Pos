@@ -3,8 +3,7 @@
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Payment;
-use App\Models\Customer;
-use App\Models\Supplier;
+use App\Models\Party;
 use App\Models\Shift;
 use Illuminate\Support\Facades\DB;
 
@@ -12,7 +11,7 @@ new class extends Component {
     use WithPagination;
 
     public $type = 'payment';
-    public $payable_type = 'supplier';
+    public $payable_type = Party::class;
     public $payable_id;
     public $amount;
     public $payment_method = 'cash';
@@ -22,13 +21,13 @@ new class extends Component {
     protected function rules()
     {
         return [
-            'type' => 'required|in:payment,receipt',
-            'payable_type' => 'required|in:supplier,customer',
-            'payable_id' => 'required|integer',
-            'amount' => 'required|numeric|min:0.01',
+            'type'           => 'required|in:payment,receipt',
+            'payable_type'   => 'required|string',
+            'payable_id'     => 'required|integer|exists:parties,id',
+            'amount'         => 'required|numeric|min:0.01',
             'payment_method' => 'required|in:cash,card,bank_transfer,cheque',
-            'notes' => 'nullable|string|max:500',
-            'payment_date' => 'required|date',
+            'notes'          => 'nullable|string|max:500',
+            'payment_date'   => 'required|date',
         ];
     }
 
@@ -36,15 +35,13 @@ new class extends Component {
     {
         $user = auth()->user();
 
-        // التحقق من الصلاحيات والتحويل التلقائي للنوع المتاح
         if ($user && $user->can('Voucher.add')) {
             $this->type = 'payment';
-            $this->payable_type = 'supplier';
         } elseif ($user && $user->can('Receipt.add')) {
             $this->type = 'receipt';
-            $this->payable_type = 'customer';
         }
 
+        $this->payable_type = Party::class;
         $this->payment_date = now()->format('Y-m-d\TH:i');
     }
 
@@ -67,7 +64,6 @@ new class extends Component {
 
     public function setType($newType)
     {
-        // منع التحويل عبر السيرفر إذا كان المستخدم لا يمتلك الصلاحية
         if ($newType === 'payment' && !auth()->user()?->can('Voucher.add')) {
             return;
         }
@@ -76,7 +72,6 @@ new class extends Component {
         }
 
         $this->type = $newType;
-        $this->payable_type = $newType === 'payment' ? 'supplier' : 'customer';
         $this->payable_id = null;
         $this->resetPage();
     }
@@ -85,7 +80,6 @@ new class extends Component {
     {
         $user = auth()->user();
 
-        // حماية على مستوى السيرفر لعملية الحفظ
         if ($this->type === 'payment' && !$user?->can('Voucher.add')) {
             abort(403, 'غير مصرح لك بإنشاء سند دفع.');
         }
@@ -102,8 +96,6 @@ new class extends Component {
             return;
         }
 
-        $payableClass = $this->payable_type === 'supplier' ? Supplier::class : Customer::class;
-
         $activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $user->id)->where('status', 'open')->first();
 
         $prefix = $this->type === 'payment' ? 'PAY-' : 'RCV-';
@@ -111,20 +103,20 @@ new class extends Component {
 
         $payment = null;
 
-        DB::transaction(function () use ($user, $tenantId, $activeShift, $payableClass, $voucherNumber, &$payment) {
+        DB::transaction(function () use ($user, $tenantId, $activeShift, $voucherNumber, &$payment) {
             $payment = Payment::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $user->branch_id ?? $activeShift?->branch_id,
-                'shift_id' => $activeShift?->id,
-                'user_id' => $user->id,
-                'type' => $this->type,
+                'tenant_id'      => $tenantId,
+                'branch_id'      => $user->branch_id ?? $activeShift?->branch_id,
+                'shift_id'       => $activeShift?->id,
+                'user_id'        => $user->id,
+                'type'           => $this->type,
                 'voucher_number' => $voucherNumber,
-                'payable_type' => $payableClass,
-                'payable_id' => $this->payable_id,
-                'amount' => $this->amount,
+                'payable_type'   => Party::class,
+                'payable_id'     => $this->payable_id,
+                'amount'         => $this->amount,
                 'payment_method' => $this->payment_method,
-                'notes' => $this->notes,
-                'payment_date' => $this->payment_date,
+                'notes'          => $this->notes,
+                'payment_date'   => $this->payment_date,
             ]);
         });
 
@@ -140,22 +132,49 @@ new class extends Component {
     {
         $payment = Payment::with(['payable', 'user'])->findOrFail($paymentId);
 
+        // حساب الرصيد الحالي المتبقي للجهة
+        $remainingBalance = 0;
+        if ($payment->payable) {
+            $party = Party::where('id', $payment->payable_id)
+                ->withSum(['payments as paid_sum' => fn($q) => $q->where('type', 'payment')], 'amount')
+                ->withSum(['payments as received_sum' => fn($q) => $q->where('type', 'receipt')], 'amount')
+                ->withSum(['orders as orders_sum'], 'total')
+                ->first();
+
+            if ($party) {
+                $openingBalance = $party->opening_balance ?? 0;
+                $ordersSum     = $party->orders_sum ?? 0;
+                $paidSum       = $party->paid_sum ?? 0;
+                $receivedSum   = $party->received_sum ?? 0;
+
+                if ($payment->type === 'payment') {
+                    // حساب الموردين: (الرصيد الافتتاحي + المقبوضات) - المدفوعات
+                    $remainingBalance = ($openingBalance + $receivedSum) - $paidSum;
+                } else {
+                    // حساب العملاء: الرصيد الافتتاحي + المبيعات/الطلبات + المدفوعات - المقبوضات
+                    $remainingBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                }
+            }
+        }
+
         $voucherData = [
-            'store_name' => auth()->user()?->tenant?->name ?? 'المتجر',
-            'voucher_no' => $payment->voucher_number,
-            'type' => $payment->type === 'receipt' ? 'سند قبض' : 'سند دفع',
-            'party_name' => $payment->payable?->name ?? 'غير محدد',
-            'amount' => number_format($payment->amount, 2),
-            'payment_method' => match ($payment->payment_method) {
-                'cash' => 'نقداً (كاش)',
-                'card' => 'بطاقة / فيزا',
+            'store_name'        => auth()->user()?->tenant?->name ?? '',
+            'voucher_no'        => $payment->voucher_number,
+            'type'              => $payment->type === 'receipt' ? 'سند قبض' : 'سند دفع',
+            'party_label'       => $payment->type === 'receipt' ? 'الزبون / العميل' : 'المورد',
+            'party_name'        => $payment->payable?->name ?? 'غير محدد',
+            'amount'            => number_format($payment->amount, 2),
+            'remaining_balance' => number_format($remainingBalance, 2),
+            'payment_method'    => match ($payment->payment_method) {
+                'cash'          => 'نقداً (كاش)',
+                'card'          => 'بطاقة / فيزا',
                 'bank_transfer' => 'تحويل بنكي',
-                'cheque' => 'شيك',
-                default => $payment->payment_method,
+                'cheque'        => 'شيك',
+                default         => $payment->payment_method,
             },
-            'date' => $payment->payment_date->format('Y-m-d H:i'),
-            'user_name' => $payment->user?->name ?? 'النظام',
-            'notes' => $payment->notes ?? '-',
+            'date'              => \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d H:i'),
+            'user_name'         => $payment->user?->name ?? 'النظام',
+            'notes'             => $payment->notes ?? '-',
         ];
 
         $this->dispatch('do-voucher-print', data: $voucherData);
@@ -164,15 +183,15 @@ new class extends Component {
     public function render()
     {
         $tenantId = $this->getTenantId();
+        $targetType = $this->type === 'payment' ? 'supplier' : 'customer';
 
-        $suppliers = Supplier::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+        $parties = Party::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+            ->when($targetType, fn($q) => $q->where(function($query) use ($targetType) {
+                $query->where('type', $targetType)->orWhere('type', 'both');
+            }))
             ->withSum(['payments as paid_sum' => fn($q) => $q->where('type', 'payment')], 'amount')
             ->withSum(['payments as received_sum' => fn($q) => $q->where('type', 'receipt')], 'amount')
-            ->get();
-
-        $customers = Customer::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
-            ->withSum(['payments as paid_sum' => fn($q) => $q->where('type', 'payment')], 'amount')
-            ->withSum(['payments as received_sum' => fn($q) => $q->where('type', 'receipt')], 'amount')
+            ->withSum(['orders as orders_sum'], 'total')
             ->get();
 
         $payments = Payment::with(['payable', 'user'])
@@ -182,8 +201,7 @@ new class extends Component {
             ->paginate(10);
 
         return $this->view([
-            'suppliers' => $suppliers,
-            'customers' => $customers,
+            'parties'  => $parties,
             'payments' => $payments,
         ])->layout('layouts::tenant');
     }
@@ -206,7 +224,6 @@ new class extends Component {
                 </div>
             @endif
 
-            <!-- أزرار التنقل (Tabs) -->
             @if (auth()->user()?->can('Voucher.add') || auth()->user()?->can('Receipt.add'))
                 <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl p-2 gap-2">
                     @can('Voucher.add')
@@ -225,7 +242,6 @@ new class extends Component {
                 </div>
             @endif
 
-            <!-- نموذج الإضافة -->
             @if (auth()->user()?->can('Voucher.add') || auth()->user()?->can('Receipt.add'))
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-b-xl shadow-md border border-gray-200 dark:border-gray-700">
                     <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
@@ -235,17 +251,25 @@ new class extends Component {
                     <form wire:submit="savePayment" class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                            <!-- قائمة البحث والتحديد التفاعلية -->
                             @php
-                                $list = $type === 'payment' ? $suppliers : $customers;
-                                $formattedList = $list
-                                    ->map(function ($item) {
-                                        $bal = ($item->received_sum ?? 0) - ($item->paid_sum ?? 0);
+                                $formattedList = $parties
+                                    ->map(function ($item) use ($type) {
+                                        $openingBalance = $item->opening_balance ?? 0;
+                                        $ordersSum = $item->orders_sum ?? 0;
+                                        $paidSum = $item->paid_sum ?? 0;
+                                        $receivedSum = $item->received_sum ?? 0;
+
+                                        if ($type === 'payment') {
+                                            $bal = ($openingBalance + $receivedSum) - $paidSum;
+                                        } else {
+                                            $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                                        }
+
                                         return [
-                                            'id' => $item->id,
-                                            'name' => $item->name ?? 'بدون اسم',
-                                            'sub' => $item->company_name ?? ($item->phone ?? ''),
-                                            'balance' => number_format($bal, 2),
+                                            'id'          => $item->id,
+                                            'name'        => $item->name ?? 'بدون اسم',
+                                            'sub'         => $item->company_name ?? ($item->phone ?? ''),
+                                            'balance'     => number_format($bal, 2),
                                             'raw_balance' => $bal,
                                         ];
                                     })
@@ -316,7 +340,7 @@ new class extends Component {
                                 <template x-if="selectedItem">
                                     <div
                                         class="mt-2 text-xs p-2 rounded bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex justify-between items-center">
-                                        <span class="text-gray-600 dark:text-gray-300">الرصيد الحالي:</span>
+                                        <span class="text-gray-600 dark:text-gray-300">الرصيد المتبقي:</span>
                                         <span class="font-bold"
                                             :class="selectedItem.raw_balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' :
                                                 'text-rose-600 dark:text-rose-400'"
@@ -375,7 +399,6 @@ new class extends Component {
                 </div>
             @endif
 
-            <!-- جدول السجلات -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
                 <h3 class="text-lg font-bold mb-4 text-gray-800 dark:text-white">
                     سجل {{ $type === 'payment' ? 'سندات الدفع' : 'سندات القبض' }}
@@ -404,7 +427,7 @@ new class extends Component {
                                         {{ number_format($payment->amount, 2) }}
                                     </td>
                                     <td class="px-4 py-3">{{ $payment->payment_method }}</td>
-                                    <td class="px-4 py-3">{{ $payment->payment_date->format('Y-m-d H:i') }}</td>
+                                    <td class="px-4 py-3">{{ \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d H:i') }}</td>
                                     <td class="px-4 py-3">{{ $payment->user?->name }}</td>
                                     <td class="px-4 py-3 text-center">
                                         <button wire:click="printVoucher({{ $payment->id }})" type="button"
@@ -443,9 +466,10 @@ new class extends Component {
             text += "--------------------------------\n";
             text += "رقم السند: " + v.voucher_no + "\n";
             text += "التاريخ: " + v.date + "\n";
-            text += "الجهة: " + v.party_name + "\n";
+            text += v.party_label + ": " + v.party_name + "\n";
             text += "--------------------------------\n";
-            text += "المبلغ: " + v.amount + " شيكل\n";
+            text += "المبلغ المدفوع: " + v.amount + " شيكل\n";
+            text += "الرصيد المتبقي: " + v.remaining_balance + " شيكل\n";
             text += "طريقة الدفع: " + v.payment_method + "\n";
             text += "البيان: " + v.notes + "\n";
             text += "--------------------------------\n";
