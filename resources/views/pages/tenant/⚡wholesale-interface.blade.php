@@ -233,6 +233,11 @@ new class extends Component {
 
         $activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $user?->id)->where('status', 'open')->first();
 
+        // الاحتفاظ ببيانات السلة لإرسالها للواتساب قبل تصفير السلة
+        $savedCart = $this->cart;
+        $savedNotes = $this->notes;
+        $customerName = $customer?->name ?? 'زبون';
+
         DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
             $order = Order::create([
                 'tenant_id' => $tenantId,
@@ -285,6 +290,7 @@ new class extends Component {
 
         $currentBalance = $previousBalance + $subtotal - $paid;
 
+        // 1. إرسال الطباعة إن طُلبت
         if ($shouldPrint && $order) {
             $printableOrder = [
                 'header_title' => 'تسعيرة',
@@ -322,10 +328,42 @@ new class extends Component {
             $this->dispatch('do-voucher-print', data: $voucherData);
         }
 
+        // 2. إرسال الفاتورة تلقائياً للواتس للرقم المحدد
+        $this->triggerWhatsAppSend('+970592700780', $savedCart, $subtotal, $paid, $customerName, $savedNotes, $order?->invoice_number);
+
+        // 3. إعادة ضبط السلة والملاحظات
         $this->cart = [];
         $this->reset(['selectedCustomerId', 'notes']);
         $this->paidAmount = 0;
-        session()->flash('message', 'تم إصدار الفاتورة بنجاح!');
+        session()->flash('message', 'تم إصدار الفاتورة وإرسالها عبر الواتس بنجاح!');
+    }
+
+    // دالة مساعدة لتجهيز رابط الواتساب وفتحه
+    private function triggerWhatsAppSend(string $phone, array $cart, float $subtotal, float $paid, string $customerName, ?string $notes, ?string $invNo): void
+    {
+        $cleanPhone = preg_replace('/[^0-9]/', '', $phone);
+
+        $text = 'مرحباً، تفاصيل الفاتورة (' . ($invNo ?? 'جديدة') . "):\n\n";
+        $text .= 'الزبون: ' . $customerName . "\n";
+        $text .= "------------------------\n";
+
+        foreach ($cart as $item) {
+            $itemTotal = $item['price'] * $item['quantity'];
+            $text .= "• {$item['name']} (×{$item['quantity']}) = " . number_format($itemTotal, 2) . " شيكل\n";
+        }
+
+        $text .= "------------------------\n";
+        $text .= 'المجموع: ' . number_format($subtotal, 2) . " شيكل\n";
+        $text .= 'المدفوع: ' . number_format($paid, 2) . " شيكل\n";
+        $text .= 'المتبقي: ' . number_format($subtotal - $paid, 2) . " شيكل\n";
+
+        if (!empty($notes)) {
+            $text .= 'ملاحظات: ' . $notes . "\n";
+        }
+
+        $url = "https://wa.me/{$cleanPhone}?text=" . urlencode($text);
+
+        $this->dispatch('open-whatsapp-url', url: $url);
     }
 
     public function render()
@@ -796,6 +834,9 @@ new class extends Component {
                 "end;";
 
             window.location.href = intentUrl;
+        });
+        $wire.on('open-whatsapp-url', (event) => {
+            window.open(event.url, '_blank');
         });
     </script>
 @endscript

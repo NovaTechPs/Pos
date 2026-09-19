@@ -89,11 +89,9 @@ new class extends Component {
         $this->selectedPartyForStatement = Party::where('tenant_id', $tenantId)
             ->with([
                 'orders' => function ($query) {
-                    // ✅ تم التعديل إلى customer_id و total لتتطابق مع قاعدة البيانات
                     $query->select('id', 'customer_id', 'total', 'created_at');
                 },
                 'payments' => function ($query) {
-                    // ✅ تم التعديل إلى payable_id و payable_type للتوافق مع Polymorphic
                     $query->select('id', 'payable_id', 'payable_type', 'amount', 'created_at', 'notes');
                 },
             ])
@@ -110,13 +108,15 @@ new class extends Component {
 
     public function save()
     {
-        $validated = $this->validate();$tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $validated = $this->validate();
+        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
 
-        if ($this->partyId) {$party = Party::where('tenant_id', $tenantId)->findOrFail($this->partyId);
+        if ($this->partyId) {
+            $party = Party::where('tenant_id', $tenantId)->findOrFail($this->partyId);
             $party->update($validated);
             session()->flash('message', 'تم تعديل البيانات بنجاح!');
         } else {
-            $validated['tenant_id'] =$tenantId;
+            $validated['tenant_id'] = $tenantId;
             Party::create($validated);
             session()->flash('message', 'تمت إضافة العميل/الطرف بنجاح!');
         }
@@ -129,7 +129,8 @@ new class extends Component {
         $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
         $party = Party::where('tenant_id', $tenantId)->find($id);
 
-        if ($party) {$party->delete();
+        if ($party) {
+            $party->delete();
             session()->flash('message', 'تم حذف الطرف بنجاح.');
         }
     }
@@ -138,8 +139,9 @@ new class extends Component {
     {
         $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
 
-        $customers = Party::where('tenant_id',$tenantId)
-            ->where(function ($query) {$query
+        $customers = Party::where('tenant_id', $tenantId)
+            ->where(function ($query) {
+                $query
                     ->where('name', 'like', '%' . $this->search . '%')
                     ->orWhere('phone', 'like', '%' . $this->search . '%')
                     ->orWhere('address', 'like', '%' . $this->search . '%');
@@ -155,6 +157,30 @@ new class extends Component {
 ?>
 
 <flux:main class="space-y-6">
+    <style>
+        /* تنسيقات خاصة للطباعة عبر المتصفح */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #statement-modal-content, #statement-modal-content * {
+                visibility: visible;
+            }
+            #statement-modal-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                max-width: 100%;
+                box-shadow: none;
+                border: none;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+
     <div class="p-3 sm:p-6 bg-gray-50 min-h-screen space-y-4 sm:space-y-6" dir="rtl" x-data="thermalPrinter()">
 
         <!-- الهيدر العلوي -->
@@ -330,7 +356,6 @@ new class extends Component {
             @php
                 $transactions = collect();
 
-                // 1. تجميع الفواتير مع تصحيح اسم العمود إلى total
                 foreach ($selectedPartyForStatement->orders as $order) {$transactions->push([
                         'date' => $order->created_at,
                         'description' => 'فاتورة مبيعات #' . $order->id,
@@ -339,7 +364,6 @@ new class extends Component {
                     ]);
                 }
 
-                // 2. تجميع سندات القبض والدفع
                 foreach ($selectedPartyForStatement->payments as $payment) {$transactions->push([
                         'date' => $payment->created_at,
                         'description' => 'سداد دفعة ' . ($payment->notes ? '(' . $payment->notes . ')' : ''),
@@ -348,19 +372,35 @@ new class extends Component {
                     ]);
                 }
 
-                // 3. الترتيب التصاعدي حسب التاريخ لضمان دقة الرصيد التراكمي
                 $sortedTransactions =$transactions->sortBy('date');
                 $runningBalance = (float)$selectedPartyForStatement->opening_balance;
+
+                // تجهيز نص رسالة الواتساب
+                $waText = "*كشف حساب العميل: {$selectedPartyForStatement->name}*\n";
+                $waText .= "رقم الهاتف: " . ($selectedPartyForStatement->phone ?? 'غير محدد') . "\n";
+                $waText .= "التاريخ: " . date('Y-m-d') . "\n";
+                $waText .= "-----------------------------\n";
+                $waText .= "الرصيد الافتتاحي: " . number_format($selectedPartyForStatement->opening_balance, 2) . "\n";
+
+                $tempBalance =$runningBalance;
+                foreach ($sortedTransactions as$t) {
+                    $tempBalance += ($t['debit'] - $t['credit']);$dateFormatted = \Carbon\Carbon::parse($t['date'])->format('Y-m-d');$waText .= "• {$dateFormatted} | {$t['description']} | مدين: {$t['debit']} | دائن: {$t['credit']}\n";
+                }
+
+                $waText .= "-----------------------------\n";
+                $waText .= "*الرصيد النهائي المستحق: " . number_format($tempBalance, 2) . "*";
+                $whatsappUrl = "https://wa.me/970592700780?text=" . urlencode($waText);
             @endphp
 
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-                <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden border border-gray-100 max-h-[90vh] flex flex-col">
+                <div id="statement-modal-content" class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden border border-gray-100 max-h-[90vh] flex flex-col">
+
                     <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100">
                         <div>
                             <h3 class="text-base sm:text-lg font-bold text-gray-800">كشف حساب</h3>
                             <p class="text-xs text-gray-500">{{ $selectedPartyForStatement->name }} ({{$selectedPartyForStatement->phone ?? 'بدون رقم' }})</p>
                         </div>
-                        <button wire:click="closeStatementModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                        <button wire:click="closeStatementModal" class="no-print text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
                     </div>
 
                     <div class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
@@ -388,7 +428,7 @@ new class extends Component {
                                         <td class="p-2 whitespace-nowrap font-bold">{{ number_format($runningBalance, 2) }}</td>
                                     </tr>
 
-                                    @foreach ($sortedTransactions as $item)
+                                    @foreach ($sortedTransactions as$item)
                                         @php
                                             $runningBalance += ($item['debit'] -$item['credit']);
                                         @endphp
@@ -411,19 +451,35 @@ new class extends Component {
                         </div>
                     </div>
 
-                    <div class="flex flex-col sm:flex-row justify-between gap-3 p-4 border-t border-gray-100 bg-gray-50">
+                    <!-- أزرار الإجراءات والطباعة -->
+                    <div class="no-print flex flex-col sm:flex-row justify-between gap-3 p-4 border-t border-gray-100 bg-gray-50">
                         <button type="button" @click="connectPrinter()"
                             class="w-full sm:w-auto px-4 py-2 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1">
                             🔌 ربط الطابعة
                         </button>
-                        <div class="flex gap-2 w-full sm:w-auto">
-                            <button type="button" wire:click="closeStatementModal"
-                                class="flex-1 sm:flex-none px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 text-center">إغلاق</button>
+
+                        <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+                            <!-- زر الواتساب للرقم المطلوب -->
+                            <a href="{{ $whatsappUrl }}" target="_blank"
+                                class="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
+                                <span>إرسال واتساب</span> 💬
+                            </a>
+
+                            <!-- زر طباعة المتصفح / PDF -->
+                            <button type="button" onclick="window.print()"
+                                class="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
+                                <span>طباعة / PDF</span> 🖨️
+                            </button>
+
+                            <!-- زر الطباعة الحرارية -->
                             <button type="button"
                                 @click="printStatement({{ json_encode($selectedPartyForStatement) }})"
-                                class="flex-1 sm:flex-none px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                                <span>طباعة حرارية</span> 🖨️
+                                class="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
+                                <span>حراري</span> 🧾
                             </button>
+
+                            <button type="button" wire:click="closeStatementModal"
+                                class="flex-1 sm:flex-none px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 text-center">إغلاق</button>
                         </div>
                     </div>
                 </div>
