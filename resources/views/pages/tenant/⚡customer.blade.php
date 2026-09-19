@@ -383,7 +383,7 @@ new class extends Component {
                 $waText .= "الرصيد الافتتاحي: " . number_format($selectedPartyForStatement->opening_balance, 2) . "\n";
 
                 $tempBalance =$runningBalance;
-                foreach ($sortedTransactions as$t) {
+                foreach ($sortedTransactions as $t) {
                     $tempBalance += ($t['debit'] - $t['credit']);$dateFormatted = \Carbon\Carbon::parse($t['date'])->format('Y-m-d');$waText .= "• {$dateFormatted} | {$t['description']} | مدين: {$t['debit']} | دائن: {$t['credit']}\n";
                 }
 
@@ -428,7 +428,7 @@ new class extends Component {
                                         <td class="p-2 whitespace-nowrap font-bold">{{ number_format($runningBalance, 2) }}</td>
                                     </tr>
 
-                                    @foreach ($sortedTransactions as$item)
+                                    @foreach ($sortedTransactions as $item)
                                         @php
                                             $runningBalance += ($item['debit'] -$item['credit']);
                                         @endphp
