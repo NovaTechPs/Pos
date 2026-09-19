@@ -12,7 +12,7 @@ new class extends Component {
     public bool $showModal = false;
     public ?int $partyId = null;
 
-    // البيانات الأساسية
+    // البيانات الأساسية للطرف
     public string $name = '';
     public ?string $phone = null;
     public ?string $email = null;
@@ -25,6 +25,9 @@ new class extends Component {
     public bool $showStatementModal = false;
     public ?Party $selectedPartyForStatement = null;
 
+    // الرقم القياسي المعتمد للواتساب
+    public string $default_whatsapp_number = '970592700780';
+
     protected function rules()
     {
         return [
@@ -36,6 +39,15 @@ new class extends Component {
             'type' => 'required|in:customer,supplier,both',
             'opening_balance' => 'nullable|numeric',
         ];
+    }
+
+    private function getTenantId(): ?int
+    {
+        $user = auth()->user();
+        if (!$user) return null;
+        if (!empty($user->tenant_id)) return (int) $user->tenant_id;
+        if (method_exists($user, 'tenants')) return $user->tenants()->first()?->id;
+        return session('active_tenant_id') ? (int) session('active_tenant_id') : null;
     }
 
     public function updatingSearch()
@@ -53,7 +65,7 @@ new class extends Component {
     public function editParty($id)
     {
         $this->resetValidation();
-        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $tenantId = $this->getTenantId();
 
         $party = Party::where('tenant_id', $tenantId)->findOrFail($id);
 
@@ -84,7 +96,7 @@ new class extends Component {
 
     public function openStatementModal($id)
     {
-        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $tenantId = $this->getTenantId();
 
         $this->selectedPartyForStatement = Party::where('tenant_id', $tenantId)
             ->with([
@@ -109,7 +121,7 @@ new class extends Component {
     public function save()
     {
         $validated = $this->validate();
-        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $tenantId = $this->getTenantId();
 
         if ($this->partyId) {
             $party = Party::where('tenant_id', $tenantId)->findOrFail($this->partyId);
@@ -126,7 +138,7 @@ new class extends Component {
 
     public function deleteParty($id)
     {
-        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $tenantId = $this->getTenantId();
         $party = Party::where('tenant_id', $tenantId)->find($id);
 
         if ($party) {
@@ -135,9 +147,119 @@ new class extends Component {
         }
     }
 
+    // إرسال كشف الحساب عبر الواتساب
+    public function sendStatementWhatsapp($partyId)
+    {
+        $tenantId = $this->getTenantId();
+        $party = Party::where('tenant_id', $tenantId)
+            ->with(['orders', 'payments'])
+            ->findOrFail($partyId);
+
+        $phone = preg_replace('/[^0-9]/', '', $this->default_whatsapp_number);
+        $storeName = auth()->user()?->tenant?->name ?? '';
+
+        $transactions = collect();
+        foreach ($party->orders as $order) {
+            $transactions->push([
+                'date' => $order->created_at,
+                'description' => 'فاتورة مبيعات #' . $order->id,
+                'debit' => (float) $order->total,
+                'credit' => 0.00,
+            ]);
+        }
+        foreach ($party->payments as $payment) {
+            $transactions->push([
+                'date' => $payment->created_at,
+                'description' => 'سداد دفعة ' . ($payment->notes ? '(' . $payment->notes . ')' : ''),
+                'debit' => 0.00,
+                'credit' => (float) $payment->amount,
+            ]);
+        }
+
+        $sorted = $transactions->sortBy('date');
+        $balance = (float) $party->opening_balance;
+
+        $msg  = "📜 *كشف حساب*\n";
+        if ($storeName) $msg .= "المتجر: *{$storeName}*\n";
+        $msg .= "----------------------------\n";
+        $msg .= "العميل: {$party->name}\n";
+        $msg .= "رقم الهاتف: " . ($party->phone ?? '-') . "\n";
+        $msg .= "التاريخ: " . date('Y-m-d H:i') . "\n";
+        $msg .= "----------------------------\n";
+        $msg .= "الرصيد الافتتاحي: " . number_format($party->opening_balance, 2) . " شيكل\n";
+
+        foreach ($sorted as $t) {
+            $balance += ($t['debit'] - $t['credit']);
+            $date = \Carbon\Carbon::parse($t['date'])->format('Y-m-d');
+            $msg .= "• {$date} | {$t['description']} | مدين: {$t['debit']} | دائن: {$t['credit']}\n";
+        }
+
+        $msg .= "----------------------------\n";
+        $msg .= "الرصيد المتبقي المستحق: *" . number_format($balance, 2) . " شيكل*\n";
+        $msg .= "شكراً لتعاملكم معنا 🙏";
+
+        $whatsappUrl = "https://wa.me/{$phone}?text=" . urlencode($msg);
+
+        $this->dispatch('open-whatsapp', url: $whatsappUrl);
+    }
+
+    // طباعة كشف الحساب حرارياً باستخدام RawBT
+    public function printStatementThermal($partyId)
+    {
+        $tenantId = $this->getTenantId();
+        $party = Party::where('tenant_id', $tenantId)
+            ->with(['orders', 'payments'])
+            ->findOrFail($partyId);
+
+        $transactions = collect();
+        foreach ($party->orders as $order) {
+            $transactions->push([
+                'date' => $order->created_at,
+                'description' => 'فاتورة #' . $order->id,
+                'debit' => (float) $order->total,
+                'credit' => 0.00,
+            ]);
+        }
+        foreach ($party->payments as $payment) {
+            $transactions->push([
+                'date' => $payment->created_at,
+                'description' => 'دفعة سداد',
+                'debit' => 0.00,
+                'credit' => (float) $payment->amount,
+            ]);
+        }
+
+        $sorted = $transactions->sortBy('date');
+        $balance = (float) $party->opening_balance;
+
+        $itemsFormatted = [];
+        foreach ($sorted as $t) {
+            $balance += ($t['debit'] - $t['credit']);
+            $itemsFormatted[] = [
+                'date' => \Carbon\Carbon::parse($t['date'])->format('Y-m-d'),
+                'desc' => $t['description'],
+                'debit' => number_format($t['debit'], 2),
+                'credit' => number_format($t['credit'], 2),
+                'bal' => number_format($balance, 2),
+            ];
+        }
+
+        $statementData = [
+            'store_name'      => auth()->user()?->tenant?->name ?? '',
+            'party_name'      => $party->name,
+            'party_phone'     => $party->phone ?? '-',
+            'opening_balance' => number_format($party->opening_balance, 2),
+            'final_balance'   => number_format($balance, 2),
+            'date'            => date('Y-m-d H:i'),
+            'items'           => $itemsFormatted,
+        ];
+
+        $this->dispatch('do-statement-print', data: $statementData);
+    }
+
     public function render()
     {
-        $tenantId = session('active_tenant_id') ?? auth()->user()->tenant_id;
+        $tenantId = $this->getTenantId();
 
         $customers = Party::where('tenant_id', $tenantId)
             ->where(function ($query) {
@@ -157,41 +279,17 @@ new class extends Component {
 ?>
 
 <flux:main class="space-y-6">
-    <style>
-        /* تنسيقات خاصة للطباعة عبر المتصفح */
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-            #statement-modal-content, #statement-modal-content * {
-                visibility: visible;
-            }
-            #statement-modal-content {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                max-width: 100%;
-                box-shadow: none;
-                border: none;
-            }
-            .no-print {
-                display: none !important;
-            }
-        }
-    </style>
-
-    <div class="p-3 sm:p-6 bg-gray-50 min-h-screen space-y-4 sm:space-y-6" dir="rtl" x-data="thermalPrinter()">
+    <div class="p-3 sm:p-6 bg-gray-50 dark:bg-gray-900 min-h-screen space-y-4 sm:space-y-6" dir="rtl">
 
         <!-- الهيدر العلوي -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2 sm:mb-6">
             <div>
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-800">إدارة العملاء</h1>
-                <p class="text-xs sm:text-sm text-gray-500 mt-1">عرض وإدارة العملاء والأطراف التجارية</p>
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">إدارة العملاء</h1>
+                <p class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">عرض وإدارة العملاء والأطراف التجارية</p>
             </div>
 
             <button wire:click="openCreateModal"
-                class="w-full sm:w-auto justify-center bg-gray-900 hover:bg-black text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
+                class="w-full sm:w-auto justify-center bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
                 <span>إضافة عميل جديد</span>
                 <span class="text-lg leading-none">+</span>
             </button>
@@ -199,22 +297,22 @@ new class extends Component {
 
         <!-- رسائل التنبيه -->
         @if (session()->has('message'))
-            <div class="p-4 text-sm text-green-800 bg-green-100 rounded-lg border border-green-200">
+            <div class="p-4 text-sm text-green-800 bg-green-100 rounded-lg border border-green-200 dark:bg-gray-800 dark:text-green-400 dark:border-green-800">
                 {{ session('message') }}
             </div>
         @endif
 
         <!-- شريط البحث والتصفح -->
-        <div class="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div class="bg-white dark:bg-gray-800 p-3 sm:p-4 rounded-xl shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between border border-gray-100 dark:border-gray-700">
             <div class="relative w-full sm:w-1/2 md:w-1/3">
                 <input type="text" wire:model.live.debounce.300ms="search"
                     placeholder="ابحث بالاسم، الهاتف أو العنوان..."
-                    class="w-full pl-4 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
+                    class="w-full pl-4 pr-10 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
                 <span class="absolute right-3 top-2.5 text-gray-400">🔍</span>
             </div>
 
             <select wire:model.live="perPage"
-                class="w-full sm:w-auto border border-gray-200 rounded-lg text-sm p-2 text-gray-600 bg-white">
+                class="w-full sm:w-auto border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm p-2 text-gray-600 bg-white">
                 <option value="10">10 لكل صفحة</option>
                 <option value="25">25 لكل صفحة</option>
                 <option value="50">50 لكل صفحة</option>
@@ -222,10 +320,10 @@ new class extends Component {
         </div>
 
         <!-- جدول عرض العملاء -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-            <table class="w-full text-right border-collapse min-w-[650px]">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-x-auto">
+            <table class="w-full text-right border-collapse min-w-[650px] dark:text-gray-300">
                 <thead>
-                    <tr class="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <tr class="bg-gray-50 dark:bg-gray-700 border-b border-gray-100 dark:border-gray-600 text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         <th class="p-3 sm:p-4">#</th>
                         <th class="p-3 sm:p-4">الاسم</th>
                         <th class="p-3 sm:p-4">النوع</th>
@@ -235,23 +333,23 @@ new class extends Component {
                         <th class="p-3 sm:p-4 text-center">الإجراءات</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 text-xs sm:text-sm">
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm">
                     @forelse ($customers as $customer)
-                        <tr class="hover:bg-gray-50/50 transition">
+                        <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition">
                             <td class="p-3 sm:p-4 text-gray-400">{{ $loop->iteration }}</td>
-                            <td class="p-3 sm:p-4 font-semibold text-gray-800 whitespace-nowrap">{{ $customer->name }}</td>
+                            <td class="p-3 sm:p-4 font-semibold text-gray-800 dark:text-white whitespace-nowrap">{{ $customer->name }}</td>
                             <td class="p-3 sm:p-4 whitespace-nowrap">
                                 @if ($customer->type === 'customer')
-                                    <span class="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-medium">زبون</span>
+                                    <span class="bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-1 rounded-md text-xs font-medium">زبون</span>
                                 @elseif($customer->type === 'supplier')
-                                    <span class="bg-amber-50 text-amber-700 px-2 py-1 rounded-md text-xs font-medium">مورد</span>
+                                    <span class="bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-1 rounded-md text-xs font-medium">مورد</span>
                                 @else
-                                    <span class="bg-purple-50 text-purple-700 px-2 py-1 rounded-md text-xs font-medium">زبون ومورد</span>
+                                    <span class="bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-2 py-1 rounded-md text-xs font-medium">زبون ومورد</span>
                                 @endif
                             </td>
-                            <td class="p-3 sm:p-4 text-gray-600 whitespace-nowrap" dir="ltr">{{ $customer->phone ?? '-' }}</td>
-                            <td class="p-3 sm:p-4 text-gray-700 font-medium hidden sm:table-cell">{{ $customer->address ?? '-' }}</td>
-                            <td class="p-3 sm:p-4 font-medium text-gray-800 whitespace-nowrap">{{ number_format($customer->opening_balance, 2) }}</td>
+                            <td class="p-3 sm:p-4 text-gray-600 dark:text-gray-300 whitespace-nowrap" dir="ltr">{{ $customer->phone ?? '-' }}</td>
+                            <td class="p-3 sm:p-4 text-gray-700 dark:text-gray-300 font-medium hidden sm:table-cell">{{ $customer->address ?? '-' }}</td>
+                            <td class="p-3 sm:p-4 font-medium text-gray-800 dark:text-white whitespace-nowrap">{{ number_format($customer->opening_balance, 2) }}</td>
                             <td class="p-3 sm:p-4 text-center whitespace-nowrap">
                                 <div class="flex justify-center items-center gap-2 sm:gap-3">
                                     <button wire:click="openStatementModal({{ $customer->id }})"
@@ -283,18 +381,18 @@ new class extends Component {
         <!-- نافذة إضافة / تعديل طرف -->
         @if ($showModal)
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-                <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-auto overflow-hidden border border-gray-100 max-h-[90vh] flex flex-col">
-                    <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100">
-                        <h3 class="text-base sm:text-lg font-bold text-gray-800">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col">
+                    <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700">
+                        <h3 class="text-base sm:text-lg font-bold text-gray-800 dark:text-white">
                             {{ $partyId ? 'تعديل البيانات' : 'إضافة عميل / طرف جديد' }}
                         </h3>
-                        <button wire:click="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                        <button wire:click="closeModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold leading-none">&times;</button>
                     </div>
 
                     <form wire:submit="save" class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">الاسم الكامل <span class="text-red-500">*</span></label>
-                            <input type="text" wire:model="name" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                            <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">الاسم الكامل <span class="text-red-500">*</span></label>
+                            <input type="text" wire:model="name" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                             @error('name')
                                 <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
                             @enderror
@@ -302,8 +400,8 @@ new class extends Component {
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1">نوع الطرف <span class="text-red-500">*</span></label>
-                                <select wire:model="type" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none bg-white">
+                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">نوع الطرف <span class="text-red-500">*</span></label>
+                                <select wire:model="type" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none bg-white">
                                     <option value="customer">زبون (Customer)</option>
                                     <option value="supplier">مورد (Supplier)</option>
                                     <option value="both">كلاهما (Both)</option>
@@ -313,35 +411,35 @@ new class extends Component {
                                 @enderror
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1">رقم الهاتف</label>
-                                <input type="text" wire:model="phone" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">رقم الهاتف</label>
+                                <input type="text" wire:model="phone" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1">البريد الإلكتروني</label>
-                                <input type="email" wire:model="email" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">البريد الإلكتروني</label>
+                                <input type="email" wire:model="email" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1">الرقم الضريبي</label>
-                                <input type="text" wire:model="tax_number" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">الرقم الضريبي</label>
+                                <input type="text" wire:model="tax_number" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                             </div>
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">الموقع / العنوان</label>
-                            <input type="text" wire:model="address" placeholder="مثال: نابلس - شارع سفيان" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                            <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">الموقع / العنوان</label>
+                            <input type="text" wire:model="address" placeholder="مثال: نابلس - شارع سفيان" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1">الرصيد الافتتاحي</label>
-                            <input type="number" step="0.01" wire:model="opening_balance" class="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
+                            <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">الرصيد الافتتاحي</label>
+                            <input type="number" step="0.01" wire:model="opening_balance" class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 focus:outline-none">
                         </div>
 
-                        <div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                            <button type="button" wire:click="closeModal" class="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition">إلغاء</button>
-                            <button type="submit" wire:loading.attr="disabled" class="px-5 py-2 bg-gray-900 hover:bg-black text-white rounded-lg text-sm font-medium transition">
+                        <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <button type="button" wire:click="closeModal" class="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition">إلغاء</button>
+                            <button type="submit" wire:loading.attr="disabled" class="px-5 py-2 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
                                 <span wire:loading.remove>{{ $partyId ? 'تحديث البيانات' : 'حفظ البيانات' }}</span>
                                 <span wire:loading>جاري الحفظ...</span>
                             </button>
@@ -352,11 +450,12 @@ new class extends Component {
         @endif
 
         <!-- مودال كشف الحساب -->
-        @if ($showStatementModal &&$selectedPartyForStatement)
+        @if ($showStatementModal && $selectedPartyForStatement)
             @php
                 $transactions = collect();
 
-                foreach ($selectedPartyForStatement->orders as $order) {$transactions->push([
+                foreach ($selectedPartyForStatement->orders as $order) {
+                    $transactions->push([
                         'date' => $order->created_at,
                         'description' => 'فاتورة مبيعات #' . $order->id,
                         'debit' => (float) $order->total,
@@ -364,7 +463,8 @@ new class extends Component {
                     ]);
                 }
 
-                foreach ($selectedPartyForStatement->payments as $payment) {$transactions->push([
+                foreach ($selectedPartyForStatement->payments as $payment) {
+                    $transactions->push([
                         'date' => $payment->created_at,
                         'description' => 'سداد دفعة ' . ($payment->notes ? '(' . $payment->notes . ')' : ''),
                         'debit' => 0.00,
@@ -372,46 +472,30 @@ new class extends Component {
                     ]);
                 }
 
-                $sortedTransactions =$transactions->sortBy('date');
-                $runningBalance = (float)$selectedPartyForStatement->opening_balance;
-
-                // تجهيز نص رسالة الواتساب
-                $waText = "*كشف حساب العميل: {$selectedPartyForStatement->name}*\n";
-                $waText .= "رقم الهاتف: " . ($selectedPartyForStatement->phone ?? 'غير محدد') . "\n";
-                $waText .= "التاريخ: " . date('Y-m-d') . "\n";
-                $waText .= "-----------------------------\n";
-                $waText .= "الرصيد الافتتاحي: " . number_format($selectedPartyForStatement->opening_balance, 2) . "\n";
-
-                $tempBalance =$runningBalance;
-                foreach ($sortedTransactions as $t) {
-                    $tempBalance += ($t['debit'] - $t['credit']);$dateFormatted = \Carbon\Carbon::parse($t['date'])->format('Y-m-d');$waText .= "• {$dateFormatted} | {$t['description']} | مدين: {$t['debit']} | دائن: {$t['credit']}\n";
-                }
-
-                $waText .= "-----------------------------\n";
-                $waText .= "*الرصيد النهائي المستحق: " . number_format($tempBalance, 2) . "*";
-                $whatsappUrl = "https://wa.me/970592700780?text=" . urlencode($waText);
+                $sortedTransactions = $transactions->sortBy('date');
+                $runningBalance = (float) $selectedPartyForStatement->opening_balance;
             @endphp
 
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-                <div id="statement-modal-content" class="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden border border-gray-100 max-h-[90vh] flex flex-col">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col">
 
-                    <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100">
+                    <div class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700">
                         <div>
-                            <h3 class="text-base sm:text-lg font-bold text-gray-800">كشف حساب</h3>
-                            <p class="text-xs text-gray-500">{{ $selectedPartyForStatement->name }} ({{$selectedPartyForStatement->phone ?? 'بدون رقم' }})</p>
+                            <h3 class="text-base sm:text-lg font-bold text-gray-800 dark:text-white">كشف حساب</h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ $selectedPartyForStatement->name }} ({{ $selectedPartyForStatement->phone ?? 'بدون رقم' }})</p>
                         </div>
-                        <button wire:click="closeStatementModal" class="no-print text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                        <button wire:click="closeStatementModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold leading-none">&times;</button>
                     </div>
 
                     <div class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
-                        <div class="grid grid-cols-2 gap-2 text-xs sm:text-sm bg-gray-50 p-3 rounded-lg">
+                        <div class="grid grid-cols-2 gap-2 text-xs sm:text-sm bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg dark:text-gray-200">
                             <div>الرصيد الافتتاحي: <span class="font-bold">{{ number_format($selectedPartyForStatement->opening_balance, 2) }}</span></div>
                         </div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-right text-xs min-w-[500px]">
+                            <table class="w-full text-right text-xs min-w-[500px] dark:text-gray-300">
                                 <thead>
-                                    <tr class="bg-gray-100 text-gray-600">
+                                    <tr class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                                         <th class="p-2">التاريخ</th>
                                         <th class="p-2">البيان</th>
                                         <th class="p-2">مدين (فاتورة)</th>
@@ -419,7 +503,7 @@ new class extends Component {
                                         <th class="p-2">الرصيد</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-gray-100">
+                                <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
                                     <tr>
                                         <td class="p-2 whitespace-nowrap">{{ $selectedPartyForStatement->created_at->format('Y-m-d') }}</td>
                                         <td class="p-2 font-medium">رصيد افتتاحي</td>
@@ -430,15 +514,15 @@ new class extends Component {
 
                                     @foreach ($sortedTransactions as $item)
                                         @php
-                                            $runningBalance += ($item['debit'] -$item['credit']);
+                                            $runningBalance += ($item['debit'] - $item['credit']);
                                         @endphp
                                         <tr>
                                             <td class="p-2 whitespace-nowrap">{{ \Carbon\Carbon::parse($item['date'])->format('Y-m-d H:i') }}</td>
                                             <td class="p-2">{{ $item['description'] }}</td>
-                                            <td class="p-2 whitespace-nowrap text-red-600">
+                                            <td class="p-2 whitespace-nowrap text-red-600 dark:text-red-400">
                                                 {{ $item['debit'] > 0 ? number_format($item['debit'], 2) : '-' }}
                                             </td>
-                                            <td class="p-2 whitespace-nowrap text-emerald-600">
+                                            <td class="p-2 whitespace-nowrap text-emerald-600 dark:text-emerald-400">
                                                 {{ $item['credit'] > 0 ? number_format($item['credit'], 2) : '-' }}
                                             </td>
                                             <td class="p-2 whitespace-nowrap font-semibold">
@@ -452,35 +536,21 @@ new class extends Component {
                     </div>
 
                     <!-- أزرار الإجراءات والطباعة -->
-                    <div class="no-print flex flex-col sm:flex-row justify-between gap-3 p-4 border-t border-gray-100 bg-gray-50">
-                        <button type="button" @click="connectPrinter()"
-                            class="w-full sm:w-auto px-4 py-2 border border-gray-300 bg-white rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1">
-                            🔌 ربط الطابعة
+                    <div class="flex flex-col sm:flex-row justify-end gap-2 p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        <!-- زر الواتساب -->
+                        <button type="button" wire:click="sendStatementWhatsapp({{ $selectedPartyForStatement->id }})"
+                            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition">
+                            <span>إرسال واتساب</span> 💬
                         </button>
 
-                        <div class="flex flex-wrap gap-2 w-full sm:w-auto">
-                            <!-- زر الواتساب للرقم المطلوب -->
-                            <a href="{{ $whatsappUrl }}" target="_blank"
-                                class="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
-                                <span>إرسال واتساب</span> 💬
-                            </a>
+                        <!-- زر الطباعة الحرارية عبر RawBT -->
+                        <button type="button" wire:click="printStatementThermal({{ $selectedPartyForStatement->id }})"
+                            class="px-4 py-2 bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition">
+                            <span>طباعة حرارية</span> 🧾
+                        </button>
 
-                            <!-- زر طباعة المتصفح / PDF -->
-                            <button type="button" onclick="window.print()"
-                                class="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
-                                <span>طباعة / PDF</span> 🖨️
-                            </button>
-
-                            <!-- زر الطباعة الحرارية -->
-                            <button type="button"
-                                @click="printStatement({{ json_encode($selectedPartyForStatement) }})"
-                                class="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-1">
-                                <span>حراري</span> 🧾
-                            </button>
-
-                            <button type="button" wire:click="closeStatementModal"
-                                class="flex-1 sm:flex-none px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 text-center">إغلاق</button>
-                        </div>
+                        <button type="button" wire:click="closeStatementModal"
+                            class="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-center transition">إغلاق</button>
                     </div>
                 </div>
             </div>
@@ -489,62 +559,50 @@ new class extends Component {
     </div>
 </flux:main>
 
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('thermalPrinter', () => ({
-            port: null,
+@script
+    <script>
+        // الاستماع لحدث الطباعة الحرارية عبر RawBT
+        $wire.on('do-statement-print', (event) => {
+            const s = event.data;
 
-            async connectPrinter() {
-                try {
-                    this.port = await navigator.serial.requestPort();
-                    await this.port.open({
-                        baudRate: 9600
-                    });
-                    alert('تم الاتصال بالطابعة بنجاح');
-                } catch (e) {
-                    alert('تعذر الاتصال بالطابعة: ' + e.message);
-                }
-            },
-
-            async printStatement(party) {
-                if (!this.port) {
-                    const connectFirst = confirm(
-                        "لم يتم ربط طابعة Web Serial بعد. هل تريد الربط الآن؟");
-                    if (connectFirst) {
-                        await this.connectPrinter();
-                    }
-                    if (!this.port) return;
-                }
-
-                try {
-                    const writer = this.port.writable.getWriter();
-
-                    const esc = '\x1B';
-                    const init = esc + '@';
-                    const alignCenter = esc + 'a' + '\x01';
-                    const alignRight = esc + 'a' + '\x02';
-                    const cut = esc + 'i';
-
-                    let rawText = init + alignCenter;
-                    rawText += "==============================\n";
-                    rawText += "         STATEMENT            \n";
-                    rawText += "==============================\n";
-                    rawText += alignRight;
-                    rawText += `Name: ${party.name}\n`;
-                    rawText += `Phone: ${party.phone || '-'}\n`;
-                    rawText += `Date: ${new Date().toISOString().split('T')[0]}\n`;
-                    rawText += "------------------------------\n";
-                    rawText += `Opening Bal: ${party.opening_balance}\n`;
-                    rawText += "------------------------------\n\n\n\n";
-                    rawText += cut;
-
-                    const encoder = new TextEncoder();
-                    await writer.write(encoder.encode(rawText));
-                    writer.releaseLock();
-                } catch (e) {
-                    alert('خطأ أثناء الطباعة: ' + e.message);
-                }
+            let text = "";
+            text += "--------------------------------\n";
+            if (s.store_name) {
+                text += "        " + s.store_name + "        \n";
             }
-        }));
-    });
-</script>
+            text += "          كشف حساب          \n";
+            text += "--------------------------------\n";
+            text += "العميل: " + s.party_name + "\n";
+            text += "الهاتف: " + s.party_phone + "\n";
+            text += "التاريخ: " + s.date + "\n";
+            text += "--------------------------------\n";
+            text += "الرصيد الافتتاحي: " + s.opening_balance + "\n";
+            text += "--------------------------------\n";
+
+            s.items.forEach(item => {
+                text += item.date + " | " + item.desc + "\n";
+                text += "  مدين: " + item.debit + " | دائن: " + item.credit + "\n";
+                text += "  الرصيد: " + item.bal + "\n";
+                text += "................................\n";
+            });
+
+            text += "--------------------------------\n";
+            text += "الرصيد النهائي: " + s.final_balance + " شيكل\n";
+            text += "--------------------------------\n\n\n\n";
+
+            const intentUrl = "intent:" + encodeURIComponent(text) +
+                "#Intent;" +
+                "scheme=rawbt;" +
+                "package=ru.a402d.rawbtprinter;" +
+                "S.type=text/plain;" +
+                "end;";
+
+            window.location.href = intentUrl;
+        });
+
+        // الاستماع لحدث فتح الواتساب
+        $wire.on('open-whatsapp', (event) => {
+            window.open(event.url, '_blank');
+        });
+    </script>
+@endscript
