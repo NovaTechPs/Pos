@@ -402,6 +402,7 @@ new class extends Component {
                     </div>
 
                     <!-- شبكة المنتجات -->
+                    <!-- شبكة المنتجات (بدون صور) -->
                     <div
                         class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
                         @forelse($products as $product)
@@ -413,27 +414,20 @@ new class extends Component {
                                             ($product->retail_price ?? ($product->price ?? 0))));
                             @endphp
                             <button wire:click="addToCart({{ $product->id }})"
-                                class="flex flex-col h-40 sm:h-48 justify-between p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
+                                class="flex flex-col h-24 justify-between p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
 
+                                <!-- اسم المنتج -->
                                 <div
-                                    class="w-full h-20 sm:h-24 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg overflow-hidden flex items-center justify-center p-1 border border-zinc-100 dark:border-zinc-800">
-                                    @if ($product->image)
-                                        <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}"
-                                            class="w-full h-full object-contain group-hover:scale-105 transition duration-200">
-                                    @else
-                                        <flux:icon icon="photo" class="w-6 h-6 text-zinc-300 dark:text-zinc-600" />
-                                    @endif
-                                </div>
-
-                                <div
-                                    class="font-semibold text-xs text-zinc-800 dark:text-zinc-200 line-clamp-2 my-1 leading-tight">
+                                    class="font-semibold text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 line-clamp-2 leading-snug">
                                     {{ $product->name }}
                                 </div>
 
+                                <!-- السعر -->
                                 <div
                                     class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
-                                    <span class="text-[9px] text-zinc-400">سعر الجملة</span>
-                                    <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm">
+                                    <span class="text-[10px] text-zinc-400">سعر الجملة</span>
+                                    <span
+                                        class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm font-mono">
                                         {{ number_format($effectivePrice, 2) }}
                                     </span>
                                 </div>
