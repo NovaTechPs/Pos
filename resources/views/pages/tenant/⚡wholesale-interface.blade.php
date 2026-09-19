@@ -681,50 +681,68 @@ new class extends Component {
 
     // طباعة الفاتورة عبر RawBT
     $wire.on('do-kiosk-print', (event) => {
-        const inv = event.data;
+    const inv = event.data;
 
-        let text = "";
-        text += "--------------------------------\n";
-        text += "            " + (inv.header_title || "تسعيرة") + "            \n";
-        text += "--------------------------------\n";
-        text += "رقم الفاتورة: " + inv.invoice_no + "\n";
-        text += "التاريخ: " + inv.date + "\n";
-        text += "الزبون: " + inv.customer_name + "\n";
-        if (inv.customer_phone) {
-            text += "الهاتف: " + inv.customer_phone + "\n";
-        }
-        text += "--------------------------------\n";
+    // دالة لتنسيق السطر بحيث تكون الكلمة على اليمين والقيمة على اليسار بشكل متناسق
+    function formatLine(leftText, rightText, width = 32) {
+        let l = String(leftText || '');
+        let r = String(rightText || '');
+        let spaceCount = width - (l.length + r.length);
+        if (spaceCount < 1) spaceCount = 1;
+        return r + " ".repeat(spaceCount) + l + "\n";
+    }
 
+    let text = "";
+
+    // الهيدر الرئيسي
+    text += "================================\n";
+    text += "            " + (inv.header_title || "فاتورة") + "            \n";
+    text += "================================\n";
+
+    // تفاصيل الفاتورة والزبون
+    text += formatLine(inv.invoice_no, "رقم الفاتورة:");
+    text += formatLine(inv.date, "التاريخ:");
+    text += formatLine(inv.customer_name, "الزبون:");
+
+    // رأس جدول الأصناف
+    text += "--------------------------------\n";
+    text += "المنتج             العدد  المجموع\n";
+    text += "--------------------------------\n";
+
+    // عرض المنتجات بشكل جدول مرتب
+    if (inv.items && inv.items.length) {
         inv.items.forEach(item => {
-            let total = (item.price * item.quantity).toFixed(2);
+            let totalStr = (item.price * item.quantity).toFixed(2);
+            let qtyStr = item.quantity + " x " + Number(item.price).toFixed(2);
+
             text += item.name + "\n";
-            text += "   " + item.quantity + " x " + Number(item.price).toFixed(2) + " = " + total + " \n";
+            text += formatLine(totalStr, "   " + qtyStr) + "\n";
         });
+    }
 
-        text += "--------------------------------\n";
-        text += "مجموع الفاتورة: " + Number(inv.total).toFixed(2) + " \n";
-        text += "الدفعة النقدية: " + Number(inv.paid_amount).toFixed(2) + " \n";
-        text += "صافي الفاتورة: " + Number(inv.remaining_amount).toFixed(2) + " \n";
+    // ملخص الحساب المالي
+    text += "================================\n";
+    text += formatLine(Number(inv.total).toFixed(2) + " شيكل", "المجموع:");
+    text += formatLine(Number(inv.paid_amount).toFixed(2) + " شيكل", "المدفوع:");
+    text += formatLine(Number(inv.remaining_amount).toFixed(2) + " شيكل", "المتبقي:");
 
-        text += "--------------------------------\n";
-        text += "الرصيد السابق: " + Number(inv.previous_balance).toFixed(2) + " \n";
-        text += "الرصيد الحالي: " + Number(inv.current_balance).toFixed(2) + " \n";
+    // كشف رصيد الحساب
+    text += "--------------------------------\n";
+    text += formatLine(Number(inv.previous_balance).toFixed(2) + " شيكل", "الرصيد السابق:");
+    text += formatLine(Number(inv.current_balance).toFixed(2) + " شيكل", "الرصيد الحالي:");
 
-        if (inv.notes) {
-            text += "ملاحظات: " + inv.notes + "\n";
-        }
-        text += "--------------------------------\n\n\n\n";
+    text += "================================\n\n\n\n";
 
-        const intentUrl = "intent:" + encodeURIComponent(text) +
-            "#Intent;" +
-            "scheme=rawbt;" +
-            "package=ru.a402d.rawbtprinter;" +
-            "S.type=text/plain;" +
-            "end;";
+    // إرسال النص المنسق إلى تطبيق RawBT للطباعة
+    const intentUrl = "intent:" + encodeURIComponent(text) +
+        "#Intent;" +
+        "scheme=rawbt;" +
+        "package=ru.a402d.rawbtprinter;" +
+        "S.type=text/plain;" +
+        "end;";
 
-        window.location.href = intentUrl;
-    });
-
+    window.location.href = intentUrl;
+});
     // طباعة سند القبض عبر RawBT
     $wire.on('do-voucher-print', (event) => {
         const voucher = event.data;
