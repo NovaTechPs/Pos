@@ -33,9 +33,15 @@ new class extends Component {
     {
         $user = auth()->user();
 
-        if (!$user) return null;
-        if (!empty($user->tenant_id)) return (int) $user->tenant_id;
-        if (method_exists($user, 'tenants')) return $user->tenants()->first()?->id;
+        if (!$user) {
+            return null;
+        }
+        if (!empty($user->tenant_id)) {
+            return (int) $user->tenant_id;
+        }
+        if (method_exists($user, 'tenants')) {
+            return $user->tenants()->first()?->id;
+        }
 
         return session('active_tenant_id') ? (int) session('active_tenant_id') : null;
     }
@@ -61,14 +67,13 @@ new class extends Component {
         }
 
         $tenantId = $this->getTenantId();
-        if (!$tenantId) return;
+        if (!$tenantId) {
+            return;
+        }
 
         $matchedProduct = Product::where('products.tenant_id', $tenantId)
             ->whereExists(function ($query) use ($trimmedSearch) {
-                $query->select(DB::raw(1))
-                    ->from('product_barcodes')
-                    ->whereColumn('product_barcodes.product_id', 'products.id')
-                    ->where('product_barcodes.barcode', $trimmedSearch);
+                $query->select(DB::raw(1))->from('product_barcodes')->whereColumn('product_barcodes.product_id', 'products.id')->where('product_barcodes.barcode', $trimmedSearch);
             })
             ->first();
 
@@ -89,14 +94,13 @@ new class extends Component {
 
         if ($this->selectedCustomerId) {
             $historyItems = OrderItem::whereHas('order', function ($q) {
-                $q->where('customer_id', $this->selectedCustomerId)
-                  ->where('status', 'completed');
+                $q->where('customer_id', $this->selectedCustomerId)->where('status', 'completed');
             })
-            ->where('product_id', $productId)
-            ->where('tenant_id', $tenantId)
-            ->latest()
-            ->take(10)
-            ->get();
+                ->where('product_id', $productId)
+                ->where('tenant_id', $tenantId)
+                ->latest()
+                ->take(10)
+                ->get();
 
             foreach ($historyItems as $item) {
                 $history[] = [
@@ -111,7 +115,7 @@ new class extends Component {
             'product_name' => $product?->name ?? '',
             'customer_name' => $customer?->name ?? 'زبون عابر (لم يتم تحديد عميل)',
             'history' => $history,
-            'has_history' => !empty($history)
+            'has_history' => !empty($history),
         ];
 
         $this->showPriceHistoryModal = true;
@@ -126,33 +130,25 @@ new class extends Component {
     public function addToCart(int $productId): void
     {
         $tenantId = $this->getTenantId();
-        if (!$tenantId) return;
+        if (!$tenantId) {
+            return;
+        }
 
         $branchId = $this->getUserBranchId();
 
         $product = Product::where('products.tenant_id', $tenantId)
             ->leftJoin('branch_products', function ($join) use ($branchId) {
-                $join->on('products.id', '=', 'branch_products.product_id')
-                     ->where('branch_products.branch_id', '=', $branchId);
+                $join->on('products.id', '=', 'branch_products.product_id')->where('branch_products.branch_id', '=', $branchId);
             })
-            ->select(
-                'products.*',
-                'branch_products.retail_price as branch_retail_price',
-                'branch_products.wholesale_price as branch_wholesale_price'
-            )
+            ->select('products.*', 'branch_products.retail_price as branch_retail_price', 'branch_products.wholesale_price as branch_wholesale_price')
             ->where('products.id', $productId)
             ->first();
 
-        if (!$product) return;
+        if (!$product) {
+            return;
+        }
 
-        $price = (float) (
-            $product->branch_wholesale_price
-            ?? $product->branch_retail_price
-            ?? $product->wholesale_price
-            ?? $product->retail_price
-            ?? $product->price
-            ?? 0
-        );
+        $price = (float) ($product->branch_wholesale_price ?? ($product->branch_retail_price ?? ($product->wholesale_price ?? ($product->retail_price ?? ($product->price ?? 0)))));
 
         if (isset($this->cart[$productId])) {
             $this->cart[$productId]['quantity']++;
@@ -187,15 +183,19 @@ new class extends Component {
 
     public function setFullPayment(): void
     {
-        $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+        $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
     }
 
     public function completeSale(bool $shouldPrint = false): void
     {
-        if (empty($this->cart)) return;
+        if (empty($this->cart)) {
+            return;
+        }
 
         $tenantId = $this->getTenantId();
-        if (!$tenantId) return;
+        if (!$tenantId) {
+            return;
+        }
 
         $user = auth()->user();
         $customer = null;
@@ -211,13 +211,13 @@ new class extends Component {
                     $paidSum = $party->payments()->where('type', 'payment')->sum('amount');
                     $receivedSum = $party->payments()->where('type', 'receipt')->sum('amount');
 
-                    $previousBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+                    $previousBalance = $openingBalance + $ordersSum + $paidSum - $receivedSum;
                 }
             }
         }
 
-        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
-        $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
+        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
+        $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + $item['cost'] * $item['quantity'], 0);
 
         $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
 
@@ -231,10 +231,7 @@ new class extends Component {
         $order = null;
         $payment = null;
 
-        $activeShift = Shift::where('tenant_id', $tenantId)
-            ->where('user_id', $user?->id)
-            ->where('status', 'open')
-            ->first();
+        $activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $user?->id)->where('status', 'open')->first();
 
         DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
             $order = Order::create([
@@ -270,18 +267,18 @@ new class extends Component {
 
             if ($paid > 0 && $customer) {
                 $payment = Payment::create([
-                    'tenant_id'      => $tenantId,
-                    'branch_id'      => $this->getUserBranchId() ?? $activeShift?->branch_id,
-                    'shift_id'       => $activeShift?->id,
-                    'user_id'        => $user?->id,
-                    'type'           => 'receipt',
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $this->getUserBranchId() ?? $activeShift?->branch_id,
+                    'shift_id' => $activeShift?->id,
+                    'user_id' => $user?->id,
+                    'type' => 'receipt',
                     'voucher_number' => 'RCV-' . strtoupper(uniqid()),
-                    'payable_type'   => Party::class,
-                    'payable_id'     => $customer->id,
-                    'amount'         => $paid,
+                    'payable_type' => Party::class,
+                    'payable_id' => $customer->id,
+                    'amount' => $paid,
                     'payment_method' => 'cash',
-                    'notes'          => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
-                    'payment_date'   => now(),
+                    'notes' => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
+                    'payment_date' => now(),
                 ]);
             }
         });
@@ -309,17 +306,17 @@ new class extends Component {
 
         if ($payment) {
             $voucherData = [
-                'header_title'   => 'تسعيرة',
-                'voucher_no'     => $payment->voucher_number,
-                'type'           => 'سند قبض',
-                'party_name'     => $customer?->name ?? 'زبون',
-                'amount'         => number_format($payment->amount, 2),
+                'header_title' => 'تسعيرة',
+                'voucher_no' => $payment->voucher_number,
+                'type' => 'سند قبض',
+                'party_name' => $customer?->name ?? 'زبون',
+                'amount' => number_format($payment->amount, 2),
                 'payment_method' => 'نقداً (كاش)',
-                'date'           => $payment->payment_date->format('Y-m-d H:i'),
-                'user_name'      => $user?->name ?? 'النظام',
+                'date' => $payment->payment_date->format('Y-m-d H:i'),
+                'user_name' => $user?->name ?? 'النظام',
                 'previous_balance' => $previousBalance,
                 'current_balance' => $currentBalance,
-                'notes'          => $payment->notes,
+                'notes' => $payment->notes,
             ];
 
             $this->dispatch('do-voucher-print', data: $voucherData);
@@ -336,32 +333,28 @@ new class extends Component {
         $tenantId = $this->getTenantId();
         $branchId = $this->getUserBranchId();
 
-        $products = Product::where('products.tenant_id', $tenantId)
-            ->leftJoin('branch_products', function ($join) use ($branchId) {
-                $join->on('products.id', '=', 'branch_products.product_id')
-                     ->where('branch_products.branch_id', '=', $branchId);
-            })
-            ->select(
-                'products.*',
-                'branch_products.retail_price as branch_retail_price',
-                'branch_products.wholesale_price as branch_wholesale_price'
-            )
-            ->when($this->search, function ($q) {
-                $term = "%{$this->search}%";
-                $q->where(function ($sub) use ($term) {
-                    $sub->where('products.name', 'like', $term)
-                        ->orWhereExists(function ($query) use ($term) {
-                            $query->select(DB::raw(1))
-                                  ->from('product_barcodes')
-                                  ->whereColumn('product_barcodes.product_id', 'products.id')
-                                  ->where('product_barcodes.barcode', 'like', $term);
-                        });
-                });
-            })
-            ->paginate(12);
+        $trimmedSearch = trim($this->search);
+
+        // إذا كانت خانة البحث فارغة، نعيد نتائج فارغة ولا نجري استعلام قاعدة البيانات
+        if (empty($trimmedSearch)) {
+            $products = Product::whereRaw('1 = 0')->paginate(12);
+        } else {
+            $products = Product::where('products.tenant_id', $tenantId)
+                ->leftJoin('branch_products', function ($join) use ($branchId) {
+                    $join->on('products.id', '=', 'branch_products.product_id')->where('branch_products.branch_id', '=', $branchId);
+                })
+                ->select('products.*', 'branch_products.retail_price as branch_retail_price', 'branch_products.wholesale_price as branch_wholesale_price')
+                ->where(function ($sub) use ($trimmedSearch) {
+                    $term = "%{$trimmedSearch}%";
+                    $sub->where('products.name', 'like', $term)->orWhereExists(function ($query) use ($term) {
+                        $query->select(DB::raw(1))->from('product_barcodes')->whereColumn('product_barcodes.product_id', 'products.id')->where('product_barcodes.barcode', 'like', $term);
+                    });
+                })
+                ->paginate(12);
+        }
 
         $customers = Party::when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
-            ->where(function($query) {
+            ->where(function ($query) {
                 $query->where('type', 'customer')->orWhere('type', 'both');
             })
             ->withSum(['payments as paid_sum' => fn($q) => $q->where('type', 'payment')], 'amount')
@@ -369,7 +362,7 @@ new class extends Component {
             ->withSum(['orders as orders_sum' => fn($q) => $q->where('status', 'completed')], 'total')
             ->get();
 
-        $cartTotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+        $cartTotal = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
 
         return $this->view([
             'products' => $products,
@@ -381,400 +374,434 @@ new class extends Component {
 ?>
 <flux:main class="p-2 sm:p-4">
 
-<div class="min-h-screen lg:h-[calc(100vh-4rem)] flex flex-col bg-zinc-50 dark:bg-zinc-950" dir="rtl">
+    <div class="min-h-screen lg:h-[calc(100vh-4rem)] flex flex-col bg-zinc-50 dark:bg-zinc-950" dir="rtl">
 
-    <div class="h-full flex flex-col space-y-3">
-        <!-- التنبيهات -->
-        @if (session()->has('error'))
-            <flux:badge variant="danger" class="mb-2 w-full justify-start p-2 text-xs">
-                {{ session('error') }}
-            </flux:badge>
-        @endif
+        <div class="h-full flex flex-col space-y-3">
+            <!-- التنبيهات -->
+            @if (session()->has('error'))
+                <flux:badge variant="danger" class="mb-2 w-full justify-start p-2 text-xs">
+                    {{ session('error') }}
+                </flux:badge>
+            @endif
 
-        @if (session()->has('message'))
-            <flux:badge variant="success" class="mb-2 w-full justify-start p-2 text-xs">
-                {{ session('message') }}
-            </flux:badge>
-        @endif
+            @if (session()->has('message'))
+                <flux:badge variant="success" class="mb-2 w-full justify-start p-2 text-xs">
+                    {{ session('message') }}
+                </flux:badge>
+            @endif
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 lg:overflow-hidden">
-            <!-- قسم المنتجات (يمين) -->
-            <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3 lg:h-full lg:overflow-hidden">
-                <!-- شريط البحث -->
-                <div class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                    <flux:input
-                        wire:model.live.debounce.150ms="search"
-                        wire:keydown.enter="searchBarcode"
-                        placeholder="بحث باسم المنتج أو الباركود..."
-                        icon="magnifying-glass"
-                        class="w-full"
-                        autofocus
-                        id="barcode-search-input"
-                    />
-                </div>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 lg:overflow-hidden">
+                <!-- قسم المنتجات (يمين) -->
+                <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3 lg:h-full lg:overflow-hidden">
+                    <!-- شريط البحث -->
+                    <div
+                        class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <flux:input wire:model.live.debounce.150ms="search" wire:keydown.enter="searchBarcode"
+                            placeholder="بحث باسم المنتج أو الباركود..." icon="magnifying-glass" class="w-full"
+                            autofocus id="barcode-search-input" />
+                    </div>
 
-                <!-- شبكة المنتجات -->
-                <div class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
-                    @forelse($products as $product)
-                        @php
-                            $effectivePrice = $product->branch_wholesale_price
-                                ?? $product->branch_retail_price
-                                ?? $product->wholesale_price
-                                ?? $product->retail_price
-                                ?? $product->price
-                                ?? 0;
-                        @endphp
-                        <button wire:click="addToCart({{ $product->id }})"
+                    <!-- شبكة المنتجات -->
+                    <div
+                        class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
+                        @forelse($products as $product)
+                            @php
+                                $effectivePrice =
+                                    $product->branch_wholesale_price ??
+                                    ($product->branch_retail_price ??
+                                        ($product->wholesale_price ??
+                                            ($product->retail_price ?? ($product->price ?? 0))));
+                            @endphp
+                            <button wire:click="addToCart({{ $product->id }})"
                                 class="flex flex-col h-40 sm:h-48 justify-between p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
 
-                            <div class="w-full h-20 sm:h-24 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg overflow-hidden flex items-center justify-center p-1 border border-zinc-100 dark:border-zinc-800">
-                                @if($product->image)
-                                    <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-contain group-hover:scale-105 transition duration-200">
+                                <div
+                                    class="w-full h-20 sm:h-24 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg overflow-hidden flex items-center justify-center p-1 border border-zinc-100 dark:border-zinc-800">
+                                    @if ($product->image)
+                                        <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}"
+                                            class="w-full h-full object-contain group-hover:scale-105 transition duration-200">
+                                    @else
+                                        <flux:icon icon="photo" class="w-6 h-6 text-zinc-300 dark:text-zinc-600" />
+                                    @endif
+                                </div>
+
+                                <div
+                                    class="font-semibold text-xs text-zinc-800 dark:text-zinc-200 line-clamp-2 my-1 leading-tight">
+                                    {{ $product->name }}
+                                </div>
+
+                                <div
+                                    class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
+                                    <span class="text-[9px] text-zinc-400">سعر الجملة</span>
+                                    <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm">
+                                        {{ number_format($effectivePrice, 2) }}
+                                    </span>
+                                </div>
+                            </button>
+                        @empty
+                            <div class="col-span-full text-center py-8 text-zinc-400 text-xs">
+                                @if (empty(trim($search)))
+                                    ابدأ بالكتابة في مربع البحث أو امسح الباركود لعرض المنتجات...
                                 @else
-                                    <flux:icon icon="photo" class="w-6 h-6 text-zinc-300 dark:text-zinc-600" />
+                                    لا توجد منتجات مطابقة للبحث.
+                                @endif
+                            </div>
+                        @endforelse
+                    </div>
+
+                    <div class="pt-1">{{ $products->links() }}</div>
+                </div>
+
+                <!-- قسم الفاتورة والسلة (يسار) -->
+                <div
+                    class="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm min-h-[350px] lg:h-full lg:overflow-hidden">
+                    <div class="flex flex-col h-full justify-between space-y-2">
+                        <div class="space-y-2 flex-1 flex flex-col lg:overflow-hidden">
+                            <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                                فاتورة مبيعات باص</flux:heading>
+
+                            <!-- قائمة اختيار الزبون -->
+                            <div class="space-y-1.5">
+                                <select wire:model.live="selectedCustomerId"
+                                    class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">-- اختر الزبون (اختياري: زبون عابر) --</option>
+                                    @foreach ($customers as $customer)
+                                        @php
+                                            $openingBalance = $customer->opening_balance ?? 0;
+                                            $ordersSum = $customer->orders_sum ?? 0;
+                                            $paidSum = $customer->paid_sum ?? 0;
+                                            $receivedSum = $customer->received_sum ?? 0;
+
+                                            $bal = $openingBalance + $ordersSum + $paidSum - $receivedSum;
+                                        @endphp
+                                        <option value="{{ $customer->id }}">
+                                            {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }}
+                                            — [الرصيد: {{ number_format($bal, 2) }}]
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                @if ($selectedCustomerId && ($selectedCustomer = $customers->firstWhere('id', $selectedCustomerId)))
+                                    @php
+                                        $openingBalance = $selectedCustomer->opening_balance ?? 0;
+                                        $ordersSum = $selectedCustomer->orders_sum ?? 0;
+                                        $paidSum = $selectedCustomer->paid_sum ?? 0;
+                                        $receivedSum = $selectedCustomer->received_sum ?? 0;
+
+                                        $currentBalance = $openingBalance + $ordersSum + $paidSum - $receivedSum;
+                                    @endphp
+                                    <div
+                                        class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
+                                        <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي
+                                            للزبون:</span>
+                                        <span
+                                            class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
+                                            {{ number_format($currentBalance, 2) }} شيكل
+                                        </span>
+                                    </div>
                                 @endif
                             </div>
 
-                            <div class="font-semibold text-xs text-zinc-800 dark:text-zinc-200 line-clamp-2 my-1 leading-tight">
-                                {{ $product->name }}
+                            <!-- حقل الملاحظات -->
+                            <div>
+                                <flux:input wire:model="notes" placeholder="ملاحظات الفاتورة..." size="sm" />
                             </div>
 
-                            <div class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
-                                <span class="text-[9px] text-zinc-400">سعر الجملة</span>
-                                <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm">
-                                    {{ number_format($effectivePrice, 2) }}
-                                </span>
-                            </div>
-                        </button>
-                    @empty
-                        <div class="col-span-full text-center py-8 text-zinc-400 text-xs">لا توجد منتجات مطابقة.</div>
-                    @endforelse
-                </div>
+                            <!-- السلة - قائمة الأصناف -->
+                            <div
+                                class="flex-1 min-h-[140px] max-h-[220px] lg:max-h-none overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
+                                @forelse($cart as $id => $item)
+                                    <div class="py-2 flex justify-between items-center text-xs gap-2">
+                                        <div
+                                            class="w-7 h-7 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
+                                            @if (!empty($item['image']))
+                                                <img src="{{ Storage::url($item['image']) }}"
+                                                    alt="{{ $item['name'] }}" class="w-full h-full object-contain">
+                                            @else
+                                                <flux:icon icon="photo" class="w-3.5 h-3.5 text-zinc-400" />
+                                            @endif
+                                        </div>
 
-                <div class="pt-1">{{ $products->links() }}</div>
-            </div>
-
-            <!-- قسم الفاتورة والسلة (يسار) -->
-            <div class="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm min-h-[350px] lg:h-full lg:overflow-hidden">
-                <div class="flex flex-col h-full justify-between space-y-2">
-                    <div class="space-y-2 flex-1 flex flex-col lg:overflow-hidden">
-                        <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">فاتورة مبيعات باص</flux:heading>
-
-                        <!-- قائمة اختيار الزبون -->
-                        <div class="space-y-1.5">
-                            <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="">-- اختر الزبون (اختياري: زبون عابر) --</option>
-                                @foreach($customers as $customer)
-                                    @php
-                                        $openingBalance = $customer->opening_balance ?? 0;
-                                        $ordersSum = $customer->orders_sum ?? 0;
-                                        $paidSum = $customer->paid_sum ?? 0;
-                                        $receivedSum = $customer->received_sum ?? 0;
-
-                                        $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-                                    @endphp
-                                    <option value="{{ $customer->id }}">
-                                        {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }} — [الرصيد: {{ number_format($bal, 2) }}]
-                                    </option>
-                                @endforeach
-                            </select>
-
-                            @if($selectedCustomerId && $selectedCustomer = $customers->firstWhere('id', $selectedCustomerId))
-                                @php
-                                    $openingBalance = $selectedCustomer->opening_balance ?? 0;
-                                    $ordersSum = $selectedCustomer->orders_sum ?? 0;
-                                    $paidSum = $selectedCustomer->paid_sum ?? 0;
-                                    $receivedSum = $selectedCustomer->received_sum ?? 0;
-
-                                    $currentBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-                                @endphp
-                                <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
-                                    <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للزبون:</span>
-                                    <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
-                                        {{ number_format($currentBalance, 2) }} شيكل
-                                    </span>
-                                </div>
-                            @endif
-                        </div>
-
-                        <!-- حقل الملاحظات -->
-                        <div>
-                            <flux:input wire:model="notes" placeholder="ملاحظات الفاتورة..." size="sm" />
-                        </div>
-
-                        <!-- السلة - قائمة الأصناف -->
-                        <div class="flex-1 min-h-[140px] max-h-[220px] lg:max-h-none overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
-                            @forelse($cart as $id => $item)
-                                <div class="py-2 flex justify-between items-center text-xs gap-2">
-                                    <div class="w-7 h-7 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
-                                        @if(!empty($item['image']))
-                                            <img src="{{ Storage::url($item['image']) }}" alt="{{ $item['name'] }}" class="w-full h-full object-contain">
-                                        @else
-                                            <flux:icon icon="photo" class="w-3.5 h-3.5 text-zinc-400" />
-                                        @endif
-                                    </div>
-
-                                    <div class="flex-1 truncate">
-                                        <div class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
-                                            <span>{{ $item['name'] }}</span>
-                                            <button type="button"
-                                                    wire:click="showLastPrice({{ $id }})"
+                                        <div class="flex-1 truncate">
+                                            <div
+                                                class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
+                                                <span>{{ $item['name'] }}</span>
+                                                <button type="button" wire:click="showLastPrice({{ $id }})"
                                                     title="سجل آخر 10 عمليات بيع لهذا الزبون"
                                                     class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition">
-                                                <flux:icon icon="clock" class="w-3.5 h-3.5" />
-                                            </button>
+                                                    <flux:icon icon="clock" class="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+
+                                            <div class="flex items-center gap-1 mt-0.5">
+                                                <span class="text-[10px] text-zinc-400">السعر:</span>
+                                                <input type="number" step="0.01"
+                                                    wire:change="updatePrice({{ $id }}, $event.target.value)"
+                                                    value="{{ $item['price'] }}"
+                                                    class="w-16 px-1 py-0.5 text-[11px] font-mono border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                            </div>
                                         </div>
 
-                                        <div class="flex items-center gap-1 mt-0.5">
-                                            <span class="text-[10px] text-zinc-400">السعر:</span>
-                                            <input type="number"
-                                                   step="0.01"
-                                                   wire:change="updatePrice({{ $id }}, $event.target.value)"
-                                                   value="{{ $item['price'] }}"
-                                                   class="w-16 px-1 py-0.5 text-[11px] font-mono border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none" />
+                                        <div class="flex items-center gap-1">
+                                            <flux:button size="xs" variant="subtle"
+                                                wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})">
+                                                -</flux:button>
+                                            <span
+                                                class="font-bold text-xs px-1 text-zinc-700 dark:text-zinc-300">{{ $item['quantity'] }}</span>
+                                            <flux:button size="xs" variant="subtle"
+                                                wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})">
+                                                +</flux:button>
                                         </div>
                                     </div>
-
-                                    <div class="flex items-center gap-1">
-                                        <flux:button size="xs" variant="subtle" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})">-</flux:button>
-                                        <span class="font-bold text-xs px-1 text-zinc-700 dark:text-zinc-300">{{ $item['quantity'] }}</span>
-                                        <flux:button size="xs" variant="subtle" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})">+</flux:button>
-                                    </div>
-                                </div>
-                            @empty
-                                <div class="text-center py-6 text-zinc-400 text-xs">السلة فارغة</div>
-                            @endforelse
-                        </div>
-                    </div>
-
-                    <!-- المجموع وخيارات الدفع والطباعة -->
-                    <div class="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
-                        <div class="flex justify-between items-center font-bold text-sm">
-                            <span class="text-zinc-700 dark:text-zinc-300">المجموع الكلي:</span>
-                            <span class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
+                                @empty
+                                    <div class="text-center py-6 text-zinc-400 text-xs">السلة فارغة</div>
+                                @endforelse
+                            </div>
                         </div>
 
-                        <!-- قسم المبلغ المدفوع بدعم Alpine.js للمنع الفوري للتهنيج -->
-                        <div x-data="{ paid: @entangle('paidAmount').live }" class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-                            <div class="flex items-center justify-between">
-                                <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ المدفوع:</label>
-                                <button type="button"
-                                        wire:click="setFullPayment"
-                                        class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
-                                    دفع كامل
-                                </button>
+                        <!-- المجموع وخيارات الدفع والطباعة -->
+                        <div class="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+                            <div class="flex justify-between items-center font-bold text-sm">
+                                <span class="text-zinc-700 dark:text-zinc-300">المجموع الكلي:</span>
+                                <span
+                                    class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
                             </div>
 
-                            <input type="number"
-                                   step="0.01"
-                                   x-model.number="paid"
-                                   placeholder="0.00"
-                                   class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
-
-                            <template x-if="paid !== null && paid !== '' && parseFloat(paid) < {{ $cartTotal }}">
-                                <div class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
-                                    <span>المتبقي (دين):</span>
-                                    <span class="font-mono" x-text="({{ $cartTotal }} - parseFloat(paid || 0)).toFixed(2)"></span>
+                            <!-- قسم المبلغ المدفوع بدعم Alpine.js للمنع الفوري للتهنيج -->
+                            <div x-data="{ paid: @entangle('paidAmount').live }"
+                                class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ
+                                        المدفوع:</label>
+                                    <button type="button" wire:click="setFullPayment"
+                                        class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
+                                        دفع كامل
+                                    </button>
                                 </div>
-                            </template>
-                        </div>
 
-                        <div class="grid grid-cols-2 gap-2 pt-1">
-                            <flux:button variant="filled" class="w-full py-2 text-xs" wire:click="completeSale(false)" :disabled="empty($cart)">
-                                حفظ فقط
-                            </flux:button>
+                                <input type="number" step="0.01" x-model.number="paid" placeholder="0.00"
+                                    class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
 
-                            <flux:button variant="primary" icon="printer" class="w-full py-2 text-xs" wire:click="completeSale(true)" :disabled="empty($cart)">
-                                حفظ وطباعة
-                            </flux:button>
+                                <template
+                                    x-if="paid !== null && paid !== '' && parseFloat(paid) < {{ $cartTotal }}">
+                                    <div
+                                        class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
+                                        <span>المتبقي (دين):</span>
+                                        <span class="font-mono"
+                                            x-text="({{ $cartTotal }} - parseFloat(paid || 0)).toFixed(2)"></span>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2 pt-1">
+                                <flux:button variant="filled" class="w-full py-2 text-xs"
+                                    wire:click="completeSale(false)" :disabled="empty($cart)">
+                                    حفظ فقط
+                                </flux:button>
+
+                                <flux:button variant="primary" icon="printer" class="w-full py-2 text-xs"
+                                    wire:click="completeSale(true)" :disabled="empty($cart)">
+                                    حفظ وطباعة
+                                </flux:button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- مودال عرض آخر 10 عمليات بيع -->
-@if($showPriceHistoryModal)
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
-        <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-4 space-y-4">
-            <div class="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                <h3 class="font-bold text-sm text-zinc-800 dark:text-zinc-200">
-                    سجل آخر 10 عمليات بيع
-                </h3>
-                <button wire:click="closePriceHistoryModal" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-                    ✕
-                </button>
-            </div>
-
-            <div class="space-y-2 text-xs">
-                <div>
-                    <span class="text-zinc-400">المنتج:</span>
-                    <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['product_name'] ?? '-' }}</span>
-                </div>
-                <div>
-                    <span class="text-zinc-400">الزبون:</span>
-                    <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['customer_name'] ?? '-' }}</span>
+    <!-- مودال عرض آخر 10 عمليات بيع -->
+    @if ($showPriceHistoryModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            dir="rtl">
+            <div
+                class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-4 space-y-4">
+                <div class="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                    <h3 class="font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                        سجل آخر 10 عمليات بيع
+                    </h3>
+                    <button wire:click="closePriceHistoryModal"
+                        class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                        ✕
+                    </button>
                 </div>
 
-                <div class="border-t border-zinc-100 dark:border-zinc-800 pt-3 max-h-60 overflow-y-auto">
-                    @if($selectedHistoryItem['has_history'])
-                        <table class="w-full text-right text-[11px] border-collapse">
-                            <thead>
-                                <tr class="border-b border-zinc-200 dark:border-zinc-700 text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
-                                    <th class="p-1.5">السعر</th>
-                                    <th class="p-1.5">الكمية</th>
-                                    <th class="p-1.5">التاريخ</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                @foreach($selectedHistoryItem['history'] as $row)
-                                    <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                        <td class="p-1.5 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                            {{ number_format($row['price'], 2) }}
-                                        </td>
-                                        <td class="p-1.5 text-zinc-700 dark:text-zinc-300 font-mono">
-                                            {{ $row['quantity'] }}
-                                        </td>
-                                        <td class="p-1.5 text-zinc-500 dark:text-zinc-400 text-[10px]">
-                                            {{ $row['date'] }}
-                                        </td>
+                <div class="space-y-2 text-xs">
+                    <div>
+                        <span class="text-zinc-400">المنتج:</span>
+                        <span
+                            class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['product_name'] ?? '-' }}</span>
+                    </div>
+                    <div>
+                        <span class="text-zinc-400">الزبون:</span>
+                        <span
+                            class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['customer_name'] ?? '-' }}</span>
+                    </div>
+
+                    <div class="border-t border-zinc-100 dark:border-zinc-800 pt-3 max-h-60 overflow-y-auto">
+                        @if ($selectedHistoryItem['has_history'])
+                            <table class="w-full text-right text-[11px] border-collapse">
+                                <thead>
+                                    <tr
+                                        class="border-b border-zinc-200 dark:border-zinc-700 text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
+                                        <th class="p-1.5">السعر</th>
+                                        <th class="p-1.5">الكمية</th>
+                                        <th class="p-1.5">التاريخ</th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    @else
-                        <div class="text-center py-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg text-zinc-400 text-xs">
-                            لا يوجد سجل بيع سابق لهذا المنتج مع العميل المحدد.
-                        </div>
-                    @endif
+                                </thead>
+                                <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    @foreach ($selectedHistoryItem['history'] as $row)
+                                        <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                            <td
+                                                class="p-1.5 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                                {{ number_format($row['price'], 2) }}
+                                            </td>
+                                            <td class="p-1.5 text-zinc-700 dark:text-zinc-300 font-mono">
+                                                {{ $row['quantity'] }}
+                                            </td>
+                                            <td class="p-1.5 text-zinc-500 dark:text-zinc-400 text-[10px]">
+                                                {{ $row['date'] }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        @else
+                            <div
+                                class="text-center py-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg text-zinc-400 text-xs">
+                                لا يوجد سجل بيع سابق لهذا المنتج مع العميل المحدد.
+                            </div>
+                        @endif
+                    </div>
                 </div>
-            </div>
 
-            <div class="pt-2">
-                <flux:button variant="subtle" class="w-full text-xs" wire:click="closePriceHistoryModal">
-                    إغلاق
-                </flux:button>
+                <div class="pt-2">
+                    <flux:button variant="subtle" class="w-full text-xs" wire:click="closePriceHistoryModal">
+                        إغلاق
+                    </flux:button>
+                </div>
             </div>
         </div>
-    </div>
-@endif
+    @endif
 
 </flux:main>
 
 @script
-<script>
-    Livewire.hook('commit', ({ respond }) => {
-        respond(() => {
-            const activeEl = document.activeElement;
-            const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+    <script>
+        Livewire.hook('commit', ({
+            respond
+        }) => {
+            respond(() => {
+                const activeEl = document.activeElement;
+                const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName ===
+                    'TEXTAREA' || activeEl.tagName === 'SELECT');
 
-            if (!isInput) {
-                const searchInput = document.getElementById('barcode-search-input');
-                if (searchInput) {
-                    searchInput.focus();
+                if (!isInput) {
+                    const searchInput = document.getElementById('barcode-search-input');
+                    if (searchInput) {
+                        searchInput.focus();
+                    }
                 }
+            });
+        });
+
+        // طباعة الفاتورة عبر RawBT
+        $wire.on('do-kiosk-print', (event) => {
+            const inv = event.data;
+
+            // دالة لتنسيق السطر بحيث تكون الكلمة على اليمين والقيمة على اليسار بشكل متناسق
+            function formatLine(leftText, rightText, width = 32) {
+                let l = String(leftText || '');
+                let r = String(rightText || '');
+                let spaceCount = width - (l.length + r.length);
+                if (spaceCount < 1) spaceCount = 1;
+                return r + " ".repeat(spaceCount) + l + "\n";
             }
+
+            let text = "";
+
+            // الهيدر الرئيسي
+            text += "================================\n";
+            text += "            " + (inv.header_title || "فاتورة") + "            \n";
+            text += "================================\n";
+
+            // تفاصيل الفاتورة والزبون
+            text += formatLine(inv.invoice_no, "رقم الفاتورة:");
+            text += formatLine(inv.date, "التاريخ:");
+            text += formatLine(inv.customer_name, "الزبون:");
+
+            // رأس جدول الأصناف
+            text += "--------------------------------\n";
+            text += "المنتج             العدد  المجموع\n";
+            text += "--------------------------------\n";
+
+            // عرض المنتجات بشكل جدول مرتب
+            if (inv.items && inv.items.length) {
+                inv.items.forEach(item => {
+                    let totalStr = (item.price * item.quantity).toFixed(2);
+                    let qtyStr = item.quantity + " x " + Number(item.price).toFixed(2);
+
+                    text += item.name + "\n";
+                    text += formatLine(totalStr, "   " + qtyStr) + "\n";
+                });
+            }
+
+            // ملخص الحساب المالي
+            text += "================================\n";
+            text += formatLine(Number(inv.total).toFixed(2) + " شيكل", "المجموع:");
+            text += formatLine(Number(inv.paid_amount).toFixed(2) + " شيكل", "المدفوع:");
+            text += formatLine(Number(inv.remaining_amount).toFixed(2) + " شيكل", "المتبقي:");
+
+            // كشف رصيد الحساب
+            text += "--------------------------------\n";
+            text += formatLine(Number(inv.previous_balance).toFixed(2) + " شيكل", "الرصيد السابق:");
+            text += formatLine(Number(inv.current_balance).toFixed(2) + " شيكل", "الرصيد الحالي:");
+
+            text += "================================\n\n\n\n";
+
+            // إرسال النص المنسق إلى تطبيق RawBT للطباعة
+            const intentUrl = "intent:" + encodeURIComponent(text) +
+                "#Intent;" +
+                "scheme=rawbt;" +
+                "package=ru.a402d.rawbtprinter;" +
+                "S.type=text/plain;" +
+                "end;";
+
+            window.location.href = intentUrl;
         });
-    });
+        // طباعة سند القبض عبر RawBT
+        $wire.on('do-voucher-print', (event) => {
+            const voucher = event.data;
 
-    // طباعة الفاتورة عبر RawBT
-    $wire.on('do-kiosk-print', (event) => {
-    const inv = event.data;
+            let text = "";
+            text += "--------------------------------\n";
+            text += "            " + (voucher.header_title || "تسعيرة") + "            \n";
+            text += "           " + voucher.type + "           \n";
+            text += "--------------------------------\n";
+            text += "رقم السند: " + voucher.voucher_no + "\n";
+            text += "التاريخ: " + voucher.date + "\n";
+            text += "الزبون: " + voucher.party_name + "\n";
+            text += "--------------------------------\n";
+            text += "الدفعة الواصلة: " + voucher.amount + " \n";
+            text += "طريقة الدفع: " + voucher.payment_method + "\n";
+            text += "--------------------------------\n";
+            text += "الرصيد السابق: " + Number(voucher.previous_balance).toFixed(2) + " \n";
+            text += "الرصيد الحالي: " + Number(voucher.current_balance).toFixed(2) + " \n";
 
-    // دالة لتنسيق السطر بحيث تكون الكلمة على اليمين والقيمة على اليسار بشكل متناسق
-    function formatLine(leftText, rightText, width = 32) {
-        let l = String(leftText || '');
-        let r = String(rightText || '');
-        let spaceCount = width - (l.length + r.length);
-        if (spaceCount < 1) spaceCount = 1;
-        return r + " ".repeat(spaceCount) + l + "\n";
-    }
+            if (voucher.notes) {
+                text += "ملاحظات: " + voucher.notes + "\n";
+            }
+            text += "--------------------------------\n\n\n\n";
 
-    let text = "";
+            const intentUrl = "intent:" + encodeURIComponent(text) +
+                "#Intent;" +
+                "scheme=rawbt;" +
+                "package=ru.a402d.rawbtprinter;" +
+                "S.type=text/plain;" +
+                "end;";
 
-    // الهيدر الرئيسي
-    text += "================================\n";
-    text += "            " + (inv.header_title || "فاتورة") + "            \n";
-    text += "================================\n";
-
-    // تفاصيل الفاتورة والزبون
-    text += formatLine(inv.invoice_no, "رقم الفاتورة:");
-    text += formatLine(inv.date, "التاريخ:");
-    text += formatLine(inv.customer_name, "الزبون:");
-
-    // رأس جدول الأصناف
-    text += "--------------------------------\n";
-    text += "المنتج             العدد  المجموع\n";
-    text += "--------------------------------\n";
-
-    // عرض المنتجات بشكل جدول مرتب
-    if (inv.items && inv.items.length) {
-        inv.items.forEach(item => {
-            let totalStr = (item.price * item.quantity).toFixed(2);
-            let qtyStr = item.quantity + " x " + Number(item.price).toFixed(2);
-
-            text += item.name + "\n";
-            text += formatLine(totalStr, "   " + qtyStr) + "\n";
+            window.location.href = intentUrl;
         });
-    }
-
-    // ملخص الحساب المالي
-    text += "================================\n";
-    text += formatLine(Number(inv.total).toFixed(2) + " شيكل", "المجموع:");
-    text += formatLine(Number(inv.paid_amount).toFixed(2) + " شيكل", "المدفوع:");
-    text += formatLine(Number(inv.remaining_amount).toFixed(2) + " شيكل", "المتبقي:");
-
-    // كشف رصيد الحساب
-    text += "--------------------------------\n";
-    text += formatLine(Number(inv.previous_balance).toFixed(2) + " شيكل", "الرصيد السابق:");
-    text += formatLine(Number(inv.current_balance).toFixed(2) + " شيكل", "الرصيد الحالي:");
-
-    text += "================================\n\n\n\n";
-
-    // إرسال النص المنسق إلى تطبيق RawBT للطباعة
-    const intentUrl = "intent:" + encodeURIComponent(text) +
-        "#Intent;" +
-        "scheme=rawbt;" +
-        "package=ru.a402d.rawbtprinter;" +
-        "S.type=text/plain;" +
-        "end;";
-
-    window.location.href = intentUrl;
-});
-    // طباعة سند القبض عبر RawBT
-    $wire.on('do-voucher-print', (event) => {
-        const voucher = event.data;
-
-        let text = "";
-        text += "--------------------------------\n";
-        text += "            " + (voucher.header_title || "تسعيرة") + "            \n";
-        text += "           " + voucher.type + "           \n";
-        text += "--------------------------------\n";
-        text += "رقم السند: " + voucher.voucher_no + "\n";
-        text += "التاريخ: " + voucher.date + "\n";
-        text += "الزبون: " + voucher.party_name + "\n";
-        text += "--------------------------------\n";
-        text += "الدفعة الواصلة: " + voucher.amount + " \n";
-        text += "طريقة الدفع: " + voucher.payment_method + "\n";
-        text += "--------------------------------\n";
-        text += "الرصيد السابق: " + Number(voucher.previous_balance).toFixed(2) + " \n";
-        text += "الرصيد الحالي: " + Number(voucher.current_balance).toFixed(2) + " \n";
-
-        if (voucher.notes) {
-            text += "ملاحظات: " + voucher.notes + "\n";
-        }
-        text += "--------------------------------\n\n\n\n";
-
-        const intentUrl = "intent:" + encodeURIComponent(text) +
-            "#Intent;" +
-            "scheme=rawbt;" +
-            "package=ru.a402d.rawbtprinter;" +
-            "S.type=text/plain;" +
-            "end;";
-
-        window.location.href = intentUrl;
-    });
-</script>
+    </script>
 @endscript
