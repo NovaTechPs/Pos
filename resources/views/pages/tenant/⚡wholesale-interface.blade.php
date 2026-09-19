@@ -23,8 +23,7 @@ new class extends Component {
     public ?string $notes = '';
 
     // المبلغ المدفوع (للدفع الجزئي أو الكلي)
-    public ?float $paidAmount = null;
-
+public ?float $paidAmount = 0;
     // متغيرات مودال سجل أسعار البيع
     public bool $showPriceHistoryModal = false;
     public ?array $selectedHistoryItem = null;
@@ -192,12 +191,12 @@ new class extends Component {
     }
 
     // زر سريع لتعيين دفع المبلغ كاملاً
-    public function setFullPayment(): void
-    {
-        $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
-    }
+   public function setFullPayment(): void
+{
+    $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
+}
 
-  public function completeSale(bool $shouldPrint = false): void
+public function completeSale(bool $shouldPrint = false): void
 {
     if (empty($this->cart)) return;
 
@@ -207,7 +206,7 @@ new class extends Component {
     $user = auth()->user();
     $customer = null;
 
-    // حساب الرصيد السابق للعميل
+    // حساب الرصيد السابق للزبون
     $previousBalance = 0;
     if ($this->selectedCustomerId) {
         $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
@@ -227,12 +226,13 @@ new class extends Component {
     $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['price'] * $item['quantity']), 0);
     $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + ($item['cost'] * $item['quantity']), 0);
 
-    $paid = is_null($this->paidAmount) ? $subtotal : (float) $this->paidAmount;
+    // إذا كان الحقل فارغاً يتم اعتباره 0
+    $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
 
-    $paymentStatus = 'paid';
-    if ($paid <= 0) {
-        $paymentStatus = 'unpaid';
-    } elseif ($paid < $subtotal) {
+    $paymentStatus = 'unpaid';
+    if ($paid >= $subtotal && $subtotal > 0) {
+        $paymentStatus = 'paid';
+    } elseif ($paid > 0) {
         $paymentStatus = 'partial';
     }
 
@@ -276,6 +276,7 @@ new class extends Component {
             ]);
         }
 
+        // إنشاء سند قبض تلقائي في حال وجود مبلغ مدفوع وزبون محدد
         if ($paid > 0 && $customer) {
             $payment = Payment::create([
                 'tenant_id'      => $tenantId,
@@ -294,7 +295,7 @@ new class extends Component {
         }
     });
 
-    // حساب الرصيد الحالي الجديد بعد إضافة الفاتورة والدفعة
+    // حساب الرصيد الحالي بعد الفاتورة والنزول
     $currentBalance = $previousBalance + $subtotal - $paid;
 
     // طباعة الفاتورة
@@ -317,7 +318,7 @@ new class extends Component {
         $this->dispatch('do-kiosk-print', data: $printableOrder);
     }
 
-    // طباعة سند القبض مع إضافة الأرصدة
+    // طباعة سند القبض
     if ($payment) {
         $voucherData = [
             'header_title'   => 'تسعيرة',
@@ -337,7 +338,8 @@ new class extends Component {
     }
 
     $this->cart = [];
-    $this->reset(['selectedCustomerId', 'notes', 'paidAmount']);
+    $this->reset(['selectedCustomerId', 'notes']);
+    $this->paidAmount = 0; // إعادة تعيين المبلغ المدفوع لـ 0 بعد كل عملية
     session()->flash('message', 'تم إصدار الفاتورة بنجاح!');
 }
 
@@ -472,43 +474,67 @@ new class extends Component {
                         <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">فاتورة مبيعات باص</flux:heading>
 
                         <!-- قائمة اختيار العميل مع عرض الرصيد المطابق تماماً -->
-                        <div class="space-y-1.5">
-                            <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="">-- اختر العميل (اختياري: زبون عابر) --</option>
-                                @foreach($customers as $customer)
-                                    @php
-                                        $openingBalance = $customer->opening_balance ?? 0;
-                                        $ordersSum = $customer->orders_sum ?? 0;
-                                        $paidSum = $customer->paid_sum ?? 0;
-                                        $receivedSum = $customer->received_sum ?? 0;
+                        <!-- قائمة اختيار الزبون -->
+<div class="space-y-1.5">
+    <select wire:model.live="selectedCustomerId" class="w-full text-xs border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 dark:text-zinc-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">-- اختر الزبون (اختياري: زبون عابر) --</option>
+        @foreach($customers as $customer)
+            @php
+                $openingBalance = $customer->opening_balance ?? 0;
+                $ordersSum = $customer->orders_sum ?? 0;
+                $paidSum = $customer->paid_sum ?? 0;
+                $receivedSum = $customer->received_sum ?? 0;
 
-                                        // نفس معادلة صفحة payment.blade بالكامل
-                                        $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-                                    @endphp
-                                    <option value="{{ $customer->id }}">
-                                        {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }} — [الرصيد: {{ number_format($bal, 2) }}]
-                                    </option>
-                                @endforeach
-                            </select>
+                $bal = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+            @endphp
+            <option value="{{ $customer->id }}">
+                {{ $customer->name }} {{ $customer->phone ? "({$customer->phone})" : '' }} — [الرصيد: {{ number_format($bal, 2) }}]
+            </option>
+        @endforeach
+    </select>
 
-                            <!-- شريط إظهار الرصيد الحالي عند اختيار عميل -->
-                            @if($selectedCustomerId && $selectedCustomer = $customers->firstWhere('id', $selectedCustomerId))
-                                @php
-                                    $openingBalance = $selectedCustomer->opening_balance ?? 0;
-                                    $ordersSum = $selectedCustomer->orders_sum ?? 0;
-                                    $paidSum = $selectedCustomer->paid_sum ?? 0;
-                                    $receivedSum = $selectedCustomer->received_sum ?? 0;
+    @if($selectedCustomerId && $selectedCustomer = $customers->firstWhere('id', $selectedCustomerId))
+        @php
+            $openingBalance = $selectedCustomer->opening_balance ?? 0;
+            $ordersSum = $selectedCustomer->orders_sum ?? 0;
+            $paidSum = $selectedCustomer->paid_sum ?? 0;
+            $receivedSum = $selectedCustomer->received_sum ?? 0;
 
-                                    $currentBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
-                                @endphp
-                                <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
-                                    <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للعميل:</span>
-                                    <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
-                                        {{ number_format($currentBalance, 2) }} شيكل
-                                    </span>
-                                </div>
-                            @endif
-                        </div>
+            $currentBalance = ($openingBalance + $ordersSum + $paidSum) - $receivedSum;
+        @endphp
+        <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
+            <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للزبون:</span>
+            <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
+                {{ number_format($currentBalance, 2) }} شيكل
+            </span>
+        </div>
+    @endif
+</div>
+
+<!-- حقل المبلغ المدفوع ومفتاح الدفع بالكامل -->
+<div class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+    <div class="flex items-center justify-between">
+        <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ المدفوع:</label>
+        <button type="button"
+                wire:click="setFullPayment"
+                class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
+            دفع كامل
+        </button>
+    </div>
+
+    <input type="number"
+           step="0.01"
+           wire:model.live="paidAmount"
+           placeholder="0.00"
+           class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
+
+    @if(!is_null($paidAmount) && $paidAmount < $cartTotal)
+        <div class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
+            <span>المتبقي (دين):</span>
+            <span class="font-mono">{{ number_format($cartTotal - (float)$paidAmount, 2) }}</span>
+        </div>
+    @endif
+</div>
 
                         <!-- حقل الملاحظات -->
                         <div>
@@ -719,11 +745,8 @@ new class extends Component {
 
         text += "--------------------------------\n";
         text += "مجموع الفاتورة: " + Number(inv.total).toFixed(2) + " \n";
-
-        if (Number(inv.paid_amount) > 0) {
-            text += "الدفعة النقدية: " + Number(inv.paid_amount).toFixed(2) + " \n";
-            text += "صافي الفاتورة: " + Number(inv.remaining_amount).toFixed(2) + " \n";
-        }
+        text += "الدفعة النقدية: " + Number(inv.paid_amount).toFixed(2) + " \n";
+        text += "صافي الفاتورة: " + Number(inv.remaining_amount).toFixed(2) + " \n";
 
         text += "--------------------------------\n";
         text += "الرصيد السابق: " + Number(inv.previous_balance).toFixed(2) + " \n";
