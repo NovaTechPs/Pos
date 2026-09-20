@@ -571,21 +571,18 @@ new class extends Component {
             const v = event.data;
 
             let text = "";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "        " + v.store_name + "        \n";
             text += "        " + v.type + "        \n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "رقم السند: " + v.voucher_no + "\n";
             text += "التاريخ: " + v.date + "\n";
             text += v.party_label + ": " + v.party_name + "\n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "المبلغ المدفوع: " + v.amount + " شيكل\n";
             text += "الرصيد المتبقي: " + v.remaining_balance + " شيكل\n";
             text += "طريقة الدفع: " + v.payment_method + "\n";
             text += "البيان: " + v.notes + "\n";
-            text += "--------------------------------\n";
-            text += "المستلم/الموظف: " + v.user_name + "\n";
-            text += "--------------------------------\n\n\n\n";
 
             const intentUrl = "intent:" + encodeURIComponent(text) +
                 "#Intent;" +
