@@ -444,33 +444,37 @@ public function searchInvoice()
         }
     }
 
-    public function scanBarcode()
-    {
-        $this->errorMessage = null;
-        $this->successMessage = null;
-        $trimmedBarcode = trim($this->barcode);
+   public function scanBarcode()
+{
+    $this->errorMessage = null;
+    $this->successMessage = null;
+    $trimmedBarcode = trim($this->barcode);
 
-        if ($trimmedBarcode === '') {
-            return;
-        }
-
-        if (!$this->activeShift) {
-            $this->errorMessage = 'يرجى فتح شيفت أولاً قبل مسح المنتجات!';
-            $this->showOpenShiftModal = true;
-            return;
-        }
-
-        $tenantId = session('active_tenant_id');
-        $barcodeRecord = ProductBarcode::where('tenant_id', $tenantId)->where('barcode', $trimmedBarcode)->first();
-
-        if ($barcodeRecord && $barcodeRecord->product) {
-            $this->addToCart($barcodeRecord->product, $trimmedBarcode);
-            $this->barcode = '';
-        } else {
-            $this->errorMessage = 'عذراً، لم يتم العثور على منتج بهذا الباركود!';
-            $this->barcode = '';
-        }
+    if ($trimmedBarcode === '') {
+        return;
     }
+
+    if (!$this->activeShift) {
+        $this->errorMessage = 'يرجى فتح شيفت أولاً قبل مسح المنتجات!';
+        $this->showOpenShiftModal = true;
+        $this->barcode = '';
+        return;
+    }
+
+    $tenantId = session('active_tenant_id');
+    $barcodeRecord = ProductBarcode::where('tenant_id', $tenantId)
+        ->where('barcode', $trimmedBarcode)
+        ->first();
+
+    if ($barcodeRecord && $barcodeRecord->product) {
+        $this->addToCart($barcodeRecord->product, $trimmedBarcode);
+    } else {
+        $this->errorMessage = "عذراً، لم يتم العثور على منتج بالباركود: {$trimmedBarcode}";
+    }
+
+    // تفريغ الباركود لإتاحة المسح التالي فوراً
+    $this->barcode = '';
+}
 
     public function addToCart(Product $product, string $scannedBarcode = '')
     {
@@ -1124,11 +1128,13 @@ public function getInvoiceDateProperty(): string
                     <div class="p-2 bg-slate-50 border-b border-slate-200 relative shrink-0">
                         <div class="relative flex items-center gap-2">
                             <!-- حقل مسح الباركود التلقائي -->
-                            <input type="text" wire:model.live.debounce.150ms="barcode"
-                                placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه تلقائياً... 🔄' : 'امسح الباركود هنا للإضافة المباشرة... 📦' }}"
-                                autofocus
-                                class="w-full bg-white border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-indigo-300 focus:outline-indigo-600' }} rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-sm">
-
+                        <!-- حقل مسح الباركود التلقائي والسريع -->
+<input type="text"
+    wire:model="barcode"
+    wire:keydown.enter.prevent="scanBarcode"
+    placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه... 🔄' : 'امسح الباركود هنا للإضافة المباشرة... 📦' }}"
+    autofocus
+    class="w-full bg-white border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-indigo-300 focus:outline-indigo-600' }} rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-sm">
                             @if (!empty($barcode))
                                 <button type="button" wire:click="$set('barcode', '')"
                                     class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
