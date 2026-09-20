@@ -339,31 +339,40 @@ new class extends Component {
         $this->heldInvoices = array_values($this->heldInvoices);
     }
 
-    public function searchInvoice()
-    {
-        $query = trim($this->searchInvoiceQuery);
+public function searchInvoice()
+{
+    $query = trim($this->searchInvoiceQuery);
 
-        if ($query === '') {
-            $this->errorMessage = 'يرجى إدخال رقم الفاتورة للبحث.';
-            return;
-        }
-
-        $tenantId = session('active_tenant_id');
-        $invoice = Order::where('tenant_id', $tenantId)
-            ->where(function ($q) use ($query) {
-                $q->where('invoice_number', $query)
-                    ->orWhere('invoice_number', 'like', '%' . $query . '%')
-                    ->orWhere('id', $query);
-            })
-            ->first();
-
-        if ($invoice) {
-            $this->loadInvoice($invoice->id);
-            $this->searchInvoiceQuery = '';
-        } else {
-            $this->errorMessage = "لم يتم العثور على أي فاتورة مطابقة للبحث: {$query}";
-        }
+    if ($query === '') {
+        $this->errorMessage = 'يرجى إدخال رقم الفاتورة للبحث.';
+        return;
     }
+
+    $tenantId = session('active_tenant_id');
+
+    // استخراج الأرقام فقط لاستخدامها في حال إدخال الرقم مجرداً بدون البادئة
+    $digitsOnly = preg_replace('/\D/', '', $query);
+
+    $invoice = Order::where('tenant_id', $tenantId)
+        ->where('type', 'pos') // قيد البحث على فواتير POS فقط
+        ->where(function ($q) use ($query, $digitsOnly) {
+            $q->where('invoice_number', $query)
+              ->orWhere('invoice_number', 'like', '%' . $query . '%')
+              ->orWhere('id', $query);
+
+            if (!empty($digitsOnly)) {
+                $q->orWhere('invoice_number', 'like', '%' . $digitsOnly . '%');
+            }
+        })
+        ->first();
+
+    if ($invoice) {
+        $this->loadInvoice($invoice->id);
+        $this->searchInvoiceQuery = '';
+    } else {
+        $this->errorMessage = "لم يتم العثور على أي فاتورة مطابقة للبحث: {$query}";
+    }
+}
 
     public function loadInvoice(int $invoiceId)
     {
@@ -869,6 +878,27 @@ public function updatedBarcode()
 
     $this->scanBarcode();
 }
+public function getInvoiceCreatorProperty(): string
+{
+    if ($this->currentInvoiceId) {
+        $invoice = Order::with('user')->find($this->currentInvoiceId);
+        return $invoice?->user?->name ?? 'غير محدد';
+    }
+
+    return Auth::user()->name ?? 'الكاشير الحالي';
+}
+public function getInvoiceDateProperty(): string
+{
+    if ($this->currentInvoiceId) {
+        $invoice = Order::find($this->currentInvoiceId);
+        if ($invoice && $invoice->created_at) {
+            return $invoice->created_at->locale('ar')->isoFormat('dddd، YYYY-MM-DD - h:mm A');
+        }
+    }
+
+    // إذا كانت فاتورة جديدة، يتم عرض تاريخ ووقت اليوم الحالي
+    return now()->locale('ar')->isoFormat('dddd، YYYY-MM-DD');
+}
     public function render()
     {
         $tenantId = session('active_tenant_id');
@@ -1039,7 +1069,14 @@ public function updatedBarcode()
                             <span
                                 class="text-[10px] bg-purple-900 text-white px-1.5 py-0.5 rounded font-mono">F10</span>
                         </button>
-
+<div class="flex items-center gap-1.5 bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-md text-xs font-bold text-slate-700">
+        <span>📅</span>
+        <span class="font-mono text-slate-900">{{ $this->invoiceDate }}</span>
+    </div>
+    <div class="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md text-xs font-bold text-indigo-900">
+        <span>👤</span>
+        <span>بواسطة: {{ $this->invoiceCreator }}</span>
+    </div>
                         @if ($currentInvoiceId)
                             <span
                                 class="bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 rounded-md text-xs font-bold font-mono">
