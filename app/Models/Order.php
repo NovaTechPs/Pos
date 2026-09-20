@@ -15,7 +15,6 @@ use BelongsToTenant, SoftDeletes;
     public function items() { return $this->hasMany(OrderItem::class); }
     public function branch() { return $this->belongsTo(Branch::class); }
     public function user() { return $this->belongsTo(User::class); }
-    public function customer() { return $this->belongsTo(Customer::class); }
     public function party()
     {
         return $this->belongsTo(Party::class, 'customer_id');

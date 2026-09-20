@@ -83,43 +83,44 @@ new class extends Component {
         }
     }
 
-    public function showLastPrice(int $productId): void
-    {
-        $tenantId = $this->getTenantId();
+   public function showLastPrice(int $productId): void
+{
+    $tenantId = $this->getTenantId();
 
-        $product = Product::find($productId);
-        $customer = $this->selectedCustomerId ? Customer::find($this->selectedCustomerId) : null;
+    $product = Product::find($productId);
+    // الاستعلام عن الزبون من جدول parties بدلاً من Customer
+    $customer = $this->selectedCustomerId ? Party::find($this->selectedCustomerId) : null;
 
-        $history = [];
+    $history = [];
 
-        if ($this->selectedCustomerId) {
-            $historyItems = OrderItem::whereHas('order', function ($q) {
-                $q->where('customer_id', $this->selectedCustomerId)->where('status', 'completed');
-            })
-                ->where('product_id', $productId)
-                ->where('tenant_id', $tenantId)
-                ->latest()
-                ->take(10)
-                ->get();
+    if ($this->selectedCustomerId) {
+        $historyItems = OrderItem::whereHas('order', function ($q) {
+            $q->where('customer_id', $this->selectedCustomerId)->where('status', 'completed');
+        })
+            ->where('product_id', $productId)
+            ->where('tenant_id', $tenantId)
+            ->latest()
+            ->take(10)
+            ->get();
 
-            foreach ($historyItems as $item) {
-                $history[] = [
-                    'price' => (float) $item->unit_price,
-                    'quantity' => $item->quantity,
-                    'date' => $item->created_at ? $item->created_at->format('Y-m-d H:i') : '-',
-                ];
-            }
+        foreach ($historyItems as $item) {
+            $history[] = [
+                'price' => (float) $item->unit_price,
+                'quantity' => $item->quantity,
+                'date' => $item->created_at ? $item->created_at->format('Y-m-d H:i') : '-',
+            ];
         }
-
-        $this->selectedHistoryItem = [
-            'product_name' => $product?->name ?? '',
-            'customer_name' => $customer?->name ?? 'زبون عابر (لم يتم تحديد عميل)',
-            'history' => $history,
-            'has_history' => !empty($history),
-        ];
-
-        $this->showPriceHistoryModal = true;
     }
+
+    $this->selectedHistoryItem = [
+        'product_name' => $product?->name ?? '',
+        'customer_name' => $customer?->name ?? 'زبون عابر (لم يتم تحديد عميل)',
+        'history' => $history,
+        'has_history' => !empty($history),
+    ];
+
+    $this->showPriceHistoryModal = true;
+}
 
     public function closePriceHistoryModal(): void
     {
@@ -186,157 +187,160 @@ new class extends Component {
         $this->paidAmount = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
     }
 
-    public function completeSale(bool $shouldPrint = false): void
-    {
-        if (empty($this->cart)) {
-            return;
-        }
-
-        $tenantId = $this->getTenantId();
-        if (!$tenantId) {
-            return;
-        }
-
-        $user = auth()->user();
-        $customer = null;
-
-        $previousBalance = 0;
-        if ($this->selectedCustomerId) {
-            $customer = Customer::where('tenant_id', $tenantId)->find($this->selectedCustomerId);
-            if ($customer) {
-                $party = Party::find($customer->id);
-                if ($party) {
-                    $openingBalance = $party->opening_balance ?? 0;
-                    $ordersSum = $party->orders()->where('status', 'completed')->sum('total');
-                    $paidSum = $party->payments()->where('type', 'payment')->sum('amount');
-                    $receivedSum = $party->payments()->where('type', 'receipt')->sum('amount');
-
-                    $previousBalance = $openingBalance + $ordersSum + $paidSum - $receivedSum;
-                }
-            }
-        }
-
-        $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
-        $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + $item['cost'] * $item['quantity'], 0);
-
-        $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
-
-        $paymentStatus = 'unpaid';
-        if ($paid >= $subtotal && $subtotal > 0) {
-            $paymentStatus = 'paid';
-        } elseif ($paid > 0) {
-            $paymentStatus = 'partial';
-        }
-
-        $order = null;
-        $payment = null;
-
-        $activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $user?->id)->where('status', 'open')->first();
-
-        // الاحتفاظ ببيانات السلة لإرسالها للواتساب قبل تصفير السلة
-        $savedCart = $this->cart;
-        $savedNotes = $this->notes;
-        $customerName = $customer?->name ?? 'زبون';
-
-        DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $paid, $paymentStatus, &$order, &$payment) {
-            $order = Order::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $this->getUserBranchId(),
-                'customer_id' => $customer?->id,
-                'customer_name' => $customer?->name ?? 'زبون',
-                'customer_phone' => $customer?->phone,
-                'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
-                'type' => 'wholesale',
-                'status' => 'completed',
-                'subtotal' => $subtotal,
-                'total' => $subtotal,
-                'total_cost' => $totalCost,
-                'total_profit' => $subtotal - $totalCost,
-                'paid_amount' => $paid,
-                'payment_status' => $paymentStatus,
-                'notes' => $this->notes,
-            ]);
-
-            foreach ($this->cart as $productId => $item) {
-                OrderItem::create([
-                    'tenant_id' => $tenantId,
-                    'order_id' => $order->id,
-                    'product_id' => $productId,
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['price'],
-                    'total_price' => $item['price'] * $item['quantity'],
-                    'cost_price' => $item['cost'],
-                    'total_cost' => $item['cost'] * $item['quantity'],
-                ]);
-            }
-
-            if ($paid > 0 && $customer) {
-                $payment = Payment::create([
-                    'tenant_id' => $tenantId,
-                    'branch_id' => $this->getUserBranchId() ?? $activeShift?->branch_id,
-                    'shift_id' => $activeShift?->id,
-                    'user_id' => $user?->id,
-                    'type' => 'receipt',
-                    'voucher_number' => 'RCV-' . strtoupper(uniqid()),
-                    'payable_type' => Party::class,
-                    'payable_id' => $customer->id,
-                    'amount' => $paid,
-                    'payment_method' => 'cash',
-                    'notes' => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
-                    'payment_date' => now(),
-                ]);
-            }
-        });
-
-        $currentBalance = $previousBalance + $subtotal - $paid;
-
-        // 1. إرسال الطباعة إن طُلبت
-        if ($shouldPrint && $order) {
-            $printableOrder = [
-                'header_title' => 'تسعيرة',
-                'invoice_no' => $order->invoice_number,
-                'customer_name' => $order->customer_name,
-                'customer_phone' => $order->customer_phone,
-                'date' => $order->created_at->format('Y-m-d H:i'),
-                'items' => array_values($this->cart),
-                'total' => $subtotal,
-                'paid_amount' => $paid,
-                'remaining_amount' => $subtotal - $paid,
-                'previous_balance' => $previousBalance,
-                'current_balance' => $currentBalance,
-                'notes' => $this->notes,
-            ];
-
-            $this->dispatch('do-kiosk-print', data: $printableOrder);
-        }
-
-        if ($payment) {
-            $voucherData = [
-                'header_title' => 'تسعيرة',
-                'voucher_no' => $payment->voucher_number,
-                'type' => 'سند قبض',
-                'party_name' => $customer?->name ?? 'زبون',
-                'amount' => number_format($payment->amount, 2),
-                'payment_method' => 'نقداً (كاش)',
-                'date' => $payment->payment_date->format('Y-m-d H:i'),
-                'user_name' => $user?->name ?? 'النظام',
-                'previous_balance' => $previousBalance,
-                'current_balance' => $currentBalance,
-                'notes' => $payment->notes,
-            ];
-
-            $this->dispatch('do-voucher-print', data: $voucherData);
-        }
-
-        // 2. إرسال الفاتورة تلقائياً للواتس للرقم المحدد
-        $this->triggerWhatsAppSend('+970592700780', $savedCart, $subtotal, $paid, $customerName, $savedNotes, $order?->invoice_number);
-
-        // 3. إعادة ضبط السلة والملاحظات
-        $this->cart = [];
-        $this->reset(['selectedCustomerId', 'notes']);
-        $this->paidAmount = 0;
-        session()->flash('message', 'تم إصدار الفاتورة وإرسالها عبر الواتس بنجاح!');
+   public function completeSale(bool $shouldPrint = false): void
+{
+    if (empty($this->cart)) {
+        return;
     }
+
+    $tenantId = $this->getTenantId();
+    if (!$tenantId) {
+        return;
+    }
+
+    $user = auth()->user();
+    $customer = null;
+
+    $previousBalance = 0;
+    if ($this->selectedCustomerId) {
+        // الاستعلام المباشر من جدول parties للعميل المحدد
+        $customer = Party::where('tenant_id', $tenantId)
+            ->where(function ($q) {
+                $q->where('type', 'customer')->orWhere('type', 'both');
+            })
+            ->find($this->selectedCustomerId);
+
+        if ($customer) {
+            $openingBalance = $customer->opening_balance ?? 0;
+            $ordersSum = $customer->orders()->where('status', 'completed')->sum('total');
+            $paidSum = $customer->payments()->where('type', 'payment')->sum('amount');
+            $receivedSum = $customer->payments()->where('type', 'receipt')->sum('amount');
+
+            $previousBalance = $openingBalance + $ordersSum + $paidSum - $receivedSum;
+        }
+    }
+
+    $subtotal = array_reduce($this->cart, fn($sum, $item) => $sum + $item['price'] * $item['quantity'], 0);
+    $totalCost = array_reduce($this->cart, fn($sum, $item) => $sum + $item['cost'] * $item['quantity'], 0);
+
+    $paid = is_null($this->paidAmount) ? 0 : (float) $this->paidAmount;
+
+    $paymentStatus = 'unpaid';
+    if ($paid >= $subtotal && $subtotal > 0) {
+        $paymentStatus = 'paid';
+    } elseif ($paid > 0) {
+        $paymentStatus = 'partial';
+    }
+
+    $order = null;
+    $payment = null;
+
+    $activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $user?->id)->where('status', 'open')->first();
+
+    // الاحتفاظ ببيانات السلة وإحصائيات الزبون
+    $savedCart = $this->cart;
+    $savedNotes = $this->notes;
+    $customerName = $customer?->name ?? 'زبون عابر';
+
+    DB::transaction(function () use ($tenantId, $user, $activeShift, $subtotal, $totalCost, $customer, $customerName, $paid, $paymentStatus, &$order, &$payment) {
+        $order = Order::create([
+            'tenant_id' => $tenantId,
+            'branch_id' => $this->getUserBranchId(),
+            'customer_id' => $customer?->id,
+            'customer_name' => $customerName, // حفظ اسم الزبون القادم من جدول parties
+            'customer_phone' => $customer?->phone, // حفظ رقم الهاتف
+            'invoice_number' => 'INV-VAN-' . date('Ymd') . '-' . rand(100, 999),
+            'type' => 'wholesale',
+            'status' => 'completed',
+            'subtotal' => $subtotal,
+            'total' => $subtotal,
+            'total_cost' => $totalCost,
+            'total_profit' => $subtotal - $totalCost,
+            'paid_amount' => $paid,
+            'payment_status' => $paymentStatus,
+            'notes' => $this->notes,
+        ]);
+
+        foreach ($this->cart as $productId => $item) {
+            OrderItem::create([
+                'tenant_id' => $tenantId,
+                'order_id' => $order->id,
+                'product_id' => $productId,
+                'quantity' => $item['quantity'],
+                'unit_price' => $item['price'],
+                'total_price' => $item['price'] * $item['quantity'],
+                'cost_price' => $item['cost'],
+                'total_cost' => $item['cost'] * $item['quantity'],
+            ]);
+        }
+
+        if ($paid > 0 && $customer) {
+            $payment = Payment::create([
+                'tenant_id' => $tenantId,
+                'branch_id' => $this->getUserBranchId() ?? $activeShift?->branch_id,
+                'shift_id' => $activeShift?->id,
+                'user_id' => $user?->id,
+                'type' => 'receipt',
+                'voucher_number' => 'RCV-' . strtoupper(uniqid()),
+                'payable_type' => Party::class,
+                'payable_id' => $customer->id,
+                'amount' => $paid,
+                'payment_method' => 'cash',
+                'notes' => 'سند قبض تلقائي للفاتورة رقم: #' . $order->invoice_number,
+                'payment_date' => now(),
+            ]);
+        }
+    });
+
+    $currentBalance = $previousBalance + $subtotal - $paid;
+
+    // 1. إرسال الطباعة إن طُلبت
+    if ($shouldPrint && $order) {
+        $printableOrder = [
+            'header_title' => 'تسعيرة',
+            'invoice_no' => $order->invoice_number,
+            'customer_name' => $order->customer_name,
+            'customer_phone' => $order->customer_phone,
+            'date' => $order->created_at->format('Y-m-d H:i'),
+            'items' => array_values($this->cart),
+            'total' => $subtotal,
+            'paid_amount' => $paid,
+            'remaining_amount' => $subtotal - $paid,
+            'previous_balance' => $previousBalance,
+            'current_balance' => $currentBalance,
+            'notes' => $this->notes,
+        ];
+
+        $this->dispatch('do-kiosk-print', data: $printableOrder);
+    }
+
+    if ($payment) {
+        $voucherData = [
+            'header_title' => 'تسعيرة',
+            'voucher_no' => $payment->voucher_number,
+            'type' => 'سند قبض',
+            'party_name' => $customerName,
+            'amount' => number_format($payment->amount, 2),
+            'payment_method' => 'نقداً (كاش)',
+            'date' => $payment->payment_date->format('Y-m-d H:i'),
+            'user_name' => $user?->name ?? 'النظام',
+            'previous_balance' => $previousBalance,
+            'current_balance' => $currentBalance,
+            'notes' => $payment->notes,
+        ];
+
+        $this->dispatch('do-voucher-print', data: $voucherData);
+    }
+
+    // 2. إرسال الفاتورة تلقائياً للواتس
+    $this->triggerWhatsAppSend('+970592700780', $savedCart, $subtotal, $paid, $customerName, $savedNotes, $order?->invoice_number);
+
+    // 3. إعادة ضبط السلة والملاحظات
+    $this->cart = [];
+    $this->reset(['selectedCustomerId', 'notes']);
+    $this->paidAmount = 0;
+    session()->flash('message', 'تم إصدار الفاتورة وإرسالها عبر الواتس بنجاح!');
+}
 
     // دالة مساعدة لتجهيز رابط الواتساب وفتحه
     private function triggerWhatsAppSend(string $phone, array $cart, float $subtotal, float $paid, string $customerName, ?string $notes, ?string $invNo): void
