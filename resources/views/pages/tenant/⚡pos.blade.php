@@ -339,40 +339,40 @@ new class extends Component {
         $this->heldInvoices = array_values($this->heldInvoices);
     }
 
-public function searchInvoice()
-{
-    $query = trim($this->searchInvoiceQuery);
+    public function searchInvoice()
+    {
+        $query = trim($this->searchInvoiceQuery);
 
-    if ($query === '') {
-        $this->errorMessage = 'يرجى إدخال رقم الفاتورة للبحث.';
-        return;
+        if ($query === '') {
+            $this->errorMessage = 'يرجى إدخال رقم الفاتورة للبحث.';
+            return;
+        }
+
+        $tenantId = session('active_tenant_id');
+
+        // استخراج الأرقام فقط لاستخدامها في حال إدخال الرقم مجرداً بدون البادئة
+        $digitsOnly = preg_replace('/\D/', '', $query);
+
+        $invoice = Order::where('tenant_id', $tenantId)
+            ->where('type', 'pos') // قيد البحث على فواتير POS فقط
+            ->where(function ($q) use ($query, $digitsOnly) {
+                $q->where('invoice_number', $query)
+                    ->orWhere('invoice_number', 'like', '%' . $query . '%')
+                    ->orWhere('id', $query);
+
+                if (!empty($digitsOnly)) {
+                    $q->orWhere('invoice_number', 'like', '%' . $digitsOnly . '%');
+                }
+            })
+            ->first();
+
+        if ($invoice) {
+            $this->loadInvoice($invoice->id);
+            $this->searchInvoiceQuery = '';
+        } else {
+            $this->errorMessage = "لم يتم العثور على أي فاتورة مطابقة للبحث: {$query}";
+        }
     }
-
-    $tenantId = session('active_tenant_id');
-
-    // استخراج الأرقام فقط لاستخدامها في حال إدخال الرقم مجرداً بدون البادئة
-    $digitsOnly = preg_replace('/\D/', '', $query);
-
-    $invoice = Order::where('tenant_id', $tenantId)
-        ->where('type', 'pos') // قيد البحث على فواتير POS فقط
-        ->where(function ($q) use ($query, $digitsOnly) {
-            $q->where('invoice_number', $query)
-              ->orWhere('invoice_number', 'like', '%' . $query . '%')
-              ->orWhere('id', $query);
-
-            if (!empty($digitsOnly)) {
-                $q->orWhere('invoice_number', 'like', '%' . $digitsOnly . '%');
-            }
-        })
-        ->first();
-
-    if ($invoice) {
-        $this->loadInvoice($invoice->id);
-        $this->searchInvoiceQuery = '';
-    } else {
-        $this->errorMessage = "لم يتم العثور على أي فاتورة مطابقة للبحث: {$query}";
-    }
-}
 
     public function loadInvoice(int $invoiceId)
     {
@@ -444,37 +444,35 @@ public function searchInvoice()
         }
     }
 
-   public function scanBarcode()
-{
-    $this->errorMessage = null;
-    $this->successMessage = null;
-    $trimmedBarcode = trim($this->barcode);
+    public function scanBarcode()
+    {
+        $this->errorMessage = null;
+        $this->successMessage = null;
+        $trimmedBarcode = trim($this->barcode);
 
-    if ($trimmedBarcode === '') {
-        return;
-    }
+        if ($trimmedBarcode === '') {
+            return;
+        }
 
-    if (!$this->activeShift) {
-        $this->errorMessage = 'يرجى فتح شيفت أولاً قبل مسح المنتجات!';
-        $this->showOpenShiftModal = true;
+        if (!$this->activeShift) {
+            $this->errorMessage = 'يرجى فتح شيفت أولاً قبل مسح المنتجات!';
+            $this->showOpenShiftModal = true;
+            $this->barcode = '';
+            return;
+        }
+
+        $tenantId = session('active_tenant_id');
+        $barcodeRecord = ProductBarcode::where('tenant_id', $tenantId)->where('barcode', $trimmedBarcode)->first();
+
+        if ($barcodeRecord && $barcodeRecord->product) {
+            $this->addToCart($barcodeRecord->product, $trimmedBarcode);
+        } else {
+            $this->errorMessage = "عذراً، لم يتم العثور على منتج بالباركود: {$trimmedBarcode}";
+        }
+
+        // تفريغ الباركود لإتاحة المسح التالي فوراً
         $this->barcode = '';
-        return;
     }
-
-    $tenantId = session('active_tenant_id');
-    $barcodeRecord = ProductBarcode::where('tenant_id', $tenantId)
-        ->where('barcode', $trimmedBarcode)
-        ->first();
-
-    if ($barcodeRecord && $barcodeRecord->product) {
-        $this->addToCart($barcodeRecord->product, $trimmedBarcode);
-    } else {
-        $this->errorMessage = "عذراً، لم يتم العثور على منتج بالباركود: {$trimmedBarcode}";
-    }
-
-    // تفريغ الباركود لإتاحة المسح التالي فوراً
-    $this->barcode = '';
-}
 
     public function addToCart(Product $product, string $scannedBarcode = '')
     {
@@ -771,7 +769,7 @@ public function searchInvoice()
         $this->showBelowCostModal = false;
         $order = $this->processCheckout();
         if ($order) {
-            $this->dispatch('print-receipt', ['orderId' => $order->id]);
+            $this->dispatch('print-receipt', orderId: $order->id);
         }
     }
 
@@ -781,7 +779,7 @@ public function searchInvoice()
         if ($this->pendingCheckoutMode === 'checkoutAndPrint') {
             $order = $this->processCheckout();
             if ($order) {
-                $this->dispatch('print-receipt', ['orderId' => $order->id]);
+                $this->dispatch('print-receipt', orderId: $order->id);
             }
         } else {
             $this->processCheckout();
@@ -872,27 +870,27 @@ public function searchInvoice()
         }
     }
 
-public function getInvoiceCreatorProperty(): string
-{
-    if ($this->currentInvoiceId) {
-        $invoice = Order::with('user')->find($this->currentInvoiceId);
-        return $invoice?->user?->name ?? 'غير محدد';
-    }
-
-    return Auth::user()->name ?? 'الكاشير الحالي';
-}
-public function getInvoiceDateProperty(): string
-{
-    if ($this->currentInvoiceId) {
-        $invoice = Order::find($this->currentInvoiceId);
-        if ($invoice && $invoice->created_at) {
-            return $invoice->created_at->locale('ar')->isoFormat('dddd، YYYY-MM-DD - h:mm A');
+    public function getInvoiceCreatorProperty(): string
+    {
+        if ($this->currentInvoiceId) {
+            $invoice = Order::with('user')->find($this->currentInvoiceId);
+            return $invoice?->user?->name ?? 'غير محدد';
         }
-    }
 
-    // إذا كانت فاتورة جديدة، يتم عرض تاريخ ووقت اليوم الحالي
-    return now()->locale('ar')->isoFormat('dddd، YYYY-MM-DD');
-}
+        return Auth::user()->name ?? 'الكاشير الحالي';
+    }
+    public function getInvoiceDateProperty(): string
+    {
+        if ($this->currentInvoiceId) {
+            $invoice = Order::find($this->currentInvoiceId);
+            if ($invoice && $invoice->created_at) {
+                return $invoice->created_at->locale('ar')->isoFormat('dddd، YYYY-MM-DD - h:mm A');
+            }
+        }
+
+        // إذا كانت فاتورة جديدة، يتم عرض تاريخ ووقت اليوم الحالي
+        return now()->locale('ar')->isoFormat('dddd، YYYY-MM-DD');
+    }
     public function render()
     {
         $tenantId = session('active_tenant_id');
@@ -1063,14 +1061,16 @@ public function getInvoiceDateProperty(): string
                             <span
                                 class="text-[10px] bg-purple-900 text-white px-1.5 py-0.5 rounded font-mono">F10</span>
                         </button>
-<div class="flex items-center gap-1.5 bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-md text-xs font-bold text-slate-700">
-        <span>📅</span>
-        <span class="font-mono text-slate-900">{{ $this->invoiceDate }}</span>
-    </div>
-    <div class="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md text-xs font-bold text-indigo-900">
-        <span>👤</span>
-        <span>بواسطة: {{ $this->invoiceCreator }}</span>
-    </div>
+                        <div
+                            class="flex items-center gap-1.5 bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-md text-xs font-bold text-slate-700">
+                            <span>📅</span>
+                            <span class="font-mono text-slate-900">{{ $this->invoiceDate }}</span>
+                        </div>
+                        <div
+                            class="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md text-xs font-bold text-indigo-900">
+                            <span>👤</span>
+                            <span>بواسطة: {{ $this->invoiceCreator }}</span>
+                        </div>
                         @if ($currentInvoiceId)
                             <span
                                 class="bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 rounded-md text-xs font-bold font-mono">
@@ -1118,13 +1118,11 @@ public function getInvoiceDateProperty(): string
                     <div class="p-2 bg-slate-50 border-b border-slate-200 relative shrink-0">
                         <div class="relative flex items-center gap-2">
                             <!-- حقل مسح الباركود التلقائي -->
-                        <!-- حقل مسح الباركود التلقائي والسريع -->
-<input type="text"
-    wire:model="barcode"
-    wire:keydown.enter.prevent="scanBarcode"
-    placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه... 🔄' : 'امسح الباركود هنا للإضافة المباشرة... 📦' }}"
-    autofocus
-    class="w-full bg-white border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-indigo-300 focus:outline-indigo-600' }} rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-sm">
+                            <!-- حقل مسح الباركود التلقائي والسريع -->
+                            <input type="text" wire:model="barcode" wire:keydown.enter.prevent="scanBarcode"
+                                placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه... 🔄' : 'امسح الباركود هنا للإضافة المباشرة... 📦' }}"
+                                autofocus
+                                class="w-full bg-white border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-indigo-300 focus:outline-indigo-600' }} rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 placeholder-slate-400 shadow-sm">
                             @if (!empty($barcode))
                                 <button type="button" wire:click="$set('barcode', '')"
                                     class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
@@ -1721,22 +1719,36 @@ public function getInvoiceDateProperty(): string
 
 <script>
     document.addEventListener('livewire:initialized', () => {
-        Livewire.on('print-receipt', async (event) => {
-            const orderId = event.orderId || (event[0] ? event[0].orderId : null);
-            if (!orderId) return;
+        Livewire.on('print-receipt', (data) => {
+            // استخراج orderId بشكل مضمون سواء جاء كـ Object أو Array (Livewire 3)
+            let orderId = null;
+            if (typeof data === 'object') {
+                orderId = data.orderId || (data[0] ? data[0].orderId : null);
+            }
 
-            // فتح صفحة الطباعة المخفية للطباعة المباشرة عبر المتصفح
-            const printWindow = window.open(`/orders/${orderId}/print`, 'PrintWindow', 'width=300,height=400');
+            if (!orderId) {
+                console.error('لم يتم استقبال رقم الطلب (Order ID) بشكل صحيح.');
+                return;
+            }
+
+            const printUrl = `/orders/${orderId}/print`;
+
+            // فتح نافذة الطباعة وتفعيل أمر الطباعة تلقائياً فور التحميل
+            const printWindow = window.open(printUrl, 'PrintReceiptWindow',
+                'width=400,height=600,top=100,left=100');
 
             if (printWindow) {
                 printWindow.onload = function() {
                     printWindow.focus();
                     printWindow.print();
-                    // إغلاق النافذة تلقائياً بعد إعطاء أمر الطباعة
-                    setTimeout(() => { printWindow.close(); }, 500);
+                    // إغلاق النافذة تلقائياً بعد إرسال أمر الطباعة بالطابعة الحرارية
+                    setTimeout(() => {
+                        printWindow.close();
+                    }, 500);
                 };
             } else {
-                alert('يرجى السماح بالنوافذ المنبثقة (Pop-ups) للموقع لتفعيل الطباعة التلقائية!');
+                // إذا كان المتصفح يحظر النوافذ المنبثقة
+                alert('يرجى السماح بالنوافذ المنبثقة (Pop-up) لهذا الموقع لتفعيل الطباعة التلقائية!');
             }
         });
     });
