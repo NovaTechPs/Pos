@@ -871,17 +871,7 @@ public function searchInvoice()
             return null;
         }
     }
-public function updatedBarcode()
-{
-    $trimmedBarcode = trim($this->barcode);
 
-    // للتأكد من أن جهاز الباركود أرسل رمزاً كاملاً
-    if ($trimmedBarcode === '') {
-        return;
-    }
-
-    $this->scanBarcode();
-}
 public function getInvoiceCreatorProperty(): string
 {
     if ($this->currentInvoiceId) {
@@ -1731,10 +1721,22 @@ public function getInvoiceDateProperty(): string
 
 <script>
     document.addEventListener('livewire:initialized', () => {
-        Livewire.on('print-receipt', (event) => {
+        Livewire.on('print-receipt', async (event) => {
             const orderId = event.orderId || (event[0] ? event[0].orderId : null);
-            if (orderId) {
-                window.open(`/orders/${orderId}/print`, '_blank', 'width=400,height=600');
+            if (!orderId) return;
+
+            // فتح صفحة الطباعة المخفية للطباعة المباشرة عبر المتصفح
+            const printWindow = window.open(`/orders/${orderId}/print`, 'PrintWindow', 'width=300,height=400');
+
+            if (printWindow) {
+                printWindow.onload = function() {
+                    printWindow.focus();
+                    printWindow.print();
+                    // إغلاق النافذة تلقائياً بعد إعطاء أمر الطباعة
+                    setTimeout(() => { printWindow.close(); }, 500);
+                };
+            } else {
+                alert('يرجى السماح بالنوافذ المنبثقة (Pop-ups) للموقع لتفعيل الطباعة التلقائية!');
             }
         });
     });
