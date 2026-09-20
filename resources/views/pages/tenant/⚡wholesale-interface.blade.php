@@ -774,9 +774,8 @@ new class extends Component {
                     // اختصار اسم المنتج لأول كلمتين فقط
                     let shortName = formatProductName(item.name);
 
-                    text += shortName ;
-                    // دمج الإجمالي ومعلومات الكمية والسعر في نص واحد داخل سطر واحد
-                    text += formatLine(lineInfo + " = " + totalStr) + "\n";
+                  // دمج الإجمالي ومعلومات الكمية والسعر في نص واحد داخل سطر واحد
+                    text += formatLine(shortName+"  "+lineInfo + " = " + totalStr) + "\n";
                     text += "        ****       \n";
                 });
             }
