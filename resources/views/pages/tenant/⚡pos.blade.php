@@ -758,21 +758,22 @@ new class extends Component {
         return $this->processCheckout();
     }
 
-    public function checkoutAndPrint()
-    {
-        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
-            $this->pendingCheckoutMode = 'checkoutAndPrint';
-            $this->showBelowCostModal = true;
-            return;
-        }
-
-        $this->showBelowCostModal = false;
-        $order = $this->processCheckout();
-        if ($order) {
-            $this->dispatch('print-receipt', orderId: $order->id);
-        }
+  public function checkoutAndPrint()
+{
+    if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+        $this->pendingCheckoutMode = 'checkoutAndPrint';
+        $this->showBelowCostModal = true;
+        return;
     }
 
+    $this->showBelowCostModal = false;
+
+    // إرسال أمر الطباعة للشاشة قبل تفريغ السلة
+    $this->dispatch('print-receipt');
+
+    // معالجة وحفظ العملية في قاعدة البيانات
+    $this->processCheckout();
+}
     public function confirmBelowCostCheckout()
     {
         $this->showBelowCostModal = false;
@@ -1818,10 +1819,57 @@ new class extends Component {
 <script>
     document.addEventListener('livewire:initialized', () => {
         Livewire.on('print-receipt', () => {
-            // الانتظار القصير لضمان تحديث بيانات الفاتورة في DOM
+            // أخذ النسخة المباشرة لـ HTML الفاتورة
+            const receiptContent = document.getElementById('thermal-receipt').innerHTML;
+
+            // إنشاء إطار مخفي للطباعة الفورية دون الحاجة لتحديث الواجهة الرئيسية
+            const printFrame = document.createElement('iframe');
+            printFrame.style.position = 'absolute';
+            printFrame.style.width = '0 font-size';
+            printFrame.style.height = '0';
+            printFrame.style.border = 'none';
+            document.body.appendChild(printFrame);
+
+            const frameDoc = printFrame.contentWindow.document;
+            frameDoc.open();
+            frameDoc.write(`
+                <html>
+                <head>
+                    <title>طباعة الفاتورة</title>
+                    <style>
+                        body { font-family: monospace; width: 80mm; margin: 0; padding: 5px; font-size: 11px; }
+                        .text-center { text-align: center; }
+                        .font-bold { font-weight: bold; }
+                        .font-black { font-weight: 900; }
+                        .flex { display: flex; }
+                        .justify-between { justify-content: space-between; }
+                        .border-b { border-bottom: 1px solid #000; }
+                        .border-t { border-top: 1px solid #000; }
+                        .border-dashed { border-style: dashed; }
+                        .my-1 { margin-top: 4px; margin-bottom: 4px; }
+                        .my-2 { margin-top: 8px; margin-bottom: 8px; }
+                        .py-1 { padding-top: 4px; padding-bottom: 4px; }
+                        .pt-1 { padding-top: 4px; }
+                        .mt-1 { margin-top: 4px; }
+                        .mt-4 { margin-top: 16px; }
+                        table { width: 100%; border-collapse: collapse; text-align: right; }
+                        th, td { padding: 2px 0; }
+                        @page { size: 80mm auto; margin: 0; }
+                    </style>
+                </head>
+                <body>
+                    ${receiptContent}
+                </body>
+                </html>
+            `);
+            frameDoc.close();
+
+            // إعطاء أمر الطباعة فور تحميل الإطار المخفي
             setTimeout(() => {
-                window.print();
-            }, 300);
+                printFrame.contentWindow.focus();
+                printFrame.contentWindow.print();
+                setTimeout(() => { document.body.removeChild(printFrame); }, 1000);
+            }, 200);
         });
     });
 </script>
