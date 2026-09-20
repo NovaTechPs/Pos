@@ -767,8 +767,7 @@ new class extends Component {
                     // تنسيق الأرقام: إلغاء الأصفار العشرية إذا كان الرقم صحيحاً، وإلا إبقاء خانتين عشريتين
                     let totalStr = (totalNum % 1 === 0) ? totalNum.toString() : totalNum.toFixed(2);
                     let priceStr = (priceNum % 1 === 0) ? priceNum.toString() : priceNum.toFixed(2);
-                    let qtyStr = (qtyNum % 1 === 0) ? qtyNum.toString() : qtyNum
-                .toString(); // أو qtyNum.toFixed(2) إن كانت الكميات فيها كسور
+                    let qtyStr = (qtyNum % 1 === 0) ? qtyNum.toString() : qtyNum.toFixed(2);
 
                     let lineInfo = qtyStr + " x " + priceStr;
 
@@ -776,9 +775,9 @@ new class extends Component {
                     let shortName = formatProductName(item.name);
 
                     text += shortName + "\n";
-                    text += formatLine(totalStr, "   " + lineInfo) + "\n";
-                     text += "        ****       \n";
-
+                    // دمج الإجمالي ومعلومات الكمية والسعر في نص واحد داخل سطر واحد
+                    text += formatLine(lineInfo + " = " + totalStr) + "\n";
+                    text += "        ****       \n";
                 });
             }
 
