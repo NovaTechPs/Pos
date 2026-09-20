@@ -758,22 +758,22 @@ new class extends Component {
         return $this->processCheckout();
     }
 
-    public function checkoutAndPrint()
-    {
-        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
-            $this->pendingCheckoutMode = 'checkoutAndPrint';
-            $this->showBelowCostModal = true;
-            return;
-        }
-
-        $this->showBelowCostModal = false;
-
-        // إرسال أمر الطباعة للشاشة قبل تفريغ السلة
-        $this->dispatch('print-receipt');
-
-        // معالجة وحفظ العملية في قاعدة البيانات
-        $this->processCheckout();
+  public function checkoutAndPrint()
+{
+    if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+        $this->pendingCheckoutMode = 'checkoutAndPrint';
+        $this->showBelowCostModal = true;
+        return;
     }
+
+    $this->showBelowCostModal = false;
+
+    // إرسال أمر الطباعة للشاشة قبل تفريغ السلة
+    $this->dispatch('print-receipt');
+
+    // معالجة وحفظ العملية في قاعدة البيانات
+    $this->processCheckout();
+}
     public function confirmBelowCostCheckout()
     {
         $this->showBelowCostModal = false;
@@ -1717,88 +1717,87 @@ new class extends Component {
 
     </div>
     <!-- ==================== قالب الفاتورة الحرارية للطباعة المباشرة ==================== -->
-    <div id="thermal-receipt" class="hidden print:block text-black bg-white p-2 font-mono text-xs w-[80mm] mx-auto">
-        <div class="text-center font-bold mb-2">
-            <h2 class="text-base font-black">اسم المتجر / الشركة</h2>
-            <p class="text-[10px]">فاتورة مبيعات حرارية</p>
-            <p class="text-[10px]">التاريخ: {{ now()->format('Y-m-d H:i') }}</p>
+<div id="thermal-receipt" class="hidden print:block text-black bg-white p-2 font-mono text-xs w-[80mm] mx-auto">
+    <div class="text-center font-bold mb-2">
+        <h2 class="text-base font-black">اسم المتجر / الشركة</h2>
+        <p class="text-[10px]">فاتورة مبيعات حرارية</p>
+        <p class="text-[10px]">التاريخ: {{ now()->format('Y-m-d H:i') }}</p>
+    </div>
+
+    <div class="border-b border-t border-black py-1 my-1 text-[11px]">
+        <div class="flex justify-between">
+            <span>رقم الفاتورة:</span>
+            <span class="font-bold">#{{ $currentInvoiceId ?? 'جديدة' }}</span>
         </div>
-
-        <div class="border-b border-t border-black py-1 my-1 text-[11px]">
-            <div class="flex justify-between">
-                <span>رقم الفاتورة:</span>
-                <span class="font-bold">#{{ $currentInvoiceId ?? 'جديدة' }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span>الكاشير:</span>
-                <span>{{ Auth::user()->name ?? 'الكاشير' }}</span>
-            </div>
-        </div>
-
-        <!-- جدول أصناف الفاتورة -->
-        <table class="w-full text-right my-2 text-[10px] border-collapse">
-            <thead>
-                <tr class="border-b border-black">
-                    <th class="py-0.5">الصنف</th>
-                    <th class="py-0.5 text-center">الكمية</th>
-                    <th class="py-0.5 text-center">السعر</th>
-                    <th class="py-0.5 text-left">الإجمالي</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($cart as $item)
-                    <tr>
-                        <td class="py-0.5 font-bold">{{ $item['name'] }}</td>
-                        <td class="py-0.5 text-center">{{ $item['quantity'] }}</td>
-                        <td class="py-0.5 text-center">{{ number_format($item['price'], 2) }}</td>
-                        <td class="py-0.5 text-left font-bold">{{ number_format($item['subtotal'], 2) }}</td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-
-        <!-- الحسابات الإجمالية -->
-        <div class="border-t border-black pt-1 mt-1 text-[11px] space-y-0.5">
-            <div class="flex justify-between">
-                <span>المجموع:</span>
-                <span>{{ number_format($this->subtotal, 2) }}</span>
-            </div>
-            @if ($this->calculated_discount > 0)
-                <div class="flex justify-between text-rose-800">
-                    <span>الخصم:</span>
-                    <span>{{ number_format($this->calculated_discount, 2) }}</span>
-                </div>
-            @endif
-            <div class="flex justify-between font-black text-sm border-t border-black pt-1">
-                <span>الصافي المطلـوب:</span>
-                <span>{{ number_format($this->total, 2) }}</span>
-            </div>
-            <div class="flex justify-between text-[10px]">
-                <span>المدفوع:</span>
-                <span>{{ number_format($paid_amount, 2) }}</span>
-            </div>
-            <div class="flex justify-between text-[10px]">
-                <span>المتبقي:</span>
-                <span>{{ number_format($this->change, 2) }}</span>
-            </div>
-        </div>
-
-        <div class="text-center mt-4 pt-2 border-t border-dashed border-black text-[9px]">
-            <p>شكراً لزيارتكم!</p>
+        <div class="flex justify-between">
+            <span>الكاشير:</span>
+            <span>{{ Auth::user()->name ?? 'الكاشير' }}</span>
         </div>
     </div>
+
+    <!-- جدول أصناف الفاتورة -->
+    <table class="w-full text-right my-2 text-[10px] border-collapse">
+        <thead>
+            <tr class="border-b border-black">
+                <th class="py-0.5">الصنف</th>
+                <th class="py-0.5 text-center">الكمية</th>
+                <th class="py-0.5 text-center">السعر</th>
+                <th class="py-0.5 text-left">الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($cart as $item)
+                <tr>
+                    <td class="py-0.5 font-bold">{{ $item['name'] }}</td>
+                    <td class="py-0.5 text-center">{{ $item['quantity'] }}</td>
+                    <td class="py-0.5 text-center">{{ number_format($item['price'], 2) }}</td>
+                    <td class="py-0.5 text-left font-bold">{{ number_format($item['subtotal'], 2) }}</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+
+    <!-- الحسابات الإجمالية -->
+    <div class="border-t border-black pt-1 mt-1 text-[11px] space-y-0.5">
+        <div class="flex justify-between">
+            <span>المجموع:</span>
+            <span>{{ number_format($this->subtotal, 2) }}</span>
+        </div>
+        @if($this->calculated_discount > 0)
+            <div class="flex justify-between text-rose-800">
+                <span>الخصم:</span>
+                <span>{{ number_format($this->calculated_discount, 2) }}</span>
+            </div>
+        @endif
+        <div class="flex justify-between font-black text-sm border-t border-black pt-1">
+            <span>الصافي المطلـوب:</span>
+            <span>{{ number_format($this->total, 2) }}</span>
+        </div>
+        <div class="flex justify-between text-[10px]">
+            <span>المدفوع:</span>
+            <span>{{ number_format($paid_amount, 2) }}</span>
+        </div>
+        <div class="flex justify-between text-[10px]">
+            <span>المتبقي:</span>
+            <span>{{ number_format($this->change, 2) }}</span>
+        </div>
+    </div>
+
+    <div class="text-center mt-4 pt-2 border-t border-dashed border-black text-[9px]">
+        <p>شكراً لزيارتكم!</p>
+    </div>
+</div>
+<iframe id="silent-print-frame" style="display: none; position: absolute; width: 0; height: 0; border: 0;"></iframe>
 </flux:main>
 <style>
     @media print {
-
         /* إخفاء كل عناصر الواجهة والشاشة */
         body * {
             visibility: hidden !important;
         }
 
         /* إظهار الفاتورة الحرارية فقط */
-        #thermal-receipt,
-        #thermal-receipt * {
+        #thermal-receipt, #thermal-receipt * {
             visibility: visible !important;
         }
 
@@ -1807,8 +1806,7 @@ new class extends Component {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 80mm !important;
-            /* عرض ورقة طابعة الفواتير الحرارية */
+            width: 80mm !important; /* عرض ورقة طابعة الفواتير الحرارية */
             margin: 0 !important;
             padding: 2mm !important;
         }
@@ -1819,8 +1817,8 @@ new class extends Component {
         }
     }
 </style>
+
 <!-- إطار مخفي للطباعة الفورية -->
-<iframe id="silent-print-frame" style="display: none; position: absolute; width: 0; height: 0; border: 0;"></iframe>
 
 <script>
     document.addEventListener('livewire:initialized', () => {
