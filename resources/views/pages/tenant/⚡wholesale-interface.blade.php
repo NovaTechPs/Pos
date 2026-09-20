@@ -775,9 +775,9 @@ new class extends Component {
                     // اختصار اسم المنتج لأول كلمتين فقط
                     let shortName = formatProductName(item.name);
 
-                    text += shortName ;
+                    text += shortName + "\n";
                     text += formatLine(totalStr, "   " + lineInfo) + "\n";
-                  text += "____________________\n";
+                     text += "        ****       \n";
 
                 });
             }
