@@ -1,4 +1,5 @@
 <?php
+
 use Livewire\Component;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -12,26 +13,23 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 new class extends Component {
+    // --- مصفوفة الفاتورة المخصصة للطباعة ---
+    public array $receipt = [];
+
     // --- البيانات والحالة (State) ---
     public string $barcode = '';
     public array $cart = [];
     public $paid_amount = 0;
     public string $notes = '';
 
-    // --- حقل البحث السريع المباشر فوق الجدول ---
+    // --- حقول البحث ---
     public string $inlineSearchQuery = '';
     public array $inlineSearchResults = [];
-
-    // --- حقل البحث عن الفاتورة ---
     public string $searchInvoiceQuery = '';
-
-    // --- حقل البحث عن الأصناف في القائمة اليمينية والمودال ---
     public string $productSearchQuery = '';
 
-    // --- تحديد الفرع الخاص بالأدمن والمستخدم ---
+    // --- الفرع والخصم ---
     public ?int $selectedBranchId = null;
-
-    // --- إضافات الخصم والتعديل على السعر الإجمالي ---
     public $discount_amount = 0;
     public string $discount_type = 'fixed';
     public $custom_final_total = null;
@@ -41,27 +39,17 @@ new class extends Component {
     public ?string $errorMessage = null;
     public ?string $successMessage = null;
 
-    // --- حالة التنقل بين الفواتير ---
+    // --- الحالة والمودالات ---
     public ?int $currentInvoiceId = null;
-
-    // --- ميزة تعليق الفواتير ---
     public array $heldInvoices = [];
     public bool $showHeldModal = false;
-
-    // --- ميزة استطلاع تكلفة وأرباح الأصناف ---
     public bool $showCostModal = false;
-
-    // --- ميزة التنبيه عند البيع تحت التكلفة ---
     public bool $showBelowCostModal = false;
     public string $pendingCheckoutMode = 'checkout';
-
-    // --- ميزة مودال الأصناف (F10) ---
     public bool $showProductsModal = false;
-
-    // --- ميزة وضع المرتجع المباشر ---
     public bool $isReturnMode = false;
 
-    // --- إدارة الشيفت والصندوق ---
+    // --- الشيفت والصندوق ---
     public ?Shift $activeShift = null;
     public bool $showOpenShiftModal = false;
     public bool $showCloseShiftModal = false;
@@ -73,7 +61,6 @@ new class extends Component {
     public float $shift_total_returns = 0;
     public float $shift_expected_cash = 0;
 
-    // --- الدورات والأحداث ---
     public function mount()
     {
         $user = Auth::user();
@@ -83,6 +70,45 @@ new class extends Component {
         $this->categories = Category::where('tenant_id', $tenantId)->get();
         $this->loadQuickProducts();
         $this->checkActiveShift();
+    }
+
+    // --- دالة تجهيز بيانات الطباعة الحرارية المباشرة ---
+    public function printReceipt()
+    {
+        if (empty($this->cart) && !$this->currentInvoiceId) {
+            $this->errorMessage = 'لا توجد فاتورة لطباعتها!';
+            return;
+        }
+
+        $items = [];
+        $counter = 1;
+        foreach ($this->cart as $item) {
+            $items[] = [
+                'id' => $counter++,
+                'name' => $item['name'],
+                'qty' => $item['quantity'],
+                'price' => number_format($item['price'], 2),
+                'total' => number_format($item['subtotal'], 2),
+            ];
+        }
+
+        $this->receipt = [
+            'store_name' => 'فانوس',
+            'notice' => 'راجع فاتورتك وتأكد من مشترياتك قبل مغادرة المعرض',
+            'copy_type' => $this->currentInvoiceId ? 'نسخة فاتورة' : 'النسخة الأصلية',
+            'invoice_no' => $this->currentInvoiceId ? (string) $this->currentInvoiceId : 'POS-' . time(),
+            'date' => now()->format('Y/m/d'),
+            'time' => now()->format('h:i أ'),
+            'items' => $items,
+            'total_qty' => array_sum(array_column($this->cart, 'quantity')),
+            'total_amount' => number_format($this->subtotal, 2),
+            'net_amount' => number_format($this->total, 2),
+            'currency' => 'ش.ض',
+            'system_name' => 'الشامل لايت للمحاسبة',
+        ];
+
+        // إطلاق الحدث المباشر المماثل لتجربتك
+        $this->dispatch('trigger-print');
     }
 
     public function updatedSelectedBranchId($value)
@@ -97,7 +123,6 @@ new class extends Component {
         $this->loadQuickProducts();
     }
 
-    // --- دالة البحث السريع المباشر فوق جدول السلة ---
     public function updatedInlineSearchQuery()
     {
         $search = trim($this->inlineSearchQuery);
@@ -165,7 +190,6 @@ new class extends Component {
 
         $this->quickProducts = $products->map(function ($product) use ($branchId) {
             $branchData = BranchProduct::where('branch_id', $branchId)->where('product_id', $product->id)->first();
-
             $product->retail_price = $branchData?->retail_price ?? ($product->retail_price ?? 0);
             return $product;
         });
@@ -177,7 +201,6 @@ new class extends Component {
         return $user->branch_id ?? $this->selectedBranchId;
     }
 
-    // --- وظائف الشيفت والصندوق ---
     public function checkActiveShift(): void
     {
         $tenantId = session('active_tenant_id');
@@ -233,7 +256,6 @@ new class extends Component {
         }
 
         $cashSales = (float) Order::where('shift_id', $this->activeShift->id)->where('type', 'pos')->sum('total');
-
         $cashReturns = (float) Order::where('shift_id', $this->activeShift->id)->where('type', 'return')->sum('total');
 
         $this->shift_opening_cash = (float) $this->activeShift->opening_cash;
@@ -349,12 +371,10 @@ new class extends Component {
         }
 
         $tenantId = session('active_tenant_id');
-
-        // استخراج الأرقام فقط لاستخدامها في حال إدخال الرقم مجرداً بدون البادئة
         $digitsOnly = preg_replace('/\D/', '', $query);
 
         $invoice = Order::where('tenant_id', $tenantId)
-            ->where('type', 'pos') // قيد البحث على فواتير POS فقط
+            ->where('type', 'pos')
             ->where(function ($q) use ($query, $digitsOnly) {
                 $q->where('invoice_number', $query)
                     ->orWhere('invoice_number', 'like', '%' . $query . '%')
@@ -470,7 +490,6 @@ new class extends Component {
             $this->errorMessage = "عذراً، لم يتم العثور على منتج بالباركود: {$trimmedBarcode}";
         }
 
-        // تفريغ الباركود لإتاحة المسح التالي فوراً
         $this->barcode = '';
     }
 
@@ -488,7 +507,6 @@ new class extends Component {
             return;
         }
 
-        // إغلاق مودال F10 فور الاختيار
         $this->showProductsModal = false;
 
         if ($this->currentInvoiceId) {
@@ -735,7 +753,6 @@ new class extends Component {
         return $paid - $this->total;
     }
 
-    // --- الفحص الذاتي للبيع تحت التكلفة ---
     public function getHasBelowCostItemProperty(): bool
     {
         foreach ($this->cart as $item) {
@@ -758,30 +775,29 @@ new class extends Component {
         return $this->processCheckout();
     }
 
-  public function checkoutAndPrint()
-{
-    if ($this->has_below_cost_item && !$this->showBelowCostModal) {
-        $this->pendingCheckoutMode = 'checkoutAndPrint';
-        $this->showBelowCostModal = true;
-        return;
+    public function checkoutAndPrint()
+    {
+        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+            $this->pendingCheckoutMode = 'checkoutAndPrint';
+            $this->showBelowCostModal = true;
+            return;
+        }
+
+        $this->showBelowCostModal = false;
+
+        // 1. تجهيز بيانات الفاتورة
+        $this->printReceipt();
+
+        // 2. إتمام العملية وتصفير السلة
+        $this->processCheckout();
     }
 
-    $this->showBelowCostModal = false;
-
-    // إرسال أمر الطباعة للشاشة قبل تفريغ السلة
-    $this->dispatch('print-receipt');
-
-    // معالجة وحفظ العملية في قاعدة البيانات
-    $this->processCheckout();
-}
     public function confirmBelowCostCheckout()
     {
         $this->showBelowCostModal = false;
         if ($this->pendingCheckoutMode === 'checkoutAndPrint') {
-            $order = $this->processCheckout();
-            if ($order) {
-                $this->dispatch('print-receipt', orderId: $order->id);
-            }
+            $this->printReceipt();
+            $this->processCheckout();
         } else {
             $this->processCheckout();
         }
@@ -880,6 +896,7 @@ new class extends Component {
 
         return Auth::user()->name ?? 'الكاشير الحالي';
     }
+
     public function getInvoiceDateProperty(): string
     {
         if ($this->currentInvoiceId) {
@@ -889,9 +906,9 @@ new class extends Component {
             }
         }
 
-        // إذا كانت فاتورة جديدة، يتم عرض تاريخ ووقت اليوم الحالي
         return now()->locale('ar')->isoFormat('dddd، YYYY-MM-DD');
     }
+
     public function render()
     {
         $tenantId = session('active_tenant_id');
@@ -904,71 +921,14 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="h-[calc(100vh-4rem)] p-2 bg-slate-100 font-sans select-none overflow-hidden">
+<flux:main class="h-[calc(100vh-4rem)] p-2 bg-slate-100 font-sans select-none overflow-hidden no-print">
     <div x-data x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
         x-on:keydown.window.f2.prevent="$wire.holdInvoice()" x-on:keydown.window.f3.prevent="$wire.checkout()"
-        x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
+        x-on:keydown.window.f6.prevent="$wire.printReceipt()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
         x-on:keydown.window.f10.prevent="$wire.set('showProductsModal', !$wire.showProductsModal)" class="h-full">
         <div class="grid grid-cols-12 gap-2 h-full">
 
-            <!-- ==================== قسم الأصناف والأقسام (على اليمين) ==================== -->
-            {{-- <div class="col-span-12 lg:col-span-5 flex flex-col h-full bg-white border border-slate-300 rounded-xl p-2.5 shadow-sm min-h-0 space-y-2">
-
-                <!-- حقل المباشرة لمسح الباركود بالأجهزة -->
-                <form wire:submit.prevent="scanBarcode" class="shrink-0">
-                    <input wire:model="barcode"
-                        placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه...' : 'امسح الباركود هنا لإضافته المباشرة...' }}"
-                        autofocus
-                        class="w-full bg-slate-50 border {{ $isReturnMode ? 'border-rose-400 focus:outline-rose-600' : 'border-slate-300 focus:outline-indigo-600' }} rounded-lg p-2 text-xs font-semibold">
-                </form>
-
-                <!-- حقل البحث في الأصناف القائمة اليمينية -->
-                <div class="relative shrink-0">
-                    <input type="text"
-                        wire:model.live.debounce.250ms="productSearchQuery"
-                        placeholder="بحث في الأصناف (بالاسم أو الباركود)... 🔍"
-                        class="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg p-2 text-xs font-bold text-indigo-900 focus:outline-indigo-600 focus:bg-white placeholder-indigo-400">
-                    @if (!empty($productSearchQuery))
-                        <button type="button" wire:click="$set('productSearchQuery', '')"
-                            class="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 font-bold text-xs">
-                            ✕
-                        </button>
-                    @endif
-                </div>
-
-                <!-- أزرار الأقسام -->
-                <div class="flex gap-1 overflow-x-auto pb-1 shrink-0 scrollbar-none">
-                    <button wire:click="selectCategory(null)"
-                        class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ is_null($selectedCategoryId) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
-                        الكل
-                    </button>
-                    @foreach ($categories as $cat)
-                        <button wire:click="selectCategory({{ $cat->id }})"
-                            class="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap {{ $selectedCategoryId === $cat->id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">
-                            {{ $cat->name }}
-                        </button>
-                    @endforeach
-                </div>
-
-                <!-- شبكة الأصناف السريعة -->
-                <div class="flex-1 overflow-y-auto min-h-0 border border-slate-200 rounded-lg p-2 bg-slate-50">
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        @forelse($quickProducts as $p)
-                            <button wire:click="addToCart({{ $p->id }})"
-                                class="{{ $isReturnMode ? 'bg-rose-700 hover:bg-rose-800 border-rose-900' : 'bg-indigo-700 hover:bg-indigo-800 border-indigo-900' }} text-white p-2 rounded-lg shadow-sm flex flex-col justify-between items-start text-right transition-all h-20 active:scale-95 border">
-                                <span class="text-xs font-bold line-clamp-2 leading-tight">{{ $p->name }}</span>
-                                <span class="text-xs font-mono font-black text-amber-300 mt-1">{{ number_format($p->retail_price, 2) }}</span>
-                            </button>
-                        @empty
-                            <div class="col-span-full text-center py-16 text-slate-400 text-xs font-semibold">
-                                لا توجد منتجات مطابقة لنتيجة البحث
-                            </div>
-                        @endforelse
-                    </div>
-                </div>
-            </div> --}}
-
-            <!-- ==================== قسم الفاتورة والحسابات (على اليسار) ==================== -->
+            <!-- ==================== قسم الفاتورة والحسابات ==================== -->
             <div class="col-span-12 lg:col-span-12 flex flex-col h-full space-y-2 min-h-0">
                 <div
                     class="bg-white border border-slate-300 rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm shrink-0">
@@ -1113,13 +1073,8 @@ new class extends Component {
 
                 <div
                     class="flex-1 bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm flex flex-col min-h-0">
-
-                    <!-- ==================== حقل البحث السريع المباشر فوق جدول الفاتورة ==================== -->
-                    <!-- ==================== حقل البحث ومسح الباركود المباشر فوق جدول الفاتورة ==================== -->
                     <div class="p-2 bg-slate-50 border-b border-slate-200 relative shrink-0">
                         <div class="relative flex items-center gap-2">
-                            <!-- حقل مسح الباركود التلقائي -->
-                            <!-- حقل مسح الباركود التلقائي والسريع -->
                             <input type="text" wire:model="barcode" wire:keydown.enter.prevent="scanBarcode"
                                 placeholder="{{ $isReturnMode ? 'امسح الباركود لإرجاعه... 🔄' : 'امسح الباركود هنا للإضافة المباشرة... 📦' }}"
                                 autofocus
@@ -1208,6 +1163,7 @@ new class extends Component {
                             </tbody>
                         </table>
                     </div>
+
                     <div class="bg-slate-100 border-t border-slate-300 p-2 text-xs space-y-2">
                         <div class="grid grid-cols-12 gap-2 items-center">
                             <div class="col-span-6 flex items-center gap-1">
@@ -1243,6 +1199,7 @@ new class extends Component {
                             </div>
                         </div>
                     </div>
+
                     <div class="bg-slate-900 text-white p-2.5 flex items-center justify-between text-xs font-bold">
                         <div>
                             <span>المجموع: </span><span
@@ -1266,19 +1223,15 @@ new class extends Component {
                 </div>
 
                 <div class="space-y-1.5 shrink-0" x-data="{ showNumpad: false }">
-                    <!-- حقل المبلغ المدفوع ومحاكي لوحة الأرقام المنبثقة -->
                     <div class="relative">
                         <div class="flex justify-between items-center mb-0.5">
                             <label class="text-[10px] font-bold text-slate-600">المبلغ المدفوع (نقداً):</label>
                             <button type="button" @click="showNumpad = !showNumpad"
-                                class="text-[10px] text-indigo-600 font-bold underline">
-                                [لوحة الأرقام]
-                            </button>
+                                class="text-[10px] text-indigo-600 font-bold underline">[لوحة الأرقام]</button>
                         </div>
                         <input type="number" wire:model.live="paid_amount" @focus="showNumpad = true"
                             class="w-full text-lg font-black font-mono text-left bg-slate-50 border border-slate-300 rounded-lg p-1 focus:outline-none focus:border-indigo-600 text-indigo-900">
 
-                        <!-- لوحة الأرقام تظهر فقط عند الحاجة بأسلوب Popover -->
                         <div x-show="showNumpad" @click.outside="showNumpad = false" x-cloak
                             class="absolute bottom-full mb-1 left-0 right-0 bg-white border border-slate-300 shadow-2xl rounded-lg p-2 z-50">
                             <div class="grid grid-cols-3 gap-1 font-bold font-mono text-xs">
@@ -1292,13 +1245,11 @@ new class extends Component {
                         </div>
                     </div>
 
-                    <!-- أزرار الإجراءات بأقصى توفير للمساحة -->
                     <div class="grid grid-cols-2 gap-1.5">
-                        <button wire:click="checkoutAndPrint" @if (count($cart) === 0 || $currentInvoiceId) disabled @endif
-                            class="col-span-2 {{ $this->total < 0 ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg font-bold py-2 px-3 shadow active:scale-95 transition-all text-xs flex justify-between items-center">
-                            <span>🖨️ {{ $this->total < 0 ? 'حفظ وطباعة المرتجع' : 'حفظ وطباعة' }}</span>
-                            <span
-                                class="text-[9px] {{ $this->total < 0 ? 'bg-rose-800' : 'bg-emerald-800' }} text-white px-1.5 py-0.5 rounded font-mono">F6</span>
+                        <button wire:click="printReceipt" @if (count($cart) === 0 && !$currentInvoiceId) disabled @endif
+                            class="col-span-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg font-bold py-2 px-3 shadow active:scale-95 transition-all text-xs flex justify-between items-center">
+                            <span>🖨️ طباعة الفاتورة</span>
+                            <span class="text-[9px] bg-blue-800 text-white px-1.5 py-0.5 rounded font-mono">F6</span>
                         </button>
 
                         <button wire:click="checkout" @if (count($cart) === 0 || $currentInvoiceId) disabled @endif
@@ -1316,566 +1267,377 @@ new class extends Component {
                 </div>
             </div>
         </div>
-        <!-- ==================== مودال عرض الأصناف (F10) ==================== -->
-        @if ($showProductsModal)
-            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4"
-                x-data="{ show: @entangle('showProductsModal') }" x-effect="if (show) { setTimeout(() => $refs.f10SearchInput.focus(), 100) }">
-
-                <div
-                    class="bg-slate-200 rounded-xl shadow-2xl w-full max-w-6xl overflow-hidden border border-slate-400 flex flex-col h-[90vh]">
-
-                    <!-- شريط العنوان والبحث العلوي -->
-                    <div
-                        class="bg-slate-300 border-b border-slate-400 p-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
-                        <div class="flex items-center gap-2">
-                            <button type="button" wire:click="$set('showProductsModal', false)"
-                                class="px-2.5 py-1 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-800 shadow-sm active:scale-95">
-                                (Esc) إلغاء / إغلاق
-                            </button>
-                            <label class="flex items-center gap-1 text-xs font-bold text-slate-800 cursor-pointer">
-                                <input type="checkbox" class="rounded border-slate-400 text-indigo-600 focus:ring-0">
-                                <span>اختيار متعدد</span>
-                            </label>
-                        </div>
-
-                        <!-- حقل البحث والاختيار -->
-                        <div class="flex items-center gap-2 flex-1 max-w-2xl">
-                            <select wire:model.live="selectedCategoryId"
-                                class="bg-white border border-slate-400 text-xs font-bold rounded p-1.5 focus:outline-indigo-600">
-                                <option value="">الكل</option>
-                                @foreach ($categories as $cat)
-                                    <option value="{{ $cat->id }}">{{ $cat->name }}</option>
-                                @endforeach
-                            </select>
-
-                            <div class="relative flex-1">
-                                <!-- حقل البحث المستقل والخاص بـ F10 مع التركيز التلقائي -->
-                                <input type="text" x-ref="f10SearchInput"
-                                    wire:model.live.debounce.200ms="productSearchQuery"
-                                    placeholder="ابحث بالاسم أو الباركود... 🔍"
-                                    class="w-full bg-white border border-slate-400 text-xs font-bold text-slate-900 rounded p-1.5 pl-7 focus:outline-indigo-600 shadow-inner">
-
-                                @if (!empty($productSearchQuery))
-                                    <button type="button" wire:click="$set('productSearchQuery', '')"
-                                        class="absolute left-2 top-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs">✕</button>
-                                @endif
-                            </div>
-
-                            <button type="button" wire:click="loadQuickProducts"
-                                class="p-1.5 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-700">
-                                🔄
-                            </button>
-                        </div>
-
-                        <button wire:click="$set('showProductsModal', false)"
-                            class="text-slate-600 hover:text-rose-600 font-bold text-base px-2">✕</button>
-                    </div>
-
-                    <!-- جدول عرض الأصناف (نمط برنامج الشامل) -->
-                    <div class="flex-1 overflow-y-auto bg-slate-200 min-h-0 p-1">
-                        <table class="w-full text-right text-xs border-collapse bg-slate-300">
-                            <thead
-                                class="bg-slate-300 sticky top-0 font-bold text-slate-900 border-b-2 border-slate-400 shadow-sm">
-                                <tr>
-                                    <th class="p-1.5 border border-slate-400 text-center w-12">الرقم</th>
-                                    <th class="p-1.5 border border-slate-400">الاسم</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-20">الكمية</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-28">السعر/مفرق</th>
-                                    <th class="p-1.5 border border-slate-400 text-[11px]">ملاحظات</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-16">CT</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-16">التقسيمة</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-24">التاريخ</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-300 font-bold">
-                                @forelse($quickProducts as $index => $p)
-                                    <tr wire:click="addToCart({{ $p->id }})"
-                                        wire:key="modal-prod-{{ $p->id }}"
-                                        class="cursor-pointer transition-colors border-b border-slate-300 {{ $index % 2 == 0 ? 'bg-slate-200' : 'bg-slate-100' }} hover:bg-indigo-100/80 active:bg-indigo-200">
-
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-800">
-                                            {{ $p->id }}
-                                        </td>
-
-                                        <td class="p-1.5 border border-slate-300 text-slate-900 font-bold">
-                                            {{ $p->name }}
-                                        </td>
-
-                                        <td
-                                            class="p-1.5 border border-slate-300 text-center font-mono {{ ($p->stock_quantity ?? 0) < 0 ? 'text-rose-600' : 'text-slate-800' }}">
-                                            {{ $p->stock_quantity ?? 0 }}
-                                        </td>
-
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-900">
-                                            USD {{ number_format($p->retail_price, 2) }}
-                                        </td>
-
-                                        <td
-                                            class="p-1.5 border border-slate-300 text-slate-600 text-[11px] font-normal truncate max-w-xs">
-                                            {{ $p->notes ?? ($p->barcode ?? '') }}
-                                        </td>
-
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-700">
-                                            {{ $p->ct ?? 0 }}
-                                        </td>
-
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-700">
-                                            {{ $p->packaging_unit ?? 0 }}
-                                        </td>
-
-                                        <td
-                                            class="p-1.5 border border-slate-300 text-center font-mono text-[10px] text-slate-600">
-                                            {{ $p->created_at ? $p->created_at->format('Y-m-d') : '' }}
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="8"
-                                            class="py-16 text-center text-slate-500 font-bold text-xs bg-slate-100">
-                                            لا توجد أصناف مطابقة للبحث
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- الشريط السفلي -->
-                    <div
-                        class="p-2 bg-slate-300 border-t border-slate-400 flex justify-between items-center text-xs font-bold text-slate-700 shrink-0">
-                        <span>عدد الأصناف المعروضة: {{ count($quickProducts) }}</span>
-                        <button wire:click="$set('showProductsModal', false)"
-                            class="px-4 py-1 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-800 shadow-sm active:scale-95">
-                            إغلاق (Esc)
-                        </button>
-                    </div>
-                </div>
-            </div>
-        @endif
-        <!-- مودال فتح الشيفت -->
-        @if ($showOpenShiftModal)
-            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-300">
-                    <div class="bg-indigo-900 text-white p-3.5 flex justify-between items-center font-bold text-sm">
-                        <span>🔓 فتح شِفت جديد / بداية الدوام</span>
-                        <button wire:click="$set('showOpenShiftModal', false)"
-                            class="text-slate-300 hover:text-white font-bold">✕</button>
-                    </div>
-                    <div class="p-4 space-y-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">الرصيد الافتتاحي في الدرج
-                                (الفكة):</label>
-                            <input type="number" step="0.01" wire:model="opening_cash"
-                                class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-lg font-black font-mono text-center focus:outline-indigo-600">
-                        </div>
-                        <button wire:click="openShift"
-                            class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-3 rounded-xl text-xs shadow transition-all active:scale-95">
-                            بدء العمل وفتح الصندوق
-                        </button>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        <!-- مودال إغلاق الشيفت ومطابقة الصندوق -->
-        @if ($showCloseShiftModal)
-            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-300">
-                    <div class="bg-slate-900 text-white p-3 flex justify-between items-center">
-                        <h3 class="text-sm font-bold flex items-center gap-1.5">
-                            <span>🔒</span>
-                            <span>إغلاق الشيفت ومطابقة الصندوق</span>
-                        </h3>
-                        <button wire:click="$set('showCloseShiftModal', false)"
-                            class="text-slate-400 hover:text-white font-bold">✕</button>
-                    </div>
-
-                    <div class="p-4 space-y-3 text-xs">
-                        <div
-                            class="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 font-bold">
-                            <div>الرصيد الافتتاحي: <span
-                                    class="font-mono text-indigo-700">{{ number_format($shift_opening_cash, 2) }}</span>
-                            </div>
-                            <div>المبيعات النقدية: <span
-                                    class="font-mono text-emerald-600">{{ number_format($shift_total_sales, 2) }}</span>
-                            </div>
-                            <div>المرتجعات النقدية: <span
-                                    class="font-mono text-rose-600">{{ number_format($shift_total_returns, 2) }}</span>
-                            </div>
-                            <div class="col-span-2 border-t pt-2 text-sm text-slate-900">
-                                المتوقع بالدرج: <span
-                                    class="font-mono font-black text-amber-600">{{ number_format($shift_expected_cash, 2) }}</span>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block font-bold text-slate-700 mb-1">المبلغ الفعلي الموجود بالدرج بعد
-                                العدّ:</label>
-                            <input type="number" step="0.01" wire:model.live.debounce.300ms="actual_cash"
-                                class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-lg font-black font-mono text-center focus:outline-indigo-600">
-                        </div>
-
-                        @php
-                            $diff = (float) $actual_cash - $shift_expected_cash;
-                        @endphp
-
-                        <div
-                            class="p-2.5 rounded-lg text-center font-bold text-xs {{ $diff == 0 ? 'bg-emerald-100 text-emerald-800' : ($diff < 0 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800') }}">
-                            @if ($diff == 0)
-                                الصندوق مطابق تماماً 👌
-                            @elseif($diff < 0)
-                                يوجد عجز بمقدار: {{ number_format(abs($diff), 2) }} ⚠️
-                            @else
-                                يوجد زيادة بمقدار: {{ number_format($diff, 2) }} 💡
-                            @endif
-                        </div>
-
-                        <div>
-                            <label class="block font-bold text-slate-700 mb-1">ملاحظات الإغلاق (اختياري):</label>
-                            <textarea wire:model="shift_notes" rows="2"
-                                class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs focus:outline-indigo-600"></textarea>
-                        </div>
-
-                        <button wire:click="closeShift"
-                            class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold p-3 rounded-xl text-xs shadow transition-all active:scale-95">
-                            تأكيد إغلاق الشيفت وتصفية الصندوق
-                        </button>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        <!-- مودال الفواتير المعلقة -->
-        @if ($showHeldModal)
-            <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-300">
-                    <div class="bg-slate-800 text-white p-3 flex justify-between items-center">
-                        <h3 class="text-sm font-bold">الفواتير المعلقة (F1 لإغلاق)</h3>
-                        <button wire:click="$set('showHeldModal', false)"
-                            class="text-slate-400 hover:text-white font-bold text-sm">✕</button>
-                    </div>
-                    <div class="p-3 max-h-80 overflow-y-auto space-y-2">
-                        @forelse($heldInvoices as $index => $held)
-                            <div
-                                class="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex items-center justify-between hover:bg-slate-100">
-                                <div>
-                                    <div class="text-xs font-bold text-slate-800">فاتورة #{{ $held['id'] }}</div>
-                                    <div class="text-[10px] text-slate-500 font-mono">{{ $held['time'] }}</div>
-                                    <div class="text-xs font-bold text-indigo-700 font-mono mt-0.5">المجموع:
-                                        {{ number_format($held['total'], 2) }}</div>
-                                    @if (!empty($held['notes']))
-                                        <div class="text-[10px] text-slate-600">ملاحظة: {{ $held['notes'] }}</div>
-                                    @endif
-                                </div>
-                                <div class="flex gap-2">
-                                    <button wire:click="restoreHeldInvoice({{ $index }})"
-                                        class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded shadow active:scale-95 transition-all">
-                                        استرجاع
-                                    </button>
-                                    <button wire:click="removeHeldInvoice({{ $index }})"
-                                        class="px-2 py-1 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded shadow active:scale-95 transition-all">
-                                        حذف
-                                    </button>
-                                </div>
-                            </div>
-                        @empty
-                            <div class="text-center py-8 text-xs text-slate-400 font-semibold">
-                                لا توجد فواتير معلقة حالياً.
-                            </div>
-                        @endforelse
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        <!-- مودال استطلاع تكلفة وأرباح الأصناف -->
-        @if ($showCostModal)
-            <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-slate-300">
-                    <div class="bg-indigo-900 text-white p-3 flex justify-between items-center">
-                        <h3 class="text-sm font-bold flex items-center gap-1.5">
-                            <span>🔍</span>
-                            <span>معاينة تكلفة وأرباح الفاتورة</span>
-                        </h3>
-                        <button wire:click="$set('showCostModal', false)"
-                            class="text-slate-300 hover:text-white font-bold text-sm">✕</button>
-                    </div>
-                    <div class="p-3 max-h-96 overflow-y-auto">
-                        <table class="w-full text-right text-xs">
-                            <thead class="bg-slate-100 font-bold border-b border-slate-200">
-                                <tr>
-                                    <th class="p-2">الصنف</th>
-                                    <th class="p-2 text-center">الكمية</th>
-                                    <th class="p-2 text-center">سعر البيع</th>
-                                    <th class="p-2 text-center">تكلفة الوحدة</th>
-                                    <th class="p-2 text-center">إجمالي التكلفة</th>
-                                    <th class="p-2 text-center">الربح المتوقع</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                @foreach ($cart as $id => $item)
-                                    @php
-                                        $itemCost = (float) ($item['cost_price'] ?? 0);
-                                        $totalItemCost = $itemCost * $item['quantity'];
-                                        $itemProfit = $item['subtotal'] - $totalItemCost;
-                                    @endphp
-                                    <tr>
-                                        <td class="p-2 font-bold text-slate-800">{{ $item['name'] }}</td>
-                                        <td class="p-2 text-center font-mono">{{ $item['quantity'] }}</td>
-                                        <td class="p-2 text-center font-mono text-slate-700">
-                                            {{ number_format($item['price'], 2) }}</td>
-                                        <td class="p-2 text-center font-mono text-rose-600 font-semibold">
-                                            {{ number_format($itemCost, 2) }}</td>
-                                        <td class="p-2 text-center font-mono font-bold text-rose-700">
-                                            {{ number_format($totalItemCost, 2) }}</td>
-                                        <td
-                                            class="p-2 text-center font-mono font-bold {{ $itemProfit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
-                                            {{ number_format($itemProfit, 2) }}
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="bg-slate-100 p-3 border-t border-slate-200 flex justify-between items-center text-xs">
-                        <div class="flex gap-4 font-bold">
-                            <div>
-                                <span class="text-slate-600">إجمالي التكلفة:</span>
-                                <span
-                                    class="font-mono text-rose-700 font-black text-sm mr-1">{{ number_format($this->total_cost, 2) }}</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-600">إجمالي الربح:</span>
-                                <span
-                                    class="font-mono {{ $this->expected_profit >= 0 ? 'text-emerald-600' : 'text-rose-600' }} font-black text-sm mr-1">
-                                    {{ number_format($this->expected_profit, 2) }}
-                                </span>
-                            </div>
-                        </div>
-                        <button wire:click="$set('showCostModal', false)"
-                            class="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded shadow transition-all">
-                            إغلاق
-                        </button>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-        <!-- مودال التنبيه عند البيع تحت التكلفة -->
-        @if ($showBelowCostModal)
-            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-300">
-                    <div class="bg-rose-600 text-white p-4 flex justify-between items-center font-bold text-sm">
-                        <span class="flex items-center gap-2">
-                            <span class="text-lg">⚠️</span>
-                            <span>تنبيه: السعر أقل من التكلفة</span>
-                        </span>
-                        <button wire:click="$set('showBelowCostModal', false)"
-                            class="text-rose-100 hover:text-white font-bold">✕</button>
-                    </div>
-
-                    <div class="p-4 space-y-3">
-                        <p class="text-xs font-bold text-slate-700 leading-relaxed">
-                            تحذير! تحتوي الفاتورة على منتجات يتم بيعها بأسعار أقل من التكلفة:
-                        </p>
-
-                        <div class="max-h-48 overflow-y-auto space-y-2">
-                            @foreach ($cart as $item)
-                                @if ($item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0))
-                                    <div
-                                        class="bg-rose-50 border border-rose-200 p-2 rounded-lg text-xs flex justify-between items-center font-bold">
-                                        <div>
-                                            <div class="text-slate-900">{{ $item['name'] }}</div>
-                                            <div class="text-[10px] text-rose-700">التكلفة:
-                                                {{ number_format($item['cost_price'], 2) }}</div>
-                                        </div>
-                                        <div class="text-rose-700 font-mono text-sm">
-                                            سعر البيع: {{ number_format($item['price'], 2) }}
-                                        </div>
-                                    </div>
-                                @endif
-                            @endforeach
-                        </div>
-
-                        <p class="text-xs text-slate-600 font-semibold">هل تريد الاستمرار وإتمام الفاتورة بهذا السعر؟
-                        </p>
-
-                        <div class="flex items-center gap-2 pt-2">
-                            <button wire:click="confirmBelowCostCheckout"
-                                class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow transition-all active:scale-95">
-                                نعم، استمرار
-                            </button>
-                            <button wire:click="$set('showBelowCostModal', false)"
-                                class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 px-3 rounded-xl text-xs transition-all">
-                                إلغاء لتعديل السعر
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        @endif
-
-    </div>
-    <!-- ==================== قالب الفاتورة الحرارية للطباعة المباشرة ==================== -->
-<div id="thermal-receipt" class="hidden print:block text-black bg-white p-2 font-mono text-xs w-[80mm] mx-auto">
-    <div class="text-center font-bold mb-2">
-        <h2 class="text-base font-black">اسم المتجر / الشركة</h2>
-        <p class="text-[10px]">فاتورة مبيعات حرارية</p>
-        <p class="text-[10px]">التاريخ: {{ now()->format('Y-m-d H:i') }}</p>
     </div>
 
-    <div class="border-b border-t border-black py-1 my-1 text-[11px]">
-        <div class="flex justify-between">
-            <span>رقم الفاتورة:</span>
-            <span class="font-bold">#{{ $currentInvoiceId ?? 'جديدة' }}</span>
-        </div>
-        <div class="flex justify-between">
-            <span>الكاشير:</span>
-            <span>{{ Auth::user()->name ?? 'الكاشير' }}</span>
-        </div>
-    </div>
+    <!-- ==================== قالب الفاتورة المعتمد من تجربتك ==================== -->
+    <!-- ==================== قالب الفاتورة الحرارية ==================== -->
+    <div id="receipt-print-area" class="receipt-box">
+        @if (!empty($receipt))
+            <!-- الرأسية / Header -->
+            <div class="header">
+                <h2 class="store-title">{{ $receipt['store_name'] }}</h2>
+                <p class="notice">{{ $receipt['notice'] }}</p>
+                <div class="divider-line"></div>
+                <p class="copy-type">{{ $receipt['copy_type'] }}</p>
+            </div>
 
-    <!-- جدول أصناف الفاتورة -->
-    <table class="w-full text-right my-2 text-[10px] border-collapse">
-        <thead>
-            <tr class="border-b border-black">
-                <th class="py-0.5">الصنف</th>
-                <th class="py-0.5 text-center">الكمية</th>
-                <th class="py-0.5 text-center">السعر</th>
-                <th class="py-0.5 text-left">الإجمالي</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($cart as $item)
-                <tr>
-                    <td class="py-0.5 font-bold">{{ $item['name'] }}</td>
-                    <td class="py-0.5 text-center">{{ $item['quantity'] }}</td>
-                    <td class="py-0.5 text-center">{{ number_format($item['price'], 2) }}</td>
-                    <td class="py-0.5 text-left font-bold">{{ number_format($item['subtotal'], 2) }}</td>
-                </tr>
-            @endforeach
-        </tbody>
-    </table>
+            <!-- تفاصيل الرقم والتاريخ -->
+            <div class="meta-info">
+                <span>رقم: <strong>{{ $receipt['invoice_no'] }}</strong></span>
+                <span>التاريخ: <strong>{{ $receipt['date'] }}</strong></span>
+                <span>الوقت: <strong>{{ $receipt['time'] }}</strong></span>
+            </div>
 
-    <!-- الحسابات الإجمالية -->
-    <div class="border-t border-black pt-1 mt-1 text-[11px] space-y-0.5">
-        <div class="flex justify-between">
-            <span>المجموع:</span>
-            <span>{{ number_format($this->subtotal, 2) }}</span>
-        </div>
-        @if($this->calculated_discount > 0)
-            <div class="flex justify-between text-rose-800">
-                <span>الخصم:</span>
-                <span>{{ number_format($this->calculated_discount, 2) }}</span>
+            <!-- جدول المنتجات -->
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="width: 8%;">#</th>
+                        <th style="width: 48%;">البيان</th>
+                        <th style="width: 12%;">كمية</th>
+                        <th style="width: 16%;">سعر</th>
+                        <th style="width: 16%;">مبلغ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($receipt['items'] as $item)
+                        <tr>
+                            <td>{{ $item['id'] }}</td>
+                            <td class="item-name">{{ $item['name'] }}</td>
+                            <td>{{ $item['qty'] }}</td>
+                            <td>{{ $item['price'] }}</td>
+                            <td>{{ $item['total'] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+
+            <!-- مجموع الكميات والمبالغ -->
+            <div class="info-box">
+                <span>مجموع الكميات:</span>
+                <strong class="font-bold-black">{{ $receipt['total_qty'] }}</strong>
+            </div>
+
+            <div class="info-box">
+                <span>المجموع:</span>
+                <strong class="font-bold-black">{{ $receipt['total_amount'] }}</strong>
+            </div>
+
+            <div class="net-box">
+                <span>الصافي للدفع ({{ $receipt['currency'] }}):</span>
+                <strong class="net-value">{{ $receipt['net_amount'] }}</strong>
+            </div>
+
+            <!-- الباركود والتذييل -->
+            <div class="barcode-section">
+                <svg id="barcode"></svg>
+                <p class="system-name">{{ $receipt['system_name'] }}</p>
+                <p class="print-time">تاريخ ووقت الطباعة: {{ $receipt['date'] }} {{ $receipt['time'] }}</p>
             </div>
         @endif
-        <div class="flex justify-between font-black text-sm border-t border-black pt-1">
-            <span>الصافي المطلـوب:</span>
-            <span>{{ number_format($this->total, 2) }}</span>
-        </div>
-        <div class="flex justify-between text-[10px]">
-            <span>المدفوع:</span>
-            <span>{{ number_format($paid_amount, 2) }}</span>
-        </div>
-        <div class="flex justify-between text-[10px]">
-            <span>المتبقي:</span>
-            <span>{{ number_format($this->change, 2) }}</span>
-        </div>
     </div>
 
-    <div class="text-center mt-4 pt-2 border-t border-dashed border-black text-[9px]">
-        <p>شكراً لزيارتكم!</p>
-    </div>
-</div>
-<iframe id="silent-print-frame" style="display: none; position: absolute; width: 0; height: 0; border: 0;"></iframe>
-</flux:main>
-<style>
-    @media print {
-        /* إخفاء كل عناصر الواجهة والشاشة */
-        body * {
-            visibility: hidden !important;
+    <style>
+        /* خط مخصص وأداء ممتاز للطابعات الحرارية */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;800;900&display=swap');
+
+        /* الحاوية الرئيسية للفاتورة (على الشاشة) */
+        .receipt-box {
+            width: 80mm;
+            max-width: 80mm;
+            background: #fff;
+            padding: 2mm 3mm;
+            box-sizing: border-box;
+
+            font-family: 'Cairo', 'Courier New', monospace, sans-serif;
+            font-size: 13px;
+            line-height: 1.3;
+            color: #000;
+            direction: rtl;
+            text-align: center;
+            margin: 0 auto;
         }
 
-        /* إظهار الفاتورة الحرارية فقط */
-        #thermal-receipt, #thermal-receipt * {
-            visibility: visible !important;
+        /* تغميق النصوص والحدود بأقصى درجة */
+        .receipt-box *,
+        .receipt-box strong,
+        .receipt-box td,
+        .receipt-box th,
+        .receipt-box span,
+        .receipt-box p {
+            color: #000 !important;
+            font-weight: 800 !important;
         }
 
-        #thermal-receipt {
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 80mm !important; /* عرض ورقة طابعة الفواتير الحرارية */
-            margin: 0 !important;
-            padding: 2mm !important;
+        .font-bold-black {
+            font-weight: 900 !important;
+            font-size: 14px;
         }
 
-        @page {
-            size: 80mm auto;
-            margin: 0;
+        .header .store-title {
+            font-size: 22px;
+            font-weight: 900 !important;
+            margin: 0 0 2px 0;
+            line-height: 1.2;
         }
+
+        .header .notice {
+            font-size: 11px;
+            margin: 3px 0;
+            font-weight: 800 !important;
+            line-height: 1.2;
+        }
+
+        .header .copy-type {
+            font-size: 13px;
+            font-weight: 900 !important;
+            margin: 4px 0 6px 0;
+            background-color: #000;
+            color: #fff !important;
+            padding: 2px 0;
+            border-radius: 2px;
+        }
+
+        .divider-line {
+            border-bottom: 2px dashed #000;
+            margin: 4px 0;
+        }
+
+        .meta-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 800 !important;
+            margin-bottom: 6px;
+            padding: 0 1px;
+            border-bottom: 1.5px solid #000;
+            padding-bottom: 4px;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 6px;
+            table-layout: fixed;
+        }
+
+        .items-table th {
+            border: 2px solid #000;
+            padding: 4px 1px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 900 !important;
+            background-color: #f0f0f0 !important;
+        }
+
+        .items-table td {
+            border: 1.5px solid #000;
+            padding: 4px 2px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 800 !important;
+            word-break: break-word;
+        }
+
+        .items-table .item-name {
+            text-align: right;
+            font-size: 12px;
+            line-height: 1.2;
+            padding-right: 3px;
+        }
+
+        .info-box {
+            border: 1.5px solid #000;
+            padding: 3px 6px;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 800 !important;
+        }
+
+        .net-box {
+            border: 2.5px solid #000;
+            padding: 4px 6px;
+            margin: 6px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 900 !important;
+            background-color: #f9f9f9 !important;
+        }
+
+        .net-value {
+            font-size: 18px;
+            font-weight: 900 !important;
+        }
+
+        .barcode-section {
+            margin-top: 6px;
+            text-align: center;
+        }
+
+        #barcode {
+            width: 85%;
+            max-height: 40px;
+            margin: 0 auto;
+        }
+
+        .system-name {
+            font-size: 11px;
+            font-weight: 900 !important;
+            margin: 4px 0 0 0;
+        }
+
+        .print-time {
+            font-size: 9px;
+            font-weight: 800 !important;
+            margin: 2px 0;
+        }
+
+        /* ========================================================
+       عزل الطباعة الآمن بنسبة 100% (حل مشكلة الفاتورة البيضاء)
+       ======================================================== */
+      @media print {
+
+    @page {
+        size: 80mm auto;
+        margin: 0;
     }
-</style>
 
-<!-- إطار مخفي للطباعة الفورية -->
+    html,
+    body {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
 
-<script>
-    document.addEventListener('livewire:initialized', () => {
-        Livewire.on('print-receipt', () => {
-            // التقاط محتوى الفاتورة من قالب thermal-receipt
-            const receiptElement = document.getElementById('thermal-receipt');
-            if (!receiptElement) return;
+    body {
+        visibility: hidden !important;
+    }
 
-            const receiptHtml = receiptElement.innerHTML;
-            const printFrame = document.getElementById('silent-print-frame');
-            const frameDoc = printFrame.contentWindow.document;
+    #receipt-print-area,
+    #receipt-print-area * {
+        visibility: visible !important;
+    }
 
-            frameDoc.open();
-            frameDoc.write(`
-                <html>
-                <head>
-                    <title>Print Receipt</title>
-                    <style>
-                        body {
-                            font-family: monospace;
-                            width: 80mm;
-                            margin: 0;
-                            padding: 2mm;
-                            font-size: 11px;
-                            color: #000;
-                        }
-                        .text-center { text-align: center; }
-                        .font-bold { font-weight: bold; }
-                        .font-black { font-weight: 900; }
-                        .flex { display: flex; }
-                        .justify-between { justify-content: space-between; }
-                        .border-b { border-bottom: 1px solid #000; }
-                        .border-t { border-top: 1px solid #000; }
-                        .border-dashed { border-style: dashed; }
-                        .my-1 { margin-top: 4px; margin-bottom: 4px; }
-                        .my-2 { margin-top: 8px; margin-bottom: 8px; }
-                        .py-1 { padding-top: 4px; padding-bottom: 4px; }
-                        .pt-1 { padding-top: 4px; }
-                        .mt-1 { margin-top: 4px; }
-                        .mt-4 { margin-top: 16px; }
-                        table { width: 100%; border-collapse: collapse; text-align: right; }
-                        th, td { padding: 2px 0; }
-                        @page { size: 80mm auto; margin: 0; }
-                    </style>
-                </head>
-                <body>
-                    ${receiptHtml}
-                </body>
-                </html>
-            `);
-            frameDoc.close();
+    #receipt-print-area {
+        position: absolute !important;
 
-            // إعطاء أمر الطباعة المباشر
-            setTimeout(() => {
-                printFrame.contentWindow.focus();
-                printFrame.contentWindow.print();
-            }, 150);
+        /* التوسيط */
+        left: 50% !important;
+        top: 0 !important;
+        transform: translateX(-50%) !important;
+
+        width: 80mm !important;
+        max-width: 80mm !important;
+
+        margin: 0 !important;
+        padding: 2mm 3mm !important;
+
+        box-sizing: border-box !important;
+
+        background: #fff !important;
+
+        direction: rtl !important;
+        text-align: center !important;
+
+        font-family: 'Cairo', Arial, sans-serif !important;
+        font-size: 12px !important;
+        line-height: 1.25 !important;
+    }
+
+    .receipt-box {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    .items-table {
+        width: 100% !important;
+        table-layout: fixed !important;
+    }
+
+    .items-table th,
+    .items-table td {
+        padding: 3px 2px !important;
+        font-size: 11px !important;
+    }
+
+    .items-table .item-name {
+        font-size: 11px !important;
+        word-break: break-word !important;
+    }
+
+    .header .store-title {
+        font-size: 20px !important;
+    }
+
+    .header .notice {
+        font-size: 10px !important;
+    }
+
+    .meta-info {
+        font-size: 10px !important;
+    }
+
+    .info-box {
+        font-size: 11px !important;
+        padding: 3px 4px !important;
+    }
+
+    .net-box {
+        font-size: 12px !important;
+        padding: 4px !important;
+    }
+
+    .net-value {
+        font-size: 16px !important;
+    }
+
+    .system-name {
+        font-size: 10px !important;
+    }
+
+    .print-time {
+        font-size: 8px !important;
+    }
+}
+    </style>
+
+    <!-- مكتبة الباركود والسكربت الخاص بتجربتك -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+
+
+    <script>
+        function generateBarcode() {
+            const barcodeElem = document.getElementById("barcode");
+            if (barcodeElem && "{{ $receipt['invoice_no'] ?? '' }}") {
+                JsBarcode("#barcode", "{{ $receipt['invoice_no'] ?? '00000' }}", {
+                    format: "CODE128",
+                    displayValue: false,
+                    height: 40,
+                    margin: 0
+                });
+            }
+        }
+
+        document.addEventListener('livewire:initialized', () => {
+            generateBarcode();
+
+            Livewire.on('trigger-print', () => {
+                setTimeout(() => {
+                    generateBarcode();
+                    window.print();
+                }, 300);
+            });
         });
-    });
-</script>
+    </script>
+</flux:main>
