@@ -100,43 +100,47 @@ new class extends Component {
         $this->resetPage();
     }
 
-    public function savePayment()
-    {
-        $this->validate();
+ public function savePayment()
+{
+    $this->validate();
 
-        if (!$this->voucher_number) {
-            $this->generateVoucherNumber();
-        }
-
-        // 1. حفظ أو تحديث السند
-        $payment = Payment::updateOrCreate(
-            ['id' => $this->paymentId],
-            [
-                'tenant_id'      => $this->getTenantId(),
-                'voucher_number' => $this->voucher_number,
-                'type'           => $this->type,
-                'payable_type'   => $this->payable_type,
-                'payable_id'     => $this->payable_id,
-                'amount'         => $this->amount,
-                'payment_date'   => $this->payment_date,
-                'payment_method' => $this->payment_method,
-                'notes'          => $this->notes,
-                'user_id'        => auth()->id(),
-            ]
-        );
-
-        // 2. طباعة السند تلقائياً
-        $this->printVoucher($payment->id);
-
-        // 3. إرسال الرسالة عبر الواتساب فوراً للرقم المعتمد
-        if ($this->send_whatsapp_on_save) {
-            $this->sendWhatsapp($payment->id);
-        }
-
-        // 4. إعادة ضبط المدخلات
-        $this->resetInputFields();
-        session()->flash('message', 'تم حفظ السند بنجاح.');
+    if (!$this->voucher_number) {
+        $this->generateVoucherNumber();
     }
+
+    $data = [
+        'tenant_id'      => $this->getTenantId(),
+        'voucher_number' => $this->voucher_number,
+        'type'           => $this->type,
+        'payable_type'   => $this->payable_type,
+        'payable_id'     => $this->payable_id,
+        'amount'         => $this->amount,
+        'payment_date'   => $this->payment_date,
+        'payment_method' => $this->payment_method,
+        'notes'          => $this->notes,
+        'user_id'        => auth()->id(),
+    ];
+
+    // حفظ سند جديد أو تعديل سند قائم بدون تمرير 'id' => null
+    if ($this->paymentId) {
+        $payment = Payment::findOrFail($this->paymentId);
+        $payment->update($data);
+    } else {
+        $payment = Payment::create($data);
+    }
+
+    // 2. طباعة السند تلقائياً
+    $this->printVoucher($payment->id);
+
+    // 3. إرسال الرسالة عبر الواتساب فوراً للرقم المعتمد
+    if ($this->send_whatsapp_on_save) {
+        $this->sendWhatsapp($payment->id);
+    }
+
+    // 4. إعادة ضبط المدخلات
+    $this->resetInputFields();
+    session()->flash('message', 'تم حفظ السند بنجاح.');
+}
 
     public function sendWhatsapp($paymentId)
     {
