@@ -100,47 +100,47 @@ new class extends Component {
         $this->resetPage();
     }
 
- public function savePayment()
-{
-    $this->validate();
+    public function savePayment()
+    {
+        $this->validate();
 
-    if (!$this->voucher_number) {
-        $this->generateVoucherNumber();
+        if (!$this->voucher_number) {
+            $this->generateVoucherNumber();
+        }
+
+        $data = [
+            'tenant_id'      => $this->getTenantId(),
+            'voucher_number' => $this->voucher_number,
+            'type'           => $this->type,
+            'payable_type'   => $this->payable_type,
+            'payable_id'     => $this->payable_id,
+            'amount'         => $this->amount,
+            'payment_date'   => $this->payment_date,
+            'payment_method' => $this->payment_method,
+            'notes'          => $this->notes,
+            'user_id'        => auth()->id(),
+        ];
+
+        // حفظ سند جديد أو تعديل سند قائم بدون تمرير 'id' => null
+        if ($this->paymentId) {
+            $payment = Payment::findOrFail($this->paymentId);
+            $payment->update($data);
+        } else {
+            $payment = Payment::create($data);
+        }
+
+        // 2. طباعة السند تلقائياً
+        $this->printVoucher($payment->id);
+
+        // 3. إرسال الرسالة عبر الواتساب فوراً للرقم المعتمد
+        if ($this->send_whatsapp_on_save) {
+            $this->sendWhatsapp($payment->id);
+        }
+
+        // 4. إعادة ضبط المدخلات
+        $this->resetInputFields();
+        session()->flash('message', 'تم حفظ السند بنجاح.');
     }
-
-    $data = [
-        'tenant_id'      => $this->getTenantId(),
-        'voucher_number' => $this->voucher_number,
-        'type'           => $this->type,
-        'payable_type'   => $this->payable_type,
-        'payable_id'     => $this->payable_id,
-        'amount'         => $this->amount,
-        'payment_date'   => $this->payment_date,
-        'payment_method' => $this->payment_method,
-        'notes'          => $this->notes,
-        'user_id'        => auth()->id(),
-    ];
-
-    // حفظ سند جديد أو تعديل سند قائم بدون تمرير 'id' => null
-    if ($this->paymentId) {
-        $payment = Payment::findOrFail($this->paymentId);
-        $payment->update($data);
-    } else {
-        $payment = Payment::create($data);
-    }
-
-    // 2. طباعة السند تلقائياً
-    $this->printVoucher($payment->id);
-
-    // 3. إرسال الرسالة عبر الواتساب فوراً للرقم المعتمد
-    if ($this->send_whatsapp_on_save) {
-        $this->sendWhatsapp($payment->id);
-    }
-
-    // 4. إعادة ضبط المدخلات
-    $this->resetInputFields();
-    session()->flash('message', 'تم حفظ السند بنجاح.');
-}
 
     public function sendWhatsapp($paymentId)
     {
@@ -189,7 +189,8 @@ new class extends Component {
         }
         $msg .= "----------------------------\n";
         $msg .= "رقم السند: {$payment->voucher_number}\n";
-        $msg .= "التاريخ: " . \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d H:i') . "\n";
+        // تعديل الوقت إلى نظام 12 ساعة (h:i A)
+        $msg .= "التاريخ: " . \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d h:i A') . "\n";
         $msg .= "{$partyLabel}: " . ($payment->payable?->name ?? 'غير محدد') . "\n";
         $msg .= "المبلغ: *" . number_format($payment->amount, 2) . " شيكل*\n";
         $msg .= "طريقة الدفع: {$method}\n";
@@ -246,7 +247,8 @@ new class extends Component {
                 'cheque'        => 'شيك',
                 default         => $payment->payment_method,
             },
-            'date'              => \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d H:i'),
+            // تعديل الوقت إلى نظام 12 ساعة (h:i A)
+            'date'              => \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d h:i A'),
             'user_name'         => $payment->user?->name ?? 'النظام',
             'notes'             => $payment->notes ?? '-',
         ];
@@ -533,7 +535,8 @@ new class extends Component {
                                     </td>
                                     <td class="px-4 py-3">{{ $payment->payment_method }}</td>
                                     <td class="px-4 py-3">
-                                        {{ \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d H:i') }}
+                                        {{-- تعديل الوقت في الجدول إلى نظام 12 ساعة (h:i A) --}}
+                                        {{ \Carbon\Carbon::parse($payment->payment_date)->format('Y-m-d h:i A') }}
                                     </td>
                                     <td class="px-4 py-3">{{ $payment->user?->name }}</td>
                                     <td class="px-4 py-3 text-center flex justify-center gap-2">

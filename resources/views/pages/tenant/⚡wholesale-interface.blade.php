@@ -424,13 +424,15 @@ new class extends Component {
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 lg:overflow-hidden">
                 <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3 lg:h-full lg:overflow-hidden">
-                    <div class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                         <flux:input wire:model.live.debounce.150ms="search" wire:keydown.enter="searchBarcode"
                             placeholder="بحث باسم المنتج أو الباركود..." icon="magnifying-glass" class="w-full"
                             autofocus id="barcode-search-input" />
                     </div>
 
-                    <div class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
+                    <div
+                        class="lg:flex-1 lg:overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 p-0.5 content-start max-h-[45vh] lg:max-h-none overflow-y-auto">
                         @forelse($products as $product)
                             @php
                                 $effectivePrice =
@@ -441,12 +443,15 @@ new class extends Component {
                             @endphp
                             <button wire:click="addToCart({{ $product->id }})"
                                 class="flex flex-col h-24 justify-between p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-right group">
-                                <div class="font-semibold text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 line-clamp-2 leading-snug">
+                                <div
+                                    class="font-semibold text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 line-clamp-2 leading-snug">
                                     {{ $product->name }}
                                 </div>
-                                <div class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
+                                <div
+                                    class="flex justify-between items-center w-full pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
                                     <span class="text-[10px] text-zinc-400">سعر الجملة</span>
-                                    <span class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm font-mono">
+                                    <span
+                                        class="font-bold text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm font-mono">
                                         {{ number_format($effectivePrice, 2) }}
                                     </span>
                                 </div>
@@ -465,7 +470,8 @@ new class extends Component {
                     <div class="pt-1">{{ $products->links() }}</div>
                 </div>
 
-                <div class="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm min-h-[350px] lg:h-full lg:overflow-hidden">
+                <div
+                    class="lg:col-span-5 xl:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm min-h-[350px] lg:h-full lg:overflow-hidden">
                     <div class="flex flex-col h-full justify-between space-y-2">
                         <div class="space-y-2 flex-1 flex flex-col lg:overflow-hidden">
                             <flux:heading size="md" class="border-b border-zinc-100 dark:border-zinc-800 pb-2">
@@ -500,9 +506,12 @@ new class extends Component {
 
                                         $currentBalance = $openingBalance + $ordersSum + $paidSum - $receivedSum;
                                     @endphp
-                                    <div class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
-                                        <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي للزبون:</span>
-                                        <span class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
+                                    <div
+                                        class="flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/80 p-2 rounded-lg text-xs border border-zinc-200 dark:border-zinc-700">
+                                        <span class="text-zinc-600 dark:text-zinc-400 font-medium">الرصيد الحالي
+                                            للزبون:</span>
+                                        <span
+                                            class="font-bold font-mono {{ $currentBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
                                             {{ number_format($currentBalance, 2) }} شيكل
                                         </span>
                                     </div>
@@ -513,19 +522,23 @@ new class extends Component {
                                 <flux:input wire:model="notes" placeholder="ملاحظات الفاتورة..." size="sm" />
                             </div>
 
-                            <div class="flex-1 min-h-[140px] max-h-[220px] lg:max-h-none overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
+                            <div
+                                class="flex-1 min-h-[140px] max-h-[220px] lg:max-h-none overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 pr-1">
                                 @forelse($cart as $id => $item)
                                     <div class="py-2 flex justify-between items-center text-xs gap-2">
-                                        <div class="w-7 h-7 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
+                                        <div
+                                            class="w-7 h-7 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center p-0.5">
                                             @if (!empty($item['image']))
-                                                <img src="{{ Storage::url($item['image']) }}" alt="{{ $item['name'] }}" class="w-full h-full object-contain">
+                                                <img src="{{ Storage::url($item['image']) }}"
+                                                    alt="{{ $item['name'] }}" class="w-full h-full object-contain">
                                             @else
                                                 <flux:icon icon="photo" class="w-3.5 h-3.5 text-zinc-400" />
                                             @endif
                                         </div>
 
                                         <div class="flex-1 truncate">
-                                            <div class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
+                                            <div
+                                                class="font-medium truncate text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
                                                 <span>{{ $item['name'] }}</span>
                                                 <button type="button" wire:click="showLastPrice({{ $id }})"
                                                     title="سجل آخر 10 عمليات بيع لهذا الزبون"
@@ -544,9 +557,14 @@ new class extends Component {
                                         </div>
 
                                         <div class="flex items-center gap-1">
-                                            <flux:button size="xs" variant="subtle" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})">-</flux:button>
-                                            <span class="font-bold text-xs px-1 text-zinc-700 dark:text-zinc-300">{{ $item['quantity'] }}</span>
-                                            <flux:button size="xs" variant="subtle" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})">+</flux:button>
+                                            <flux:button size="xs" variant="subtle"
+                                                wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})">
+                                                -</flux:button>
+                                            <span
+                                                class="font-bold text-xs px-1 text-zinc-700 dark:text-zinc-300">{{ $item['quantity'] }}</span>
+                                            <flux:button size="xs" variant="subtle"
+                                                wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})">
+                                                +</flux:button>
                                         </div>
                                     </div>
                                 @empty
@@ -558,13 +576,17 @@ new class extends Component {
                         <div class="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
                             <div class="flex justify-between items-center font-bold text-sm">
                                 <span class="text-zinc-700 dark:text-zinc-300">المجموع الكلي:</span>
-                                <span class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
+                                <span
+                                    class="text-base text-emerald-600 dark:text-emerald-400 font-mono">{{ number_format($cartTotal, 2) }}</span>
                             </div>
 
-                            <div x-data="{ paid: @entangle('paidAmount').live }" class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                            <div x-data="{ paid: @entangle('paidAmount').live }"
+                                class="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
                                 <div class="flex items-center justify-between">
-                                    <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ المدفوع:</label>
-                                    <button type="button" wire:click="setFullPayment" class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
+                                    <label class="text-xs text-zinc-600 dark:text-zinc-400 font-medium">المبلغ
+                                        المدفوع:</label>
+                                    <button type="button" wire:click="setFullPayment"
+                                        class="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline">
                                         دفع كامل
                                     </button>
                                 </div>
@@ -572,20 +594,25 @@ new class extends Component {
                                 <input type="number" step="0.01" x-model.number="paid" placeholder="0.00"
                                     class="w-full text-xs p-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono" />
 
-                                <template x-if="paid !== null && paid !== '' && parseFloat(paid) < {{ $cartTotal }}">
-                                    <div class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
+                                <template
+                                    x-if="paid !== null && paid !== '' && parseFloat(paid) < {{ $cartTotal }}">
+                                    <div
+                                        class="flex justify-between text-[11px] text-rose-600 dark:text-rose-400 font-semibold px-1 pt-0.5">
                                         <span>المتبقي (دين):</span>
-                                        <span class="font-mono" x-text="({{ $cartTotal }} - parseFloat(paid || 0)).toFixed(2)"></span>
+                                        <span class="font-mono"
+                                            x-text="({{ $cartTotal }} - parseFloat(paid || 0)).toFixed(2)"></span>
                                     </div>
                                 </template>
                             </div>
 
                             <div class="grid grid-cols-2 gap-2 pt-1">
-                                <flux:button variant="filled" class="w-full py-2 text-xs" wire:click="completeSale(false)" :disabled="empty($cart)">
+                                <flux:button variant="filled" class="w-full py-2 text-xs"
+                                    wire:click="completeSale(false)" :disabled="empty($cart)">
                                     حفظ فقط
                                 </flux:button>
 
-                                <flux:button variant="primary" icon="printer" class="w-full py-2 text-xs" wire:click="completeSale(true)" :disabled="empty($cart)">
+                                <flux:button variant="primary" icon="printer" class="w-full py-2 text-xs"
+                                    wire:click="completeSale(true)" :disabled="empty($cart)">
                                     حفظ وطباعة
                                 </flux:button>
                             </div>
@@ -597,13 +624,16 @@ new class extends Component {
     </div>
 
     @if ($showPriceHistoryModal)
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" dir="rtl">
-            <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-4 space-y-4">
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            dir="rtl">
+            <div
+                class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-w-md w-full p-4 space-y-4">
                 <div class="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
                     <h3 class="font-bold text-sm text-zinc-800 dark:text-zinc-200">
                         سجل آخر 10 عمليات بيع
                     </h3>
-                    <button wire:click="closePriceHistoryModal" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                    <button wire:click="closePriceHistoryModal"
+                        class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
                         ✕
                     </button>
                 </div>
@@ -611,18 +641,21 @@ new class extends Component {
                 <div class="space-y-2 text-xs">
                     <div>
                         <span class="text-zinc-400">المنتج:</span>
-                        <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['product_name'] ?? '-' }}</span>
+                        <span
+                            class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['product_name'] ?? '-' }}</span>
                     </div>
                     <div>
                         <span class="text-zinc-400">الزبون:</span>
-                        <span class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['customer_name'] ?? '-' }}</span>
+                        <span
+                            class="font-semibold text-zinc-800 dark:text-zinc-100 mr-1">{{ $selectedHistoryItem['customer_name'] ?? '-' }}</span>
                     </div>
 
                     <div class="border-t border-zinc-100 dark:border-zinc-800 pt-3 max-h-60 overflow-y-auto">
                         @if ($selectedHistoryItem['has_history'])
                             <table class="w-full text-right text-[11px] border-collapse">
                                 <thead>
-                                    <tr class="border-b border-zinc-200 dark:border-zinc-700 text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
+                                    <tr
+                                        class="border-b border-zinc-200 dark:border-zinc-700 text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
                                         <th class="p-1.5">السعر</th>
                                         <th class="p-1.5">الكمية</th>
                                         <th class="p-1.5">التاريخ</th>
@@ -631,7 +664,8 @@ new class extends Component {
                                 <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
                                     @foreach ($selectedHistoryItem['history'] as $row)
                                         <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                                            <td class="p-1.5 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                            <td
+                                                class="p-1.5 font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                                                 {{ number_format($row['price'], 2) }}
                                             </td>
                                             <td class="p-1.5 text-zinc-700 dark:text-zinc-300 font-mono">
@@ -645,7 +679,8 @@ new class extends Component {
                                 </tbody>
                             </table>
                         @else
-                            <div class="text-center py-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg text-zinc-400 text-xs">
+                            <div
+                                class="text-center py-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg text-zinc-400 text-xs">
                                 لا يوجد سجل بيع سابق لهذا المنتج مع العميل المحدد.
                             </div>
                         @endif
@@ -683,7 +718,7 @@ new class extends Component {
         });
 
         // طباعة الفاتورة عبر RawBT
-// طباعة الفاتورة عبر RawBT
+        // طباعة الفاتورة عبر RawBT
         $wire.on('do-kiosk-print', (event) => {
             const inv = event.data;
 
@@ -725,14 +760,25 @@ new class extends Component {
             // عرض المنتجات بشكل جدول مرتب
             if (inv.items && inv.items.length) {
                 inv.items.forEach(item => {
-                    let totalStr = (item.price * item.quantity).toFixed(2);
-                    let qtyStr = item.quantity + " x " + Number(item.price).toFixed(2);
+                    let priceNum = Number(item.price);
+                    let qtyNum = Number(item.quantity);
+                    let totalNum = priceNum * qtyNum;
+
+                    // تنسيق الأرقام: إلغاء الأصفار العشرية إذا كان الرقم صحيحاً، وإلا إبقاء خانتين عشريتين
+                    let totalStr = (totalNum % 1 === 0) ? totalNum.toString() : totalNum.toFixed(2);
+                    let priceStr = (priceNum % 1 === 0) ? priceNum.toString() : priceNum.toFixed(2);
+                    let qtyStr = (qtyNum % 1 === 0) ? qtyNum.toString() : qtyNum
+                .toString(); // أو qtyNum.toFixed(2) إن كانت الكميات فيها كسور
+
+                    let lineInfo = qtyStr + " x " + priceStr;
 
                     // اختصار اسم المنتج لأول كلمتين فقط
                     let shortName = formatProductName(item.name);
 
-                    text += shortName + "\n";
-                    text += formatLine(totalStr, "   " + qtyStr) + "\n";
+                    text += shortName ;
+                    text += formatLine(totalStr, "   " + lineInfo) + "\n";
+                  text += "____________________\n";
+
                 });
             }
 
