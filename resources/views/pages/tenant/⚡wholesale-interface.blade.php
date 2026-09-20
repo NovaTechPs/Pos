@@ -683,6 +683,7 @@ new class extends Component {
         });
 
         // طباعة الفاتورة عبر RawBT
+// طباعة الفاتورة عبر RawBT
         $wire.on('do-kiosk-print', (event) => {
             const inv = event.data;
 
@@ -694,12 +695,22 @@ new class extends Component {
                 return r + " ".repeat(spaceCount) + l + "\n";
             }
 
+            // دالة المساعدة لقص اسم المنتج ليظهر أول كلمتين فقط + نقاط
+            function formatProductName(name) {
+                if (!name) return '';
+                const words = name.trim().split(/\s+/);
+                if (words.length > 2) {
+                    return words.slice(0, 2).join(' ') + '...';
+                }
+                return name;
+            }
+
             let text = "";
 
             // الهيدر الرئيسي
-            text += "================================\n";
+            text += "=============================\n";
             text += "            " + (inv.header_title || "فاتورة") + "            \n";
-            text += "================================\n";
+            text += "=============================\n";
 
             // تفاصيل الفاتورة والزبون
             text += formatLine(inv.invoice_no, "رقم الفاتورة:");
@@ -707,9 +718,9 @@ new class extends Component {
             text += formatLine(inv.customer_name, "الزبون:");
 
             // رأس جدول الأصناف
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "المنتج             العدد  المجموع\n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
 
             // عرض المنتجات بشكل جدول مرتب
             if (inv.items && inv.items.length) {
@@ -717,29 +728,32 @@ new class extends Component {
                     let totalStr = (item.price * item.quantity).toFixed(2);
                     let qtyStr = item.quantity + " x " + Number(item.price).toFixed(2);
 
-                    text += item.name + "\n";
+                    // اختصار اسم المنتج لأول كلمتين فقط
+                    let shortName = formatProductName(item.name);
+
+                    text += shortName + "\n";
                     text += formatLine(totalStr, "   " + qtyStr) + "\n";
                 });
             }
 
             // ملخص الحساب المالي
-            text += "================================\n";
+            text += "=============================\n";
             text += formatLine(Number(inv.total).toFixed(2) + " شيكل", "المجموع:");
             text += formatLine(Number(inv.paid_amount).toFixed(2) + " شيكل", "المدفوع:");
             text += formatLine(Number(inv.remaining_amount).toFixed(2) + " شيكل", "المتبقي:");
 
             // كشف رصيد الحساب
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += formatLine(Number(inv.previous_balance).toFixed(2) + " شيكل", "الرصيد السابق:");
             text += formatLine(Number(inv.current_balance).toFixed(2) + " شيكل", "الرصيد الحالي:");
 
             // إضافة الملاحظات للطباعة إذا وُجدت
             if (inv.notes && inv.notes.trim() !== '') {
-                text += "--------------------------------\n";
+                text += "-----------------------------\n";
                 text += "ملاحظات: " + inv.notes + "\n";
             }
 
-            text += "================================\n\n\n\n";
+            text += "=============================\n\n\n\n";
 
             const intentUrl = "intent:" + encodeURIComponent(text) +
                 "#Intent;" +
@@ -750,32 +764,31 @@ new class extends Component {
 
             window.location.href = intentUrl;
         });
-
         // طباعة سند القبض عبر RawBT
         $wire.on('do-voucher-print', (event) => {
             const voucher = event.data;
 
             let text = "";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "            " + (voucher.header_title || "تسعيرة") + "            \n";
             text += "           " + voucher.type + "           \n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "رقم السند: " + voucher.voucher_no + "\n";
             text += "التاريخ: " + voucher.date + "\n";
             text += "الزبون: " + voucher.party_name + "\n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "الدفعة الواصلة: " + voucher.amount + " \n";
             text += "طريقة الدفع: " + voucher.payment_method + "\n";
-            text += "--------------------------------\n";
+            text += "-----------------------------\n";
             text += "الرصيد السابق: " + Number(voucher.previous_balance).toFixed(2) + " \n";
             text += "الرصيد الحالي: " + Number(voucher.current_balance).toFixed(2) + " \n";
 
             // إضافة الملاحظات لسند القبض
             if (voucher.notes && voucher.notes.trim() !== '') {
-                text += "--------------------------------\n";
+                text += "-----------------------------\n";
                 text += "ملاحظات: " + voucher.notes + "\n";
             }
-            text += "--------------------------------\n\n\n\n";
+            text += "-----------------------------\n\n\n\n";
 
             const intentUrl = "intent:" + encodeURIComponent(text) +
                 "#Intent;" +
