@@ -23,7 +23,7 @@ return new class extends Migration
         $table->foreignId('shift_id')->nullable();
 
         // الكاشير/الموظف اختياري
-        $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+        $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
         // ** التعديل هنا: توجيه المفتاح الأجنبي نحو جدول parties **
         $table->foreignId('customer_id')->nullable()->constrained('parties')->nullOnDelete();

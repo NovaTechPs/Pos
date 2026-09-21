@@ -21,7 +21,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
-
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();

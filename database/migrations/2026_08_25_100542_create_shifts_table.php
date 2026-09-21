@@ -15,7 +15,6 @@ return new class extends Migration
      $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('daily_settlement_id')->nullable()->constrained('daily_settlements')->nullOnDelete();
 
             // المبالغ النقدية ومطابقة الصندوق
@@ -31,7 +30,11 @@ return new class extends Migration
             // حالة الشيفت والتوقيت
             $table->enum('status', ['open', 'closed'])->default('open');
             $table->timestamp('opened_at');
+                        $table->foreignId('opened_by')->nullable()->constrained('users')->nullOnDelete();
+
             $table->timestamp('closed_at')->nullable();
+                                    $table->foreignId('closed_by')->nullable()->constrained('users')->nullOnDelete();
+
             $table->text('notes')->nullable();
 
             $table->timestamps();

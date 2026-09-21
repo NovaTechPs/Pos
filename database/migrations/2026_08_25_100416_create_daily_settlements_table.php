@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
             $table->foreignId('closed_by')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
             // بيانات اليوم المالي والإحصائيات التجميعية
             $table->date('settlement_date');

@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
             // تحديد نوع السند: receipt = سند قبض (تحصيل), payment = سند دفع (مصروف/مورد)
             $table->enum('type', ['receipt', 'payment']);

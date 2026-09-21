@@ -12,16 +12,16 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('branches', function (Blueprint $table) {
-         $table->id();
+            $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('phone')->nullable();
             $table->text('address')->nullable();
-            $table->enum('type', ['branch', 'warehouse'])->default('branch'); // هل هو فرع بيع أم مخزن؟
+            $table->enum('type', ['branch', 'warehouse'])->default('branch');
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
             $table->index('tenant_id');
-
         });
     }
 

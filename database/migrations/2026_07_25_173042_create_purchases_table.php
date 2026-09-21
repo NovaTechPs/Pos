@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
             $table->foreignId('supplier_id')->nullable()->constrained()->nullOnDelete(); // المورد
-            $table->foreignId('user_id')->constrained(); // الموظف الذي أدخل الفاتورة
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('reference_number')->nullable(); // رقم فاتورة المورد
             $table->decimal('total', 12, 2);
             $table->decimal('paid_amount', 12, 2);

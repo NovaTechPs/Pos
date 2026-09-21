@@ -22,13 +22,9 @@ return new class extends Migration
             $table->decimal('wholesale_price', 12, 2)->default(0.00);
             $table->integer('offer_quantity')->nullable();
             $table->decimal('offer_price', 10, 2)->nullable();
-                        $table->integer('min_wholesale_quantity')->default(1);
-  $table->foreignId('user_id')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+            $table->integer('min_wholesale_quantity')->default(1);
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
-
             $table->unique(['branch_id', 'product_id']);
             $table->index(['tenant_id', 'branch_id']);
         });

@@ -26,13 +26,11 @@ return new class extends Migration
             // حالات وأولوية الترتيب
             $table->boolean('is_active')->default(true); // تفعيل/تعطيل التصنيف
             $table->integer('sort_order')->default(0); // ترتيب الظهور في الشاشة
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
             $table->softDeletes(); // للحذف المرن
-  $table->foreignId('user_id')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+
             // فهرس مركزي لسرعة جلب تصنيفات متجر معين مرتبة
             $table->index(['tenant_id', 'is_active', 'sort_order']);
         });
