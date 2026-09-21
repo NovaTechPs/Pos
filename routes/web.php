@@ -2,79 +2,65 @@
 
 use Illuminate\Support\Facades\Route;
 
-
-
-
-
-
+// الصفحة الرئيسية
 Route::view('/', 'welcome')->name('home');
 
+// --------------------------------------------------------------------------
+// مسارات لوحة تحكم الأدمن (Admin Routes)
+// --------------------------------------------------------------------------
+Route::middleware(['auth', 'verified', 'is_admin'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::view('/dashboard', 'pages.admin.dashboard')->name('dashboard');
+        Route::livewire('/plan', 'pages::admin.plans')->name('plan');
+        Route::livewire('/user', 'pages::admin.users')->name('user');
+    });
 
+// --------------------------------------------------------------------------
+// مسارات المستخدم / المتجر (Tenant Routes)
+// --------------------------------------------------------------------------
+Route::middleware(['auth', 'verified'])
+    ->prefix('dashboard')
+    ->name('tenant.')
+    ->group(function () {
+        // الصفحة الرئيسية للمتجر
+        Route::view('/', 'pages.tenant.dashboard')->name('dashboard');
 
+        // إدارة النظام والعملاء والبروفايل
+        Route::livewire('/user', 'pages::tenant.branch')->name('branch');
+        Route::livewire('/role', 'pages::tenant.role')->name('role');
+        Route::livewire('/employees', 'pages::tenant.employees')->name('employees');
+        Route::livewire('/customer', 'pages::tenant.customer')->name('customer');
+        Route::livewire('/supplier', 'pages::tenant.supplier')->name('supplier');
 
+        // المبيعات ونقطة البيع (POS)
+        Route::livewire('/pos', 'pages::tenant.pos')->name('pos');
+        Route::livewire('/product', 'pages::tenant.product')->name('product');
+        Route::livewire('/purchases', 'pages::tenant.purchase')->name('purchases');
+        Route::livewire('/wholesale', 'pages::tenant.wholesale')->name('wholesale');
+        Route::livewire('/wholesale-interface', 'pages::tenant.wholesale-interface')->name('wholesale-interface');
+        Route::livewire('/wholesale-orders', 'pages::tenant.wholesale-orders')->name('wholesale-orders');
 
+        // المتجر الإلكتروني والطلبات
+        Route::livewire('/store/{slug}', 'pages::tenant.store')->name('store');
+        Route::livewire('/online-orders', 'pages::tenant.online-orders')->name('online-orders');
 
+        // الحسابات والمالية والتقارير
+        Route::livewire('/analytics', 'pages::tenant.analytics')->name('analytics');
+        Route::livewire('/daily-settlement', 'pages::tenant.daily-settlement-component')->name('daily-settlement');
+        Route::livewire('/receipt-vouchers', 'pages::tenant.receipt-vouchers')->name('receipt');
+        Route::livewire('/payment', 'pages::tenant.payment')->name('payment');
+        Route::livewire('/excel', 'pages::tenant.exsel')->name('excel');
 
-Route::middleware(['auth', 'verified', 'is_admin'])->prefix('admin')->name('admin.')->group(function () {
+        // أدوات وطباعة
+        Route::livewire('/print', 'pages::tenant.print')->name('print');
+        Route::livewire('/backup', 'pages::tenant.backup')->name('backup');
+    });
 
-    // صفحة الداشبورد الخاصة بالأدمن
-Route::view('/dashboard', 'pages.admin.dashboard')->name('dashboard');
-Route::livewire('/plan', 'pages::admin.plans')->name('plan');
-Route::livewire('/user', 'pages::admin.users')->name('user');
-
-
-
-
-
-});
+// مسارات أخرى
 Route::middleware(['auth', 'verified'])->group(function () {
-
-    // صفحة الداشبورد الخاصة بالمستخدم/المتجر
-
-Route::view('/dashboard', 'pages.tenant.dashboard')->name('dashboard');
-Route::livewire('dashboard/user', 'pages::tenant.branch')->name('branch');
-Route::livewire('dashboard/role', 'pages::tenant.role')->name('role');
-Route::livewire('dashboard/employees', 'pages::tenant.employees')->name('employees');
-Route::livewire('dashboard/product', 'pages::tenant.product')->name('product');
-Route::livewire('dashboard/pos', 'pages::tenant.pos')->name('pos');
-    Route::livewire('/dashboard/analytics', 'pages::tenant.analytics')->name('analytics');
-        Route::livewire('/dashboard/store/{slug}', 'pages::tenant.store')->name('store');;
-             Route::livewire('/dashboard/online', 'pages::tenant.online-orders')->name('storeORDEE');
-             Route::livewire('/dashboard/Wholesale', 'pages::tenant.wholesale-interface')->name('wholesaleinterface');
-             Route::livewire('/dashboard/orders', 'pages::tenant.wholesale-orders')->name('wholesaleorders');
-             Route::livewire('/dashboard/DailySettlementComponent', 'pages::tenant.daily-settlement-component')->name('DailySettlementComponent');
-
-
-             Route::livewire('/dashboard/print', 'pages::tenant.print')->name('print');
-
-
-
-
-
-
-    Route::livewire('/post/create', 'pages::post.create');
-
-
-
-Route::livewire('dashboard/purchases', 'pages::tenant.purchase')->name('purchases');
-Route::livewire('dashboard/wholesale', 'pages::tenant.wholesale')->name('wholesale');
-Route::livewire('dashboard/customer', 'pages::tenant.customer')->name('customer');
-Route::livewire('dashboard/supplier', 'pages::tenant.supplier')->name('supplier');
-
-Route::livewire('dashboard/receipt', 'pages::tenant.receipt-vouchers')->name('receipt');
-Route::livewire('dashboard/payment', 'pages::tenant.payment')->name('payment');
-Route::livewire('dashboard/exsel', 'pages::tenant.exsel')->name('exsel');
-Route::livewire('dashboard/backup', 'pages::tenant.backup')->name('backup');
-
-// Route::livewire('dashboard/purchases', 'pages::tenant.')->name('purchases');
-
-
-
-
-
-
-    // أضف بقية مسارات المتجر هنا مستقبلاً (مثل نقاط البيع والمنتجات)
-    // Volt::route('/pos', 'tenant.pos.index')->name('pos.index');
+    Route::livewire('/post/create', 'pages::post.create')->name('post.create');
 });
 
 require __DIR__.'/settings.php';

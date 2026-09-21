@@ -65,7 +65,7 @@ new class extends Component {
 
             $this->dispatch('tenant-changed', tenantId: $tenant->id);
 
-            return $this->redirect(request()->header('Referer') ?? route('dashboard'), navigate: true);
+            return $this->redirect(request()->header('Referer') ?? route('tenant.dashboard'), navigate: true);
         }
 
         return null;

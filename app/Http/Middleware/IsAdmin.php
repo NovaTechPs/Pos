@@ -20,6 +20,6 @@ class IsAdmin
         }
 
         // إذا لم يكن أدمن، يتم تحويله للداشبورد العادية
-        return redirect()->route('dashboard');
+        return redirect()->route('tenant.dashboard');
     }
 }

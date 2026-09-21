@@ -8,20 +8,21 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('tenants', function (Blueprint $table) {
+        Schema::create('plans', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('phone')->nullable();
-            $table->foreignId('plan_id')->nullable()->nullOnDelete();
-            $table->string('domain')->unique();
+            $table->string('slug')->unique();
+            $table->text('description')->nullable();
+            $table->decimal('price', 10, 2)->default(0.00);
+            $table->integer('invoice_period')->default(1);
+            $table->string('invoice_interval')->default('month');
             $table->boolean('is_active')->default(true);
-            $table->unsignedBigInteger('owner_id')->nullable();
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('tenants');
+        Schema::dropIfExists('plans');
     }
 };

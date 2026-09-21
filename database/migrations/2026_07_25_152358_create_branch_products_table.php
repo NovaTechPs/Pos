@@ -6,9 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('branch_products', function (Blueprint $table) {
@@ -16,23 +13,22 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->decimal('stock_quantity', 10, 2)->default(0.00);
-            $table->decimal('alert_quantity', 10, 2)->default(5.00);
+            $table->decimal('stock_quantity', 12, 2)->default(0.00);
+            $table->decimal('alert_quantity', 12, 2)->default(5.00);
             $table->decimal('retail_price', 12, 2)->default(0.00);
             $table->decimal('wholesale_price', 12, 2)->default(0.00);
-            $table->integer('offer_quantity')->nullable();
-            $table->decimal('offer_price', 10, 2)->nullable();
-            $table->integer('min_wholesale_quantity')->default(1);
+            $table->decimal('offer_quantity', 12, 2)->nullable();
+            $table->decimal('offer_price', 12, 2)->nullable();
+            $table->decimal('min_wholesale_quantity', 12, 2)->default(1.00);
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
+
             $table->unique(['branch_id', 'product_id']);
             $table->index(['tenant_id', 'branch_id']);
+            $table->index(['branch_id', 'stock_quantity', 'alert_quantity']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('branch_products');

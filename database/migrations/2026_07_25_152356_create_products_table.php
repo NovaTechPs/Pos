@@ -6,19 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::disableForeignKeyConstraints();
-
         Schema::create('products', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->cascadeOnDelete();
-            $table->foreignId('category_id')
-                ->nullable()
-                ->nullOnDelete();
+            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('category_id')->nullable()->nullOnDelete();
             $table->string('name');
             $table->decimal('cost_price', 12, 2)->default(0.00);
             $table->boolean('is_price_unified')->default(true);
@@ -30,14 +23,10 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
-            // الفهارس
             $table->index(['tenant_id', 'category_id']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('products');

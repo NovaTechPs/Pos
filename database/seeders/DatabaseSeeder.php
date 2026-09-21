@@ -16,187 +16,186 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        //     // 1. إضافة الخطة التشغيلية (Plans)
-        //     DB::table('plans')->updateOrInsert(
-        //         ['id' => 1],
-        //         [
-        //             'name'             => 'plan 1',
-        //             'slug'             => 'plan',
-        //             'description'      => null,
-        //             'price'            => 30.00,
-        //             'invoice_period'   => 1,
-        //             'invoice_interval' => 'month',
-        //             'is_active'        => true,
-        //             'created_at'       => '2026-09-15 08:05:51',
-        //             'updated_at'       => '2026-09-15 08:05:51',
-        //         ]
-        //     );
+        // تعطيل فحص المفاتيح الأجنبية لتفادي التعارض الدائري (Circular FK)
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-        //     // 2. إضافة المستأجر (Tenant) بناءً على الصورة
-        //     DB::table('tenants')->updateOrInsert(
-        //         ['id' => 1],
-        //         [
-        //             'name'       => 'fanous',
-        //             'phone'      => null,
-        //             'plan_id'    => 1,
-        //             'domain'     => 'fanoos.com',
-        //             'is_active'  => 1,
-        //             'owner_id'   => 2,
-        //             'created_at' => '2026-09-15 13:27:17',
-        //             'updated_at' => '2026-09-15 13:27:17',
-        //         ]
-        //     );
+        // 1. إضافة الخطة التشغيلية (Plans)
+        DB::table('plans')->updateOrInsert(
+            ['id' => 1],
+            [
+                'name'             => 'plan 1',
+                'slug'             => 'plan',
+                'description'      => null,
+                'price'            => 30.00,
+                'invoice_period'   => 1,
+                'invoice_interval' => 'month',
+                'is_active'        => true,
+                'created_at'       => '2026-09-15 08:05:51',
+                'updated_at'       => '2026-09-15 08:05:51',
+            ]
+        );
 
-        //     // 3. إضافة الفروع (Branches) بناءً على الصورة
-        //     $branches = [
-        //         ['id' => 2, 'tenant_id' => 1, 'name' => 'فانوس', 'phone' => null, 'address' => null, 'type' => 'branch'],
-        //         ['id' => 3, 'tenant_id' => 1, 'name' => 'crase', 'phone' => null, 'address' => null, 'type' => 'branch'],
-        //         ['id' => 4, 'tenant_id' => 1, 'name' => 'مخزن جملة', 'phone' => null, 'address' => null, 'type' => 'branch'],
-        //     ];
+        // 2. إضافة المستأجر (Tenant)
+        DB::table('tenants')->updateOrInsert(
+            ['id' => 1],
+            [
+                'name'       => 'fanous',
+                'phone'      => null,
+                'plan_id'    => 1,
+                'domain'     => 'fanoos.com',
+                'is_active'  => 1,
+                'owner_id'   => 2,
+                'created_at' => '2026-09-15 13:27:17',
+                'updated_at' => '2026-09-15 13:27:17',
+            ]
+        );
 
-        //     foreach ($branches as $branch) {
-        //         DB::table('branches')->updateOrInsert(
-        //             ['id' => $branch['id']],
-        //             array_merge($branch, [
-        //                 'updated_at' => now(),
-        //                 'created_at' => now(),
-        //             ])
-        //         );
-        //     }
+        // 3. إضافة الفروع (Branches)
+        $branches = [
+            ['id' => 2, 'tenant_id' => 1, 'name' => 'فانوس', 'phone' => null, 'address' => null, 'type' => 'branch'],
+            ['id' => 3, 'tenant_id' => 1, 'name' => 'crase', 'phone' => null, 'address' => null, 'type' => 'branch'],
+            ['id' => 4, 'tenant_id' => 1, 'name' => 'مخزن جملة', 'phone' => null, 'address' => null, 'type' => 'branch'],
+        ];
 
-        //     // 4. إضافة الصلاحيات (Permissions)
-        //     $permissions = [
-        //         // المبيعات والـ POS
-        //         ['name' => 'orders.view', 'display_name' => 'عرض الفواتير', 'group' => 'المبيعات'],
-        //         ['name' => 'orders.create', 'display_name' => 'إجراء عملية بيع (POS)', 'group' => 'المبيعات'],
-        //         ['name' => 'orders.apply_discount', 'display_name' => 'تطبيق خصم', 'group' => 'المبيعات'],
-        //         ['name' => 'orders.refund', 'display_name' => 'إلغاء أو إرجاع فاتورة', 'group' => 'المبيعات'],
+        foreach ($branches as $branch) {
+            DB::table('branches')->updateOrInsert(
+                ['id' => $branch['id']],
+                array_merge($branch, [
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ])
+            );
+        }
 
-        //         // المشتريات والموردين
-        //         ['name' => 'purchases.view', 'display_name' => 'عرض فواتير المشتريات', 'group' => 'المشتريات'],
-        //         ['name' => 'purchases.create', 'display_name' => 'إدخال فاتورة شراء', 'group' => 'المشتريات'],
-        //         ['name' => 'suppliers.manage', 'display_name' => 'إدارة الموردين', 'group' => 'المشتريات'],
+        // 4. إضافة الصلاحيات (Permissions)
+        $permissions = [
+            ['name' => 'orders.view', 'display_name' => 'عرض الفواتير', 'group' => 'المبيعات'],
+            ['name' => 'orders.create', 'display_name' => 'إجراء عملية بيع (POS)', 'group' => 'المبيعات'],
+            ['name' => 'orders.apply_discount', 'display_name' => 'تطبيق خصم', 'group' => 'المبيعات'],
+            ['name' => 'orders.refund', 'display_name' => 'إلغاء أو إرجاع فاتورة', 'group' => 'المبيعات'],
+            ['name' => 'purchases.view', 'display_name' => 'عرض فواتير المشتريات', 'group' => 'المشتريات'],
+            ['name' => 'purchases.create', 'display_name' => 'إدخال فاتورة شراء', 'group' => 'المشتريات'],
+            ['name' => 'suppliers.manage', 'display_name' => 'إدارة الموردين', 'group' => 'المشتريات'],
+            ['name' => 'products.view', 'display_name' => 'عرض قائمة المنتجات', 'group' => 'المخزون'],
+            ['name' => 'products.create', 'display_name' => 'إضافة منتج جديد', 'group' => 'المخزون'],
+            ['name' => 'products.edit', 'display_name' => 'تعديل بيانات وأسعار المنتجات', 'group' => 'المخزون'],
+            ['name' => 'stock.adjust', 'display_name' => 'تسوية وجرد المخزون', 'group' => 'المخزون'],
+            ['name' => 'reports.sales', 'display_name' => 'عرض تقارير المبيعات', 'group' => 'التقارير'],
+            ['name' => 'reports.profit', 'display_name' => 'عرض تقارير الأرباح', 'group' => 'التقارير'],
+            ['name' => 'users.manage', 'display_name' => 'إدارة الموظفين والأدوار', 'group' => 'الإدارة'],
+        ];
 
-        //         // المنتجات والمخزون
-        //         ['name' => 'products.view', 'display_name' => 'عرض قائمة المنتجات', 'group' => 'المخزون'],
-        //         ['name' => 'products.create', 'display_name' => 'إضافة منتج جديد', 'group' => 'المخزون'],
-        //         ['name' => 'products.edit', 'display_name' => 'تعديل بيانات وأسعار المنتجات', 'group' => 'المخزون'],
-        //         ['name' => 'stock.adjust', 'display_name' => 'تسوية وجرد المخزون', 'group' => 'المخزون'],
+        foreach ($permissions as $permission) {
+            Permission::updateOrCreate(
+                ['name' => $permission['name']],
+                $permission
+            );
+        }
 
-        //         // التقارير والموظفين
-        //         ['name' => 'reports.sales', 'display_name' => 'عرض تقارير المبيعات', 'group' => 'التقارير'],
-        //         ['name' => 'reports.profit', 'display_name' => 'عرض تقارير الأرباح', 'group' => 'التقارير'],
-        //         ['name' => 'users.manage', 'display_name' => 'إدارة الموظفين والأدوار', 'group' => 'الإدارة'],
-        //     ];
+        // 5. إنشاء الأدوار
+        $targetTenantId = 1;
 
-        //     foreach ($permissions as $permission) {
-        //         Permission::updateOrCreate(
-        //             ['name' => $permission['name']],
-        //             $permission
-        //         );
-        //     }
+        $adminRole = Role::updateOrCreate(
+            ['id' => 1],
+            [
+                'tenant_id'   => $targetTenantId,
+                'name'        => 'admin',
+                'description' => 'مدير النظام الخاص بالمنشأة',
+            ]
+        );
 
-        //     // 5. إنشاء الأدوار
-        //     $targetTenantId = 1;
+        $cashierRole = Role::updateOrCreate(
+            ['id' => 2],
+            [
+                'tenant_id'   => $targetTenantId,
+                'name'        => 'cashier',
+                'description' => 'كاشير مبيعات',
+            ]
+        );
 
-        //     $adminRole = Role::updateOrCreate(
-        //         ['id' => 1],
-        //         [
-        //             'tenant_id'   => $targetTenantId,
-        //             'name'        => 'admin',
-        //             'description' => 'مدير النظام الخاص بالمنشأة',
-        //         ]
-        //     );
+        if (method_exists($adminRole, 'syncPermissions')) {
+            $adminRole->syncPermissions(Permission::all());
+            $cashierRole->syncPermissions([
+                'orders.view',
+                'orders.create',
+                'products.view'
+            ]);
+        }
 
-        //     $cashierRole = Role::updateOrCreate(
-        //         ['id' => 2],
-        //         [
-        //             'tenant_id'   => $targetTenantId,
-        //             'name'        => 'cashier',
-        //             'description' => 'كاشير مبيعات',
-        //         ]
-        //     );
+        // 6. إضافة المستخدمين
+        $defaultPassword = Hash::make('password123');
 
-        //     if (method_exists($adminRole, 'syncPermissions')) {
-        //         $adminRole->syncPermissions(Permission::all());
-        //         $cashierRole->syncPermissions([
-        //             'orders.view',
-        //             'orders.create',
-        //             'products.view'
-        //         ]);
-        //     }
+        $users = [
+            [
+                'email'     => 'admin@example.com',
+                'name'      => 'SaaS Admin',
+                'is_owner'  => false,
+                'role_id'   => null,
+                'type'      => 'saas_admin',
+                'is_active' => true,
+                'tenant_id' => null,
+                'branch_id' => null,
+            ],
+            [
+                'email'     => 'user@example.com',
+                'name'      => 'Test Tenant User',
+                'is_owner'  => true,
+                'role_id'   => null,
+                'type'      => 'tenant_user',
+                'is_active' => true,
+                'tenant_id' => 1,
+                'branch_id' => 2,
+            ],
+            [
+                'email'     => 'yasmin@fanos.com',
+                'name'      => 'ياسمين',
+                'is_owner'  => false,
+                'role_id'   => $adminRole->id,
+                'type'      => 'tenant_user',
+                'is_active' => true,
+                'tenant_id' => 1,
+                'branch_id' => 2,
+            ],
+            [
+                'email'     => 'kalide@fanous.com',
+                'name'      => 'خالد',
+                'is_owner'  => false,
+                'role_id'   => $adminRole->id,
+                'type'      => 'tenant_user',
+                'is_active' => true,
+                'tenant_id' => 1,
+                'branch_id' => 3,
+            ],
+            [
+                'email'     => 'hade@fanous.com',
+                'name'      => 'هادي',
+                'is_owner'  => false,
+                'role_id'   => $cashierRole->id,
+                'type'      => 'tenant_user',
+                'is_active' => true,
+                'tenant_id' => 1,
+                'branch_id' => 4,
+            ],
+        ];
 
-        //     // 6. إضافة وتحديث المستخدمين وتربيطهم بالفروع الحقيقية (2، 3، 4)
-        //     $defaultPassword = Hash::make('password123');
+        foreach ($users as $userData) {
+            $user = User::updateOrCreate(
+                ['email' => $userData['email']],
+                array_merge($userData, [
+                    'password' => $defaultPassword,
+                ])
+            );
 
-        //     $users = [
-        //         [
-        //             'email'     => 'admin@example.com',
-        //             'name'      => 'SaaS Admin',
-        //             'is_owner'  => false,
-        //             'role_id'   => null,
-        //             'type'      => 'saas_admin',
-        //             'is_active' => true,
-        //             'tenant_id' => null,
-        //             'branch_id' => null,
-        //         ],
-        //         [
-        //             'email'     => 'user@example.com',
-        //             'name'      => 'Test Tenant User',
-        //             'is_owner'  => true,
-        //             'role_id'   => null,
-        //             'type'      => 'tenant_user',
-        //             'is_active' => true,
-        //             'tenant_id' => 1,
-        //             'branch_id' => 2, // فرع فانوس
-        //         ],
-        //         [
-        //             'email'     => 'yasmin@fanos.com',
-        //             'name'      => 'ياسمين',
-        //             'is_owner'  => false,
-        //             'role_id'   => $adminRole->id,
-        //             'type'      => 'tenant_user',
-        //             'is_active' => true,
-        //             'tenant_id' => 1,
-        //             'branch_id' => 2, // فرع فانوس
-        //         ],
-        //         [
-        //             'email'     => 'kalide@fanous.com',
-        //             'name'      => 'خالد',
-        //             'is_owner'  => false,
-        //             'role_id'   => $adminRole->id,
-        //             'type'      => 'tenant_user',
-        //             'is_active' => true,
-        //             'tenant_id' => 1,
-        //             'branch_id' => 3, // فرع crase
-        //         ],
-        //         [
-        //             'email'     => 'hade@fanous.com',
-        //             'name'      => 'هادي',
-        //             'is_owner'  => false,
-        //             'role_id'   => $cashierRole->id,
-        //             'type'      => 'tenant_user',
-        //             'is_active' => true,
-        //             'tenant_id' => 1,
-        //             'branch_id' => 4, // فرع مخزن جملة
-        //         ],
-        //     ];
+            if (method_exists($user, 'assignRole')) {
+                if ($userData['type'] === 'saas_admin' || $userData['is_owner'] || $userData['role_id'] == $adminRole->id) {
+                    $user->assignRole($adminRole);
+                } elseif ($userData['role_id'] == $cashierRole->id) {
+                    $user->assignRole($cashierRole);
+                }
+            }
+        }
 
-        //     foreach ($users as $userData) {
-        //         $user = User::updateOrCreate(
-        //             ['email' => $userData['email']],
-        //             array_merge($userData, [
-        //                 'password' => $defaultPassword,
-        //             ])
-        //         );
-
-        //         if (method_exists($user, 'assignRole')) {
-        //             if ($userData['type'] === 'saas_admin' || $userData['is_owner'] || $userData['role_id'] == $adminRole->id) {
-        //                 $user->assignRole($adminRole);
-        //             } elseif ($userData['role_id'] == $cashierRole->id) {
-        //                 $user->assignRole($cashierRole);
-        //             }
-        //         }
-        //     }
+        // إعادة تفعيل فحص المفاتيح الأجنبية
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
 }

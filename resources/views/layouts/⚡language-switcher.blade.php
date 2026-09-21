@@ -11,7 +11,7 @@ new class extends Component {
             Session::put('locale', $locale);
             App::setLocale($locale);
 
-            return redirect(request()->header('Referer') ?? route('dashboard'));
+            return redirect(request()->header('Referer') ?? route('tenant.dashboard'));
         }
     }
 }; ?>

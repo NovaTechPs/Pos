@@ -27,138 +27,139 @@
     <flux:sidebar sticky collapsible="mobile"
         class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:sidebar.header>
-            <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
+            <x-app-logo :sidebar="true" href="{{ route('tenant.dashboard') }}" wire:navigate />
             <flux:sidebar.collapse class="lg:hidden" />
         </flux:sidebar.header>
 
+        <!-- تم تصحيح استدعاء المكون وفقاً لبنية Volt المعرفة في web.php -->
         <livewire:pages::tenant.tenant-switcher />
 
         <flux:sidebar.nav>
             <flux:sidebar.group :heading="__('Platform')" class="grid">
 
                 @can('dashboard.view')
-                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="home" :href="route('tenant.dashboard')"
+                        :current="request()->routeIs('tenant.dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('branches.view')
-                    <flux:sidebar.item icon="building-storefront" :href="route('branch')"
-                        :current="request()->routeIs('branch')" wire:navigate>
+                    <flux:sidebar.item icon="building-storefront" :href="route('tenant.branch')"
+                        :current="request()->routeIs('tenant.branch')" wire:navigate>
                         {{ __('Branches') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('roles.view')
-                    <flux:sidebar.item icon="shield-check" :href="route('role')" :current="request()->routeIs('role')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="shield-check" :href="route('tenant.role')"
+                        :current="request()->routeIs('tenant.role')" wire:navigate>
                         {{ __('Roles') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('employees.view')
-                    <flux:sidebar.item icon="user-group" :href="route('employees')"
-                        :current="request()->routeIs('employees')" wire:navigate>
+                    <flux:sidebar.item icon="user-group" :href="route('tenant.employees')"
+                        :current="request()->routeIs('tenant.employees')" wire:navigate>
                         {{ __('Employees') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('products.view')
-                    <flux:sidebar.item icon="cube" :href="route('product')" :current="request()->routeIs('product')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="cube" :href="route('tenant.product')"
+                        :current="request()->routeIs('tenant.product')" wire:navigate>
                         {{ __('Products') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('pos.view')
-                    <flux:sidebar.item icon="calculator" :href="route('pos')" :current="request()->routeIs('pos')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="calculator" :href="route('tenant.pos')"
+                        :current="request()->routeIs('tenant.pos')" wire:navigate>
                         {{ __('POS') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('analytics.view')
-                    <flux:sidebar.item icon="chart-bar-square" :href="route('analytics')"
-                        :current="request()->routeIs('analytics')" wire:navigate>
+                    <flux:sidebar.item icon="chart-bar-square" :href="route('tenant.analytics')"
+                        :current="request()->routeIs('tenant.analytics')" wire:navigate>
                         {{ __('Analytics') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('daily_settlement.view')
-                    <flux:sidebar.item icon="scale" :href="route('DailySettlementComponent')"
-                        :current="request()->routeIs('DailySettlementComponent')" wire:navigate>
+                    <flux:sidebar.item icon="scale" :href="route('tenant.daily-settlement')"
+                        :current="request()->routeIs('tenant.daily-settlement')" wire:navigate>
                         {{ __('Daily Settlement') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('store_order.view')
-                    <flux:sidebar.item icon="clipboard-document-list" :href="route('storeORDEE')"
-                        :current="request()->routeIs('storeORDEE')" wire:navigate>
-                        {{ __('Store Order') }}
+                    <flux:sidebar.item icon="clipboard-document-list" :href="route('tenant.online-orders')"
+                        :current="request()->routeIs('tenant.online-orders')" wire:navigate>
+                        {{ __('Online Orders') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('store.view')
                     <flux:sidebar.item icon="shopping-bag"
-                        :href="route('store', ['slug' => session('active_tenant_slug') ?? 'default'])"
-                        :current="request()->routeIs('store')" wire:navigate>
+                        :href="route('tenant.store', ['slug' => session('active_tenant_slug') ?? 'default'])"
+                        :current="request()->routeIs('tenant.store')" wire:navigate>
                         {{ __('Store') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('wholesale_sales.view')
-                    <flux:sidebar.item icon="building-office-2" :href="route('wholesaleinterface')"
-                        :current="request()->routeIs('wholesaleinterface')" wire:navigate>
+                    <flux:sidebar.item icon="building-office-2" :href="route('tenant.wholesale-interface')"
+                        :current="request()->routeIs('tenant.wholesale-interface')" wire:navigate>
                         {{ __('Wholesale Sales') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('van_sales.view')
-                    <flux:sidebar.item icon="truck" :href="route('wholesaleorders')"
-                        :current="request()->routeIs('wholesaleorders')" wire:navigate>
+                    <flux:sidebar.item icon="truck" :href="route('tenant.wholesale-orders')"
+                        :current="request()->routeIs('tenant.wholesale-orders')" wire:navigate>
                         {{ __('Van Sales') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('sales_invoices.view')
-                    <flux:sidebar.item icon="document-text" :href="route('wholesale')"
-                        :current="request()->routeIs('wholesale')" wire:navigate>
+                    <flux:sidebar.item icon="document-text" :href="route('tenant.wholesale')"
+                        :current="request()->routeIs('tenant.wholesale')" wire:navigate>
                         {{ __('Sales Invoices') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('purchase_invoices.view')
-                    <flux:sidebar.item icon="arrow-down-tray" :href="route('purchases')"
-                        :current="request()->routeIs('purchases')" wire:navigate>
+                    <flux:sidebar.item icon="arrow-down-tray" :href="route('tenant.purchases')"
+                        :current="request()->routeIs('tenant.purchases')" wire:navigate>
                         {{ __('Purchase Invoices') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('customers.view')
-                    <flux:sidebar.item icon="users" :href="route('customer')" :current="request()->routeIs('customer')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="users" :href="route('tenant.customer')"
+                        :current="request()->routeIs('tenant.customer')" wire:navigate>
                         {{ __('Customers') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('suppliers.view')
-                    <flux:sidebar.item icon="truck" :href="route('supplier')" :current="request()->routeIs('supplier')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="truck" :href="route('tenant.supplier')"
+                        :current="request()->routeIs('tenant.supplier')" wire:navigate>
                         {{ __('Suppliers') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('vouchers.view')
-                    <flux:sidebar.item icon="credit-card" :href="route('payment')"
-                        :current="request()->routeIs('payment')" wire:navigate>
+                    <flux:sidebar.item icon="credit-card" :href="route('tenant.payment')"
+                        :current="request()->routeIs('tenant.payment')" wire:navigate>
                         {{ __('Vouchers') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('backup.view')
-                    <flux:sidebar.item icon="server-stack" :href="route('backup')" :current="request()->routeIs('backup')"
-                        wire:navigate>
+                    <flux:sidebar.item icon="server-stack" :href="route('tenant.backup')"
+                        :current="request()->routeIs('tenant.backup')" wire:navigate>
                         {{ __('Backup') }}
                     </flux:sidebar.item>
                 @endcan
@@ -170,8 +171,9 @@
 
         <!-- أدوات التحكم باللغة والمظهر (Desktop Sidebar) -->
         <div class="px-2 py-3 space-y-2 border-t border-zinc-200 dark:border-zinc-700">
-            <!-- تبديل اللغة باستخدام المكون Single File Component -->
+            <!-- تبديل اللغة -->
             <livewire:layouts::language-switcher />
+
 
             <!-- تبديل الثيم الداكن / الفاتح -->
             <div x-data="{
@@ -232,13 +234,9 @@
 
                 <flux:menu.separator />
 
-                <flux:menu.radio.group>
-                    <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
-                        {{ __('Settings') }}
-                    </flux:menu.item>
-                </flux:menu.radio.group>
-
-                <flux:menu.separator />
+                <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
+                    {{ __('Settings') }}
+                </flux:menu.item <flux:menu.separator />
 
                 <form method="POST" action="{{ route('logout') }}" class="w-full">
                     @csrf
