@@ -759,27 +759,27 @@ new class extends Component {
 
             // عرض المنتجات بشكل جدول مرتب
             // عرض المنتجات بشكل جدول مرتب في سطر واحد
-if (inv.items && inv.items.length) {
-    inv.items.forEach(item => {
-        let priceNum = Number(item.price);
-        let qtyNum = Number(item.quantity);
-        let totalNum = priceNum * qtyNum;
+            if (inv.items && inv.items.length) {
+                inv.items.forEach(item => {
+                    let priceNum = Number(item.price);
+                    let qtyNum = Number(item.quantity);
+                    let totalNum = priceNum * qtyNum;
 
-        // تنسيق الأرقام: إلغاء الأصفار العشرية إذا كان الرقم صحيحاً
-        let totalStr = (totalNum % 1 === 0) ? totalNum.toString() : totalNum.toFixed(2);
-        let priceStr = (priceNum % 1 === 0) ? priceNum.toString() : priceNum.toFixed(2);
-        let qtyStr = (qtyNum % 1 === 0) ? qtyNum.toString() : qtyNum.toFixed(2);
+                    // تنسيق الأرقام: إلغاء الأصفار العشرية إذا كان الرقم صحيحاً
+                    let totalStr = (totalNum % 1 === 0) ? totalNum.toString() : totalNum.toFixed(2);
+                    let priceStr = (priceNum % 1 === 0) ? priceNum.toString() : priceNum.toFixed(2);
+                    let qtyStr = (qtyNum % 1 === 0) ? qtyNum.toString() : qtyNum.toFixed(2);
 
-        // اختصار اسم المنتج لأول كلمتين فقط
-        let shortName = formatProductName(item.name);
+                    // اختصار اسم المنتج لأول كلمتين فقط
+                    let shortName = formatProductName(item.name);
 
-        // دمج التفاصيل: (الاسم الكمية x السعر)
-        let leftDetails = shortName + " (" + qtyStr + "x" + priceStr + ")";
+                    // دمج التفاصيل: (الاسم الكمية x السعر)
+                    let leftDetails = shortName + " (" + qtyStr + "x" + priceStr + ")";
 
-        // طباعة التفاصيل على اليمين والمجموع الكلي محاذى لليسار في نفس السطر
-        text += formatLine(totalStr, leftDetails) + "\n";
-    });
-}
+                    // طباعة التفاصيل على اليمين والمجموع الكلي محاذى لليسار في نفس السطر
+                    text += formatLine(totalStr, leftDetails) + "\n";
+                });
+            }
 
             // ملخص الحساب المالي
             text += "=============================\n";
