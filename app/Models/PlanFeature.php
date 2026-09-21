@@ -6,5 +6,5 @@ use Illuminate\Database\Eloquent\Model;
 
 class PlanFeature extends Model
 {
-   protected $fillable = ['plan_id', 'feature_key', 'value'];
+    protected $fillable = ['plan_id', 'feature_key', 'value'];
 }

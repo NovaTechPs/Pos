@@ -25,22 +25,19 @@ class DailySettlement extends Model
     ];
 
     protected $casts = [
-        'date' => 'date',
+        'settlement_date' => 'date',
         'total_sales' => 'decimal:2',
         'total_returns' => 'decimal:2',
         'total_cash' => 'decimal:2',
         'total_card' => 'decimal:2',
-        'total_expenses' => 'decimal:2',
         'expected_cash' => 'decimal:2',
         'actual_cash' => 'decimal:2',
         'difference' => 'decimal:2',
     ];
 
-    // --- Relationships ---
-
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'closed_by');
     }
 
     public function branch(): BelongsTo

@@ -8,16 +8,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Purchase extends Model
 {
-   use BelongsToTenant, SoftDeletes;
-   protected $guarded = [];
+    use BelongsToTenant, SoftDeletes;
 
-    // علاقة الفاتورة بالمورد
+    protected $guarded = [];
+
     public function supplier()
     {
-        return $this->belongsTo(Supplier::class)->withTrashed();
+        return $this->belongsTo(Party::class, 'supplier_id')->withTrashed();
     }
 
-    // علاقة الفاتورة بعناصرها
     public function items()
     {
         return $this->hasMany(PurchaseItem::class);

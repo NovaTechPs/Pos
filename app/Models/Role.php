@@ -8,14 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 class Role extends Model
 {
     use BelongsToTenant;
-protected $fillable = ['tenant_id', 'name', 'description'];
+
+    protected $fillable = ['tenant_id', 'name', 'description'];
     protected $guarded = [];
 
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
     }
-
 
     public function permissions()
     {

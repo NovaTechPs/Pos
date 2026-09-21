@@ -38,8 +38,6 @@ class Shift extends Model
         'closed_at' => 'datetime',
     ];
 
-    // --- العلاقات (Relationships) ---
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -8,13 +8,25 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-use BelongsToTenant, SoftDeletes;
+    use BelongsToTenant, SoftDeletes;
 
     protected $guarded = [];
 
-    public function items() { return $this->hasMany(OrderItem::class); }
-    public function branch() { return $this->belongsTo(Branch::class); }
-    public function user() { return $this->belongsTo(User::class); }
+    public function items()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function party()
     {
         return $this->belongsTo(Party::class, 'customer_id');

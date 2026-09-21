@@ -2,46 +2,29 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
-/**
- * @property int $id
- * @property string $name
- * @property string $email
- * @property Carbon|null $email_verified_at
- * @property string $password
- * @property string|null $two_factor_secret
- * @property string|null $two_factor_recovery_codes
- * @property Carbon|null $two_factor_confirmed_at
- * @property string|null $remember_token
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
- */
-#[Fillable(['name', 'email', 'password', 'type', 'is_active',
-    'tenant_id', 'branch_id', 'is_owner', 'role_id'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes , TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes, TwoFactorAuthenticatable;
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $fillable = [
+        'name', 'email', 'password', 'type', 'is_active',
+        'tenant_id', 'branch_id', 'is_owner', 'role_id'
+    ];
+
+    protected $hidden = [
+        'password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'
+    ];
+
     protected function casts(): array
     {
         return [
@@ -52,9 +35,6 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
 
-    /**
-     * Get the user's initials
-     */
     public function initials(): string
     {
         $initials = Str::initials($this->name, true);
@@ -66,18 +46,24 @@ class User extends Authenticatable implements PasskeyUser
 
     public function ownedTenants()
     {
-        return $this->hasMany(Tenant::class, 'user_id');
+        return $this->hasMany(Tenant::class, 'owner_id');
     }
 
-    // المتجر الذي يعمل به حالياً (سواء كان موظف أو المالك في الجلسة الحالية)
-  public function tenants()
-{
-    return $this->hasMany(Tenant::class,'owner_id');
-}
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class, 'tenant_id');
+    }
 
-    /**
-     * 1. هل المستخدم مدير المنصة بالكامل (SaaS Admin)؟
-     */
+    public function role()
+    {
+        return $this->belongsTo(Role::class);
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function isSaaSAdmin(): bool
     {
         return $this->type === 'saas_admin';
@@ -86,12 +72,6 @@ class User extends Authenticatable implements PasskeyUser
     public function isTenantOwner(): bool
     {
         return $this->type === 'tenant_user' && $this->is_owner;
-    }
-    // ... باقي إعدادات النموذج
-
-    public function role()
-    {
-        return $this->belongsTo(Role::class);
     }
 
     public function isBranchManager(): bool
@@ -104,45 +84,25 @@ class User extends Authenticatable implements PasskeyUser
         return ! is_null($this->tenant_id) && $this->is_owner === false;
     }
 
-    /**
-     * فحص هل المستخدم كاشير
-     */
     public function isCashier(): bool
     {
         return ! $this->is_owner && $this->role?->name === 'Cashier';
     }
 
-    public function branch()
+    public function hasPermission(string $permissionName): bool
     {
+        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+            return true;
+        }
 
-        return $this->belongsTo(Branch::class);
+        if (!$this->role_id) {
+            return false;
+        }
+
+        if (!$this->relationLoaded('role') || !$this->role->relationLoaded('permissions')) {
+            $this->load('role.permissions');
+        }
+
+        return $this->role ? $this->role->permissions->contains('name', $permissionName) : false;
     }
-
-    /**
-     * التحقق مما إذا كان المستخدم يمتلك صلاحية معينة
-     */
- public function hasPermission(string $permissionName): bool
-{
-    // 1. SaaS Admin لديه كل الصلاحيات
-    if ($this->isSaaSAdmin()) {
-        return true;
-    }
-
-    // 2. مالك المتجر لديه كل صلاحيات متجره
-    if ($this->isTenantOwner()) {
-        return true;
-    }
-
-    // 3. إذا لم يمتلك دوراً، ارفض مباشرة دون الاستعلام من قاعدة البيانات
-    if (!$this->role_id) {
-        return false;
-    }
-
-    // 4. الموظف العادي: فحص الصلاحية مع تحميل العلاقة إذا لم تكن محمّلة
-    if (!$this->relationLoaded('role') || !$this->role->relationLoaded('permissions')) {
-        $this->load('role.permissions');
-    }
-
-    return $this->role ? $this->role->permissions->contains('name', $permissionName) : false;
-}
 }
