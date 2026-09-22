@@ -17,12 +17,22 @@ class User extends Authenticatable implements PasskeyUser
     use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes, TwoFactorAuthenticatable;
 
     protected $fillable = [
-        'name', 'email', 'password', 'type', 'is_active',
-        'tenant_id', 'branch_id', 'is_owner', 'role_id'
+        'name',
+        'email',
+        'password',
+        'type',
+        'is_active',
+        'tenant_id',
+        'branch_id',
+        'is_owner',
+        'role_id'
     ];
 
     protected $hidden = [
-        'password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'
+        'password',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+        'remember_token'
     ];
 
     protected function casts(): array
@@ -40,7 +50,7 @@ class User extends Authenticatable implements PasskeyUser
         $initials = Str::initials($this->name, true);
 
         return Str::length($initials) > 1
-            ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
+            ? Str::substr($initials, 0, 1) . Str::substr($initials, -1)
             : $initials;
     }
 
@@ -49,9 +59,9 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Tenant::class, 'owner_id');
     }
 
-    public function tenant()
+    public function tenants()
     {
-        return $this->belongsTo(Tenant::class, 'tenant_id');
+        return $this->hasMany(Tenant::class, 'owner_id');
     }
 
     public function role()

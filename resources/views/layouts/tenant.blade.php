@@ -4,23 +4,6 @@
 <head>
     @include('partials.head')
 
-    <!-- حماية ثبات الوضع الليلي عند التحديث وتنقلات Livewire -->
-    <script>
-        function applyTheme() {
-            const theme = localStorage.getItem('theme');
-            if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        }
-
-        // تطبيق الوضع عند تحميل الصفحة لأول مرة
-        applyTheme();
-
-        // إعادة تطبيق الوضع فوراً بعد كل تنقل عبر wire:navigate أو تحديث Livewire
-        document.addEventListener('livewire:navigated', applyTheme);
-    </script>
 </head>
 
 <body class="min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
@@ -167,37 +150,6 @@
         <div class="px-2 py-3 space-y-2 border-t border-zinc-200 dark:border-zinc-700">
             <!-- تبديل اللغة -->
             <livewire:layouts::language-switcher />
-
-
-            <!-- تبديل الثيم الداكن / الفاتح -->
-            <div x-data="{
-                darkMode: localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches),
-                toggle() {
-                    this.darkMode = !this.darkMode;
-                    if (this.darkMode) {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('theme', 'dark');
-                    } else {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('theme', 'light');
-                    }
-                }
-            }">
-                <flux:button @click="toggle()" variant="subtle" class="w-full justify-start">
-                    <template x-if="darkMode">
-                        <div class="flex items-center gap-2">
-                            <flux:icon name="sun" class="size-4" />
-                            <span>{{ __('Light Mode') }}</span>
-                        </div>
-                    </template>
-                    <template x-if="!darkMode">
-                        <div class="flex items-center gap-2">
-                            <flux:icon name="moon" class="size-4" />
-                            <span>{{ __('Dark Mode') }}</span>
-                        </div>
-                    </template>
-                </flux:button>
-            </div>
         </div>
 
         <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />

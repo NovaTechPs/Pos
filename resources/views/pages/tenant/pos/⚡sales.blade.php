@@ -201,14 +201,22 @@ new class extends Component {
         return $user->branch_id ?? $this->selectedBranchId;
     }
 
-    public function checkActiveShift(): void
-    {
-        $tenantId = session('active_tenant_id');
-        $userId = Auth::id();
+public function checkActiveShift(): void
+{
+    $tenantId = session('active_tenant_id');
+    $branchId = $this->getActiveBranchId();
 
-        $this->activeShift = Shift::where('tenant_id', $tenantId)->where('user_id', $userId)->where('status', 'open')->first();
+    $this->activeShift = null;
+
+    if (!$tenantId || !$branchId) {
+        return;
     }
 
+    $this->activeShift = Shift::where('tenant_id', $tenantId)
+        ->where('branch_id', $branchId)
+        ->where('status', 'open')
+        ->first();
+}
     public function triggerOpenShiftModal(): void
     {
         $this->opening_cash = 0;
@@ -925,7 +933,7 @@ new class extends Component {
     <div x-data x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
         x-on:keydown.window.f2.prevent="$wire.holdInvoice()" x-on:keydown.window.f3.prevent="$wire.checkout()"
         x-on:keydown.window.f6.prevent="$wire.printReceipt()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
-        x-on:keydown.window.f10.prevent="$wire.set('showProductsModal', !$wire.showProductsModal)" class="h-full">
+        x-on:keydown.window.f8.prevent="$wire.set('showProductsModal', !$wire.showProductsModal)" class="h-full">
         <div class="grid grid-cols-12 gap-2 h-full">
 
             <!-- ==================== قسم الفاتورة والحسابات ==================== -->
@@ -1501,114 +1509,114 @@ new class extends Component {
         /* ========================================================
        عزل الطباعة الآمن بنسبة 100% (حل مشكلة الفاتورة البيضاء)
        ======================================================== */
-      @media print {
+        @media print {
 
-    @page {
-        size: 80mm auto;
-        margin: 0;
-    }
+            @page {
+                size: 80mm auto;
+                margin: 0;
+            }
 
-    html,
-    body {
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-    }
+            html,
+            body {
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+            }
 
-    body {
-        visibility: hidden !important;
-    }
+            body {
+                visibility: hidden !important;
+            }
 
-    #receipt-print-area,
-    #receipt-print-area * {
-        visibility: visible !important;
-    }
+            #receipt-print-area,
+            #receipt-print-area * {
+                visibility: visible !important;
+            }
 
-    #receipt-print-area {
-        position: absolute !important;
+            #receipt-print-area {
+                position: absolute !important;
 
-        /* التوسيط */
-        left: 50% !important;
-        top: 0 !important;
-        transform: translateX(-50%) !important;
+                /* التوسيط */
+                left: 50% !important;
+                top: 0 !important;
+                transform: translateX(-50%) !important;
 
-        width: 80mm !important;
-        max-width: 80mm !important;
+                width: 80mm !important;
+                max-width: 80mm !important;
 
-        margin: 0 !important;
-        padding: 2mm 3mm !important;
+                margin: 0 !important;
+                padding: 2mm 3mm !important;
 
-        box-sizing: border-box !important;
+                box-sizing: border-box !important;
 
-        background: #fff !important;
+                background: #fff !important;
 
-        direction: rtl !important;
-        text-align: center !important;
+                direction: rtl !important;
+                text-align: center !important;
 
-        font-family: 'Cairo', Arial, sans-serif !important;
-        font-size: 12px !important;
-        line-height: 1.25 !important;
-    }
+                font-family: 'Cairo', Arial, sans-serif !important;
+                font-size: 12px !important;
+                line-height: 1.25 !important;
+            }
 
-    .receipt-box {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 auto !important;
-        padding: 0 !important;
-        box-sizing: border-box !important;
-    }
+            .receipt-box {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+            }
 
-    .items-table {
-        width: 100% !important;
-        table-layout: fixed !important;
-    }
+            .items-table {
+                width: 100% !important;
+                table-layout: fixed !important;
+            }
 
-    .items-table th,
-    .items-table td {
-        padding: 3px 2px !important;
-        font-size: 11px !important;
-    }
+            .items-table th,
+            .items-table td {
+                padding: 3px 2px !important;
+                font-size: 11px !important;
+            }
 
-    .items-table .item-name {
-        font-size: 11px !important;
-        word-break: break-word !important;
-    }
+            .items-table .item-name {
+                font-size: 11px !important;
+                word-break: break-word !important;
+            }
 
-    .header .store-title {
-        font-size: 20px !important;
-    }
+            .header .store-title {
+                font-size: 20px !important;
+            }
 
-    .header .notice {
-        font-size: 10px !important;
-    }
+            .header .notice {
+                font-size: 10px !important;
+            }
 
-    .meta-info {
-        font-size: 10px !important;
-    }
+            .meta-info {
+                font-size: 10px !important;
+            }
 
-    .info-box {
-        font-size: 11px !important;
-        padding: 3px 4px !important;
-    }
+            .info-box {
+                font-size: 11px !important;
+                padding: 3px 4px !important;
+            }
 
-    .net-box {
-        font-size: 12px !important;
-        padding: 4px !important;
-    }
+            .net-box {
+                font-size: 12px !important;
+                padding: 4px !important;
+            }
 
-    .net-value {
-        font-size: 16px !important;
-    }
+            .net-value {
+                font-size: 16px !important;
+            }
 
-    .system-name {
-        font-size: 10px !important;
-    }
+            .system-name {
+                font-size: 10px !important;
+            }
 
-    .print-time {
-        font-size: 8px !important;
-    }
-}
+            .print-time {
+                font-size: 8px !important;
+            }
+        }
     </style>
 
     <!-- مكتبة الباركود والسكربت الخاص بتجربتك -->

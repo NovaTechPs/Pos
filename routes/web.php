@@ -24,36 +24,72 @@ Route::middleware(['auth', 'verified'])
     ->prefix('dashboard')
     ->name('tenant.')
     ->group(function () {
-        // الصفحة الرئيسية للمتجر
-        Route::view('/', 'pages.tenant.dashboard')->name('dashboard');
 
-        // إدارة النظام والعملاء والبروفايل
-        Route::livewire('/user', 'pages::tenant.branch')->name('branch');
-        Route::livewire('/role', 'pages::tenant.role')->name('role');
-        Route::livewire('/employees', 'pages::tenant.employees')->name('employees');
-        Route::livewire('/customer', 'pages::tenant.customer')->name('customer');
+        // Dashboard
+        Route::view('/', 'pages.tenant.dashboard')
+            ->name('dashboard');
 
-        // المبيعات ونقطة البيع (POS)
-        Route::livewire('/pos', 'pages::tenant.pos')->name('pos');
-        Route::livewire('/product', 'pages::tenant.product')->name('product');
-        Route::livewire('/purchase-invoices', 'pages::tenant.purchase-invoice')->name('purchase-invoices');
-        Route::livewire('/sale-invoices', 'pages::tenant.sale-invoice')->name('sale-invoices');
-        Route::livewire('/wholesale-sales', 'pages::tenant.wholesale-sales')->name('wholesale-sales');
-        Route::livewire('/wholesale-invoices', 'pages::tenant.wholesale-invoices')->name('wholesale-invoices');
+        // Branches / Employees / Roles / Customers
+        Route::livewire('/branch', 'pages::tenant.branches.index')
+            ->name('branch');
 
-        // المتجر الإلكتروني والطلبات
-        Route::livewire('/store/{slug}', 'pages::tenant.store')->name('store');
-        Route::livewire('/online-orders', 'pages::tenant.online-orders')->name('online-orders');
+        Route::livewire('/role', 'pages::tenant.roles.index')
+            ->name('role');
 
-        // الحسابات والمالية والتقارير
-        Route::livewire('/analytics', 'pages::tenant.analytics')->name('analytics');
-        Route::livewire('/daily-settlement', 'pages::tenant.daily-settlement-component')->name('daily-settlement');
-        Route::livewire('/payment', 'pages::tenant.payment')->name('payment');
-        Route::livewire('/excel', 'pages::tenant.excel')->name('excel');
+        Route::livewire('/employees', 'pages::tenant.employees.index')
+            ->name('employees');
 
-        // أدوات وطباعة
-        Route::livewire('/backup', 'pages::tenant.backup')->name('backup');
+        Route::livewire('/customer', 'pages::tenant.customers.index')
+            ->name('customer');
+
+        // Categories / Products
+        Route::livewire('/category', 'pages::tenant.categories.index')
+            ->name('category');
+
+        Route::livewire('/product', 'pages::tenant.products.index')
+            ->name('product');
+
+        // POS
+        Route::livewire('/pos', 'pages::tenant.pos.sales')
+            ->name('pos');
+
+        // Sales
+        Route::livewire('/sale-invoices', 'pages::tenant.sales.invoices')
+            ->name('sale-invoices');
+
+        // Wholesale
+        Route::livewire('/wholesale-sales', 'pages::tenant.wholesale.sales')
+            ->name('wholesale-sales');
+
+        Route::livewire('/wholesale-invoices', 'pages::tenant.wholesale.invoices')
+            ->name('wholesale-invoices');
+
+        // Purchases
+        Route::livewire('/purchase-invoices', 'pages::tenant.purchases.invoices')
+            ->name('purchase-invoices');
+
+        // Online Store
+        Route::livewire('/store/{slug}', 'pages::tenant.stores.index')
+            ->name('store');
+
+        Route::livewire('/online-orders', 'pages::tenant.orders.online')
+            ->name('online-orders');
+
+        // Reports
+        Route::livewire('/analytics', 'pages::tenant.reports.analytics')
+            ->name('analytics');
+
+        // Accounting
+        Route::livewire('/daily-settlement', 'pages::tenant.accounting.daily-settlement')
+            ->name('daily-settlement');
+        Route::livewire('/payment', 'pages::tenant.accounting.payment')
+            ->name('payment');
+
+        // System
+        Route::livewire('/excel', 'pages::tenant.system.excel')
+            ->name('excel');
+
+        Route::livewire('/backup', 'pages::tenant.system.backup')
+            ->name('backup');
     });
-
-
 require __DIR__ . '/settings.php';

@@ -24,7 +24,7 @@ class Tenant extends Model
 
     public function users()
     {
-        return $this->hasMany(User::class, 'tenant_id');
+        return $this->belongsToMany(User::class);
     }
 
     public function branches()
