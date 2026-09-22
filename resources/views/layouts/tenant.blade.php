@@ -109,29 +109,29 @@
                 @endcan
 
                 @can('wholesale_sales.view')
-                    <flux:sidebar.item icon="building-office-2" :href="route('tenant.wholesale-interface')"
-                        :current="request()->routeIs('tenant.wholesale-interface')" wire:navigate>
+                    <flux:sidebar.item icon="building-office-2" :href="route('tenant.wholesale-sales')"
+                        :current="request()->routeIs('tenant.wholesale-sales')" wire:navigate>
                         {{ __('Wholesale Sales') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('van_sales.view')
-                    <flux:sidebar.item icon="truck" :href="route('tenant.wholesale-orders')"
-                        :current="request()->routeIs('tenant.wholesale-orders')" wire:navigate>
+                    <flux:sidebar.item icon="truck" :href="route('tenant.wholesale-invoices')"
+                        :current="request()->routeIs('tenant.wholesale-invoices')" wire:navigate>
                         {{ __('Van Sales') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('sales_invoices.view')
-                    <flux:sidebar.item icon="document-text" :href="route('tenant.wholesale')"
-                        :current="request()->routeIs('tenant.wholesale')" wire:navigate>
+                    <flux:sidebar.item icon="document-text" :href="route('tenant.sale-invoices')"
+                        :current="request()->routeIs('tenant.sale-invoices')" wire:navigate>
                         {{ __('Sales Invoices') }}
                     </flux:sidebar.item>
                 @endcan
 
                 @can('purchase_invoices.view')
-                    <flux:sidebar.item icon="arrow-down-tray" :href="route('tenant.purchases')"
-                        :current="request()->routeIs('tenant.purchases')" wire:navigate>
+                    <flux:sidebar.item icon="arrow-down-tray" :href="route('tenant.purchase-invoices')"
+                        :current="request()->routeIs('tenant.purchase-invoices')" wire:navigate>
                         {{ __('Purchase Invoices') }}
                     </flux:sidebar.item>
                 @endcan
