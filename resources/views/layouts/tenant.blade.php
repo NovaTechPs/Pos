@@ -143,12 +143,6 @@
                     </flux:sidebar.item>
                 @endcan
 
-                @can('suppliers.view')
-                    <flux:sidebar.item icon="truck" :href="route('tenant.supplier')"
-                        :current="request()->routeIs('tenant.supplier')" wire:navigate>
-                        {{ __('Suppliers') }}
-                    </flux:sidebar.item>
-                @endcan
 
                 @can('vouchers.view')
                     <flux:sidebar.item icon="credit-card" :href="route('tenant.payment')"
