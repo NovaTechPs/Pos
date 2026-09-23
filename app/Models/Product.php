@@ -40,8 +40,16 @@ class Product extends Model
     public function branches()
     {
         return $this->belongsToMany(Branch::class, 'branch_products')
-                    ->withPivot('quantity', 'alert_quantity', 'retail_price', 'wholesale_price')
-                    ->withTimestamps();
+            ->withPivot(
+                'stock_quantity',
+                'alert_quantity',
+                'retail_price',
+                'wholesale_price',
+                'offer_quantity',
+                'offer_price',
+                'min_wholesale_quantity'
+            )
+            ->withTimestamps();
     }
 
     public function priceForBranch($branchId)
