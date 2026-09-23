@@ -77,7 +77,7 @@ new #[Title('Profile settings')] class extends Component {
 }; ?>
 
 <section class="w-full">
-    @include('partials.settings-heading')
+    @include('pages.settings.partials.settings-heading')
 
     <flux:heading class="sr-only">{{ __('Profile settings') }}</flux:heading>
 

@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ app()->getLocale() == 'ar' ? 'rtl' : 'ltr' }}">
 
 <head>
-    @include('partials.head')
+    @include('layouts.partials.head')
 
 </head>
 
@@ -149,7 +149,7 @@
         <!-- أدوات التحكم باللغة والمظهر (Desktop Sidebar) -->
         <div class="px-2 py-3 space-y-2 border-t border-zinc-200 dark:border-zinc-700">
             <!-- تبديل اللغة -->
-            <livewire:layouts::language-switcher />
+            <livewire:layouts::partials.language-switcher />
         </div>
 
         <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
