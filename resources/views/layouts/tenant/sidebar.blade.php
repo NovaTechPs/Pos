@@ -16,8 +16,9 @@
 
 
     {{-- Tenant Switcher --}}
-    <livewire:pages::tenant.tenant-switcher />
-
+    {{-- <livewire:pages::tenant.tenant-switcher />
+     --}}
+<livewire:tenant-switcher />
 
     {{-- Main Navigation --}}
     <flux:sidebar.nav>
