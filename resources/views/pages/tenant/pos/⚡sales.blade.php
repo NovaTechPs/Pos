@@ -1200,7 +1200,7 @@ new class extends Component {
 
         return $this->view([
             'branches' => $branches,
-        ])->layout('layouts::tenant');
+        ])->layout('layouts::pos');
     }
 };
 ?>

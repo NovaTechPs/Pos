@@ -2,9 +2,9 @@
 
 namespace App\Providers;
 
-use App\Models\Permission;
 use Carbon\CarbonImmutable;
 use App\Models\User;
+use App\Models\Product;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -30,32 +30,26 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-
-    try {
-        Permission::all()->each(function ($permission) {
-            Gate::define($permission->name, function ($user) use ($permission) {
-                return $user->hasPermission($permission->name);
-            });
-        });
-    } catch (\Exception $e) {
-        // لتجنب المشاكل عند تشغيل الـ Migrations لأول مرة
-    }
-
         view()->composer('*', function () {
             if (Session::has('locale')) {
                 App::setLocale(Session::get('locale'));
             }
         });
+
         $this->configureDefaults();
+
         if (config('app.env') !== 'local' || request()->header('X-Forwarded-Proto') === 'https') {
             URL::forceScheme('https');
         }
+
         Schema::defaultStringLength(191);
-        // تعريف فحص ديناميكي لكافة الصلاحيات
+
+        // فحص الصلاحيات بشكل ديناميكي
         Gate::before(function (User $user, string $ability) {
             return $user->hasPermission($ability) ? true : null;
         });
 
+        // Gate للتحقق من إمكانية الوصول إلى نظام POS
         Gate::define('access-pos', function (User $user) {
             return $user->tenant && $user->tenant->hasFeature('pos_system');
         });
@@ -63,6 +57,7 @@ class AppServiceProvider extends ServiceProvider
         // Gate للتحقق من إمكانية إضافة منتج جديد بناءً على الحد الأقصى للمتجر
         Gate::define('create-product', function (User $user) {
             $tenant = $user->tenant;
+
             if (!$tenant || !$tenant->hasFeature('products_limit')) {
                 return false;
             }
@@ -94,11 +89,11 @@ class AppServiceProvider extends ServiceProvider
         Password::defaults(
             fn(): ?Password => app()->isProduction()
                 ? Password::min(12)
-                ->mixedCase()
-                ->letters()
-                ->numbers()
-                ->symbols()
-                ->uncompromised()
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised()
                 : null,
         );
     }

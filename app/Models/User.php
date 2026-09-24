@@ -99,20 +99,22 @@ class User extends Authenticatable implements PasskeyUser
         return ! $this->is_owner && $this->role?->name === 'Cashier';
     }
 
-    public function hasPermission(string $permissionName): bool
-    {
-        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
-            return true;
-        }
 
-        if (!$this->role_id) {
-            return false;
-        }
-
-        if (!$this->relationLoaded('role') || !$this->role->relationLoaded('permissions')) {
-            $this->load('role.permissions');
-        }
-
-        return $this->role ? $this->role->permissions->contains('name', $permissionName) : false;
+public function hasPermission(string $permissionName): bool
+{
+    if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+        return true;
     }
+
+    if (!$this->role_id) {
+        return false;
+    }
+
+    return $this->role
+        ->permissions()
+        ->where('name', $permissionName)
+        ->exists();
+}
+
+
 }
