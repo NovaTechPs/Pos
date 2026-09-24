@@ -1,4 +1,4 @@
-<x-layouts::saas :title="__('SaaS Dashboard')">
+<x-layouts::admin :title="__('SaaS Dashboard')">
     <flux:main>
         @php
             $stats = [
@@ -112,4 +112,4 @@
 
         </div>
     </flux:main>
-</x-layouts::saas>
+</x-layouts::admin>
