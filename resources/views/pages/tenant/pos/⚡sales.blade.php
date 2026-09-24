@@ -18,6 +18,7 @@ new class extends Component {
     public string $barcode = '';
     public array $cart = [];
     public $paid_amount = 0;
+    public string $payment_method = 'cash';
     public string $notes = '';
     public string $inlineSearchQuery = '';
     public array $inlineSearchResults = [];
@@ -153,7 +154,7 @@ new class extends Component {
             ->map(function (Product $product) {
                 $branchProduct = $product->branchProducts->first();
                 $product->setAttribute('retail_price', (float) ($branchProduct?->retail_price ?? 0));
-                $product->setAttribute('stock_quantity', (float) ($branchProduct?->quantity ?? 0));
+                $product->setAttribute('stock_quantity', (float) ($branchProduct?->stock_quantity ?? 0));
                 $product->setAttribute('barcode_value', $product->barcodes->first()?->barcode);
                 return $product;
             })
@@ -210,7 +211,7 @@ new class extends Component {
             ->map(function (Product $product) {
                 $branchProduct = $product->branchProducts->first();
                 $product->setAttribute('retail_price', (float) ($branchProduct?->retail_price ?? 0));
-                $product->setAttribute('stock_quantity', (float) ($branchProduct?->quantity ?? 0));
+                $product->setAttribute('stock_quantity', (float) ($branchProduct?->stock_quantity ?? 0));
                 $product->setAttribute('barcode_value', $product->barcodes->first()?->barcode);
                 return $product;
             });
@@ -289,14 +290,16 @@ new class extends Component {
             return;
         }
 
-        $sales = (float) Order::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'pos')->sum('total');
+                $cashSales = (float) \App\Models\Payment::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'receipt')->where('payment_method', 'cash')->sum('amount');
+        $cashReturns = (float) \App\Models\Payment::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
 
-        $returns = (float) Order::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'return')->sum('total');
+        $sales = (float) Order::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'pos')->sum('total');
+        $returns = abs((float) Order::query()->where('tenant_id', $this->tenantId())->where('shift_id', $this->activeShift->id)->where('type', 'return')->sum('total'));
 
         $this->shift_opening_cash = (float) $this->activeShift->opening_cash;
         $this->shift_total_sales = $sales;
         $this->shift_total_returns = abs($returns);
-        $this->shift_expected_cash = $this->shift_opening_cash + $this->shift_total_sales - $this->shift_total_returns;
+        $this->shift_expected_cash = $this->shift_opening_cash + $cashSales - $cashReturns;
         $this->actual_cash = $this->shift_expected_cash;
         $this->showCloseShiftModal = true;
     }
@@ -360,6 +363,7 @@ new class extends Component {
             'id' => count($this->heldInvoices) + 1,
             'cart' => $this->cart,
             'paid_amount' => $this->paid_amount,
+            'payment_method' => $this->payment_method,
             'discount_amount' => $this->discount_amount,
             'discount_type' => $this->discount_type,
             'custom_final_total' => $this->custom_final_total,
@@ -381,6 +385,7 @@ new class extends Component {
 
         $held = $this->heldInvoices[$index];
         $this->cart = $held['cart'];
+        $this->payment_method = $held['payment_method'] ?? 'cash';
         $this->paid_amount = $held['paid_amount'];
         $this->discount_amount = $held['discount_amount'] ?? 0;
         $this->discount_type = $held['discount_type'] ?? 'fixed';
@@ -482,6 +487,7 @@ new class extends Component {
         }
 
         $this->paid_amount = (float) $invoice->paid_amount;
+        $this->payment_method = 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = 'fixed';
         $this->custom_final_total = null;
@@ -690,6 +696,7 @@ new class extends Component {
         $this->cart = [];
         $this->receipt = [];
         $this->paid_amount = 0;
+        $this->payment_method = 'cash';
         $this->discount_amount = 0;
         $this->discount_type = 'fixed';
         $this->custom_final_total = null;
@@ -888,6 +895,7 @@ new class extends Component {
         $this->errorMessage = null;
         $this->successMessage = null;
 
+        $this->checkActiveShift();
         if (!$this->activeShift) {
             $this->errorMessage = 'لا يمكنك إجراء عملية بيع بدون فتح شيفت أولاً.';
             $this->showOpenShiftModal = true;
@@ -908,14 +916,20 @@ new class extends Component {
             return null;
         }
 
-        $shiftId = $this->activeShift->id;
+        if (!in_array($this->payment_method, ['cash', 'card', 'bank_transfer', 'cheque'], true)) {
+            $this->errorMessage = 'طريقة الدفع المحددة غير صالحة.';
+            return null;
+        }
+
         $invoiceType = $this->total < 0 ? 'return' : 'pos';
-        $invoiceNumber = $this->makeInvoiceNumber($invoiceType);
+        $shiftId = (int) $this->activeShift->id;
+        $invoiceNumber = $this->makeInvoiceNumber($invoiceType, $tenantId);
 
         try {
             $order = DB::transaction(function () use ($tenantId, $branchId, $user, $shiftId, $invoiceType, $invoiceNumber) {
                 $validatedItems = [];
                 $subtotal = 0.0;
+                $totalCost = 0.0;
 
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
@@ -927,26 +941,28 @@ new class extends Component {
                     }
 
                     $product = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->first();
-
                     if (!$product) {
                         throw new \RuntimeException('أحد المنتجات لم يعد متاحاً في هذا المتجر.');
                     }
 
-                    $branchProduct = BranchProduct::query()->where('branch_id', $branchId)->where('product_id', $productId)->lockForUpdate()->first();
+                    $branchProduct = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $productId)
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$branchProduct) {
                         throw new \RuntimeException("المنتج {$product->name} غير مرتبط بالفرع الحالي.");
                     }
 
-                    $costPrice = (float) ($product->cost_price ?? 0);
+                    $costPrice = max(0, (float) ($rawItem['cost_price'] ?? $product->cost_price ?? 0));
                     $lineTotal = $this->roundUpToNearestHalf($price * $quantity);
                     $subtotal += $lineTotal;
+                    $totalCost += $costPrice * $quantity;
 
-                    if ($quantity > 0) {
-                        $available = (float) ($branchProduct->quantity ?? 0);
-                        if ($available < $quantity) {
-                            throw new \RuntimeException("الكمية المتوفرة من المنتج {$product->name} غير كافية.");
-                        }
+                    if ($quantity > 0 && (float) $branchProduct->stock_quantity < $quantity) {
+                        throw new \RuntimeException("الكمية المتوفرة من المنتج {$product->name} غير كافية. المتوفر: {$branchProduct->stock_quantity}.");
                     }
 
                     $validatedItems[] = [
@@ -969,26 +985,42 @@ new class extends Component {
                     }
                 }
 
-                $paid = (float) $this->paid_amount;
-                if ($paid == 0.0 && $total >= 0) {
-                    $paid = $total;
+                $requiredPayment = abs($total);
+                $paid = max(0, (float) $this->paid_amount);
+                if ($paid <= 0 && $requiredPayment > 0) {
+                    $paid = $requiredPayment;
                 }
+
+                if ($paid > $requiredPayment) {
+                    $paid = $requiredPayment;
+                }
+
+                $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment
+                    ? 'paid'
+                    : ($paid > 0 ? 'partial' : 'unpaid');
 
                 $order = Order::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
                     'shift_id' => $shiftId,
-                    'user_id' => $user->id,
+                    'created_by' => $user->id,
                     'customer_id' => null,
                     'invoice_number' => $invoiceNumber,
                     'type' => $invoiceType,
+                    'status' => 'completed',
                     'subtotal' => $subtotal,
+                    'tax_amount' => 0,
+                    'discount_type' => $this->discount_type,
+                    'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, (float) $this->discount_amount)) : 0,
                     'discount' => $discount,
                     'total' => $total,
+                    'total_cost' => $totalCost,
+                    'total_profit' => $total - $totalCost,
                     'paid_amount' => $paid,
-                    'payment_status' => 'paid',
+                    'payment_status' => $paymentStatus,
                     'notes' => $this->notes ?: null,
                     'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
 
                 foreach ($validatedItems as $item) {
@@ -1002,24 +1034,43 @@ new class extends Component {
                         'total_price' => $item['total_price'],
                     ]);
 
-                    $branchQuery = BranchProduct::query()->where('branch_id', $branchId)->where('product_id', $item['product_id']);
+                    $branchProductQuery = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $item['product_id']);
 
                     if ($item['quantity'] > 0) {
-                        $branchQuery->decrement('quantity', $item['quantity']);
+                        $branchProductQuery->decrement('stock_quantity', $item['quantity']);
                     } else {
-                        $branchQuery->increment('quantity', abs($item['quantity']));
+                        $branchProductQuery->increment('stock_quantity', abs($item['quantity']));
                     }
+                }
+
+                if ($paid > 0) {
+                    \App\Models\Payment::create([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $branchId,
+                        'shift_id' => $shiftId,
+                        'created_by' => $user->id,
+                        'type' => $invoiceType === 'return' ? 'payment' : 'receipt',
+                        'voucher_number' => 'PAY-' . $order->invoice_number,
+                        'amount' => $paid,
+                        'payment_method' => $this->payment_method,
+                        'order_id' => $order->id,
+                        'notes' => $this->notes ?: null,
+                        'payment_date' => now(),
+                    ]);
                 }
 
                 return $order;
             });
 
-
             $this->clearCartState();
             $this->checkActiveShift();
             $this->loadQuickProducts();
-
-            $this->successMessage = $invoiceType === 'return' ? 'تمت عملية الإرجاع وحفظ الفاتورة بنجاح.' : 'تمت عملية البيع وحفظ الفاتورة بنجاح.';
+            $this->successMessage = $invoiceType === 'return'
+                ? 'تمت عملية الإرجاع وحفظ الفاتورة وتحديث المخزون بنجاح.'
+                : 'تمت عملية البيع وحفظ الفاتورة وتحديث المخزون بنجاح.';
 
             return $order;
         } catch (\Throwable $e) {
@@ -1027,19 +1078,25 @@ new class extends Component {
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
                 'user_id' => $user->id,
+                'shift_id' => $shiftId,
                 'message' => $e->getMessage(),
-
             ]);
 
-            $this->errorMessage = $e->getMessage();//'تعذر حفظ الفاتورة. يرجى المحاولة مرة أخرى.';
+            $this->errorMessage = app()->environment('local')
+                ? 'تعذر حفظ الفاتورة: ' . $e->getMessage()
+                : 'تعذر حفظ الفاتورة. يرجى المحاولة مرة أخرى.';
             return null;
         }
     }
 
-    private function makeInvoiceNumber(string $type): string
+    private function makeInvoiceNumber(string $type, int $tenantId): string
     {
         $prefix = $type === 'return' ? 'RET-' : 'POS-';
-        return $prefix . now()->format('YmdHis') . '-' . random_int(100, 999);
+        do {
+            $number = $prefix . now()->format('YmdHis') . '-' . random_int(1000, 9999);
+        } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
+
+        return $number;
     }
 
     private function prepareReceiptFromOrder(Order $order): void
@@ -1137,51 +1194,60 @@ new class extends Component {
 };
 ?>
 
+<flux:main dir="rtl" class="h-[calc(100vh-4rem)] bg-slate-100 font-sans select-none overflow-hidden p-3 md:p-4">
+    <div x-data x-cloak
+        x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
+        x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
+        x-on:keydown.window.f3.prevent="$wire.checkout()"
+        x-on:keydown.window.f4.prevent="$wire.clearCart()"
+        x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()"
+        x-on:keydown.window.f10.prevent="$wire.set('showProductsModal', !$wire.showProductsModal)"
+        class="h-full flex flex-col gap-3 min-h-0">
 
-<flux:main class="h-[calc(100vh-4rem)] p-2 bg-slate-100 font-sans select-none overflow-hidden">
-    <div x-data x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
-        x-on:keydown.window.f2.prevent="$wire.holdInvoice()" x-on:keydown.window.f3.prevent="$wire.checkout()"
-        x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()" x-on:keydown.window.f4.prevent="$wire.clearCart()"
-        x-on:keydown.window.f10.prevent="$wire.set('showProductsModal', !$wire.showProductsModal)" class="h-full">
-        <div class="grid grid-cols-12 gap-2 h-full">
+        @include('pages.tenant.pos.partials.toolbar')
 
+        @if ($errorMessage)
+            <div class="shrink-0 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 flex items-center justify-between gap-3 text-xs font-black shadow-sm">
+                <div class="flex items-center gap-2"><span class="w-7 h-7 rounded-lg bg-rose-100 flex items-center justify-center">!</span><span>{{ $errorMessage }}</span></div>
+                <button wire:click="$set('errorMessage', null)" class="w-7 h-7 rounded-lg hover:bg-rose-100">✕</button>
+            </div>
+        @endif
 
-            <!-- ==================== قسم الفاتورة والحسابات (على اليسار) ==================== -->
-            <div class="col-span-12 lg:col-span-12 flex flex-col h-full space-y-2 min-h-0">
-            @include('pages.tenant.pos.partials.toolbar')
+        @if ($successMessage)
+            <div class="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-3 flex items-center justify-between gap-3 text-xs font-black shadow-sm">
+                <div class="flex items-center gap-2"><span class="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">✓</span><span>{{ $successMessage }}</span></div>
+                <button wire:click="$set('successMessage', null)" class="w-7 h-7 rounded-lg hover:bg-emerald-100">✕</button>
+            </div>
+        @endif
 
-                @if ($errorMessage)
-                    <div
-                        class="bg-rose-50 border border-rose-200 text-rose-700 p-2 rounded-lg text-xs font-semibold flex items-center justify-between">
-                        <span>{{ $errorMessage }}</span>
-                        <button wire:click="$set('errorMessage', null)" class="text-rose-500 font-bold">✕</button>
-                    </div>
-                @endif
-                @if ($successMessage)
-                    <div
-                        class="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2 rounded-lg text-xs font-semibold flex items-center justify-between">
-                        <span>{{ $successMessage }}</span>
-                        <button wire:click="$set('successMessage', null)" class="text-emerald-600 font-bold">✕</button>
-                    </div>
-                @endif
+        @if ($this->has_below_cost_item)
+            <div class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-2.5 flex items-center justify-between text-xs font-black shadow-sm">
+                <span>⚠ يوجد منتج واحد أو أكثر بسعر بيع أقل من التكلفة.</span>
+                <button wire:click="openCostModal" class="text-amber-700 underline">عرض التكلفة</button>
+            </div>
+        @endif
 
-                @if ($this->has_below_cost_item)
-                    <div
-                        class="bg-rose-100 border-l-4 border-rose-600 text-rose-900 p-2 rounded-lg text-xs font-bold flex items-center justify-between shadow-sm animate-pulse">
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm">⚠️</span>
-                            <span>تنبيه: يوجد منتج (أو أكثر) بسعر بيع أقل من سعر التكلفة!</span>
-                        </div>
-                    </div>
-                @endif
-
-
+        <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <section class="lg:col-span-8 min-h-0 flex flex-col">
                 @include('pages.tenant.pos.partials.cart')
+            </section>
 
+            <aside class="lg:col-span-4 min-h-0 flex flex-col gap-3 overflow-y-auto">
                 @include('pages.tenant.pos.partials.payment')
 
-            </div>
+                <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+                    <div class="flex items-center justify-between">
+                        <div><div class="text-xs font-black text-slate-800">حالة الصندوق</div><div class="text-[10px] text-slate-400 mt-1">متابعة سريعة للشيفت الحالي</div></div>
+                        @if($activeShift)<span class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black">مفتوح</span>@else<span class="px-2 py-1 rounded-lg bg-rose-50 text-rose-700 text-[10px] font-black">مغلق</span>@endif
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-3">
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-[9px] text-slate-400 font-bold">الرصيد الافتتاحي</div><div class="mt-1 font-mono font-black text-slate-800">{{ $activeShift ? number_format((float)$activeShift->opening_cash,2) : '0.00' }}</div></div>
+                        <div class="rounded-xl bg-slate-50 p-3"><div class="text-[9px] text-slate-400 font-bold">رقم الشيفت</div><div class="mt-1 font-mono font-black text-slate-800">{{ $activeShift?->id ?? '—' }}</div></div>
+                    </div>
+                </div>
+            </aside>
         </div>
+
         @include('pages.tenant.pos.partials.products-modal')
         @include('pages.tenant.pos.partials.shift-open-modal')
         @include('pages.tenant.pos.partials.shift-close-modal')
@@ -1189,99 +1255,43 @@ new class extends Component {
         @include('pages.tenant.pos.partials.cost-modal')
         @include('pages.tenant.pos.partials.below-cost-modal')
     </div>
-    <!-- ==================== قالب الفاتورة الحرارية للطباعة المباشرة ==================== -->
+
     @include('pages.tenant.pos.partials.thermal-receipt')
 </flux:main>
+
 <style>
+    [x-cloak] { display: none !important; }
+    body { font-family: Tahoma, Arial, sans-serif; }
+    input, button, select, textarea { font-family: inherit; }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: .55; }
+    @media (max-width: 1023px) {
+        flux-main { overflow-y: auto !important; }
+    }
     @media print {
-
-        /* إخفاء كل عناصر الواجهة والشاشة */
-        body * {
-            visibility: hidden !important;
-        }
-
-        /* إظهار الفاتورة الحرارية فقط */
-        #thermal-receipt,
-        #thermal-receipt * {
-            visibility: visible !important;
-        }
-
-        #thermal-receipt {
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 80mm !important;
-            /* عرض ورقة طابعة الفواتير الحرارية */
-            margin: 0 !important;
-            padding: 2mm !important;
-        }
-
-        @page {
-            size: 80mm auto;
-            margin: 0;
-        }
+        body * { visibility: hidden !important; }
+        #thermal-receipt, #thermal-receipt * { visibility: visible !important; }
+        #thermal-receipt { display: block !important; position: absolute !important; right: 0 !important; top: 0 !important; width: 80mm !important; margin: 0 !important; padding: 2mm !important; }
+        @page { size: 80mm auto; margin: 0; }
     }
 </style>
-
-<!-- إطار مخفي للطباعة الفورية -->
 
 <script>
     document.addEventListener('livewire:initialized', () => {
         Livewire.on('print-receipt', () => {
-            // التقاط محتوى الفاتورة من قالب thermal-receipt
             const receiptElement = document.getElementById('thermal-receipt');
-            if (!receiptElement) return;
-
-            const receiptHtml = receiptElement.innerHTML;
             const printFrame = document.getElementById('silent-print-frame');
+            if (!receiptElement || !printFrame) return;
             const frameDoc = printFrame.contentWindow.document;
-
             frameDoc.open();
             frameDoc.write(`
-                <html>
-                <head>
-                    <title>Print Receipt</title>
-                    <style>
-                        body {
-                            font-family: monospace;
-                            width: 80mm;
-                            margin: 0;
-                            padding: 2mm;
-                            font-size: 11px;
-                            color: #000;
-                        }
-                        .text-center { text-align: center; }
-                        .font-bold { font-weight: bold; }
-                        .font-black { font-weight: 900; }
-                        .flex { display: flex; }
-                        .justify-between { justify-content: space-between; }
-                        .border-b { border-bottom: 1px solid #000; }
-                        .border-t { border-top: 1px solid #000; }
-                        .border-dashed { border-style: dashed; }
-                        .my-1 { margin-top: 4px; margin-bottom: 4px; }
-                        .my-2 { margin-top: 8px; margin-bottom: 8px; }
-                        .py-1 { padding-top: 4px; padding-bottom: 4px; }
-                        .pt-1 { padding-top: 4px; }
-                        .mt-1 { margin-top: 4px; }
-                        .mt-4 { margin-top: 16px; }
-                        table { width: 100%; border-collapse: collapse; text-align: right; }
-                        th, td { padding: 2px 0; }
-                        @page { size: 80mm auto; margin: 0; }
-                    </style>
-                </head>
-                <body>
-                    ${receiptHtml}
-                </body>
-                </html>
-            `);
+                <html dir="rtl"><head><title>فاتورة</title><style>
+                    body{font-family:Tahoma,Arial,sans-serif;width:80mm;margin:0;padding:2mm;font-size:11px;color:#000;direction:rtl}
+                    .text-center{text-align:center}.font-bold{font-weight:700}.font-black{font-weight:900}.flex{display:flex}.justify-between{justify-content:space-between}
+                    .border-b{border-bottom:1px solid #000}.border-t{border-top:1px solid #000}.border-dashed{border-style:dashed}.my-1{margin:4px 0}.my-2{margin:8px 0}.py-1{padding:4px 0}.pt-1{padding-top:4px}.mt-1{margin-top:4px}.mt-4{margin-top:16px}
+                    table{width:100%;border-collapse:collapse;text-align:right}th,td{padding:2px 0}@page{size:80mm auto;margin:0}
+                </style></head><body>${receiptElement.innerHTML}</body></html>`);
             frameDoc.close();
-
-            // إعطاء أمر الطباعة المباشر
-            setTimeout(() => {
-                printFrame.contentWindow.focus();
-                printFrame.contentWindow.print();
-            }, 150);
+            setTimeout(() => { printFrame.contentWindow.focus(); printFrame.contentWindow.print(); }, 150);
         });
     });
 </script>

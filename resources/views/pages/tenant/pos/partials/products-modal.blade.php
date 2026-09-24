@@ -1,110 +1,34 @@
-  @if ($showProductsModal)
-            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4"
-                x-data="{ show: @entangle('showProductsModal') }" x-effect="if (show) { setTimeout(() => $refs.f10SearchInput.focus(), 100) }">
-
-                <div
-                    class="bg-slate-200 rounded-xl shadow-2xl w-full max-w-6xl overflow-hidden border border-slate-400 flex flex-col h-[90vh]">
-
-                    <!-- شريط العنوان والبحث العلوي -->
-                    <div
-                        class="bg-slate-300 border-b border-slate-400 p-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
-                        <div class="flex items-center gap-2">
-                            <button type="button" wire:click="$set('showProductsModal', false)"
-                                class="px-2.5 py-1 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-800 shadow-sm active:scale-95">
-                                (Esc) إلغاء / إغلاق
-                            </button>
-                        </div>
-
-                        <!-- حقل البحث والاختيار -->
-                        <div class="flex items-center gap-2 flex-1 max-w-2xl">
-                            <select wire:model.live="selectedCategoryId"
-                                class="bg-white border border-slate-400 text-xs font-bold rounded p-1.5 focus:outline-indigo-600">
-                                <option value="">الكل</option>
-                                @foreach ($categories as $cat)
-                                    <option value="{{ $cat->id }}">{{ $cat->name }}</option>
-                                @endforeach
-                            </select>
-
-                            <div class="relative flex-1">
-                                <!-- حقل البحث المستقل والخاص بـ F10 مع التركيز التلقائي -->
-                                <input type="text" x-ref="f10SearchInput"
-                                    wire:model.live.debounce.200ms="productSearchQuery"
-                                    placeholder="ابحث بالاسم أو الباركود... 🔍"
-                                    class="w-full bg-white border border-slate-400 text-xs font-bold text-slate-900 rounded p-1.5 pl-7 focus:outline-indigo-600 shadow-inner">
-
-                                @if (!empty($productSearchQuery))
-                                    <button type="button" wire:click="$set('productSearchQuery', '')"
-                                        class="absolute left-2 top-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs">✕</button>
-                                @endif
-                            </div>
-
-                            <button type="button" wire:click="loadQuickProducts"
-                                class="p-1.5 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-700">
-                                🔄
-                            </button>
-                        </div>
-
-                        <button wire:click="$set('showProductsModal', false)"
-                            class="text-slate-600 hover:text-rose-600 font-bold text-base px-2">✕</button>
-                    </div>
-
-                    <!-- جدول عرض الأصناف (نمط برنامج الشامل) -->
-                    <div class="flex-1 overflow-y-auto bg-slate-200 min-h-0 p-1">
-                        <table class="w-full text-right text-xs border-collapse bg-slate-300">
-                            <thead class="bg-slate-300 sticky top-0 font-bold text-slate-900 border-b-2 border-slate-400 shadow-sm">
-                                <tr>
-                                    <th class="p-1.5 border border-slate-400 text-center w-14">الرقم</th>
-                                    <th class="p-1.5 border border-slate-400">الاسم</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-24">المخزون</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-28">سعر البيع</th>
-                                    <th class="p-1.5 border border-slate-400">الباركود</th>
-                                    <th class="p-1.5 border border-slate-400 text-center w-28">التاريخ</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-300 font-bold">
-                                @forelse($quickProducts as $index => $p)
-                                    <tr wire:click="selectInlineProduct({{ $p->id }})"
-                                        wire:key="modal-prod-{{ $p->id }}"
-                                        class="cursor-pointer transition-colors border-b border-slate-300 {{ $index % 2 === 0 ? 'bg-slate-200' : 'bg-slate-100' }} hover:bg-indigo-100/80 active:bg-indigo-200">
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-800">
-                                            {{ $p->id }}
-                                        </td>
-                                        <td class="p-1.5 border border-slate-300 text-slate-900 font-bold">
-                                            {{ $p->name }}
-                                        </td>
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono {{ ($p->stock_quantity ?? 0) <= 0 ? 'text-rose-600' : 'text-slate-800' }}">
-                                            {{ number_format((float) ($p->stock_quantity ?? 0), 0) }}
-                                        </td>
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-slate-900">
-                                            {{ number_format((float) ($p->retail_price ?? 0), 2) }}
-                                        </td>
-                                        <td class="p-1.5 border border-slate-300 text-slate-600 text-[11px] font-normal">
-                                            {{ $p->barcode_value ?? '' }}
-                                        </td>
-                                        <td class="p-1.5 border border-slate-300 text-center font-mono text-[10px] text-slate-600">
-                                            {{ $p->created_at?->format('Y-m-d') }}
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="6" class="py-16 text-center text-slate-500 font-bold text-xs bg-slate-100">
-                                            لا توجد أصناف مطابقة للبحث
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- الشريط السفلي -->
-                    <div
-                        class="p-2 bg-slate-300 border-t border-slate-400 flex justify-between items-center text-xs font-bold text-slate-700 shrink-0">
-                        <span>عدد الأصناف المعروضة: {{ count($quickProducts) }}</span>
-                        <button wire:click="$set('showProductsModal', false)"
-                            class="px-4 py-1 bg-slate-100 hover:bg-slate-50 border border-slate-400 rounded text-xs font-bold text-slate-800 shadow-sm active:scale-95">
-                            إغلاق (Esc)
-                        </button>
-                    </div>
+@if ($showProductsModal)
+    <div class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm p-3 md:p-6 flex items-center justify-center" x-data="{ show: @entangle('showProductsModal') }" x-effect="if (show) { setTimeout(() => $refs.f10SearchInput.focus(), 100) }">
+        <div class="w-full max-w-6xl h-[90vh] rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 flex flex-col">
+            <div class="p-4 border-b border-slate-100 bg-white shrink-0">
+                <div class="flex items-center justify-between gap-3">
+                    <div><h2 class="text-lg font-black text-slate-900">قائمة الأصناف</h2><p class="text-[11px] text-slate-400 mt-0.5">اختر الصنف لإضافته مباشرة إلى الفاتورة</p></div>
+                    <button type="button" wire:click="$set('showProductsModal', false)" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 font-black">✕</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mt-4">
+                    <select wire:model.live="selectedCategoryId" class="md:col-span-3 h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold outline-none focus:border-indigo-500"><option value="">كل التصنيفات</option>@foreach ($categories as $cat)<option value="{{ $cat->id }}">{{ $cat->name }}</option>@endforeach</select>
+                    <div class="relative md:col-span-8"><span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">🔎</span><input x-ref="f10SearchInput" type="text" wire:model.live.debounce.200ms="productSearchQuery" placeholder="ابحث باسم المنتج أو الباركود..." class="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 pr-10 pl-10 text-sm font-bold outline-none focus:border-indigo-500">@if($productSearchQuery)<button type="button" wire:click="$set('productSearchQuery','')" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">✕</button>@endif</div>
+                    <button type="button" wire:click="loadQuickProducts" class="md:col-span-1 h-11 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 font-black">↻</button>
                 </div>
             </div>
-        @endif
+
+            <div class="flex-1 overflow-auto bg-slate-50 p-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    @forelse($quickProducts as $p)
+                        @php $stock = (float)($p->stock_quantity ?? 0); @endphp
+                        <button type="button" wire:click="selectInlineProduct({{ $p->id }})" wire:key="modal-prod-{{ $p->id }}" class="text-right rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md transition p-4 group">
+                            <div class="flex items-start justify-between gap-2"><span class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">📦</span><span class="px-2 py-1 rounded-lg text-[10px] font-black {{ $stock > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">{{ $stock > 0 ? 'متوفر' : 'نفد المخزون' }}</span></div>
+                            <div class="mt-3 text-sm font-black text-slate-800 line-clamp-2 min-h-10">{{ $p->name }}</div>
+                            <div class="mt-3 flex items-end justify-between"><div><div class="text-[10px] text-slate-400 font-bold">سعر البيع</div><div class="font-mono font-black text-indigo-700">{{ number_format((float)($p->retail_price ?? 0),2) }}</div></div><div class="text-left"><div class="text-[10px] text-slate-400 font-bold">المخزون</div><div class="font-mono font-black {{ $stock > 0 ? 'text-slate-800' : 'text-rose-600' }}">{{ number_format($stock,0) }}</div></div></div>
+                            <div class="mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono truncate">{{ $p->barcode_value ?? 'بدون باركود' }}</div>
+                        </button>
+                    @empty
+                        <div class="col-span-full py-24 text-center"><div class="text-3xl">🔎</div><div class="mt-3 text-sm font-black text-slate-600">لا توجد أصناف مطابقة</div><div class="text-xs text-slate-400 mt-1">جرّب كلمة بحث أخرى أو غيّر التصنيف</div></div>
+                    @endforelse
+                </div>
+            </div>
+            <div class="px-4 py-3 border-t border-slate-100 bg-white flex items-center justify-between"><span class="text-xs font-bold text-slate-500">{{ count($quickProducts) }} صنف معروض</span><button type="button" wire:click="$set('showProductsModal', false)" class="h-10 px-5 rounded-xl bg-slate-900 text-white text-xs font-black">إغلاق <span class="font-mono text-[10px]">Esc</span></button></div>
+        </div>
+    </div>
+@endif
