@@ -42,11 +42,6 @@ new class extends Component {
         $this->resetPage();
     }
 
-    public function updatedPartySearch(): void
-    {
-        // البحث يتم مباشرة في الواجهة.
-    }
-
     public function getTenantId(): ?int
     {
         $user = Auth::user();
@@ -67,7 +62,7 @@ new class extends Component {
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'both'])
             ->where(function ($query) {
                 $search = trim($this->partySearch);
 
@@ -97,7 +92,7 @@ new class extends Component {
     {
         return Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->count();
     }
@@ -106,7 +101,7 @@ new class extends Component {
     {
         return (float) Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->whereDate('payment_date', today())
             ->sum('amount');
@@ -117,11 +112,11 @@ new class extends Component {
         $party = Party::query()
             ->where('tenant_id', $this->getTenantId())
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'both'])
             ->find($partyId);
 
         if (!$party) {
-            $this->addError('payableId', 'تعذر العثور على المورد.');
+            $this->addError('payableId', 'تعذر العثور على العميل.');
             return;
         }
 
@@ -150,7 +145,7 @@ new class extends Component {
     {
         $payment = Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->with('payable')
             ->findOrFail($id);
@@ -169,7 +164,7 @@ new class extends Component {
         $this->showForm = true;
     }
 
-    public function savePayment(): void
+    public function saveReceipt(): void
     {
         $this->validate([
             'payableId' => ['required', 'integer'],
@@ -178,7 +173,7 @@ new class extends Component {
             'paymentDate' => ['required', 'date'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ], [
-            'payableId.required' => 'يرجى اختيار المورد.',
+            'payableId.required' => 'يرجى اختيار العميل.',
             'amount.required' => 'يرجى إدخال مبلغ السند.',
             'amount.numeric' => 'المبلغ يجب أن يكون رقمًا.',
             'amount.gt' => 'المبلغ يجب أن يكون أكبر من صفر.',
@@ -197,12 +192,12 @@ new class extends Component {
                 $party = Party::query()
                     ->where('tenant_id', $tenantId)
                     ->where('is_active', true)
-                    ->whereIn('type', ['supplier', 'both'])
+                    ->whereIn('type', ['customer', 'both'])
                     ->lockForUpdate()
                     ->find($this->payableId);
 
                 if (!$party) {
-                    throw new \RuntimeException('المورد المحدد غير موجود أو غير فعال.');
+                    throw new \RuntimeException('العميل المحدد غير موجود أو غير فعال.');
                 }
 
                 $newAmount = (float) $this->amount;
@@ -210,13 +205,13 @@ new class extends Component {
                 if ($this->paymentId) {
                     $payment = Payment::query()
                         ->where('tenant_id', $tenantId)
-                        ->where('type', 'payment')
+                        ->where('type', 'receipt')
                         ->where('payable_type', Party::class)
                         ->lockForUpdate()
                         ->find($this->paymentId);
 
                     if (!$payment) {
-                        throw new \RuntimeException('سند الدفع غير موجود.');
+                        throw new \RuntimeException('سند القبض غير موجود.');
                     }
 
                     $oldPartyId = $payment->payable_id;
@@ -255,7 +250,7 @@ new class extends Component {
                     Payment::create([
                         'tenant_id' => $tenantId,
                         'voucher_number' => $voucherNumber,
-                        'type' => 'payment',
+                        'type' => 'receipt',
                         'payable_type' => Party::class,
                         'payable_id' => $party->id,
                         'amount' => $newAmount,
@@ -276,8 +271,8 @@ new class extends Component {
                 'accounting-toast',
                 type: 'success',
                 message: $this->paymentId
-                    ? 'تم تحديث سند الدفع بنجاح.'
-                    : 'تم حفظ سند الدفع بنجاح.'
+                    ? 'تم تحديث سند القبض بنجاح.'
+                    : 'تم حفظ سند القبض بنجاح.'
             );
 
             $this->resetForm();
@@ -288,7 +283,7 @@ new class extends Component {
                 'general',
                 $e instanceof \RuntimeException
                     ? $e->getMessage()
-                    : 'تعذر حفظ سند الدفع. يرجى المحاولة مرة أخرى.'
+                    : 'تعذر حفظ سند القبض. يرجى المحاولة مرة أخرى.'
             );
         }
     }
@@ -311,13 +306,13 @@ new class extends Component {
             DB::transaction(function () use ($tenantId) {
                 $payment = Payment::query()
                     ->where('tenant_id', $tenantId)
-                    ->where('type', 'payment')
+                    ->where('type', 'receipt')
                     ->where('payable_type', Party::class)
                     ->lockForUpdate()
                     ->find($this->deleteId);
 
                 if (!$payment) {
-                    throw new \RuntimeException('سند الدفع غير موجود.');
+                    throw new \RuntimeException('سند القبض غير موجود.');
                 }
 
                 $party = Party::query()
@@ -339,7 +334,7 @@ new class extends Component {
             $this->dispatch(
                 'accounting-toast',
                 type: 'success',
-                message: 'تم حذف سند الدفع وعكس أثره على الرصيد.'
+                message: 'تم حذف سند القبض وعكس أثره على الرصيد.'
             );
         } catch (\Throwable $e) {
             report($e);
@@ -348,7 +343,7 @@ new class extends Component {
                 'general',
                 $e instanceof \RuntimeException
                     ? $e->getMessage()
-                    : 'تعذر حذف سند الدفع.'
+                    : 'تعذر حذف سند القبض.'
             );
         }
     }
@@ -357,7 +352,7 @@ new class extends Component {
     {
         $this->printVoucher = Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->with('payable', 'user')
             ->findOrFail($id);
@@ -369,7 +364,7 @@ new class extends Component {
     {
         $payment = Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->with('payable')
             ->findOrFail($id);
@@ -377,16 +372,16 @@ new class extends Component {
         $phone = preg_replace('/\D+/', '', (string) $payment->payable?->phone);
 
         if (!$phone) {
-            $this->addError('general', 'لا يوجد رقم هاتف مسجل لهذا المورد.');
+            $this->addError('general', 'لا يوجد رقم هاتف مسجل لهذا العميل.');
             return;
         }
 
         $message = implode("\n", [
-            'سند دفع',
+            'سند قبض',
             'رقم السند: ' . $payment->voucher_number,
-            'المورد: ' . ($payment->payable?->name ?? '-'),
+            'العميل: ' . ($payment->payable?->name ?? '-'),
             'المبلغ: ' . number_format((float) $payment->amount, 2),
-            'طريقة الدفع: ' . $this->paymentMethodLabel($payment->payment_method),
+            'طريقة القبض: ' . $this->paymentMethodLabel($payment->payment_method),
             'التاريخ: ' . optional($payment->payment_date)->format('Y-m-d'),
         ]);
 
@@ -417,10 +412,10 @@ new class extends Component {
     {
         $lastId = Payment::query()
             ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->max('id');
 
-        return 'PAY-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
+        return 'REC-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
     }
 
     private function paymentMethodLabel(?string $method): string
@@ -438,9 +433,9 @@ new class extends Component {
     {
         $tenantId = $this->getTenantId();
 
-        $payments = Payment::query()
+        $receipts = Payment::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'payment')
+            ->where('type', 'receipt')
             ->where('payable_type', Party::class)
             ->with('payable')
             ->when(trim($this->tableSearch) !== '', function ($query) {
@@ -459,7 +454,7 @@ new class extends Component {
             ->paginate(15);
 
         return $this->view([
-            'payments' => $payments,
+            'receipts' => $receipts,
         ])->layout('layouts::tenant');
     }
 };
@@ -468,29 +463,29 @@ new class extends Component {
 
 <div dir="rtl" class="min-h-full bg-slate-50">
     @include('pages.tenant.accounting.partials.voucher-table', [
-        'mode' => 'payment',
-        'title' => 'سندات الدفع',
-        'subtitle' => 'إدارة مدفوعات الموردين وحركة الأرصدة',
-        'createLabel' => 'سند دفع جديد',
-        'items' => $payments,
+        'mode' => 'receipt',
+        'title' => 'سندات القبض',
+        'subtitle' => 'إدارة المقبوضات من العملاء وحركة الأرصدة',
+        'createLabel' => 'سند قبض جديد',
+        'items' => $receipts,
         'todayTotal' => $this->todayTotal,
         'voucherCount' => $this->voucherCount,
         'tableSearch' => $tableSearch,
     ])
 
     @include('pages.tenant.accounting.partials.voucher-form', [
-        'mode' => 'payment',
-        'title' => $paymentId ? 'تعديل سند الدفع' : 'إنشاء سند دفع',
-        'partyLabel' => 'المورد',
-        'partyTypes' => ['supplier', 'both'],
-        'saveMethod' => 'savePayment',
+        'mode' => 'receipt',
+        'title' => $paymentId ? 'تعديل سند القبض' : 'إنشاء سند قبض',
+        'partyLabel' => 'العميل',
+        'partyTypes' => ['customer', 'both'],
+        'saveMethod' => 'saveReceipt',
         'selectedParty' => $this->selectedParty,
         'partyResults' => $this->partyResults,
         'showForm' => $showForm,
     ])
 
     @include('pages.tenant.accounting.partials.voucher-print', [
-        'mode' => 'payment',
+        'mode' => 'receipt',
         'voucher' => $printVoucher,
         'show' => $showPrintModal,
     ])
@@ -503,10 +498,10 @@ new class extends Component {
                         <flux:icon name="trash" class="size-6" />
                     </div>
 
-                    <h3 class="text-lg font-bold text-slate-900">حذف سند الدفع؟</h3>
+                    <h3 class="text-lg font-bold text-slate-900">حذف سند القبض؟</h3>
 
                     <p class="mt-2 text-sm leading-6 text-slate-500">
-                        سيتم حذف السند وعكس أثره على رصيد المورد.
+                        سيتم حذف السند وعكس أثره على رصيد العميل.
                         <strong>الرصيد الافتتاحي لن يتغير.</strong>
                     </p>
                 </div>
@@ -526,11 +521,6 @@ new class extends Component {
 
     <div
         x-data
-        x-on:accounting-toast.window="
-            window.dispatchEvent(
-                new CustomEvent('show-accounting-toast', { detail: $event.detail })
-            )
-        "
         x-on:open-whatsapp.window="window.open($event.detail.url, '_blank')"
     ></div>
 </div>

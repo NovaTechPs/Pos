@@ -84,6 +84,8 @@ Route::middleware(['auth', 'verified'])
             ->name('daily-settlement');
         Route::livewire('/payment', 'pages::tenant.accounting.payment')
             ->name('payment');
+                 Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
+            ->name('receipts');
 
         // System
         Route::livewire('/excel', 'pages::tenant.system.excel')

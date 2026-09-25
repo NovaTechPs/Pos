@@ -211,6 +211,16 @@
             {{ __('Vouchers') }}
         </flux:sidebar.item>
     @endcan
+       @can('receipts.view')
+        <flux:sidebar.item
+            icon="building-storefront"
+            :href="route('tenant.receipts')"
+            :current="request()->routeIs('tenant.receipts')"
+            wire:navigate
+        >
+            {{ __('receipts') }}
+        </flux:sidebar.item>
+    @endcan
 
 
     {{-- Backup --}}

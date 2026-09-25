@@ -22,6 +22,8 @@ return new class extends Migration
             $table->decimal('current_balance', 15, 2)->default(0.00);
             $table->boolean('is_active')->default(true);
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+                        $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
+
             $table->timestamps();
             $table->softDeletes();
 
