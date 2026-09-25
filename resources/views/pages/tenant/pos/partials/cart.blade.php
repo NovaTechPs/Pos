@@ -1,112 +1,118 @@
-<div class="flex-1 min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col">
-    <div class="p-3 border-b border-slate-100 bg-white shrink-0">
-        <div class="flex flex-col md:flex-row gap-2">
-            <div class="relative flex-1">
-                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">▣</span>
-                <input type="text" wire:model.live.debounce.180ms="inlineSearchQuery"
-                    placeholder="ابحث باسم المنتج أو الباركود..."
-                    class="w-full h-11 rounded-xl border {{ $isReturnMode ? 'border-rose-300 focus:ring-rose-100' : 'border-indigo-200 focus:ring-indigo-100' }} bg-slate-50 pr-10 pl-4 text-sm font-bold outline-none focus:ring-2 focus:border-indigo-500">
-                @if ($inlineSearchQuery !== '')
-                    <button type="button" wire:click="$set('inlineSearchQuery', '')" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600">✕</button>
-                @endif
-                @if (!empty($inlineSearchResults))
-                    <div class="absolute right-0 left-0 top-12 z-30 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-                        @foreach ($inlineSearchResults as $result)
-                            <button type="button" wire:click="selectInlineProduct({{ $result['id'] }})" class="w-full p-3 text-right hover:bg-indigo-50 border-b border-slate-100 last:border-0 flex items-center justify-between gap-3">
-                                <div class="min-w-0">
-                                    <div class="text-sm font-black text-slate-800 truncate">{{ $result['name'] }}</div>
-                                    <div class="text-[10px] text-slate-400 font-mono">{{ $result['barcode_value'] ?? 'بدون باركود' }}</div>
-                                </div>
-                                <div class="text-left shrink-0">
-                                    <div class="font-mono font-black text-indigo-700">{{ number_format((float) ($result['retail_price'] ?? 0), 2) }}</div>
-                                    <div class="text-[10px] {{ ($result['stock_quantity'] ?? 0) > 0 ? 'text-emerald-600' : 'text-rose-600' }}">المخزون: {{ number_format((float) ($result['stock_quantity'] ?? 0), 0) }}</div>
-                                </div>
-                            </button>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
-            <div class="relative flex-[0.7]">
-                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">▦</span>
-                <input type="text" wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" autofocus
-                    placeholder="امسح الباركود ثم Enter"
-                    class="w-full h-11 rounded-xl border {{ $isReturnMode ? 'border-rose-300 bg-rose-50/50 focus:ring-rose-100' : 'border-slate-200 bg-slate-50 focus:ring-indigo-100' }} pr-10 pl-4 text-sm font-bold font-mono outline-none focus:ring-2 focus:border-indigo-500">
-            </div>
+<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="shrink-0 border-b border-slate-100 bg-slate-50 p-2.5">
+        <div class="relative">
+            <input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" autofocus type="text"
+                placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
+                class="w-full rounded-xl border-2 {{ $isReturnMode ? 'border-rose-300 focus:border-rose-500' : 'border-indigo-200 focus:border-indigo-500' }} bg-white px-4 py-2.5 text-sm font-black text-slate-900 outline-none placeholder:text-slate-400">
+            @if ($barcode)
+                <button wire:click="$set('barcode', '')" class="absolute left-3 top-2.5 text-slate-400 hover:text-rose-600">✕</button>
+            @endif
         </div>
-        <div class="flex items-center justify-between mt-2 text-[10px] font-bold">
-            <span class="text-slate-400">Enter لإضافة الباركود مباشرة • F10 لفتح قائمة الأصناف</span>
-            @if ($isReturnMode)<span class="text-rose-600">وضع المرتجع مفعل — الكميات السالبة تعيد المخزون</span>@endif
+
+        <div class="relative mt-2">
+            <input wire:model.live.debounce.250ms="inlineSearchQuery" type="text" placeholder="بحث مباشر باسم المنتج أو الباركود..."
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold focus:border-indigo-500 focus:outline-none">
+            @if ($inlineSearchResults)
+                <div class="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                    @foreach ($inlineSearchResults as $result)
+                        <button wire:click="selectInlineProduct({{ $result['id'] }})" class="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-right hover:bg-indigo-50">
+                            <span class="font-bold text-slate-800">{{ $result['name'] }}</span>
+                            <span class="text-[10px] font-mono text-slate-500">{{ number_format($result['price'], 2) }} · مخزون {{ number_format($result['stock'], 0) }}</span>
+                        </button>
+                    @endforeach
+                </div>
+            @endif
         </div>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-auto">
+    <div class="min-h-0 flex-1 overflow-auto">
         <table class="w-full text-right text-xs">
-            <thead class="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 text-slate-500 font-black">
+            <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 shadow-sm">
                 <tr>
-                    <th class="px-4 py-3">الصنف</th>
-                    <th class="px-2 py-3 text-center w-36">الكمية</th>
-                    <th class="px-2 py-3 text-center w-28">التكلفة</th>
-                    <th class="px-2 py-3 text-center w-28">سعر البيع</th>
-                    <th class="px-4 py-3 text-center w-32">الإجمالي</th>
-                    <th class="px-3 py-3 text-center w-14"> </th>
+                    <th class="px-3 py-2">الصنف</th>
+                    <th class="px-2 py-2 text-center">الكمية</th>
+                    <th class="px-2 py-2 text-center">التكلفة</th>
+                    <th class="px-2 py-2 text-center">السعر</th>
+                    <th class="px-2 py-2 text-center">الإجمالي</th>
+                    <th class="w-10 px-2 py-2"></th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-                @forelse($cart as $item)
-                    @php $isBelowCost = $item['quantity'] > 0 && (float)$item['price'] < (float)($item['cost_price'] ?? 0); @endphp
-                    <tr wire:key="cart-item-{{ $item['id'] }}" class="group {{ $item['quantity'] < 0 ? 'bg-rose-50/70' : ($isBelowCost ? 'bg-amber-50/70' : 'hover:bg-slate-50') }}">
-                        <td class="px-4 py-3">
-                            <div class="font-black text-slate-800">{{ $item['name'] }}</div>
-                            <div class="mt-1 flex items-center gap-1.5">
-                                @if ($item['quantity'] < 0)<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-black">مرتجع</span>@endif
-                                @if ($isBelowCost)<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-black">أقل من التكلفة</span>@endif
-                                @if (!empty($item['barcode']))<span class="text-[9px] text-slate-400 font-mono">{{ $item['barcode'] }}</span>@endif
+                @forelse ($cart as $item)
+                    @php
+                        $belowCost = $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
+                    @endphp
+                    <tr wire:key="pos-cart-{{ $item['id'] }}" class="{{ $item['quantity'] < 0 ? 'bg-rose-50' : ($belowCost ? 'bg-amber-50' : 'bg-white') }} hover:bg-indigo-50">
+                        <td class="px-3 py-2">
+                            <div class="font-black text-slate-900">{{ $item['name'] }}</div>
+                            <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
+                                @if ($item['quantity'] < 0)<span class="text-rose-600">مرتجع</span>@endif
+                                @if ($belowCost)<span class="text-amber-700">أقل من التكلفة</span>@endif
                             </div>
                         </td>
-                        <td class="px-2 py-3 text-center">
-                            <div class="inline-flex items-center rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                                <button type="button" wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] - 1 }})" class="w-8 h-9 text-rose-600 hover:bg-rose-50 font-black">−</button>
-                                <span class="min-w-10 text-center font-mono font-black {{ $item['quantity'] < 0 ? 'text-rose-600' : 'text-slate-800' }}">{{ $item['quantity'] }}</span>
-                                <button type="button" wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] + 1 }})" class="w-8 h-9 text-emerald-600 hover:bg-emerald-50 font-black">+</button>
+                        <td class="px-2 py-2 text-center">
+                            <div class="inline-flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <button wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] - 1 }})" class="px-2 py-1.5 font-black text-rose-600 hover:bg-rose-50">−</button>
+                                <span class="min-w-10 px-1 text-center font-mono font-black">{{ $item['quantity'] }}</span>
+                                <button wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] + 1 }})" class="px-2 py-1.5 font-black text-emerald-600 hover:bg-emerald-50">＋</button>
                             </div>
                         </td>
-                        <td class="px-2 py-3 text-center">
-                            <input type="number" step="0.01" value="{{ $item['cost_price'] ?? 0 }}" wire:change="updateCostPrice({{ $item['id'] }}, $event.target.value)" class="w-24 h-9 rounded-lg border border-slate-200 bg-slate-50 text-center font-mono font-bold text-slate-600 outline-none focus:border-indigo-400 focus:bg-white">
+                        <td class="px-2 py-2 text-center">
+                            <input type="number" step="0.01" value="{{ $item['cost_price'] ?? 0 }}" wire:change="updateCostPrice({{ $item['id'] }}, $event.target.value)" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-center font-mono text-[11px] font-bold text-slate-600 focus:border-indigo-500 focus:outline-none">
                         </td>
-                        <td class="px-2 py-3 text-center">
-                            <input type="number" step="0.01" value="{{ $item['price'] }}" wire:change="updateUnitPrice({{ $item['id'] }}, $event.target.value)" class="w-24 h-9 rounded-lg border {{ $isBelowCost ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-800' }} text-center font-mono font-black outline-none focus:border-indigo-400 focus:bg-white">
+                        <td class="px-2 py-2 text-center">
+                            <input type="number" step="0.01" value="{{ $item['price'] }}" wire:change="updateUnitPrice({{ $item['id'] }}, $event.target.value)" class="w-20 rounded-lg border {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }} px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none">
                         </td>
-                        <td class="px-4 py-3 text-center font-mono font-black {{ $item['subtotal'] < 0 ? 'text-rose-600' : 'text-indigo-700' }}">{{ number_format($item['subtotal'], 2) }}</td>
-                        <td class="px-3 py-3 text-center"><button type="button" wire:click="removeFromCart({{ $item['id'] }})" class="w-8 h-8 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 font-black">✕</button></td>
+                        <td class="px-2 py-2 text-center font-mono font-black {{ $item['subtotal'] < 0 ? 'text-rose-600' : 'text-indigo-700' }}">{{ number_format($item['subtotal'], 2) }}</td>
+                        <td class="px-2 py-2 text-center">
+                            <button wire:click="removeFromCart({{ $item['id'] }})" class="rounded-lg px-2 py-1 text-lg font-black text-rose-500 hover:bg-rose-50">×</button>
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="py-24 text-center"><div class="w-16 h-16 mx-auto rounded-2xl bg-slate-50 flex items-center justify-center text-2xl">🛒</div><div class="mt-3 text-sm font-black text-slate-600">لا توجد أصناف في الفاتورة</div><div class="mt-1 text-xs text-slate-400">امسح الباركود أو ابحث عن المنتج للبدء</div></td></tr>
+                    <tr>
+                        <td colspan="6" class="py-24 text-center">
+                            <div class="text-4xl opacity-30">🧾</div>
+                            <div class="mt-2 text-sm font-black text-slate-400">الفاتورة فارغة</div>
+                            <div class="mt-1 text-[11px] font-bold text-slate-300">امسح الباركود أو افتح قائمة الأصناف F10</div>
+                        </td>
+                    </tr>
                 @endforelse
             </tbody>
         </table>
     </div>
 
-    <div class="shrink-0 border-t border-slate-100 bg-slate-50 p-3 space-y-2">
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-2">
-            <div class="md:col-span-4 flex items-center gap-2">
-                <label class="text-xs font-black text-slate-600 shrink-0">الخصم</label>
-                <input type="number" step="0.01" wire:model.live.debounce.300ms="discount_amount" placeholder="0" class="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 bg-white px-3 font-mono font-black outline-none focus:border-indigo-400">
-                <button type="button" wire:click="toggleDiscountType" class="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-black text-indigo-700">{{ $discount_type === 'percentage' ? '%' : 'مبلغ' }}</button>
+    <div class="shrink-0 border-t border-slate-200 bg-slate-50 p-2.5">
+        <div class="grid grid-cols-12 gap-2">
+            <div class="col-span-12 md:col-span-4">
+                <label class="mb-1 block text-[10px] font-black text-slate-500">الخصم</label>
+                <div class="flex gap-1">
+                    <input wire:model.live.debounce.300ms="discount_amount" type="number" step="0.01" class="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 font-mono text-xs font-black focus:border-indigo-500 focus:outline-none">
+                    <button wire:click="toggleDiscountType" class="rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black">{{ $discount_type === 'percentage' ? '%' : 'مبلغ' }}</button>
+                </div>
             </div>
-            <div class="md:col-span-4 flex items-center gap-2">
-                <label class="text-xs font-black text-slate-600 shrink-0">الصافي</label>
-                <input type="number" step="0.01" wire:model.live.debounce.300ms="custom_final_total" placeholder="{{ number_format($this->total, 2) }}" class="min-w-0 flex-1 h-9 rounded-lg border border-indigo-200 bg-white px-3 font-mono font-black text-indigo-700 outline-none focus:border-indigo-500">
+            <div class="col-span-12 md:col-span-4">
+                <label class="mb-1 block text-[10px] font-black text-slate-500">إجمالي مخصص</label>
+                <input wire:model.live.debounce.300ms="custom_final_total" type="number" step="0.01" placeholder="اتركه فارغاً للحساب التلقائي" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 font-mono text-xs font-black focus:border-indigo-500 focus:outline-none">
             </div>
-            <div class="md:col-span-4 flex items-center gap-2">
-                <label class="text-xs font-black text-slate-600 shrink-0">ملاحظة</label>
-                <input type="text" wire:model.live="notes" placeholder="ملاحظات الفاتورة..." class="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold outline-none focus:border-indigo-400">
+            <div class="col-span-12 md:col-span-4">
+                <label class="mb-1 block text-[10px] font-black text-slate-500">ملاحظات</label>
+                <input wire:model.live="notes" type="text" placeholder="ملاحظة الفاتورة..." class="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs font-bold focus:border-indigo-500 focus:outline-none">
             </div>
         </div>
+    </div>
 
-        <div class="grid grid-cols-3 gap-2">
-            <div class="rounded-xl bg-white border border-slate-200 p-2.5"><div class="text-[10px] text-slate-400 font-bold">المجموع الفرعي</div><div class="mt-0.5 text-base font-black font-mono text-slate-800">{{ number_format($this->subtotal, 2) }}</div></div>
-            <div class="rounded-xl bg-white border border-slate-200 p-2.5"><div class="text-[10px] text-slate-400 font-bold">الخصم</div><div class="mt-0.5 text-base font-black font-mono text-rose-600">{{ number_format($this->calculated_discount, 2) }}</div></div>
-            <div class="rounded-xl bg-slate-900 p-2.5"><div class="text-[10px] text-slate-400 font-bold">{{ $this->total < 0 ? 'المسترد للزبون' : 'الإجمالي المطلوب' }}</div><div class="mt-0.5 text-xl font-black font-mono {{ $this->total < 0 ? 'text-rose-400' : 'text-amber-300' }}">{{ number_format(abs($this->total), 2) }}</div></div>
+    <div class="grid shrink-0 grid-cols-3 gap-px overflow-hidden rounded-b-2xl bg-slate-200">
+        <div class="bg-slate-900 p-3 text-center text-white">
+            <div class="text-[9px] font-bold text-slate-400">المجموع</div>
+            <div class="mt-1 font-mono text-base font-black">{{ number_format($this->subtotal, 2) }}</div>
+        </div>
+        <div class="bg-slate-900 p-3 text-center text-white">
+            <div class="text-[9px] font-bold text-slate-400">{{ $this->total < 0 ? 'المسترد' : 'المطلوب' }}</div>
+            <div class="mt-1 font-mono text-xl font-black text-amber-300">{{ number_format($this->amountDue, 2) }}</div>
+        </div>
+        <div class="bg-slate-900 p-3 text-center text-white">
+            <div class="text-[9px] font-bold text-slate-400">{{ $this->remaining > 0 ? 'المتبقي' : 'الباقي' }}</div>
+            <div class="mt-1 font-mono text-xl font-black {{ $this->remaining > 0 ? 'text-rose-300' : 'text-emerald-300' }}">{{ number_format($this->remaining > 0 ? $this->remaining : $this->change, 2) }}</div>
         </div>
     </div>
 </div>

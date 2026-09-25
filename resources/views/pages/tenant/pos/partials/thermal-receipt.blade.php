@@ -1,15 +1,15 @@
-<div id="thermal-receipt" class="hidden print:block text-black bg-white p-2 font-mono text-xs w-[80mm] mx-auto" dir="rtl">
+<div id="thermal-receipt" class="hidden w-[80mm] bg-white p-2 text-black print:block" dir="rtl">
     @if (!empty($receipt))
-        <div class="text-center font-bold mb-2">
-            <h2 class="text-base font-black">{{ $receipt['store_name'] }}</h2>
-            <p class="text-[10px]">{{ $receipt['copy_type'] }}</p>
-            <p class="text-[10px]">رقم الفاتورة: {{ $receipt['invoice_no'] }}</p>
-            <p class="text-[10px]">{{ $receipt['date'] }} {{ $receipt['time'] }}</p>
+        <div class="text-center">
+            <div class="text-base font-black">{{ $receipt['store_name'] }}</div>
+            <div class="mt-0.5 text-[9px] font-bold">{{ $receipt['copy_type'] }}</div>
+            <div class="text-[9px]">{{ $receipt['invoice_no'] }}</div>
+            <div class="text-[9px]">{{ $receipt['date'] }} {{ $receipt['time'] }}</div>
         </div>
-        <div class="border-b border-t border-black py-1 my-1 text-[10px]"><div class="flex justify-between"><span>الكاشير:</span><span class="font-bold">{{ $this->invoiceCreator }}</span></div></div>
-        <table class="w-full text-right my-2 text-[10px] border-collapse"><thead><tr class="border-b border-black"><th>الصنف</th><th class="text-center">الكمية</th><th class="text-center">السعر</th><th class="text-left">الإجمالي</th></tr></thead><tbody>@foreach($receipt['items'] as $item)<tr><td class="font-bold">{{ $item['name'] }}</td><td class="text-center">{{ $item['qty'] }}</td><td class="text-center">{{ $item['price'] }}</td><td class="text-left font-bold">{{ $item['total'] }}</td></tr>@endforeach</tbody></table>
-        <div class="border-t border-black pt-1 mt-1 text-[11px] space-y-0.5"><div class="flex justify-between"><span>مجموع الكميات:</span><span>{{ $receipt['total_qty'] }}</span></div><div class="flex justify-between"><span>المجموع:</span><span>{{ $receipt['total_amount'] }}</span></div><div class="flex justify-between font-black text-sm border-t border-black pt-1"><span>الصافي:</span><span>{{ $receipt['net_amount'] }}</span></div></div>
-        <div class="text-center mt-4 pt-2 border-t border-dashed border-black text-[9px]"><p>{{ $receipt['notice'] }}</p><p>{{ $receipt['system_name'] }}</p></div>
+        <div class="my-1 border-y border-black py-1 text-[9px]"><div class="flex justify-between"><span>الكاشير</span><b>{{ $receipt['cashier'] }}</b></div></div>
+        <table class="w-full border-collapse text-[9px]"><thead><tr class="border-b border-black"><th class="py-1 text-right">الصنف</th><th class="py-1 text-center">ك</th><th class="py-1 text-center">السعر</th><th class="py-1 text-left">الإجمالي</th></tr></thead><tbody>@foreach ($receipt['items'] as $item)<tr><td class="py-0.5 font-bold">{{ $item['name'] }}</td><td class="py-0.5 text-center">{{ $item['qty'] }}</td><td class="py-0.5 text-center">{{ $item['price'] }}</td><td class="py-0.5 text-left font-bold">{{ $item['total'] }}</td></tr>@endforeach</tbody></table>
+        <div class="mt-1 border-t border-black pt-1 text-[9px]"><div class="flex justify-between"><span>المجموع</span><span>{{ $receipt['subtotal'] }}</span></div><div class="flex justify-between"><span>الخصم</span><span>{{ $receipt['discount'] }}</span></div><div class="flex justify-between border-t border-black pt-1 text-[12px] font-black"><span>الصافي</span><span>{{ $receipt['total_amount'] }}</span></div><div class="flex justify-between"><span>المدفوع</span><span>{{ $receipt['paid'] }}</span></div><div class="flex justify-between"><span>الباقي</span><span>{{ $receipt['change'] }}</span></div></div>
+        <div class="mt-3 border-t border-dashed border-black pt-2 text-center text-[8px]">{{ $receipt['notice'] }}</div>
     @endif
 </div>
-<iframe id="silent-print-frame" style="display:none;position:absolute;width:0;height:0;border:0"></iframe>
+<iframe id="silent-print-frame" style="display:none;width:0;height:0;border:0"></iframe>

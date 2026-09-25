@@ -25,6 +25,8 @@ class Shift extends Model
         'notes',
         'opened_at',
         'closed_at',
+          'opened_by',
+        'closed_by',
     ];
 
     protected $casts = [

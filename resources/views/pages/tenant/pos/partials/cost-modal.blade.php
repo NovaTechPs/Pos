@@ -1,11 +1,19 @@
 @if ($showCostModal)
-    <div class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
-        <div class="w-full max-w-4xl max-h-[85vh] rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-200 flex flex-col">
-            <div class="p-4 bg-slate-900 text-white flex items-center justify-between"><div><h3 class="font-black">تحليل التكلفة والربح</h3><p class="text-[10px] text-slate-400 mt-1">قراءة سريعة لتكلفة الأصناف والربح المتوقع</p></div><button wire:click="$set('showCostModal', false)" class="w-9 h-9 rounded-lg bg-white/10">✕</button></div>
-            <div class="flex-1 overflow-auto p-4">
-                <div class="overflow-hidden rounded-xl border border-slate-200"><table class="w-full text-right text-xs"><thead class="bg-slate-50 text-slate-500 font-black"><tr><th class="p-3">الصنف</th><th class="p-3 text-center">الكمية</th><th class="p-3 text-center">سعر البيع</th><th class="p-3 text-center">التكلفة</th><th class="p-3 text-center">التكلفة الإجمالية</th><th class="p-3 text-center">الربح المتوقع</th></tr></thead><tbody class="divide-y divide-slate-100">@foreach($cart as $item) @php $itemCost=(float)($item['cost_price']??0); $totalItemCost=$itemCost*$item['quantity']; $itemProfit=$item['subtotal']-$totalItemCost; @endphp<tr><td class="p-3 font-black">{{ $item['name'] }}</td><td class="p-3 text-center font-mono">{{ $item['quantity'] }}</td><td class="p-3 text-center font-mono">{{ number_format($item['price'],2) }}</td><td class="p-3 text-center font-mono text-slate-500">{{ number_format($itemCost,2) }}</td><td class="p-3 text-center font-mono font-black">{{ number_format($totalItemCost,2) }}</td><td class="p-3 text-center font-mono font-black {{ $itemProfit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">{{ number_format($itemProfit,2) }}</td></tr>@endforeach</tbody></table></div>
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+        <div class="w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div class="flex items-center justify-between bg-indigo-700 p-4 text-white"><div class="text-sm font-black">تحليل التكلفة والربح</div><button wire:click="$set('showCostModal', false)">✕</button></div>
+            <div class="max-h-[60vh] overflow-auto p-3">
+                <table class="w-full text-right text-xs">
+                    <thead class="sticky top-0 bg-slate-100"><tr><th class="p-2">الصنف</th><th class="p-2 text-center">الكمية</th><th class="p-2 text-center">السعر</th><th class="p-2 text-center">التكلفة</th><th class="p-2 text-center">إجمالي التكلفة</th><th class="p-2 text-center">الربح</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                        @foreach ($cart as $item)
+                            @php $cost = (float) ($item['cost_price'] ?? 0); $itemCost = $cost * (int) $item['quantity']; $profit = (float) $item['subtotal'] - $itemCost; @endphp
+                            <tr><td class="p-2 font-black">{{ $item['name'] }}</td><td class="p-2 text-center font-mono">{{ $item['quantity'] }}</td><td class="p-2 text-center font-mono">{{ number_format($item['price'],2) }}</td><td class="p-2 text-center font-mono">{{ number_format($cost,2) }}</td><td class="p-2 text-center font-mono text-rose-700">{{ number_format($itemCost,2) }}</td><td class="p-2 text-center font-mono font-black {{ $profit >= 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($profit,2) }}</td></tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
-            <div class="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3"><div class="flex gap-4 text-xs font-black"><span>التكلفة: <b class="font-mono text-slate-700">{{ number_format($this->total_cost,2) }}</b></span><span>الربح: <b class="font-mono {{ $this->expected_profit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">{{ number_format($this->expected_profit,2) }}</b></span></div><button wire:click="$set('showCostModal', false)" class="h-10 px-5 rounded-xl bg-slate-900 text-white text-xs font-black">إغلاق</button></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 p-3 text-xs font-black"><span>التكلفة: <b class="font-mono text-rose-700">{{ number_format($this->total_cost,2) }}</b></span><span>الربح المتوقع: <b class="font-mono {{ $this->expected_profit >= 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($this->expected_profit,2) }}</b></span><button wire:click="$set('showCostModal', false)" class="rounded-lg bg-slate-800 px-4 py-2 text-white">إغلاق</button></div>
         </div>
     </div>
 @endif
