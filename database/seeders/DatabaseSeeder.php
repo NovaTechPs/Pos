@@ -20,7 +20,6 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
         ]);
         // تعطيل فحص المفاتيح الأجنبية لتفادي التعارض الدائري (Circular FK)
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
         // 1. إضافة الخطة التشغيلية (Plans)
         DB::table('plans')->updateOrInsert(
@@ -175,6 +174,5 @@ class DatabaseSeeder extends Seeder
         }
 
         // إعادة تفعيل فحص المفاتيح الأجنبية
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
 }
