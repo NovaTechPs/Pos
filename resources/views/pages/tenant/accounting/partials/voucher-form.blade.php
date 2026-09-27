@@ -6,338 +6,932 @@
     $selectedParty = $selectedParty ?? null;
     $partyResults = $partyResults ?? collect();
 
-    $formId = $isPayment ? 'payment-voucher-form' : 'receipt-voucher-form';
+    $formId = $isPayment
+        ? 'payment-voucher-form'
+        : 'receipt-voucher-form';
+
+    $partyInputId = $isPayment
+        ? 'payment-party-search'
+        : 'receipt-party-search';
+
+    $partyOptionsId = $isPayment
+        ? 'payment-party-options'
+        : 'receipt-party-options';
+
+    $balanceLabel = $isPayment
+        ? 'رصيد المورد الحالي'
+        : 'رصيد العميل الحالي';
+
+    $balanceAfterLabel = $isPayment
+        ? 'الرصيد بعد سند الدفع'
+        : 'الرصيد بعد سند القبض';
 @endphp
 
-@if ($showForm)
+@if($showForm)
+
     <div
         x-data="{ open: @entangle('showForm') }"
-        x-show="open"
         x-cloak
-        class="fixed inset-0 z-[70] overflow-y-auto"
-        aria-modal="true"
-        role="dialog"
+        class="fixed inset-0 z-[90]"
     >
+
+        {{-- Backdrop --}}
         <div
-            class="fixed inset-0 bg-slate-950/50 backdrop-blur-[2px]"
-            x-on:click="open = false"
+            class="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            x-show="open"
+            x-transition.opacity
+            wire:click="$set('showForm', false)"
         ></div>
 
-        <div class="relative flex min-h-full items-start justify-center p-4 sm:p-6">
-            <div
-                x-show="open"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 translate-y-3 scale-[.98]"
-                x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                class="relative my-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
-            >
-                {{-- Header --}}
-                <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-7">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="flex size-11 items-center justify-center rounded-2xl
-                            {{ $isPayment ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600' }}"
-                        >
-                            <flux:icon
-                                :name="$isPayment ? 'arrow-up-right' : 'arrow-down-left'"
-                                class="size-5"
-                            />
-                        </div>
+        {{-- Drawer --}}
+        <div
+            class="absolute inset-y-0 end-0 flex w-full max-w-xl flex-col bg-white shadow-2xl"
+            x-show="open"
+            x-transition:enter="transform transition ease-out duration-300"
+            x-transition:enter-start="translate-x-full"
+            x-transition:enter-end="translate-x-0"
+            x-transition:leave="transform transition ease-in duration-200"
+            x-transition:leave-start="translate-x-0"
+            x-transition:leave-end="translate-x-full"
+        >
 
-                        <div>
-                            <h2 class="text-lg font-bold text-slate-900">
-                                {{ $title }}
-                            </h2>
+            {{-- Header --}}
+            <div class="shrink-0 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
+                <div class="flex items-start justify-between gap-4">
 
-                            <p class="mt-0.5 text-xs text-slate-500">
-                                أدخل بيانات السند ثم احفظ العملية.
-                            </p>
+                    <div>
+                        <div class="flex items-center gap-3">
+
+                            <div
+                                class="
+                                    flex h-11 w-11 items-center justify-center rounded-xl
+                                    {{ $isPayment
+                                        ? 'bg-indigo-50 text-indigo-600'
+                                        : 'bg-emerald-50 text-emerald-600' }}
+                                "
+                            >
+                                @if($isPayment)
+
+                                    <svg
+                                        class="h-5 w-5"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M12 6v12m-4-8h8m-9.5 8.5L18 7"
+                                        />
+                                    </svg>
+
+                                @else
+
+                                    <svg
+                                        class="h-5 w-5"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M12 18V6m4 8H8m9.5-8.5L6 17"
+                                        />
+                                    </svg>
+
+                                @endif
+                            </div>
+
+                            <div>
+                                <h2 class="text-lg font-bold text-slate-900">
+                                    {{ $paymentId ? 'تعديل ' : 'إضافة ' }}
+                                    {{ $isPayment ? 'سند دفع' : 'سند قبض' }}
+                                </h2>
+
+                                <p class="mt-0.5 text-xs text-slate-500">
+                                    {{ $isPayment
+                                        ? 'تسجيل دفعة للمورد وتحديث رصيده.'
+                                        : 'تسجيل قبض من العميل وتحديث رصيده.' }}
+                                </p>
+                            </div>
+
                         </div>
                     </div>
 
                     <button
                         type="button"
-                        x-on:click="open = false"
-                        class="flex size-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                        wire:click="$set('showForm', false)"
+                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        aria-label="إغلاق"
                     >
-                        <flux:icon name="x-mark" class="size-5" />
+                        <svg
+                            class="h-5 w-5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M6 6l12 12M18 6L6 18"
+                            />
+                        </svg>
                     </button>
+
                 </div>
+            </div>
 
-                {{-- Body --}}
-                <form wire:submit=" {{ $saveMethod }}" id="{{ $formId }}">
-                    <div class="max-h-[calc(100vh-190px)] overflow-y-auto p-5 sm:p-7">
-                        @if ($errors->has('general'))
-                            <div class="mb-5 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                                <flux:icon name="exclamation-triangle" class="mt-0.5 size-5 shrink-0" />
-                                <span>{{ $errors->first('general') }}</span>
-                            </div>
-                        @endif
+            {{-- Body --}}
+            <div class="min-h-0 flex-1 overflow-y-auto">
 
-                        {{-- Top info --}}
-                        <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                                <label class="mb-1.5 block text-xs font-bold text-slate-600">
-                                    رقم السند
-                                </label>
+                <form
+                    wire:submit="{{ $saveMethod }}"
+                    id="{{ $formId }}"
+                    class="space-y-5 p-5 sm:p-6"
+                >
 
-                                <input
-                                    type="text"
-                                    wire:model="voucherNumber"
-                                    readonly
-                                    class="w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600 outline-none"
-                                >
-                            </div>
+                    {{-- Voucher number / date --}}
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
-                            <div>
-                                <label class="mb-1.5 block text-xs font-bold text-slate-600">
-                                    التاريخ
-                                </label>
+                        <div>
+                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                                رقم السند
+                            </label>
 
-                                <input
-                                    type="date"
-                                    wire:model="paymentDate"
-                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
-                                >
+                            <input
+                                type="text"
+                                wire:model="voucherNumber"
+                                readonly
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none"
+                            />
 
-                                @error('paymentDate')
-                                    <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                            @error('voucherNumber')
+                                <p class="mt-1.5 text-xs text-rose-600">
+                                    {{ $message }}
+                                </p>
+                            @enderror
                         </div>
 
-                        {{-- Party --}}
-                        <div class="mb-6">
-                            <div class="mb-1.5 flex items-center justify-between">
-                                <label class="text-xs font-bold text-slate-600">
-                                    {{ $partyLabel }}
-                                </label>
+                        <div>
+                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                                التاريخ
+                            </label>
 
-                                @if ($selectedParty)
+                            <input
+                                type="date"
+                                wire:model="paymentDate"
+                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                            />
+
+                            @error('paymentDate')
+                                <p class="mt-1.5 text-xs text-rose-600">
+                                    {{ $message }}
+                                </p>
+                            @enderror
+                        </div>
+
+                    </div>
+
+                    {{-- Party --}}
+                    <div>
+
+                        <label class="mb-2 block text-sm font-semibold text-slate-700">
+                            {{ $partyLabel }}
+                            <span class="text-rose-500">*</span>
+                        </label>
+
+                        @if($selectedParty)
+
+                            {{-- Selected party --}}
+                            <div class="overflow-hidden rounded-2xl border border-{{ $accent }}-200 bg-{{ $accent }}-50/60">
+
+                                <div class="flex items-start justify-between gap-3 p-4">
+
+                                    <div class="flex min-w-0 items-center gap-3">
+
+                                        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-{{ $accent }}-600 shadow-sm">
+                                            <svg
+                                                class="h-5 w-5"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="1.8"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M16 20v-1.5a4.5 4.5 0 00-9 0V20m4.5-9a3.5 3.5 0 100-7 3.5 3.5 0 000 7zm5.5-1.5a3 3 0 012.5 2.96V14m-1.5-7a3 3 0 11-1 5.83"
+                                                />
+                                            </svg>
+                                        </div>
+
+                                        <div class="min-w-0">
+
+                                            <p class="truncate text-sm font-bold text-slate-900">
+                                                {{ $selectedParty->name }}
+                                            </p>
+
+                                            <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+
+                                                @if($selectedParty->phone)
+                                                    <span>
+                                                        {{ $selectedParty->phone }}
+                                                    </span>
+                                                @endif
+
+                                                @if($selectedParty->tax_number)
+                                                    <span>
+                                                        الرقم الضريبي:
+                                                        {{ $selectedParty->tax_number }}
+                                                    </span>
+                                                @endif
+
+                                            </div>
+
+                                        </div>
+                                    </div>
+
                                     <button
                                         type="button"
                                         wire:click="clearParty"
-                                        class="text-xs font-semibold text-slate-400 hover:text-rose-600"
+                                        class="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
                                     >
                                         تغيير
                                     </button>
-                                @endif
+
+                                </div>
+
+                                <div class="grid grid-cols-2 border-t border-{{ $accent }}-100 bg-white/70">
+
+                                    <div class="p-3">
+
+                                        <p class="text-[11px] font-medium text-slate-500">
+                                            {{ $balanceLabel }}
+                                        </p>
+
+                                        <p class="mt-1 text-sm font-bold text-slate-900">
+                                            {{ number_format((float) $selectedParty->current_balance, 2) }}
+                                        </p>
+
+                                    </div>
+
+                                    <div class="border-s-{{ $accent }}-100 border-s p-3">
+
+                                        <p class="text-[11px] font-medium text-slate-500">
+                                            {{ $balanceAfterLabel }}
+                                        </p>
+
+                                        <p class="mt-1 text-sm font-bold text-{{ $accent }}-600">
+                                            {{ number_format(
+                                                (float) $selectedParty->current_balance
+                                                - (float) ($amount ?: 0),
+                                                2
+                                            ) }}
+                                        </p>
+
+                                    </div>
+
+                                </div>
                             </div>
 
-                            @if ($selectedParty)
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                                        <div class="flex items-center gap-3">
-                                            <div class="flex size-11 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm">
-                                                <flux:icon name="user" class="size-5" />
-                                            </div>
+                        @else
 
-                                            <div>
-                                                <div class="font-bold text-slate-900">
-                                                    {{ $selectedParty->name }}
-                                                </div>
+                            {{-- Party dropdown --}}
+                            <div
+                                class="relative"
+                                x-data="{
+                                    open: false,
+                                    activeIndex: 0,
 
-                                                @if ($selectedParty->phone)
-                                                    <div class="mt-0.5 text-xs text-slate-500" dir="ltr">
-                                                        {{ $selectedParty->phone }}
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        </div>
+                                    get items() {
+                                        return this.$refs.partyList
+                                            ? this.$refs.partyList.querySelectorAll('[data-party-option]')
+                                            : [];
+                                    },
 
-                                        <div class="flex gap-5">
-                                            <div>
-                                                <div class="text-[11px] font-semibold text-slate-400">
-                                                    الرصيد الحالي
-                                                </div>
+                                    get count() {
+                                        return this.items.length;
+                                    },
 
-                                                <div class="mt-1 text-sm font-black text-slate-800">
-                                                    {{ number_format((float) $selectedParty->current_balance, 2) }}
-                                                </div>
-                                            </div>
+                                    openList() {
+                                        this.open = true;
+                                        this.activeIndex = 0;
 
-                                            <div>
-                                                <div class="text-[11px] font-semibold text-slate-400">
-                                                    الرصيد الافتتاحي
-                                                </div>
+                                        this.$nextTick(() => {
+                                            const input = this.$refs.partySearchInput;
 
-                                                <div class="mt-1 text-sm font-bold text-slate-500">
-                                                    {{ number_format((float) $selectedParty->opening_balance, 2) }}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                            if (input && document.activeElement !== input) {
+                                                input.focus();
+                                            }
 
-                                    @if ((float) $amount > 0)
-                                        <div class="mt-4 border-t border-slate-200 pt-4">
-                                            <div class="flex items-center justify-between">
-                                                <span class="text-xs font-semibold text-slate-500">
-                                                    الرصيد بعد السند
-                                                </span>
+                                            this.scrollActiveIntoView();
+                                        });
+                                    },
 
-                                                <span class="text-base font-black {{ $isPayment ? 'text-indigo-700' : 'text-emerald-700' }}">
-                                                    {{ number_format((float) $selectedParty->current_balance - (float) $amount, 2) }}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    @endif
-                                </div>
-                            @else
-                                <div class="relative">
-                                    <div class="relative">
-                                        <flux:icon
-                                            name="magnifying-glass"
-                                            class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-slate-400"
+                                    closeList() {
+                                        this.open = false;
+                                        this.activeIndex = 0;
+                                    },
+
+                                    moveDown() {
+                                        if (!this.open) {
+                                            this.openList();
+                                            return;
+                                        }
+
+                                        if (!this.count) {
+                                            return;
+                                        }
+
+                                        this.activeIndex =
+                                            this.activeIndex >= this.count - 1
+                                                ? 0
+                                                : this.activeIndex + 1;
+
+                                        this.scrollActiveIntoView();
+                                    },
+
+                                    moveUp() {
+                                        if (!this.open) {
+                                            this.openList();
+                                            return;
+                                        }
+
+                                        if (!this.count) {
+                                            return;
+                                        }
+
+                                        this.activeIndex =
+                                            this.activeIndex <= 0
+                                                ? this.count - 1
+                                                : this.activeIndex - 1;
+
+                                        this.scrollActiveIntoView();
+                                    },
+
+                                    goFirst() {
+                                        if (!this.open) {
+                                            this.openList();
+                                            return;
+                                        }
+
+                                        if (!this.count) {
+                                            return;
+                                        }
+
+                                        this.activeIndex = 0;
+                                        this.scrollActiveIntoView();
+                                    },
+
+                                    goLast() {
+                                        if (!this.open) {
+                                            this.openList();
+                                            return;
+                                        }
+
+                                        if (!this.count) {
+                                            return;
+                                        }
+
+                                        this.activeIndex = this.count - 1;
+                                        this.scrollActiveIntoView();
+                                    },
+
+                                    chooseCurrent() {
+                                        if (!this.open || !this.count) {
+                                            return;
+                                        }
+
+                                        const item = this.items[this.activeIndex];
+
+                                        if (item) {
+                                            item.click();
+                                        }
+                                    },
+
+                                    scrollActiveIntoView() {
+                                        this.$nextTick(() => {
+                                            const item = this.items[this.activeIndex];
+
+                                            if (item) {
+                                                item.scrollIntoView({
+                                                    block: 'nearest',
+                                                    behavior: 'smooth'
+                                                });
+                                            }
+                                        });
+                                    }
+                                }"
+                                x-on:click.outside="closeList()"
+                            >
+
+                                {{-- Trigger --}}
+                                <button
+                                    type="button"
+                                    x-on:click="openList()"
+                                    x-on:keydown.arrow-down.prevent="openList()"
+                                    x-on:keydown.arrow-up.prevent="openList()"
+                                    x-on:keydown.enter.prevent="openList()"
+                                    x-on:keydown.space.prevent="openList()"
+                                    :aria-expanded="open"
+                                    aria-haspopup="listbox"
+                                    class="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-start text-sm text-slate-600 outline-none transition hover:border-{{ $accent }}-300 focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                >
+
+                                    <span class="flex items-center gap-3">
+
+                                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                                            <svg
+                                                class="h-4 w-4"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="1.8"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M16 20v-1.5a4.5 4.5 0 00-9 0V20m4.5-9a3.5 3.5 0 100-7 3.5 3.5 0 000 7zm5.5-1.5a3 3 0 012.5 2.96V14m-1.5-7a3 3 0 11-1 5.83"
+                                                />
+                                            </svg>
+                                        </span>
+
+                                        <span>
+                                            اختر {{ $partyLabel }}
+                                        </span>
+
+                                    </span>
+
+                                    <svg
+                                        class="h-4 w-4 shrink-0 text-slate-400 transition-transform"
+                                        :class="{ 'rotate-180': open }"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M6 9l6 6 6-6"
                                         />
+                                    </svg>
 
-                                        <input
-                                            type="text"
-                                            wire:model.live.debounce.250ms="partySearch"
-                                            placeholder="ابحث بالاسم أو رقم الهاتف..."
-                                            class="w-full rounded-xl border border-slate-200 bg-white py-3 pr-10 pl-4 text-sm font-medium text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
-                                        >
+                                </button>
+
+                                {{-- Dropdown --}}
+                                <div
+                                    x-show="open"
+                                    x-cloak
+                                    x-transition.origin.top
+                                    class="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                                >
+
+                                    {{-- Search --}}
+                                    <div class="border-b border-slate-100 bg-slate-50/80 p-3">
+
+                                        <div class="relative">
+
+                                            <div class="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3">
+                                                <svg
+                                                    class="h-4 w-4 text-slate-400"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="1.8"
+                                                >
+                                                    <circle cx="11" cy="11" r="7"/>
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        d="M20 20l-4-4"
+                                                    />
+                                                </svg>
+                                            </div>
+
+                                            <input
+                                                x-ref="partySearchInput"
+                                                id="{{ $partyInputId }}"
+                                                type="text"
+                                                role="combobox"
+                                                aria-autocomplete="list"
+                                                aria-controls="{{ $partyOptionsId }}"
+                                                :aria-expanded="open"
+                                                wire:model.live.debounce.250ms="partySearch"
+                                                x-on:focus="openList()"
+                                                x-on:input="activeIndex = 0"
+                                                x-on:keydown.arrow-down.prevent.stop="moveDown()"
+                                                x-on:keydown.arrow-up.prevent.stop="moveUp()"
+                                                x-on:keydown.enter.prevent.stop="chooseCurrent()"
+                                                x-on:keydown.escape.prevent.stop="closeList()"
+                                                x-on:keydown.home.prevent.stop="goFirst()"
+                                                x-on:keydown.end.prevent.stop="goLast()"
+                                                placeholder="ابحث بالاسم أو الهاتف أو الرقم الضريبي..."
+                                                autocomplete="off"
+                                                class="w-full rounded-xl border border-slate-200 bg-white py-3 ps-10 pe-4 text-sm text-slate-800 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                            />
+
+                                        </div>
+
+                                        <div class="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                                            <span>
+                                                ↑ ↓ للتنقل
+                                            </span>
+
+                                            <span>
+                                                Enter للاختيار · Esc للإغلاق
+                                            </span>
+                                        </div>
+
                                     </div>
 
-                                    @if ($partyResults->count())
-                                        <div class="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                                            @foreach ($partyResults as $party)
-                                                <button
-                                                    type="button"
-                                                    wire:key="party-{{ $mode }}-{{ $party->id }}"
-                                                    wire:click="selectParty({{ $party->id }})"
-                                                    class="flex w-full items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 text-right transition last:border-0 hover:bg-slate-50"
-                                                >
-                                                    <div class="min-w-0">
-                                                        <div class="truncate text-sm font-bold text-slate-800">
-                                                            {{ $party->name }}
-                                                        </div>
-
-                                                        @if ($party->phone)
-                                                            <div class="mt-0.5 text-xs text-slate-400" dir="ltr">
-                                                                {{ $party->phone }}
-                                                            </div>
-                                                        @endif
-                                                    </div>
-
-                                                    <div class="shrink-0 text-left">
-                                                        <div class="text-[10px] font-semibold text-slate-400">
-                                                            الرصيد
-                                                        </div>
-
-                                                        <div class="text-xs font-bold text-slate-700">
-                                                            {{ number_format((float) $party->current_balance, 2) }}
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            @endforeach
-                                        </div>
-                                    @endif
-                                </div>
-                            @endif
-
-                            @error('payableId')
-                                <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        {{-- Amount + Method --}}
-                        <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div>
-                                <label class="mb-1.5 block text-xs font-bold text-slate-600">
-                                    المبلغ
-                                </label>
-
-                                <div class="relative">
-                                    <input
-                                        type="number"
-                                        min="0.01"
-                                        step="0.01"
-                                        wire:model.live="amount"
-                                        placeholder="0.00"
-                                        class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-lg font-black text-slate-900 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
-                                        dir="ltr"
+                                    {{-- Results --}}
+                                    <div
+                                        id="{{ $partyOptionsId }}"
+                                        x-ref="partyList"
+                                        role="listbox"
+                                        class="max-h-72 overflow-y-auto overscroll-contain"
                                     >
 
-                                    <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                                        ش.ض
-                                    </span>
+                                        @forelse($partyResults as $party)
+
+                                            <button
+                                                type="button"
+                                                data-party-option
+                                                role="option"
+                                                :aria-selected="activeIndex === {{ $loop->index }}"
+                                                wire:key="{{ $formId }}-party-option-{{ $party->id }}"
+                                                wire:click="selectParty({{ $party->id }})"
+                                                x-on:click="closeList()"
+                                                x-on:mouseenter="activeIndex = {{ $loop->index }}"
+                                                x-bind:class="activeIndex === {{ $loop->index }}
+                                                    ? 'bg-' + '{{ $accent }}' + '-50 border-s-4 border-' + '{{ $accent }}' + '-500'
+                                                    : 'border-s-4 border-transparent'"
+                                                class="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-start transition hover:bg-slate-50"
+                                            >
+
+                                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                                                    <svg
+                                                        class="h-4 w-4"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="1.8"
+                                                    >
+                                                        <path
+                                                            stroke-linecap="round"
+                                                            stroke-linejoin="round"
+                                                            d="M16 20v-1.5a4.5 4.5 0 00-9 0V20m4.5-9a3.5 3.5 0 100-7 3.5 3.5 0 000 7zm5.5-1.5a3 3 0 012.5 2.96V14m-1.5-7a3 3 0 11-1 5.83"
+                                                        />
+                                                    </svg>
+                                                </div>
+
+                                                <div class="min-w-0 flex-1">
+
+                                                    <p class="truncate text-sm font-semibold text-slate-800">
+                                                        {{ $party->name }}
+                                                    </p>
+
+                                                    <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+
+                                                        @if($party->phone)
+                                                            <span>
+                                                                {{ $party->phone }}
+                                                            </span>
+                                                        @endif
+
+                                                        @if($party->tax_number)
+                                                            <span>
+                                                                {{ $party->tax_number }}
+                                                            </span>
+                                                        @endif
+
+                                                    </div>
+
+                                                </div>
+
+                                                <div class="shrink-0 text-end">
+
+                                                    <p class="text-[10px] text-slate-400">
+                                                        الرصيد
+                                                    </p>
+
+                                                    <p class="mt-0.5 text-xs font-bold text-slate-700">
+                                                        {{ number_format((float) $party->current_balance, 2) }}
+                                                    </p>
+
+                                                </div>
+
+                                            </button>
+
+                                        @empty
+
+                                            <div class="px-5 py-8 text-center">
+
+                                                <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                    <svg
+                                                        class="h-5 w-5"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="1.8"
+                                                    >
+                                                        <circle
+                                                            cx="11"
+                                                            cy="11"
+                                                            r="7"
+                                                        />
+
+                                                        <path
+                                                            stroke-linecap="round"
+                                                            d="M20 20l-4-4"
+                                                        />
+                                                    </svg>
+                                                </div>
+
+                                                @if(trim($partySearch) !== '')
+
+                                                    <p class="mt-3 text-sm font-semibold text-slate-700">
+                                                        لا توجد نتائج مطابقة
+                                                    </p>
+
+                                                    <p class="mt-1 text-xs text-slate-400">
+                                                        جرّب البحث باسم آخر أو رقم هاتف مختلف.
+                                                    </p>
+
+                                                @else
+
+                                                    <p class="mt-3 text-sm font-semibold text-slate-700">
+                                                        لا يوجد {{ $partyLabel }} متاح
+                                                    </p>
+
+                                                    <p class="mt-1 text-xs text-slate-400">
+                                                        لا توجد أطراف نشطة من النوع المطلوب.
+                                                    </p>
+
+                                                @endif
+
+                                            </div>
+
+                                        @endforelse
+
+                                    </div>
                                 </div>
-
-                                @error('amount')
-                                    <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
-                                @enderror
                             </div>
 
-                            <div>
-                                <label class="mb-1.5 block text-xs font-bold text-slate-600">
-                                    {{ $isPayment ? 'طريقة الدفع' : 'طريقة القبض' }}
-                                </label>
+                        @endif
 
-                                <select
-                                    wire:model="paymentMethod"
-                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
-                                >
-                                    <option value="cash">نقدي</option>
-                                    <option value="bank">تحويل بنكي</option>
-                                    <option value="card">بطاقة</option>
-                                    <option value="check">شيك</option>
-                                </select>
-                            </div>
-                        </div>
+                        @error('payableId')
+                            <p class="mt-1.5 text-xs text-rose-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
 
-                        {{-- Notes --}}
+                    </div>
+
+                    {{-- Amount / payment method --}}
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
                         <div>
-                            <label class="mb-1.5 block text-xs font-bold text-slate-600">
-                                البيان / الملاحظات
+
+                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                                المبلغ
+                                <span class="text-rose-500">*</span>
                             </label>
 
-                            <textarea
-                                wire:model="notes"
-                                rows="3"
-                                placeholder="اكتب أي ملاحظات مرتبطة بالسند..."
-                                class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
-                            ></textarea>
+                            <div class="relative">
 
-                            @error('notes')
-                                <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    wire:model.live="amount"
+                                    inputmode="decimal"
+                                    placeholder="0.00"
+                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pe-16 text-lg font-bold text-slate-900 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                />
+
+                                <span class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4 text-xs font-medium text-slate-400">
+                                    المبلغ
+                                </span>
+
+                            </div>
+
+                            @error('amount')
+                                <p class="mt-1.5 text-xs text-rose-600">
+                                    {{ $message }}
+                                </p>
                             @enderror
+
                         </div>
 
-                        <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-800">
-                            <strong>تنبيه:</strong>
-                            الرصيد الافتتاحي مرجعي ولا يتغير عند حفظ أو تعديل أو حذف السند.
+                        <div>
+
+                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                                طريقة الدفع
+                                <span class="text-rose-500">*</span>
+                            </label>
+
+                            <select
+                                wire:model="paymentMethod"
+                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                            >
+                                <option value="cash">
+                                    نقدي
+                                </option>
+
+                                <option value="bank">
+                                    تحويل بنكي
+                                </option>
+
+                                <option value="card">
+                                    بطاقة
+                                </option>
+
+                                <option value="check">
+                                    شيك
+                                </option>
+                            </select>
+
+                            @error('paymentMethod')
+                                <p class="mt-1.5 text-xs text-rose-600">
+                                    {{ $message }}
+                                </p>
+                            @enderror
+
                         </div>
+
                     </div>
 
-                    {{-- Footer --}}
-                    <div class="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
-                        <button
-                            type="button"
-                            x-on:click="open = false"
-                            class="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100"
-                        >
-                            إلغاء
-                        </button>
+                    {{-- Balance preview --}}
+                    @if($selectedParty)
 
-                        <button
-                            type="submit"
-                            wire:loading.attr="disabled"
-                            wire:target="{{ $saveMethod }}"
-                            class="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60
-                            {{ $isPayment ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700' }}"
-                        >
-                            <span wire:loading.remove wire:target="{{ $saveMethod }}">
-                                {{ $paymentId ? 'حفظ التعديلات' : 'حفظ السند' }}
-                            </span>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 
-                            <span wire:loading wire:target="{{ $saveMethod }}" class="inline-flex items-center gap-2">
-                                <flux:icon name="arrow-path" class="size-4 animate-spin" />
-                                جارٍ الحفظ...
-                            </span>
-                        </button>
+                            <div class="flex items-center justify-between gap-4">
+
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500">
+                                        ملخص الرصيد
+                                    </p>
+
+                                    <p class="mt-1 text-sm font-bold text-slate-800">
+                                        {{ $selectedParty->name }}
+                                    </p>
+                                </div>
+
+                                <div class="text-end">
+
+                                    <p class="text-[11px] text-slate-400">
+                                        بعد العملية
+                                    </p>
+
+                                    <p class="mt-1 text-base font-bold text-{{ $accent }}-600">
+                                        {{ number_format(
+                                            (float) $selectedParty->current_balance
+                                            - (float) ($amount ?: 0),
+                                            2
+                                        ) }}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                            <div class="mt-3 h-px bg-slate-200"></div>
+
+                            <div class="mt-3 flex items-center justify-between text-xs">
+
+                                <span class="text-slate-500">
+                                    الرصيد الحالي
+                                </span>
+
+                                <span class="font-semibold text-slate-700">
+                                    {{ number_format(
+                                        (float) $selectedParty->current_balance,
+                                        2
+                                    ) }}
+                                </span>
+
+                            </div>
+
+                            <div class="mt-2 flex items-center justify-between text-xs">
+
+                                <span class="text-slate-500">
+                                    قيمة السند
+                                </span>
+
+                                <span class="font-semibold text-{{ $accent }}-600">
+                                    - {{ number_format(
+                                        (float) ($amount ?: 0),
+                                        2
+                                    ) }}
+                                </span>
+
+                            </div>
+
+                        </div>
+
+                    @endif
+
+                    {{-- Notes --}}
+                    <div>
+
+                        <label class="mb-2 block text-sm font-semibold text-slate-700">
+                            ملاحظات
+                        </label>
+
+                        <textarea
+                            wire:model="notes"
+                            rows="4"
+                            placeholder="أضف أي ملاحظات مرتبطة بالسند..."
+                            class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                        ></textarea>
+
+                        @error('notes')
+                            <p class="mt-1.5 text-xs text-rose-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
                     </div>
+
                 </form>
             </div>
+
+            {{-- Footer --}}
+            <div class="shrink-0 border-t border-slate-100 bg-white px-5 py-4 sm:px-6">
+
+                <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+
+                    <button
+                        type="button"
+                        wire:click="$set('showForm', false)"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
+                    >
+                        إلغاء
+                    </button>
+
+                    <button
+                        type="submit"
+                        form="{{ $formId }}"
+                        wire:loading.attr="disabled"
+                        wire:target="{{ $saveMethod }}"
+                        class="
+                            flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3
+                            text-sm font-semibold text-white shadow-sm transition
+                            disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto
+                            {{ $isPayment
+                                ? 'bg-indigo-600 hover:bg-indigo-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700' }}
+                        "
+                    >
+
+                        <span
+                            wire:loading.remove
+                            wire:target="{{ $saveMethod }}"
+                        >
+                            {{ $paymentId ? 'حفظ التعديلات' : 'حفظ السند' }}
+                        </span>
+
+                        <span
+                            wire:loading
+                            wire:target="{{ $saveMethod }}"
+                            class="flex items-center gap-2"
+                        >
+                            <svg
+                                class="h-4 w-4 animate-spin"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                            >
+                                <circle
+                                    class="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    stroke-width="4"
+                                ></circle>
+
+                                <path
+                                    class="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                                ></path>
+                            </svg>
+
+                            جارٍ الحفظ...
+                        </span>
+
+                    </button>
+
+                </div>
+            </div>
+
         </div>
     </div>
+
 @endif

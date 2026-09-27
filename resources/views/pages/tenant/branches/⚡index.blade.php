@@ -4,58 +4,213 @@ use Livewire\Component;
 use Livewire\Attributes\On;
 use App\Models\Branch;
 
-new class extends Component {
-    public $branches;
-    public $branch_id;
+new class extends Component
+{
+    /*
+    |--------------------------------------------------------------------------
+    | Data
+    |--------------------------------------------------------------------------
+    */
+
+    public $branches = [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Form
+    |--------------------------------------------------------------------------
+    */
+
+    public $branch_id = null;
 
     public string $name = '';
     public string $phone = '';
     public string $address = '';
     public string $type = 'branch';
 
+    /*
+    |--------------------------------------------------------------------------
+    | Modal
+    |--------------------------------------------------------------------------
+    */
+
     public bool $showModal = false;
     public bool $isEditing = false;
 
-    protected function rules()
-    {
-        return [
-            'name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'type' => 'required|in:branch,warehouse',
-        ];
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Filters
+    |--------------------------------------------------------------------------
+    */
 
-    public function mount()
+    public string $search = '';
+    public string $typeFilter = 'all';
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lifecycle
+    |--------------------------------------------------------------------------
+    */
+
+    public function mount(): void
     {
         $this->loadBranches();
     }
 
-    // الاستماع لحدث تغيير المتجر لإعادة جلب البيانات فوراً
-    #[On('tenant-changed')]
-    public function loadBranches()
-    {
-        // جلب معرف المتجر النشط حالياً من Session
-        $tenantId = session('active_tenant_id');
+    /*
+    |--------------------------------------------------------------------------
+    | Validation
+    |--------------------------------------------------------------------------
+    */
 
-        if ($tenantId) {
-            $this->branches = Branch::where('tenant_id', $tenantId)->get();
-        } else {
-            $this->branches = collect();
-        }
+    protected function rules(): array
+    {
+        return [
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+            ],
+
+            'address' => [
+                'nullable',
+                'string',
+                'max:500',
+            ],
+
+            'type' => [
+                'required',
+                'in:branch,warehouse',
+            ],
+        ];
     }
 
-    public function openCreateModal()
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant
+    |--------------------------------------------------------------------------
+    */
+
+    private function getTenantId(): ?int
+    {
+        $tenantId = session('active_tenant_id');
+
+        return $tenantId ? (int) $tenantId : null;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Load
+    |--------------------------------------------------------------------------
+    */
+
+    #[On('tenant-changed')]
+    public function loadBranches(): void
+    {
+        $this->resetValidation();
+
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId) {
+            $this->branches = collect();
+
+            return;
+        }
+
+        $this->branches = Branch::query()
+            ->where('tenant_id', $tenantId)
+
+            ->when(
+                filled(trim($this->search)),
+                function ($query) {
+                    $search = trim($this->search);
+
+                    $query->where(function ($query) use ($search) {
+                        $query
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%");
+                    });
+                }
+            )
+
+            ->when(
+                $this->typeFilter !== 'all',
+                fn ($query) => $query->where(
+                    'type',
+                    $this->typeFilter
+                )
+            )
+
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Filters
+    |--------------------------------------------------------------------------
+    */
+
+    public function updatedSearch(): void
+    {
+        $this->loadBranches();
+    }
+
+    public function updatedTypeFilter(): void
+    {
+        $this->loadBranches();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->search = '';
+        $this->typeFilter = 'all';
+
+        $this->loadBranches();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Create
+    |--------------------------------------------------------------------------
+    */
+
+    public function openCreateModal(): void
     {
         $this->resetInputFields();
+
         $this->isEditing = false;
         $this->showModal = true;
     }
 
-    public function edit($id)
+    /*
+    |--------------------------------------------------------------------------
+    | Edit
+    |--------------------------------------------------------------------------
+    */
+
+    public function edit(int $id): void
     {
-        $tenantId = session('active_tenant_id');
-        $branch = Branch::where('tenant_id', $tenantId)->findOrFail($id);
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId) {
+            $this->flashError(
+                'يرجى اختيار المتجر أولاً.'
+            );
+
+            return;
+        }
+
+        $branch = Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($id);
 
         $this->branch_id = $branch->id;
         $this->name = $branch->name;
@@ -63,71 +218,154 @@ new class extends Component {
         $this->address = $branch->address ?? '';
         $this->type = $branch->type;
 
+        $this->resetValidation();
+
         $this->isEditing = true;
         $this->showModal = true;
     }
 
-  public function save()
-{
-    $this->validate();
+    /*
+    |--------------------------------------------------------------------------
+    | Save
+    |--------------------------------------------------------------------------
+    */
 
-    $tenantId = session('active_tenant_id');
-
-    if (!$tenantId) {
-        session()->flash('message', 'يرجى اختيار متجر أولاً لتتمكن من الإضافة.');
-        return;
-    }
-
-    $data = [
-        'tenant_id' => $tenantId,
-        'name'      => $this->name,
-        'phone'     => $this->phone,
-        'address'   => $this->address,
-        'type'      => $this->type,
-    ];
-
-    if ($this->isEditing && $this->branch_id) {
-        // حالة التعديل: البحث عن الفرع المحدد وتحديثه
-        Branch::where('tenant_id', $tenantId)
-            ->findOrFail($this->branch_id)
-            ->update($data);
-
-        session()->flash('message', 'تم تحديث بيانات الفرع/المخزن بنجاح.');
-    } else {
-        // حالة الإضافة: إنشاء سجل جديد دائماً
-        Branch::create($data);
-
-        session()->flash('message', 'تم إضافة الفرع/المخزن بنجاح.');
-    }
-
-    $this->closeModal();
-    $this->loadBranches();
-}
-
-    public function delete($id)
+    public function save(): void
     {
-        $tenantId = session('active_tenant_id');
+        $tenantId = $this->getTenantId();
 
-        Branch::where('tenant_id', $tenantId)->findOrFail($id)->delete();
-        session()->flash('message', 'تم حذف الموقع بنجاح.');
+        if (!$tenantId) {
+            $this->flashError(
+                'يرجى اختيار متجر أولاً لتتمكن من إدارة الفروع والمخازن.'
+            );
+
+            return;
+        }
+
+        $validated = $this->validate();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Update
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->isEditing) {
+
+            $branch = Branch::query()
+                ->where('tenant_id', $tenantId)
+                ->findOrFail($this->branch_id);
+
+            $branch->update([
+                'name' => $validated['name'],
+                'phone' => $validated['phone'] ?? null,
+                'address' => $validated['address'] ?? null,
+                'type' => $validated['type'],
+            ]);
+
+            $message = 'تم تحديث بيانات الموقع بنجاح.';
+
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create
+        |--------------------------------------------------------------------------
+        */
+
+        else {
+
+            Branch::create([
+                'tenant_id' => $tenantId,
+                'name' => $validated['name'],
+                'phone' => $validated['phone'] ?? null,
+                'address' => $validated['address'] ?? null,
+                'type' => $validated['type'],
+            ]);
+
+            $message = 'تم إضافة الموقع بنجاح.';
+        }
+
+        $this->closeModal();
         $this->loadBranches();
+
+        session()->flash('message', $message);
     }
 
-    public function closeModal()
+    /*
+    |--------------------------------------------------------------------------
+    | Delete
+    |--------------------------------------------------------------------------
+    */
+
+    public function delete(int $id): void
+    {
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId) {
+            $this->flashError(
+                'يرجى اختيار المتجر أولاً.'
+            );
+
+            return;
+        }
+
+        $branch = Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($id);
+
+        $branch->delete();
+
+        $this->loadBranches();
+
+        session()->flash(
+            'message',
+            'تم حذف الموقع بنجاح.'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Modal
+    |--------------------------------------------------------------------------
+    */
+
+    public function closeModal(): void
     {
         $this->showModal = false;
+
         $this->resetInputFields();
     }
 
-    private function resetInputFields()
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    private function resetInputFields(): void
     {
         $this->branch_id = null;
+
         $this->name = '';
         $this->phone = '';
         $this->address = '';
         $this->type = 'branch';
+
         $this->resetValidation();
     }
+
+    private function flashError(string $message): void
+    {
+        session()->flash('error', $message);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Render
+    |--------------------------------------------------------------------------
+    */
+
     public function render()
     {
         return $this->view()->layout('layouts::tenant');
@@ -137,122 +375,925 @@ new class extends Component {
 ?>
 
 <flux:main class="space-y-6">
-    <!-- الهيدر العلوي -->
-    <div
-        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
-        <div>
-            <flux:heading size="xl" level="1">إدارة الفروع والمخازن</flux:heading>
-            <flux:subheading>إضافة وتعديل نقاط البيع والمخازن التابعة لمتجرك الحالي</flux:subheading>
-        </div>
-        <div>
-            <flux:button variant="primary" icon="plus" wire:click="openCreateModal">
-                إضافة فرع / مخزن جديد
+
+    {{-- ============================================================
+        HEADER
+    ============================================================= --}}
+
+    <div class="space-y-5">
+
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+            <div class="min-w-0">
+
+                <div class="flex items-center gap-3">
+
+                    <div
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm dark:bg-white dark:text-zinc-900"
+                    >
+                        <flux:icon.building-storefront class="size-5" />
+                    </div>
+
+                    <div class="min-w-0">
+
+                        <flux:heading
+                            size="xl"
+                            level="1"
+                            class="truncate"
+                        >
+                            الفروع والمخازن
+                        </flux:heading>
+
+                        <flux:subheading class="mt-1">
+                            إدارة مواقع البيع والتخزين التابعة للمتجر الحالي.
+                        </flux:subheading>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <flux:button
+                variant="primary"
+                icon="plus"
+                wire:click="openCreateModal"
+                wire:loading.attr="disabled"
+                wire:target="openCreateModal"
+                class="shrink-0"
+            >
+                إضافة موقع جديد
             </flux:button>
+
         </div>
+
+
+        {{-- ========================================================
+            FLASH SUCCESS
+        ========================================================= --}}
+
+        @if (session()->has('message'))
+
+            <div
+                class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+            >
+                <div class="flex items-center gap-2">
+
+                    <flux:icon.check-circle class="size-5 shrink-0" />
+
+                    <span>
+                        {{ session('message') }}
+                    </span>
+
+                </div>
+            </div>
+
+        @endif
+
+
+        {{-- ========================================================
+            FLASH ERROR
+        ========================================================= --}}
+
+        @if (session()->has('error'))
+
+            <div
+                class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+            >
+                <div class="flex items-center gap-2">
+
+                    <flux:icon.exclamation-triangle class="size-5 shrink-0" />
+
+                    <span>
+                        {{ session('error') }}
+                    </span>
+
+                </div>
+            </div>
+
+        @endif
+
     </div>
 
-    @if (session()->has('message'))
-        <flux:badge variant="success" class="w-full justify-start p-3 text-sm">
-            {{ session('message') }}
-        </flux:badge>
-    @endif
 
-    <!-- جدول عرض الفروع والمخازن -->
-    <flux:card class="p-0 overflow-hidden">
-        <flux:table>
-            <flux:table.columns>
-                <flux:table.column>الاسم</flux:table.column>
-                <flux:table.column>النوع</flux:table.column>
-                <flux:table.column>الهاتف</flux:table.column>
-                <flux:table.column>العنوان</flux:table.column>
-                <flux:table.column align="end">الإجراءات</flux:table.column>
-            </flux:table.columns>
+    {{-- ============================================================
+        STATISTICS
+    ============================================================= --}}
 
-            <flux:table.rows>
-                @forelse($branches as $branch)
-                    <flux:table.row key="{{ $branch->id }}">
-                        <flux:table.cell class="font-medium text-zinc-900 dark:text-white">
-                            {{ $branch->name }}
-                        </flux:table.cell>
+    @php
+        $totalLocations = $branches->count();
 
-                        <flux:table.cell>
-                            @if ($branch->type === 'branch')
-                                <flux:badge size="sm" color="emerald" variant="solid">فرع بيع</flux:badge>
-                            @else
-                                <flux:badge size="sm" color="indigo" variant="solid">مخزن رئيسي</flux:badge>
-                            @endif
-                        </flux:table.cell>
+        $totalBranches = $branches
+            ->where('type', 'branch')
+            ->count();
 
-                        <flux:table.cell>
-                            {{ $branch->phone ?? '-' }}
-                        </flux:table.cell>
+        $totalWarehouses = $branches
+            ->where('type', 'warehouse')
+            ->count();
+    @endphp
 
-                        <flux:table.cell>
-                            {{ $branch->address ?? '-' }}
-                        </flux:table.cell>
 
-                        <flux:table.cell align="end">
-                            <div class="flex items-center justify-end gap-1">
-                                <flux:button variant="ghost" size="sm" icon="pencil-square"
-                                    wire:click="edit({{ $branch->id }})" />
-                                <flux:button variant="ghost" size="sm" icon="trash"
-                                    class="text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                    wire:click="delete({{ $branch->id }})"
-                                    wire:confirm="هل أنت تأكد من إزالة هذا الفرع/المخزن؟" />
-                            </div>
-                        </flux:table.cell>
-                    </flux:table.row>
-                @empty
-                    <flux:table.row>
-                        <flux:table.cell colspan="5" align="center" class="py-8 text-zinc-500">
-                            لا يوجد فروع أو مخازن مضافة لهذا المتجر بعد.
-                        </flux:table.cell>
-                    </flux:table.row>
-                @endforelse
-            </flux:table.rows>
-        </flux:table>
-    </flux:card>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 
-    <!-- مودال الإضافة والتعديل -->
-    <flux:modal wire:model="showModal" class="md:w-160 space-y-6">
-        <div>
-            <flux:heading size="lg">{{ $isEditing ? 'تعديل بيانات الموقع' : 'إضافة فرع / مخزن جديد' }}
-            </flux:heading>
-            <flux:subheading>حدد نوع الموقع وتفاصيل التواصل والارتباط بالمتجر النشط</flux:subheading>
+        {{-- Total --}}
+
+        <div
+            class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        >
+
+            <div class="flex items-center justify-between">
+
+                <div>
+
+                    <p class="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                        إجمالي المواقع
+                    </p>
+
+                    <p class="mt-2 text-2xl font-semibold text-zinc-900 dark:text-white">
+                        {{ $totalLocations }}
+                    </p>
+
+                </div>
+
+                <div
+                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                >
+                    <flux:icon.building-office-2 class="size-5" />
+                </div>
+
+            </div>
+
         </div>
 
-        <form wire:submit.prevent="save" class="space-y-4">
-            <flux:field>
-                <flux:label>نوع الموقع</flux:label>
-                <flux:select wire:model="type">
-                    <option value="branch">فرع بيع (Branch / POS)</option>
-                    <option value="warehouse">مخزن (Warehouse)</option>
-                </flux:select>
-                <flux:error name="type" />
-            </flux:field>
 
-            <flux:field>
-                <flux:label>اسم الفرع أو المخزن</flux:label>
-                <flux:input wire:model="name" placeholder="مثال: فرع وسط البلد أو المخزن المركزي" />
-                <flux:error name="name" />
-            </flux:field>
+        {{-- Branches --}}
 
-            <flux:field>
-                <flux:label>رقم الهاتف</flux:label>
-                <flux:input wire:model="phone" placeholder="059xxxxxxx" />
-                <flux:error name="phone" />
-            </flux:field>
+        <div
+            class="rounded-2xl border border-emerald-200/70 bg-emerald-50/60 p-5 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/20"
+        >
 
-            <flux:field>
-                <flux:label>العنوان / الموقع</flux:label>
-                <flux:input wire:model="address" placeholder="المدينة، الشارع الرئيسي" />
-                <flux:error name="address" />
-            </flux:field>
+            <div class="flex items-center justify-between">
 
-            <div class="flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                <flux:button variant="ghost" wire:click="closeModal">إلغاء</flux:button>
-                <flux:button type="submit" variant="primary">حفظ الموقع</flux:button>
+                <div>
+
+                    <p class="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                        فروع البيع
+                    </p>
+
+                    <p class="mt-2 text-2xl font-semibold text-emerald-800 dark:text-emerald-300">
+                        {{ $totalBranches }}
+                    </p>
+
+                </div>
+
+                <div
+                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                >
+                    <flux:icon.building-storefront class="size-5" />
+                </div>
+
             </div>
+
+        </div>
+
+
+        {{-- Warehouses --}}
+
+        <div
+            class="rounded-2xl border border-indigo-200/70 bg-indigo-50/60 p-5 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-950/20"
+        >
+
+            <div class="flex items-center justify-between">
+
+                <div>
+
+                    <p class="text-sm font-medium text-indigo-700 dark:text-indigo-400">
+                        المخازن
+                    </p>
+
+                    <p class="mt-2 text-2xl font-semibold text-indigo-800 dark:text-indigo-300">
+                        {{ $totalWarehouses }}
+                    </p>
+
+                </div>
+
+                <div
+                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+                >
+                    <flux:icon.archive-box class="size-5" />
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    {{-- ============================================================
+        FILTERS
+    ============================================================= --}}
+
+    <div
+        class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+
+            {{-- Search --}}
+
+            <div class="min-w-0 flex-1">
+
+                <flux:input
+                    wire:model.live.debounce.350ms="search"
+                    icon="magnifying-glass"
+                    placeholder="ابحث باسم الموقع أو الهاتف أو العنوان..."
+                />
+
+            </div>
+
+
+            {{-- Type --}}
+
+            <div class="w-full lg:w-48">
+
+                <flux:select wire:model.live="typeFilter">
+
+                    <option value="all">
+                        كل المواقع
+                    </option>
+
+                    <option value="branch">
+                        فروع البيع
+                    </option>
+
+                    <option value="warehouse">
+                        المخازن
+                    </option>
+
+                </flux:select>
+
+            </div>
+
+
+            {{-- Clear --}}
+
+            @if (
+                filled($search) ||
+                $typeFilter !== 'all'
+            )
+
+                <flux:button
+                    variant="ghost"
+                    icon="x-mark"
+                    wire:click="clearFilters"
+                    wire:loading.attr="disabled"
+                    wire:target="clearFilters"
+                    class="shrink-0"
+                >
+                    مسح
+                </flux:button>
+
+            @endif
+
+        </div>
+
+
+        <div class="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
+
+            <span>
+                عرض {{ $branches->count() }} موقع
+            </span>
+
+            <span
+                wire:loading
+                wire:target="search,typeFilter,clearFilters"
+                class="inline-flex items-center gap-2"
+            >
+                <flux:icon.arrow-path class="size-3.5 animate-spin" />
+                جاري تحديث النتائج...
+            </span>
+
+        </div>
+
+    </div>
+
+
+    {{-- ============================================================
+        LOCATIONS TABLE
+    ============================================================= --}}
+
+    <div
+        class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+
+        <flux:table>
+
+            <flux:table.columns>
+
+                <flux:table.column>
+                    الموقع
+                </flux:table.column>
+
+                <flux:table.column>
+                    النوع
+                </flux:table.column>
+
+                <flux:table.column>
+                    الهاتف
+                </flux:table.column>
+
+                <flux:table.column>
+                    العنوان
+                </flux:table.column>
+
+                <flux:table.column align="end">
+                    الإجراءات
+                </flux:table.column>
+
+            </flux:table.columns>
+
+
+            <flux:table.rows>
+
+                @forelse ($branches as $branch)
+
+                    <flux:table.row
+                        wire:key="branch-{{ $branch->id }}"
+                    >
+
+                        {{-- Name --}}
+
+                        <flux:table.cell>
+
+                            <div class="flex items-center gap-3">
+
+                                <div
+                                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
+                                    {{ $branch->type === 'branch'
+                                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                        : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                                    }}"
+                                >
+
+                                    @if ($branch->type === 'branch')
+
+                                        <flux:icon.building-storefront class="size-5" />
+
+                                    @else
+
+                                        <flux:icon.archive-box class="size-5" />
+
+                                    @endif
+
+                                </div>
+
+                                <div class="min-w-0">
+
+                                    <div class="font-medium text-zinc-900 dark:text-white">
+                                        {{ $branch->name }}
+                                    </div>
+
+                                    <div class="mt-0.5 text-xs text-zinc-400">
+                                        #{{ $branch->id }}
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </flux:table.cell>
+
+
+                        {{-- Type --}}
+
+                        <flux:table.cell>
+
+                            @if ($branch->type === 'branch')
+
+                                <flux:badge
+                                    size="sm"
+                                    color="emerald"
+                                    variant="solid"
+                                >
+                                    فرع بيع
+                                </flux:badge>
+
+                            @else
+
+                                <flux:badge
+                                    size="sm"
+                                    color="indigo"
+                                    variant="solid"
+                                >
+                                    مخزن
+                                </flux:badge>
+
+                            @endif
+
+                        </flux:table.cell>
+
+
+                        {{-- Phone --}}
+
+                        <flux:table.cell>
+
+                            @if (filled($branch->phone))
+
+                                <span
+                                    dir="ltr"
+                                    class="text-sm text-zinc-600 dark:text-zinc-300"
+                                >
+                                    {{ $branch->phone }}
+                                </span>
+
+                            @else
+
+                                <span class="text-xs text-zinc-400">
+                                    غير محدد
+                                </span>
+
+                            @endif
+
+                        </flux:table.cell>
+
+
+                        {{-- Address --}}
+
+                        <flux:table.cell>
+
+                            @if (filled($branch->address))
+
+                                <span class="text-sm text-zinc-600 dark:text-zinc-300">
+                                    {{ $branch->address }}
+                                </span>
+
+                            @else
+
+                                <span class="text-xs text-zinc-400">
+                                    غير محدد
+                                </span>
+
+                            @endif
+
+                        </flux:table.cell>
+
+
+                        {{-- Actions --}}
+
+                        <flux:table.cell align="end">
+
+                            <div class="flex items-center justify-end gap-1">
+
+                                <flux:button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon="pencil-square"
+                                    wire:click="edit({{ $branch->id }})"
+                                    wire:loading.attr="disabled"
+                                    wire:target="edit({{ $branch->id }})"
+                                    title="تعديل الموقع"
+                                />
+
+                                <flux:button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon="trash"
+                                    class="text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    wire:click="delete({{ $branch->id }})"
+                                    wire:confirm="هل أنت متأكد من حذف هذا الموقع؟"
+                                    wire:loading.attr="disabled"
+                                    wire:target="delete({{ $branch->id }})"
+                                    title="حذف الموقع"
+                                />
+
+                            </div>
+
+                        </flux:table.cell>
+
+                    </flux:table.row>
+
+                @empty
+
+                    <flux:table.row>
+
+                        <flux:table.cell
+                            colspan="5"
+                            align="center"
+                            class="py-16"
+                        >
+
+                            <div class="mx-auto flex max-w-md flex-col items-center">
+
+                                <div
+                                    class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                                >
+                                    <flux:icon.building-storefront class="size-8" />
+                                </div>
+
+
+                                @if (
+                                    filled($search) ||
+                                    $typeFilter !== 'all'
+                                )
+
+                                    <flux:heading size="lg">
+                                        لا توجد نتائج
+                                    </flux:heading>
+
+                                    <p class="mt-2 text-sm text-zinc-500">
+                                        لم نجد مواقع تطابق معايير البحث الحالية.
+                                    </p>
+
+                                    <flux:button
+                                        variant="ghost"
+                                        class="mt-4"
+                                        wire:click="clearFilters"
+                                    >
+                                        مسح الفلاتر
+                                    </flux:button>
+
+                                @else
+
+                                    <flux:heading size="lg">
+                                        لا توجد فروع أو مخازن
+                                    </flux:heading>
+
+                                    <p class="mt-2 text-sm text-zinc-500">
+                                        ابدأ بإضافة أول فرع بيع أو مخزن إلى المتجر.
+                                    </p>
+
+                                    <flux:button
+                                        variant="primary"
+                                        icon="plus"
+                                        class="mt-4"
+                                        wire:click="openCreateModal"
+                                    >
+                                        إضافة أول موقع
+                                    </flux:button>
+
+                                @endif
+
+                            </div>
+
+                        </flux:table.cell>
+
+                    </flux:table.row>
+
+                @endforelse
+
+            </flux:table.rows>
+
+        </flux:table>
+
+    </div>
+
+
+    {{-- ============================================================
+        CREATE / EDIT MODAL
+    ============================================================= --}}
+
+    <flux:modal
+        wire:model="showModal"
+        class="md:w-[620px]"
+    >
+
+        <form
+            wire:submit="save"
+            class="space-y-6"
+        >
+
+            {{-- Modal Header --}}
+
+            <div>
+
+                <div class="flex items-start gap-3">
+
+                    <div
+                        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl
+                        {{ $isEditing
+                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                            : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        }}"
+                    >
+
+                        @if ($isEditing)
+
+                            <flux:icon.pencil-square class="size-5" />
+
+                        @else
+
+                            <flux:icon.plus class="size-5" />
+
+                        @endif
+
+                    </div>
+
+                    <div>
+
+                        <flux:heading size="lg">
+
+                            {{ $isEditing
+                                ? 'تعديل بيانات الموقع'
+                                : 'إضافة موقع جديد'
+                            }}
+
+                        </flux:heading>
+
+                        <flux:subheading class="mt-1">
+
+                            {{ $isEditing
+                                ? 'حدّث بيانات الفرع أو المخزن ومعلومات التواصل.'
+                                : 'أدخل بيانات الفرع أو المخزن الجديد.'
+                            }}
+
+                        </flux:subheading>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            {{-- Location Type --}}
+
+            <div class="space-y-4">
+
+                <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    نوع الموقع
+                </div>
+
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+                    {{-- Branch Option --}}
+
+                    <button
+                        type="button"
+                        wire:click="$set('type', 'branch')"
+                        class="rounded-xl border p-4 text-right transition
+                        {{ $type === 'branch'
+                            ? 'border-emerald-300 bg-emerald-50 ring-2 ring-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:ring-emerald-950'
+                            : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
+                        }}"
+                    >
+
+                        <div class="flex items-center gap-3">
+
+                            <div
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
+                                {{ $type === 'branch'
+                                    ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
+                                }}"
+                            >
+                                <flux:icon.building-storefront class="size-5" />
+                            </div>
+
+                            <div>
+
+                                <div class="text-sm font-medium text-zinc-900 dark:text-white">
+                                    فرع بيع
+                                </div>
+
+                                <div class="mt-0.5 text-xs text-zinc-500">
+                                    نقطة بيع وتشغيل POS
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </button>
+
+
+                    {{-- Warehouse Option --}}
+
+                    <button
+                        type="button"
+                        wire:click="$set('type', 'warehouse')"
+                        class="rounded-xl border p-4 text-right transition
+                        {{ $type === 'warehouse'
+                            ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:ring-indigo-950'
+                            : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
+                        }}"
+                    >
+
+                        <div class="flex items-center gap-3">
+
+                            <div
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
+                                {{ $type === 'warehouse'
+                                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
+                                }}"
+                            >
+                                <flux:icon.archive-box class="size-5" />
+                            </div>
+
+                            <div>
+
+                                <div class="text-sm font-medium text-zinc-900 dark:text-white">
+                                    مخزن
+                                </div>
+
+                                <div class="mt-0.5 text-xs text-zinc-500">
+                                    موقع لتخزين المنتجات والمخزون
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </button>
+
+                </div>
+
+                @error('type')
+
+                    <div class="text-sm text-red-600 dark:text-red-400">
+                        {{ $message }}
+                    </div>
+
+                @enderror
+
+            </div>
+
+
+            {{-- Basic Information --}}
+
+            <div class="space-y-4">
+
+                <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    البيانات الأساسية
+                </div>
+
+
+                {{-- Name --}}
+
+                <flux:field>
+
+                    <flux:label>
+                        اسم الموقع
+                    </flux:label>
+
+                    <flux:input
+                        wire:model="name"
+                        placeholder="مثال: فرع وسط البلد أو المخزن المركزي"
+                        autocomplete="organization"
+                    />
+
+                    <flux:error name="name" />
+
+                </flux:field>
+
+
+                {{-- Phone --}}
+
+                <flux:field>
+
+                    <flux:label>
+                        رقم الهاتف
+                    </flux:label>
+
+                    <flux:input
+                        wire:model="phone"
+                        placeholder="059xxxxxxx"
+                        autocomplete="tel"
+                        dir="ltr"
+                    />
+
+                    <flux:error name="phone" />
+
+                </flux:field>
+
+
+                {{-- Address --}}
+
+                <flux:field>
+
+                    <flux:label>
+                        العنوان
+                    </flux:label>
+
+                    <flux:input
+                        wire:model="address"
+                        placeholder="المدينة، الشارع، المنطقة..."
+                        autocomplete="street-address"
+                    />
+
+                    <flux:error name="address" />
+
+                </flux:field>
+
+            </div>
+
+
+            {{-- Preview --}}
+
+            <div
+                class="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
+            >
+
+                <div class="flex items-center gap-3">
+
+                    <div
+                        class="flex h-10 w-10 items-center justify-center rounded-xl
+                        {{ $type === 'branch'
+                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                            : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                        }}"
+                    >
+
+                        @if ($type === 'branch')
+
+                            <flux:icon.building-storefront class="size-5" />
+
+                        @else
+
+                            <flux:icon.archive-box class="size-5" />
+
+                        @endif
+
+                    </div>
+
+                    <div class="min-w-0">
+
+                        <div class="text-xs text-zinc-500">
+                            معاينة
+                        </div>
+
+                        <div class="truncate text-sm font-medium text-zinc-900 dark:text-white">
+
+                            {{ filled($name)
+                                ? $name
+                                : 'اسم الموقع'
+                            }}
+
+                        </div>
+
+                        <div class="mt-0.5 text-xs text-zinc-500">
+
+                            {{ $type === 'branch'
+                                ? 'فرع بيع'
+                                : 'مخزن'
+                            }}
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            {{-- Footer --}}
+
+            <div
+                class="flex flex-col-reverse gap-2 border-t border-zinc-100 pt-5 sm:flex-row sm:justify-end dark:border-zinc-800"
+            >
+
+                <flux:button
+                    type="button"
+                    variant="ghost"
+                    wire:click="closeModal"
+                    wire:loading.attr="disabled"
+                >
+                    إلغاء
+                </flux:button>
+
+                <flux:button
+                    type="submit"
+                    variant="primary"
+                    icon="{{ $isEditing ? 'check' : 'plus' }}"
+                    wire:loading.attr="disabled"
+                    wire:target="save"
+                >
+
+                    <span wire:loading.remove wire:target="save">
+                        {{ $isEditing
+                            ? 'حفظ التعديلات'
+                            : 'إضافة الموقع'
+                        }}
+                    </span>
+
+                    <span
+                        wire:loading
+                        wire:target="save"
+                        class="inline-flex items-center gap-2"
+                    >
+                        <flux:icon.arrow-path class="size-4 animate-spin" />
+                        جاري الحفظ...
+                    </span>
+
+                </flux:button>
+
+            </div>
+
         </form>
+
     </flux:modal>
+
 </flux:main>

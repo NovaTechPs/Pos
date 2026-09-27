@@ -14,30 +14,130 @@ use Illuminate\Support\Str;
 new class extends Component {
     use WithPagination;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Search / Products
+    |--------------------------------------------------------------------------
+    */
+
     public string $search = '';
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Search
+    |--------------------------------------------------------------------------
+    */
+
+    public string $customerSearch = '';
+    public bool $showCustomerDropdown = false;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cart
+    |--------------------------------------------------------------------------
+    */
+
     public array $cart = [];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Customer
+    |--------------------------------------------------------------------------
+    */
+
     public ?int $selectedCustomerId = null;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Invoice
+    |--------------------------------------------------------------------------
+    */
+
     public string $notes = '';
+
     public float $paidAmount = 0;
+
     public string $paymentMethod = 'cash';
 
+    /*
+    |--------------------------------------------------------------------------
+    | Discount
+    |--------------------------------------------------------------------------
+    */
+
     public string $discountType = 'fixed';
+
     public float $discountAmount = 0;
+
     public float $discountRate = 0;
+
+    /*
+    |--------------------------------------------------------------------------
+    | WhatsApp
+    |--------------------------------------------------------------------------
+    */
+
     public bool $sendWhatsapp = false;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Price History
+    |--------------------------------------------------------------------------
+    */
+
     public bool $showPriceHistoryModal = false;
+
     public ?array $selectedHistoryItem = null;
+
+    /*
+    |--------------------------------------------------------------------------
+    | New Invoice Confirmation
+    |--------------------------------------------------------------------------
+    */
+
+    public bool $showNewInvoiceConfirm = false;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Below Cost Confirmation
+    |--------------------------------------------------------------------------
+    */
+
+    public bool $showBelowCostConfirm = false;
+
+    public ?int $pendingBelowCostProductId = null;
+
+    public float $pendingBelowCostPrice = 0;
+
+    /*
+    |--------------------------------------------------------------------------
+    | UI
+    |--------------------------------------------------------------------------
+    */
+
+    public bool $isSaving = false;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant / Branch
+    |--------------------------------------------------------------------------
+    */
 
     private function tenantId(): ?int
     {
-        return auth()->user()?->tenant_id ? (int) auth()->user()->tenant_id : null;
+        $user = auth()->user();
+
+        return session('active_tenant_id')
+            ?: $user?->tenant_id
+            ?: $user?->tenants?->first()?->id;
     }
 
     private function branchId(): ?int
     {
-        return auth()->user()?->branch_id ? (int) auth()->user()->branch_id : null;
+        $user = auth()->user();
+
+        return session('active_branch_id')
+            ?: $user?->branch_id;
     }
 
     private function currentUser(): ?object
@@ -45,10 +145,75 @@ new class extends Component {
         return auth()->user();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
+
     public function updatedSearch(): void
     {
         $this->resetPage();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Search
+    |--------------------------------------------------------------------------
+    */
+
+    public function updatedCustomerSearch(): void
+    {
+        $this->showCustomerDropdown = true;
+    }
+
+    public function openCustomerDropdown(): void
+    {
+        $this->showCustomerDropdown = true;
+    }
+
+    public function closeCustomerDropdown(): void
+    {
+        $this->showCustomerDropdown = false;
+    }
+
+    public function selectCustomer(int $customerId): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            session()->flash('error', 'تعذر تحديد المتجر الحالي.');
+            return;
+        }
+
+        $customer = Party::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('type', ['customer', 'both'])
+            ->where('is_active', true)
+            ->find($customerId);
+
+        if (!$customer) {
+            session()->flash('error', 'العميل المحدد غير صالح.');
+            return;
+        }
+
+        $this->selectedCustomerId = $customer->id;
+        $this->customerSearch = $customer->name;
+        $this->showCustomerDropdown = false;
+    }
+
+    public function clearCustomer(): void
+    {
+        $this->selectedCustomerId = null;
+        $this->customerSearch = '';
+        $this->showCustomerDropdown = false;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Discount
+    |--------------------------------------------------------------------------
+    */
 
     public function updatedDiscountType(): void
     {
@@ -69,14 +234,40 @@ new class extends Component {
         $this->discountRate = min(100, max(0, (float) $value));
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Payment
+    |--------------------------------------------------------------------------
+    */
+
     public function updatedPaidAmount($value): void
     {
         $this->paidAmount = max(0, (float) $value);
     }
 
+    public function setFullPayment(): void
+    {
+        $this->paidAmount = $this->total;
+    }
+
+    public function setPaymentAmount(float $amount): void
+    {
+        $this->paidAmount = min(
+            $this->total,
+            max(0, round($amount, 2))
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Barcode
+    |--------------------------------------------------------------------------
+    */
+
     public function searchBarcode(): void
     {
         $term = trim($this->search);
+
         if ($term === '') {
             return;
         }
@@ -85,25 +276,51 @@ new class extends Component {
         $branchId = $this->branchId();
 
         if (!$tenantId || !$branchId) {
-            session()->flash('error', 'لا يمكن إصدار فاتورة قبل ربط المستخدم بمتجر وفرع.');
+            session()->flash(
+                'error',
+                'لا يمكن إصدار فاتورة قبل ربط المستخدم بمتجر وفرع.'
+            );
+
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Exact barcode first
+        |--------------------------------------------------------------------------
+        */
+
         $product = Product::query()
             ->where('products.tenant_id', $tenantId)
-            ->whereHas('barcodes', fn ($q) => $q->where('barcode', $term))
-            ->whereHas('branchProducts', fn ($q) => $q->where('branch_id', $branchId))
+            ->whereHas('barcodes', function ($query) use ($term) {
+                $query->where('barcode', $term);
+            })
+            ->whereHas('branchProducts', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            })
             ->first();
 
         if (!$product) {
-            session()->flash('error', 'لم يتم العثور على منتج بهذا الباركود.');
+            session()->flash(
+                'error',
+                'لم يتم العثور على منتج بهذا الباركود.'
+            );
+
             return;
         }
 
         $this->addToCart($product->id);
+
         $this->search = '';
+
         $this->resetPage();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cart
+    |--------------------------------------------------------------------------
+    */
 
     public function addToCart(int $productId): void
     {
@@ -111,7 +328,11 @@ new class extends Component {
         $branchId = $this->branchId();
 
         if (!$tenantId || !$branchId) {
-            session()->flash('error', 'المستخدم غير مرتبط بفرع.');
+            session()->flash(
+                'error',
+                'المستخدم غير مرتبط بفرع.'
+            );
+
             return;
         }
 
@@ -123,26 +344,52 @@ new class extends Component {
             ->first();
 
         if (!$branchProduct?->product) {
-            session()->flash('error', 'المنتج غير مرتبط بالفرع الحالي.');
+            session()->flash(
+                'error',
+                'المنتج غير مرتبط بالفرع الحالي.'
+            );
+
             return;
         }
 
         $stock = (float) $branchProduct->stock_quantity;
-        $currentQty = (float) ($this->cart[$productId]['quantity'] ?? 0);
+
+        $currentQty = (float) (
+            $this->cart[$productId]['quantity'] ?? 0
+        );
 
         if ($stock <= $currentQty) {
-            session()->flash('error', "الكمية المتوفرة من {$branchProduct->product->name} هي {$stock}. ");
+            session()->flash(
+                'error',
+                "الكمية المتوفرة من {$branchProduct->product->name} هي {$stock}."
+            );
+
             return;
         }
 
-        $price = (float) ($branchProduct->wholesale_price > 0
-            ? $branchProduct->wholesale_price
-            : $branchProduct->retail_price);
+        $price = (float) (
+            $branchProduct->wholesale_price > 0
+                ? $branchProduct->wholesale_price
+                : $branchProduct->retail_price
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Existing item
+        |--------------------------------------------------------------------------
+        */
 
         if (isset($this->cart[$productId])) {
             $this->cart[$productId]['quantity'] = $currentQty + 1;
+
             return;
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | New item
+        |--------------------------------------------------------------------------
+        */
 
         $this->cart[$productId] = [
             'id' => $branchProduct->product->id,
@@ -162,20 +409,36 @@ new class extends Component {
         }
 
         $qty = (float) $qty;
+
         if ($qty <= 0) {
             unset($this->cart[$productId]);
+
             return;
         }
 
-        $stock = (float) ($this->cart[$productId]['stock'] ?? 0);
+        $stock = (float) (
+            $this->cart[$productId]['stock'] ?? 0
+        );
+
         if ($stock > 0 && $qty > $stock) {
             $this->cart[$productId]['quantity'] = $stock;
-            session()->flash('error', "الكمية المطلوبة تتجاوز مخزون {$this->cart[$productId]['name']}.");
+
+            session()->flash(
+                'error',
+                "الكمية المطلوبة تتجاوز مخزون {$this->cart[$productId]['name']}."
+            );
+
             return;
         }
 
         $this->cart[$productId]['quantity'] = $qty;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Price
+    |--------------------------------------------------------------------------
+    */
 
     public function updatePrice(int $productId, $newPrice): void
     {
@@ -184,8 +447,98 @@ new class extends Component {
         }
 
         $price = max(0, (float) $newPrice);
+
+        $cost = (float) (
+            $this->cart[$productId]['cost'] ?? 0
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Below cost
+        |--------------------------------------------------------------------------
+        */
+
+        if ($price < $cost && $cost > 0) {
+            if (!$this->canSellBelowCost()) {
+                $this->pendingBelowCostProductId = $productId;
+                $this->pendingBelowCostPrice = $price;
+                $this->showBelowCostConfirm = true;
+
+                return;
+            }
+        }
+
         $this->cart[$productId]['price'] = $price;
     }
+
+    private function canSellBelowCost(): bool
+    {
+        $user = $this->currentUser();
+
+        if (!$user) {
+            return false;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | If your project already has permissions/spatie permissions,
+        | this will work directly.
+        |--------------------------------------------------------------------------
+        */
+
+        if (method_exists($user, 'can')) {
+            return (bool) $user->can('sell-below-cost');
+        }
+
+        return false;
+    }
+
+    public function confirmBelowCostPrice(): void
+    {
+        if (
+            !$this->pendingBelowCostProductId ||
+            !isset($this->cart[$this->pendingBelowCostProductId])
+        ) {
+            $this->cancelBelowCostPrice();
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Explicit confirmation does not bypass authorization.
+        |--------------------------------------------------------------------------
+        */
+
+        if (!$this->canSellBelowCost()) {
+            session()->flash(
+                'error',
+                'لا تملك صلاحية البيع بأقل من التكلفة.'
+            );
+
+            $this->cancelBelowCostPrice();
+
+            return;
+        }
+
+        $this->cart[$this->pendingBelowCostProductId]['price'] =
+            max(0, $this->pendingBelowCostPrice);
+
+        $this->cancelBelowCostPrice();
+    }
+
+    public function cancelBelowCostPrice(): void
+    {
+        $this->pendingBelowCostProductId = null;
+        $this->pendingBelowCostPrice = 0;
+        $this->showBelowCostConfirm = false;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remove / Clear
+    |--------------------------------------------------------------------------
+    */
 
     public function removeFromCart(int $productId): void
     {
@@ -195,26 +548,74 @@ new class extends Component {
     public function clearCart(): void
     {
         $this->cart = [];
+
         $this->paidAmount = 0;
+
         $this->discountAmount = 0;
+
         $this->discountRate = 0;
+
         $this->notes = '';
+
         $this->selectedCustomerId = null;
+
+        $this->customerSearch = '';
+
+        $this->showCustomerDropdown = false;
+
         $this->paymentMethod = 'cash';
+
         $this->sendWhatsapp = false;
+
+        $this->cancelBelowCostPrice();
     }
 
-    public function setFullPayment(): void
+    public function requestNewInvoice(): void
     {
-        $this->paidAmount = $this->total;
+        if (empty($this->cart)) {
+            $this->clearCart();
+
+            return;
+        }
+
+        $this->showNewInvoiceConfirm = true;
     }
+
+    public function confirmNewInvoice(): void
+    {
+        $this->showNewInvoiceConfirm = false;
+
+        $this->clearCart();
+    }
+
+    public function cancelNewInvoice(): void
+    {
+        $this->showNewInvoiceConfirm = false;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Price History
+    |--------------------------------------------------------------------------
+    */
 
     public function showLastPrice(int $productId): void
     {
         $tenantId = $this->tenantId();
-        $product = Product::query()->where('tenant_id', $tenantId)->find($productId);
+
+        if (!$tenantId) {
+            return;
+        }
+
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->find($productId);
+
         $customer = $this->selectedCustomerId
-            ? Party::query()->where('tenant_id', $tenantId)->find($this->selectedCustomerId)
+            ? Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', ['customer', 'both'])
+                ->find($this->selectedCustomerId)
             : null;
 
         $history = [];
@@ -223,11 +624,13 @@ new class extends Component {
             $items = OrderItem::query()
                 ->where('tenant_id', $tenantId)
                 ->where('product_id', $productId)
-                ->whereHas('order', fn ($q) => $q
-                    ->where('tenant_id', $tenantId)
-                    ->where('customer_id', $customer->id)
-                    ->where('type', 'wholesale')
-                    ->where('status', 'completed'))
+                ->whereHas('order', function ($query) use ($customer) {
+                    $query
+                        ->where('tenant_id', $this->tenantId())
+                        ->where('customer_id', $customer->id)
+                        ->where('type', 'wholesale')
+                        ->where('status', 'completed');
+                })
                 ->latest('created_at')
                 ->take(10)
                 ->get();
@@ -247,14 +650,22 @@ new class extends Component {
             'history' => $history,
             'has_history' => !empty($history),
         ];
+
         $this->showPriceHistoryModal = true;
     }
 
     public function closePriceHistoryModal(): void
     {
         $this->showPriceHistoryModal = false;
+
         $this->selectedHistoryItem = null;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Balance
+    |--------------------------------------------------------------------------
+    */
 
     private function customerBalance(?Party $customer): float
     {
@@ -262,41 +673,65 @@ new class extends Component {
             return 0.0;
         }
 
-        $orders = (float) $customer->orders()
-            ->where('tenant_id', $this->tenantId())
-            ->where('status', 'completed')
-            ->sum('total');
+        /*
+        |--------------------------------------------------------------------------
+        | current_balance is the authoritative operational balance.
+        |
+        | opening_balance is historical/fixed and must not be recalculated
+        | from invoices and payments here.
+        |--------------------------------------------------------------------------
+        */
 
-        $payments = (float) $customer->payments()
-            ->where('tenant_id', $this->tenantId())
-            ->where('type', 'receipt')
-            ->sum('amount');
-
-        $supplierPayments = (float) $customer->payments()
-            ->where('tenant_id', $this->tenantId())
-            ->where('type', 'payment')
-            ->sum('amount');
-
-        return (float) $customer->opening_balance + $orders + $supplierPayments - $payments;
+        return round(
+            (float) $customer->current_balance,
+            2
+        );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Complete Sale
+    |--------------------------------------------------------------------------
+    */
 
     public function completeSale(bool $shouldPrint = false): void
     {
+        if ($this->isSaving) {
+            return;
+        }
+
         if (empty($this->cart)) {
-            session()->flash('error', 'أضف صنفاً واحداً على الأقل إلى الفاتورة.');
+            session()->flash(
+                'error',
+                'أضف صنفاً واحداً على الأقل إلى الفاتورة.'
+            );
+
             return;
         }
 
         $tenantId = $this->tenantId();
+
         $branchId = $this->branchId();
+
         $user = $this->currentUser();
 
         if (!$tenantId || !$branchId || !$user) {
-            session()->flash('error', 'لا يمكن إصدار الفاتورة: بيانات المستخدم أو الفرع غير مكتملة.');
+            session()->flash(
+                'error',
+                'لا يمكن إصدار الفاتورة: بيانات المستخدم أو الفرع غير مكتملة.'
+            );
+
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Validate customer
+        |--------------------------------------------------------------------------
+        */
+
         $customer = null;
+
         if ($this->selectedCustomerId) {
             $customer = Party::query()
                 ->where('tenant_id', $tenantId)
@@ -305,27 +740,76 @@ new class extends Component {
                 ->find($this->selectedCustomerId);
 
             if (!$customer) {
-                session()->flash('error', 'العميل المحدد غير صالح.');
+                session()->flash(
+                    'error',
+                    'العميل المحدد غير صالح.'
+                );
+
                 return;
             }
         }
 
+        $this->isSaving = true;
+
         $subtotal = 0.0;
+
         $totalCost = 0.0;
+
         $items = [];
+
         $previousBalance = 0.0;
+
         $currentBalance = 0.0;
 
+        $order = null;
+
+        $payment = null;
+
         try {
-            DB::transaction(function () use ($tenantId, $branchId, $user, $customer, &$subtotal, &$totalCost, &$items, &$order, &$payment, &$previousBalance, &$currentBalance) {
+            DB::transaction(function () use (
+                $tenantId,
+                $branchId,
+                $user,
+                $customer,
+                &$subtotal,
+                &$totalCost,
+                &$items,
+                &$order,
+                &$payment,
+                &$previousBalance,
+                &$currentBalance
+            ) {
+                /*
+                |--------------------------------------------------------------------------
+                | Re-check every item inside transaction
+                |--------------------------------------------------------------------------
+                */
+
                 foreach ($this->cart as $rawItem) {
-                    $productId = (int) ($rawItem['id'] ?? 0);
-                    $quantity = (float) ($rawItem['quantity'] ?? 0);
-                    $price = max(0, (float) ($rawItem['price'] ?? 0));
+                    $productId = (int) (
+                        $rawItem['id'] ?? 0
+                    );
+
+                    $quantity = (float) (
+                        $rawItem['quantity'] ?? 0
+                    );
+
+                    $price = max(
+                        0,
+                        (float) ($rawItem['price'] ?? 0)
+                    );
 
                     if ($productId <= 0 || $quantity <= 0) {
-                        throw new \RuntimeException('يوجد صنف أو كمية غير صالحة في الفاتورة.');
+                        throw new \RuntimeException(
+                            'يوجد صنف أو كمية غير صالحة في الفاتورة.'
+                        );
                     }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Product
+                    |--------------------------------------------------------------------------
+                    */
 
                     $product = Product::query()
                         ->where('tenant_id', $tenantId)
@@ -333,8 +817,16 @@ new class extends Component {
                         ->first();
 
                     if (!$product) {
-                        throw new \RuntimeException('أحد المنتجات لم يعد متاحاً في المتجر.');
+                        throw new \RuntimeException(
+                            'أحد المنتجات لم يعد متاحاً في المتجر.'
+                        );
                     }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Branch Product + lock
+                    |--------------------------------------------------------------------------
+                    */
 
                     $branchProduct = BranchProduct::query()
                         ->where('tenant_id', $tenantId)
@@ -344,23 +836,86 @@ new class extends Component {
                         ->first();
 
                     if (!$branchProduct) {
-                        throw new \RuntimeException("المنتج {$product->name} غير مرتبط بالفرع الحالي.");
+                        throw new \RuntimeException(
+                            "المنتج {$product->name} غير مرتبط بالفرع الحالي."
+                        );
                     }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Stock
+                    |--------------------------------------------------------------------------
+                    */
 
                     $available = (float) $branchProduct->stock_quantity;
+
                     if ($available < $quantity) {
-                        throw new \RuntimeException("الكمية المتوفرة من المنتج {$product->name} غير كافية. المتوفر: {$available}.");
+                        throw new \RuntimeException(
+                            "الكمية المتوفرة من المنتج {$product->name} غير كافية. المتوفر: {$available}."
+                        );
                     }
 
-                    $minimumWholesaleQuantity = (float) ($branchProduct->min_wholesale_quantity ?? 1);
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Minimum wholesale quantity
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $minimumWholesaleQuantity = (float) (
+                        $branchProduct->min_wholesale_quantity ?? 1
+                    );
+
                     if ($quantity < $minimumWholesaleQuantity) {
-                        throw new \RuntimeException("الحد الأدنى للبيع بالجملة من المنتج {$product->name} هو {$minimumWholesaleQuantity}.");
+                        throw new \RuntimeException(
+                            "الحد الأدنى للبيع بالجملة من المنتج {$product->name} هو {$minimumWholesaleQuantity}."
+                        );
                     }
 
-                    $lineTotal = round($price * $quantity, 2);
-                    $lineCost = round((float) $product->cost_price * $quantity, 2);
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Cost
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $cost = round(
+                        (float) $product->cost_price,
+                        2
+                    );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Below cost security check
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        $price < $cost &&
+                        $cost > 0 &&
+                        !$this->canSellBelowCost()
+                    ) {
+                        throw new \RuntimeException(
+                            "سعر المنتج {$product->name} أقل من التكلفة، ولا تملك صلاحية البيع بأقل من التكلفة."
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Totals
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $lineTotal = round(
+                        $price * $quantity,
+                        2
+                    );
+
+                    $lineCost = round(
+                        $cost * $quantity,
+                        2
+                    );
 
                     $subtotal += $lineTotal;
+
                     $totalCost += $lineCost;
 
                     $items[] = [
@@ -368,196 +923,643 @@ new class extends Component {
                         'name' => $product->name,
                         'quantity' => $quantity,
                         'unit_price' => $price,
-                        'cost_price' => (float) $product->cost_price,
+                        'cost_price' => $cost,
                         'total_price' => $lineTotal,
                         'total_cost' => $lineCost,
                     ];
                 }
 
-                if (!in_array($this->discountType, ['fixed', 'percentage'], true)) {
-                    throw new \RuntimeException('نوع الخصم غير صالح.');
+                /*
+                |--------------------------------------------------------------------------
+                | Discount validation
+                |--------------------------------------------------------------------------
+                */
+
+                if (!in_array(
+                    $this->discountType,
+                    ['fixed', 'percentage'],
+                    true
+                )) {
+                    throw new \RuntimeException(
+                        'نوع الخصم غير صالح.'
+                    );
                 }
 
-                if (!in_array($this->paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque'], true)) {
-                    throw new \RuntimeException('طريقة الدفع غير صالحة.');
+                /*
+                |--------------------------------------------------------------------------
+                | Payment validation
+                |--------------------------------------------------------------------------
+                */
+
+                if (!in_array(
+                    $this->paymentMethod,
+                    [
+                        'cash',
+                        'card',
+                        'bank_transfer',
+                        'cheque',
+                    ],
+                    true
+                )) {
+                    throw new \RuntimeException(
+                        'طريقة الدفع غير صالحة.'
+                    );
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Discount
+                |--------------------------------------------------------------------------
+                */
 
                 $discount = $this->discountType === 'percentage'
-                    ? round($subtotal * min(100, max(0, $this->discountRate)) / 100, 2)
-                    : min($subtotal, max(0, $this->discountAmount));
+                    ? round(
+                        $subtotal *
+                        min(
+                            100,
+                            max(0, $this->discountRate)
+                        ) /
+                        100,
+                        2
+                    )
+                    : min(
+                        $subtotal,
+                        max(0, $this->discountAmount)
+                    );
 
-                $total = max(0, round($subtotal - $discount, 2));
-                $paid = round(max(0, (float) $this->paidAmount), 2);
+                /*
+                |--------------------------------------------------------------------------
+                | Total
+                |--------------------------------------------------------------------------
+                */
+
+                $total = max(
+                    0,
+                    round(
+                        $subtotal - $discount,
+                        2
+                    )
+                );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Paid
+                |--------------------------------------------------------------------------
+                */
+
+                $paid = round(
+                    max(
+                        0,
+                        (float) $this->paidAmount
+                    ),
+                    2
+                );
 
                 if ($paid > $total) {
-                    throw new \RuntimeException('المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة.');
+                    throw new \RuntimeException(
+                        'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة.'
+                    );
                 }
 
-                $paymentStatus = $paid >= $total && $total > 0
+                /*
+                |--------------------------------------------------------------------------
+                | Payment Status
+                |--------------------------------------------------------------------------
+                */
+
+                $paymentStatus = $paid >= $total
                     ? 'paid'
-                    : ($paid > 0 ? 'partial' : 'unpaid');
+                    : (
+                        $paid > 0
+                            ? 'partial'
+                            : 'unpaid'
+                    );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Invoice Number
+                |--------------------------------------------------------------------------
+                */
 
                 $invoiceNumber = $this->makeInvoiceNumber();
+
+                /*
+                |--------------------------------------------------------------------------
+                | Lock customer
+                |--------------------------------------------------------------------------
+                */
 
                 if ($customer) {
                     $customer = Party::query()
                         ->whereKey($customer->id)
                         ->where('tenant_id', $tenantId)
+                        ->whereIn('type', ['customer', 'both'])
+                        ->where('is_active', true)
                         ->lockForUpdate()
                         ->first();
 
                     if (!$customer) {
-                        throw new \RuntimeException('تعذر قفل سجل العميل أثناء حفظ الفاتورة.');
+                        throw new \RuntimeException(
+                            'تعذر قفل سجل العميل أثناء حفظ الفاتورة.'
+                        );
                     }
 
-                    $previousBalance = $this->customerBalance($customer);
+                    $previousBalance =
+                        $this->customerBalance($customer);
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Create Order
+                |--------------------------------------------------------------------------
+                */
 
                 $order = Order::create([
                     'tenant_id' => $tenantId,
+
                     'branch_id' => $branchId,
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Wholesale is independent from Shift
+                    |--------------------------------------------------------------------------
+                    */
+
                     'shift_id' => null,
+
                     'created_by' => $user->id,
+
                     'customer_id' => $customer?->id,
-                    'customer_name' => $customer?->name ?? 'زبون عابر',
-                    'customer_phone' => $customer?->phone,
-                    'invoice_number' => $invoiceNumber,
+
+                    'customer_name' =>
+                        $customer?->name ?? 'زبون عابر',
+
+                    'customer_phone' =>
+                        $customer?->phone,
+
+                    'invoice_number' =>
+                        $invoiceNumber,
+
                     'type' => 'wholesale',
+
                     'status' => 'completed',
+
                     'subtotal' => $subtotal,
-                    'discount_type' => $this->discountType,
-                    'discount_rate' => $this->discountType === 'percentage' ? $this->discountRate : 0,
+
+                    'discount_type' =>
+                        $this->discountType,
+
+                    'discount_rate' =>
+                        $this->discountType === 'percentage'
+                            ? $this->discountRate
+                            : 0,
+
                     'discount' => $discount,
+
                     'total' => $total,
+
                     'total_cost' => $totalCost,
-                    'total_profit' => $total - $totalCost,
+
+                    'total_profit' =>
+                        round(
+                            $total - $totalCost,
+                            2
+                        ),
+
                     'paid_amount' => $paid,
-                    'payment_status' => $paymentStatus,
-                    'notes' => trim($this->notes) ?: null,
+
+                    'payment_status' =>
+                        $paymentStatus,
+
+                    'notes' =>
+                        trim($this->notes) ?: null,
                 ]);
+
+                /*
+                |--------------------------------------------------------------------------
+                | Create Items + decrease stock
+                |--------------------------------------------------------------------------
+                */
 
                 foreach ($items as $item) {
                     OrderItem::create([
-                        'tenant_id' => $tenantId,
-                        'order_id' => $order->id,
-                        'product_id' => $item['product_id'],
-                        'quantity' => $item['quantity'],
-                        'unit_price' => $item['unit_price'],
-                        'total_price' => $item['total_price'],
-                        'cost_price' => $item['cost_price'],
-                        'total_cost' => $item['total_cost'],
+                        'tenant_id' =>
+                            $tenantId,
+
+                        'order_id' =>
+                            $order->id,
+
+                        'product_id' =>
+                            $item['product_id'],
+
+                        'quantity' =>
+                            $item['quantity'],
+
+                        'unit_price' =>
+                            $item['unit_price'],
+
+                        'total_price' =>
+                            $item['total_price'],
+
+                        'cost_price' =>
+                            $item['cost_price'],
+
+                        'total_cost' =>
+                            $item['total_cost'],
+
+                        'discount' => 0,
                     ]);
 
                     BranchProduct::query()
                         ->where('tenant_id', $tenantId)
                         ->where('branch_id', $branchId)
-                        ->where('product_id', $item['product_id'])
-                        ->decrement('stock_quantity', $item['quantity']);
+                        ->where(
+                            'product_id',
+                            $item['product_id']
+                        )
+                        ->decrement(
+                            'stock_quantity',
+                            $item['quantity']
+                        );
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Payment
+                |--------------------------------------------------------------------------
+                */
 
                 if ($paid > 0) {
                     $payment = Payment::create([
-                        'tenant_id' => $tenantId,
-                        'branch_id' => $branchId,
+                        'tenant_id' =>
+                            $tenantId,
+
+                        'branch_id' =>
+                            $branchId,
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Wholesale is independent from Shift
+                        |--------------------------------------------------------------------------
+                        */
+
                         'shift_id' => null,
-                        'created_by' => $user->id,
-                        'type' => 'receipt',
-                        'voucher_number' => 'RCV-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(4)),
-                        'payable_type' => $customer ? Party::class : null,
-                        'payable_id' => $customer?->id,
-                        'amount' => $paid,
-                        'payment_method' => $this->paymentMethod,
-                        'order_id' => $order->id,
-                        'notes' => 'دفعة على الفاتورة رقم: ' . $order->invoice_number,
-                        'payment_date' => now(),
+
+                        'created_by' =>
+                            $user->id,
+
+                        'type' =>
+                            'receipt',
+
+                        'voucher_number' =>
+                            'RCV-' .
+                            now()->format('YmdHis') .
+                            '-' .
+                            Str::upper(
+                                Str::random(4)
+                            ),
+
+                        'payable_type' =>
+                            $customer
+                                ? Party::class
+                                : null,
+
+                        'payable_id' =>
+                            $customer?->id,
+
+                        'amount' =>
+                            $paid,
+
+                        'payment_method' =>
+                            $this->paymentMethod,
+
+                        'order_id' =>
+                            $order->id,
+
+                        'notes' =>
+                            'دفعة على الفاتورة رقم: ' .
+                            $order->invoice_number,
+
+                        'payment_date' =>
+                            now(),
                     ]);
-                } else {
-                    $payment = null;
                 }
 
+                /*
+                |--------------------------------------------------------------------------
+                | Customer balance
+                |--------------------------------------------------------------------------
+                */
+
                 if ($customer) {
-                    $currentBalance = round($previousBalance + $total - $paid, 2);
-                    $customer->update(['current_balance' => $currentBalance]);
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Customer sale increases receivable.
+                    | Receipt decreases receivable.
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $currentBalance = round(
+                        $previousBalance +
+                        $total -
+                        $paid,
+                        2
+                    );
+
+                    $customer->update([
+                        'current_balance' =>
+                            $currentBalance,
+                    ]);
                 }
             });
         } catch (\Throwable $e) {
             report($e);
-            session()->flash('error', $e instanceof \RuntimeException ? $e->getMessage() : 'تعذر حفظ الفاتورة، لم يتم إجراء أي تغيير.');
+
+            session()->flash(
+                'error',
+                $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'تعذر حفظ الفاتورة، لم يتم إجراء أي تغيير.'
+            );
+
+            $this->isSaving = false;
+
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Print
+        |--------------------------------------------------------------------------
+        */
+
         if ($shouldPrint && $order) {
-            $this->dispatch('do-kiosk-print', data: [
-                'header_title' => 'فاتورة مبيعات جملة',
-                'invoice_no' => $order->invoice_number,
-                'customer_name' => $order->customer_name,
-                'customer_phone' => $order->customer_phone,
-                'date' => $order->created_at->format('Y-m-d h:i A'),
-                'items' => $items,
-                'subtotal' => (float) $order->subtotal,
-                'discount' => (float) $order->discount,
-                'total' => (float) $order->total,
-                'paid_amount' => (float) $order->paid_amount,
-                'remaining_amount' => max(0, (float) $order->total - (float) $order->paid_amount),
-                'previous_balance' => $previousBalance,
-                'current_balance' => $currentBalance,
-                'payment_method' => $this->paymentMethodLabel(),
-                'notes' => $order->notes,
-            ]);
+            $this->dispatch(
+                'do-kiosk-print',
+                data: [
+                    'header_title' =>
+                        'فاتورة مبيعات جملة',
+
+                    'invoice_no' =>
+                        $order->invoice_number,
+
+                    'customer_name' =>
+                        $order->customer_name,
+
+                    'customer_phone' =>
+                        $order->customer_phone,
+
+                    'date' =>
+                        $order->created_at
+                            ->format('Y-m-d h:i A'),
+
+                    'items' =>
+                        $items,
+
+                    'subtotal' =>
+                        (float) $order->subtotal,
+
+                    'discount' =>
+                        (float) $order->discount,
+
+                    'total' =>
+                        (float) $order->total,
+
+                    'paid_amount' =>
+                        (float) $order->paid_amount,
+
+                    'remaining_amount' =>
+                        max(
+                            0,
+                            (float) $order->total -
+                            (float) $order->paid_amount
+                        ),
+
+                    'previous_balance' =>
+                        $previousBalance,
+
+                    'current_balance' =>
+                        $currentBalance,
+
+                    'payment_method' =>
+                        $this->paymentMethodLabel(),
+
+                    'notes' =>
+                        $order->notes,
+                ]
+            );
         }
 
-        if ($this->sendWhatsapp && $order && $order->customer_phone) {
-            $this->dispatch('open-whatsapp-url', url: $this->whatsappUrl($order, $items));
+        /*
+        |--------------------------------------------------------------------------
+        | WhatsApp
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $this->sendWhatsapp &&
+            $order &&
+            $order->customer_phone
+        ) {
+            $this->dispatch(
+                'open-whatsapp-url',
+                url: $this->whatsappUrl(
+                    $order,
+                    $items
+                )
+            );
         }
 
-        $invoiceNumber = $order?->invoice_number;
+        $invoiceNumber =
+            $order?->invoice_number;
+
         $this->clearCart();
-        session()->flash('message', "تم حفظ فاتورة الجملة رقم {$invoiceNumber} بنجاح.");
+
+        $this->isSaving = false;
+
+        session()->flash(
+            'message',
+            "تم حفظ فاتورة الجملة رقم {$invoiceNumber} بنجاح."
+        );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Invoice Number
+    |--------------------------------------------------------------------------
+    */
 
     private function makeInvoiceNumber(): string
     {
         do {
-            $number = 'WS-' . now()->format('Ymd') . '-' . now()->format('His') . '-' . Str::upper(Str::random(3));
-        } while (Order::query()->where('tenant_id', $this->tenantId())->where('invoice_number', $number)->exists());
+            $number =
+                'WS-' .
+                now()->format('Ymd') .
+                '-' .
+                now()->format('His') .
+                '-' .
+                Str::upper(
+                    Str::random(3)
+                );
+        } while (
+            Order::query()
+                ->where(
+                    'tenant_id',
+                    $this->tenantId()
+                )
+                ->where(
+                    'invoice_number',
+                    $number
+                )
+                ->exists()
+        );
 
         return $number;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Payment Label
+    |--------------------------------------------------------------------------
+    */
+
     private function paymentMethodLabel(): string
     {
         return match ($this->paymentMethod) {
-            'card' => 'بطاقة',
-            'bank_transfer' => 'تحويل بنكي',
-            'cheque' => 'شيك',
-            default => 'نقداً',
+            'card' =>
+                'بطاقة',
+
+            'bank_transfer' =>
+                'تحويل بنكي',
+
+            'cheque' =>
+                'شيك',
+
+            default =>
+                'نقداً',
         };
     }
 
-    private function whatsappUrl(Order $order, array $items): string
+    /*
+    |--------------------------------------------------------------------------
+    | WhatsApp
+    |--------------------------------------------------------------------------
+    */
+
+    private function normalizePhone(?string $phone): string
     {
-        $phone = preg_replace('/\D+/', '', (string) $order->customer_phone);
-        $text = "مرحباً {$order->customer_name}،\n";
-        $text .= "تم إصدار فاتورة مبيعات جملة رقم {$order->invoice_number}.\n\n";
+        $phone = preg_replace(
+            '/\D+/',
+            '',
+            (string) $phone
+        );
+
+        if ($phone === '') {
+            return '';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Palestine local number
+        |--------------------------------------------------------------------------
+        */
+
+        if (str_starts_with($phone, '0')) {
+            return '970' . substr($phone, 1);
+        }
+
+        if (str_starts_with($phone, '972')) {
+            return '970' . substr($phone, 3);
+        }
+
+        return $phone;
+    }
+
+    private function whatsappUrl(
+        Order $order,
+        array $items
+    ): string {
+        $phone = $this->normalizePhone(
+            $order->customer_phone
+        );
+
+        $text =
+            "مرحباً {$order->customer_name}،\n";
+
+        $text .=
+            "تم إصدار فاتورة مبيعات جملة رقم {$order->invoice_number}.\n\n";
 
         foreach ($items as $item) {
-            $text .= "• {$item['name']} × {$item['quantity']} = " . number_format($item['total_price'], 2) . " شيكل\n";
+            $text .=
+                "• {$item['name']} × {$item['quantity']} = " .
+                number_format(
+                    $item['total_price'],
+                    2
+                ) .
+                " شيكل\n";
         }
 
-        $text .= "\nالإجمالي: " . number_format($order->total, 2) . " شيكل\n";
-        $text .= "المدفوع: " . number_format($order->paid_amount, 2) . " شيكل\n";
-        $text .= "المتبقي: " . number_format(max(0, $order->total - $order->paid_amount), 2) . " شيكل\n";
+        $text .=
+            "\nالإجمالي: " .
+            number_format(
+                $order->total,
+                2
+            ) .
+            " شيكل\n";
+
+        $text .=
+            "المدفوع: " .
+            number_format(
+                $order->paid_amount,
+                2
+            ) .
+            " شيكل\n";
+
+        $text .=
+            "المتبقي: " .
+            number_format(
+                max(
+                    0,
+                    $order->total -
+                    $order->paid_amount
+                ),
+                2
+            ) .
+            " شيكل\n";
 
         if ($order->notes) {
-            $text .= "ملاحظات: {$order->notes}\n";
+            $text .=
+                "ملاحظات: {$order->notes}\n";
         }
 
-        return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
+        return
+            'https://wa.me/' .
+            $phone .
+            '?text=' .
+            urlencode($text);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Computed Totals
+    |--------------------------------------------------------------------------
+    */
 
     public function getSubtotalProperty(): float
     {
-        return round(array_reduce($this->cart, fn ($sum, $item) => $sum + ((float) $item['price'] * (float) $item['quantity']), 0), 2);
+        return round(
+            array_reduce(
+                $this->cart,
+                fn ($sum, $item) =>
+                    $sum +
+                    (
+                        (float) $item['price'] *
+                        (float) $item['quantity']
+                    ),
+                0
+            ),
+            2
+        );
     }
 
     public function getDiscountProperty(): float
@@ -565,18 +1567,52 @@ new class extends Component {
         $subtotal = $this->subtotal;
 
         return $this->discountType === 'percentage'
-            ? round($subtotal * min(100, max(0, $this->discountRate)) / 100, 2)
-            : min($subtotal, max(0, $this->discountAmount));
+            ? round(
+                $subtotal *
+                min(
+                    100,
+                    max(
+                        0,
+                        $this->discountRate
+                    )
+                ) /
+                100,
+                2
+            )
+            : min(
+                $subtotal,
+                max(
+                    0,
+                    $this->discountAmount
+                )
+            );
     }
 
     public function getTotalProperty(): float
     {
-        return max(0, round($this->subtotal - $this->discount, 2));
+        return max(
+            0,
+            round(
+                $this->subtotal -
+                $this->discount,
+                2
+            )
+        );
     }
 
     public function getRemainingProperty(): float
     {
-        return max(0, round($this->total - max(0, (float) $this->paidAmount), 2));
+        return max(
+            0,
+            round(
+                $this->total -
+                max(
+                    0,
+                    (float) $this->paidAmount
+                ),
+                2
+            )
+        );
     }
 
     public function getSelectedCustomerBalanceProperty(): float
@@ -586,353 +1622,1746 @@ new class extends Component {
         }
 
         $customer = Party::query()
-            ->where('tenant_id', $this->tenantId())
-            ->find($this->selectedCustomerId);
+            ->where(
+                'tenant_id',
+                $this->tenantId()
+            )
+            ->whereIn(
+                'type',
+                ['customer', 'both']
+            )
+            ->find(
+                $this->selectedCustomerId
+            );
 
-        return $this->customerBalance($customer);
+        return $this->customerBalance(
+            $customer
+        );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Render
+    |--------------------------------------------------------------------------
+    */
 
     public function render()
     {
         $tenantId = $this->tenantId();
+
         $branchId = $this->branchId();
+
         $term = trim($this->search);
 
+        /*
+        |--------------------------------------------------------------------------
+        | Products
+        |--------------------------------------------------------------------------
+        */
+
         $products = Product::query()
-            ->where('products.tenant_id', $tenantId ?: 0)
-            ->when($branchId, fn ($q) => $q->whereHas('branchProducts', fn ($bp) => $bp->where('branch_id', $branchId)))
-            ->when($term !== '', function ($q) use ($term) {
-                $q->where(function ($sub) use ($term) {
+            ->where(
+                'products.tenant_id',
+                $tenantId ?: 0
+            )
+
+            ->when(
+                $branchId,
+                fn ($query) =>
+                    $query->whereHas(
+                        'branchProducts',
+                        fn ($branchProduct) =>
+                            $branchProduct
+                                ->where(
+                                    'branch_id',
+                                    $branchId
+                                )
+                    )
+            )
+
+            ->when(
+                $term !== '',
+                function ($query) use ($term) {
                     $like = "%{$term}%";
-                    $sub->where('name', 'like', $like)
-                        ->orWhereHas('barcodes', fn ($barcode) => $barcode->where('barcode', 'like', $like));
-                });
-            }, fn ($q) => $q->whereRaw('1 = 0'))
-            ->with(['branchProducts' => fn ($q) => $q->where('branch_id', $branchId)])
+
+                    $query->where(
+                        function ($sub) use ($like) {
+                            $sub
+                                ->where(
+                                    'name',
+                                    'like',
+                                    $like
+                                )
+                                ->orWhereHas(
+                                    'barcodes',
+                                    fn ($barcode) =>
+                                        $barcode->where(
+                                            'barcode',
+                                            'like',
+                                            $like
+                                        )
+                                );
+                        }
+                    );
+                },
+                fn ($query) =>
+                    $query->whereRaw(
+                        '1 = 0'
+                    )
+            )
+
+            ->with([
+                'branchProducts' =>
+                    fn ($query) =>
+                        $query->where(
+                            'branch_id',
+                            $branchId
+                        ),
+            ])
+
             ->orderBy('name')
+
             ->paginate(16);
 
+        /*
+        |--------------------------------------------------------------------------
+        | Customers
+        |--------------------------------------------------------------------------
+        */
+
+        $customerTerm =
+            trim($this->customerSearch);
+
         $customers = Party::query()
-            ->where('tenant_id', $tenantId ?: 0)
-            ->whereIn('type', ['customer', 'both'])
-            ->where('is_active', true)
+            ->where(
+                'tenant_id',
+                $tenantId ?: 0
+            )
+            ->whereIn(
+                'type',
+                ['customer', 'both']
+            )
+            ->where(
+                'is_active',
+                true
+            )
+
+            ->when(
+                $customerTerm !== '',
+                function ($query) use (
+                    $customerTerm
+                ) {
+                    $like =
+                        "%{$customerTerm}%";
+
+                    $query->where(
+                        function ($sub) use ($like) {
+                            $sub
+                                ->where(
+                                    'name',
+                                    'like',
+                                    $like
+                                )
+                                ->orWhere(
+                                    'phone',
+                                    'like',
+                                    $like
+                                );
+                        }
+                    );
+                }
+            )
+
             ->orderBy('name')
+
+            ->limit(30)
+
             ->get();
 
         return $this->view([
-            'products' => $products,
-            'customers' => $customers,
-        ])->layout('layouts::tenant');
+            'products' =>
+                $products,
+
+            'customers' =>
+                $customers,
+        ])->layout(
+            'layouts::tenant'
+        );
     }
 };
 ?>
 
-<flux:main class="p-2 sm:p-4" dir="rtl">
-    <div class="min-h-[calc(100vh-5rem)] bg-zinc-50 dark:bg-zinc-950 rounded-2xl">
-        <div class="max-w-[1600px] mx-auto space-y-3">
+<flux:main
+    class="p-2 sm:p-4"
+    dir="rtl"
+>
+    <div
+        class="min-h-[calc(100vh-5rem)] rounded-2xl bg-zinc-50 dark:bg-zinc-950"
+    >
+        <div
+            class="mx-auto max-w-[1600px] space-y-3"
+        >
+
+            {{-- ========================================================= --}}
+            {{-- Flash Messages --}}
+            {{-- ========================================================= --}}
+
             @if (session()->has('error'))
-                <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                <div
+                    class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+                >
                     {{ session('error') }}
                 </div>
             @endif
+
             @if (session()->has('message'))
-                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+                <div
+                    class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                >
                     {{ session('message') }}
                 </div>
             @endif
 
+
+            {{-- ========================================================= --}}
+            {{-- Branch Warning --}}
+            {{-- ========================================================= --}}
+
             @if (!$this->branchId())
-                <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                    هذا المستخدم غير مرتبط بفرع. اربطه بفرع أولاً حتى يتم تسجيل المخزون والفاتورة في الفرع الصحيح.
+                <div
+                    class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+                >
+                    هذا المستخدم غير مرتبط بفرع.
+                    اربطه بفرع أولاً حتى يتم تسجيل المخزون والفاتورة في الفرع الصحيح.
                 </div>
             @endif
 
-            <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
-                <section class="xl:col-span-7 flex min-h-0 flex-col gap-3">
-                    <div class="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                        <div class="flex flex-col gap-2 sm:flex-row">
+
+            {{-- ========================================================= --}}
+            {{-- Main POS Grid --}}
+            {{-- ========================================================= --}}
+
+            <div
+                class="grid grid-cols-1 gap-3 xl:grid-cols-12"
+            >
+
+                {{-- ===================================================== --}}
+                {{-- Products --}}
+                {{-- ===================================================== --}}
+
+                <section
+                    class="flex min-h-0 flex-col gap-3 xl:col-span-7"
+                >
+
+                    {{-- Search --}}
+                    <div
+                        class="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+                        <div
+                            class="flex flex-col gap-2 sm:flex-row"
+                        >
+
                             <div class="flex-1">
                                 <flux:input
                                     id="wholesale-product-search"
-                                    wire:model.live.debounce.180ms="search"
+                                    wire:model.live.debounce.320ms="search"
                                     wire:keydown.enter="searchBarcode"
                                     icon="magnifying-glass"
                                     placeholder="ابحث باسم الصنف أو امسح الباركود ثم Enter..."
                                     autofocus
                                 />
                             </div>
-                            <div class="flex items-center gap-2 rounded-xl bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                                <flux:icon name="building-storefront" class="size-4" />
-                                <span>فرع المستخدم: {{ auth()->user()?->branch?->name ?? 'غير محدد' }}</span>
+
+                            <div
+                                class="flex items-center gap-2 rounded-xl bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                            >
+                                <flux:icon
+                                    name="building-storefront"
+                                    class="size-4"
+                                />
+
+                                <span>
+                                    {{ auth()->user()?->branch?->name ?? 'غير محدد' }}
+                                </span>
                             </div>
+
                         </div>
                     </div>
 
-                    <div class="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                        <div class="mb-3 flex items-center justify-between">
+
+                    {{-- Products --}}
+                    <div
+                        class="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+
+                        <div
+                            class="mb-3 flex items-center justify-between"
+                        >
                             <div>
-                                <h2 class="font-bold text-zinc-900 dark:text-zinc-100">أصناف الجملة</h2>
-                                <p class="text-xs text-zinc-500">اختر الصنف لإضافته إلى الفاتورة. الكمية محدودة بمخزون الفرع.</p>
+                                <h2
+                                    class="font-bold text-zinc-900 dark:text-zinc-100"
+                                >
+                                    أصناف الجملة
+                                </h2>
+
+                                <p
+                                    class="text-xs text-zinc-500"
+                                >
+                                    اختر الصنف لإضافته إلى الفاتورة.
+                                    الكمية محدودة بمخزون الفرع.
+                                </p>
                             </div>
+
                             @if ($search !== '')
-                                <flux:button size="sm" variant="subtle" wire:click="$set('search', '')">مسح البحث</flux:button>
+                                <flux:button
+                                    size="sm"
+                                    variant="subtle"
+                                    wire:click="$set('search', '')"
+                                >
+                                    مسح البحث
+                                </flux:button>
                             @endif
                         </div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+
+                        <div
+                            class="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4"
+                        >
+
                             @forelse ($products as $product)
+
                                 @php
                                     $bp = $product->branchProducts->first();
-                                    $price = (float) ($bp?->wholesale_price > 0 ? $bp->wholesale_price : ($bp?->retail_price ?? 0));
-                                    $stock = (float) ($bp?->stock_quantity ?? 0);
+
+                                    $price = (float) (
+                                        $bp?->wholesale_price > 0
+                                            ? $bp->wholesale_price
+                                            : ($bp?->retail_price ?? 0)
+                                    );
+
+                                    $stock = (float) (
+                                        $bp?->stock_quantity ?? 0
+                                    );
                                 @endphp
+
                                 <button
                                     type="button"
                                     wire:click="addToCart({{ $product->id }})"
                                     @disabled(!$bp || $stock <= 0)
                                     class="group rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-right transition hover:-translate-y-0.5 hover:border-indigo-400 hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:bg-zinc-900"
                                 >
-                                    <div class="mb-2 line-clamp-2 min-h-10 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{{ $product->name }}</div>
-                                    <div class="flex items-end justify-between gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-800">
-                                        <div>
-                                            <div class="text-[10px] text-zinc-400">سعر الجملة</div>
-                                            <div class="font-mono font-bold text-indigo-600 dark:text-indigo-400">{{ number_format($price, 2) }}</div>
-                                        </div>
-                                        <div class="text-left">
-                                            <div class="text-[10px] text-zinc-400">المخزون</div>
-                                            <div class="font-mono text-xs font-semibold {{ $stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400' }}">{{ rtrim(rtrim(number_format($stock, 2), '0'), '.') }}</div>
-                                        </div>
+
+                                    <div
+                                        class="mb-2 line-clamp-2 min-h-10 text-sm font-semibold text-zinc-800 dark:text-zinc-100"
+                                    >
+                                        {{ $product->name }}
                                     </div>
+
+                                    <div
+                                        class="flex items-end justify-between gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-800"
+                                    >
+
+                                        <div>
+                                            <div
+                                                class="text-[10px] text-zinc-400"
+                                            >
+                                                سعر الجملة
+                                            </div>
+
+                                            <div
+                                                class="font-mono font-bold text-indigo-600 dark:text-indigo-400"
+                                            >
+                                                {{ number_format($price, 2) }}
+                                            </div>
+                                        </div>
+
+                                        <div class="text-left">
+                                            <div
+                                                class="text-[10px] text-zinc-400"
+                                            >
+                                                المخزون
+                                            </div>
+
+                                            <div
+                                                class="font-mono text-xs font-semibold {{ $stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400' }}"
+                                            >
+                                                {{ rtrim(rtrim(number_format($stock, 2), '0'), '.') }}
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                 </button>
+
                             @empty
-                                <div class="col-span-full rounded-xl border border-dashed border-zinc-300 py-12 text-center text-sm text-zinc-400 dark:border-zinc-700">
-                                    {{ $search !== '' ? 'لا توجد أصناف مطابقة للبحث.' : 'ابدأ بالبحث عن صنف أو امسح الباركود.' }}
+
+                                <div
+                                    class="col-span-full rounded-xl border border-dashed border-zinc-300 py-12 text-center text-sm text-zinc-400 dark:border-zinc-700"
+                                >
+                                    {{
+                                        $search !== ''
+                                            ? 'لا توجد أصناف مطابقة للبحث.'
+                                            : 'ابدأ بالبحث عن صنف أو امسح الباركود.'
+                                    }}
                                 </div>
+
                             @endforelse
+
                         </div>
+
 
                         @if ($products->hasPages())
-                            <div class="mt-3">{{ $products->links() }}</div>
+                            <div class="mt-3">
+                                {{ $products->links() }}
+                            </div>
                         @endif
+
                     </div>
+
                 </section>
 
-                <aside class="xl:col-span-5">
-                    <div class="sticky top-3 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                        <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-                            <div class="flex items-center justify-between">
+
+                {{-- ===================================================== --}}
+                {{-- Invoice --}}
+                {{-- ===================================================== --}}
+
+                <aside
+                    class="xl:col-span-5"
+                >
+                    <div
+                        class="sticky top-3 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                    >
+
+                        {{-- Header --}}
+                        <div
+                            class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800"
+                        >
+
+                            <div
+                                class="flex items-center justify-between gap-3"
+                            >
+
                                 <div>
-                                    <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">فاتورة مبيعات جملة</div>
-                                    <div class="text-xs text-zinc-500">إنشاء فاتورة مستقلة عن الشيفتات</div>
+                                    <div
+                                        class="text-lg font-bold text-zinc-900 dark:text-zinc-100"
+                                    >
+                                        فاتورة مبيعات جملة
+                                    </div>
+
+                                    <div
+                                        class="text-xs text-zinc-500"
+                                    >
+                                        مستقلة عن الشيفتات
+                                    </div>
                                 </div>
-                                <flux:button size="sm" variant="subtle" wire:click="clearCart" :disabled="empty($cart)">فاتورة جديدة</flux:button>
+
+                                <flux:button
+                                    size="sm"
+                                    variant="subtle"
+                                    wire:click="requestNewInvoice"
+                                    :disabled="$isSaving"
+                                >
+                                    فاتورة جديدة
+                                </flux:button>
+
                             </div>
+
                         </div>
+
 
                         <div class="space-y-3 p-4">
-                            <div>
-                                <label class="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">العميل</label>
-                                <select wire:model.live="selectedCustomerId" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 focus:border-indigo-500 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
-                                    <option value="">زبون عابر — بدون حساب</option>
-                                    @foreach ($customers as $customer)
-                                        <option value="{{ $customer->id }}">{{ $customer->name }}{{ $customer->phone ? ' — '.$customer->phone : '' }}</option>
-                                    @endforeach
-                                </select>
-                                @if ($selectedCustomerId)
-                                    <div class="mt-1 flex justify-between text-xs">
-                                        <span class="text-zinc-500">الرصيد السابق</span>
-                                        <span class="font-mono font-bold {{ $this->selectedCustomerBalance > 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ number_format($this->selectedCustomerBalance, 2) }} شيكل</span>
-                                    </div>
-                                @endif
-                            </div>
 
-                            <div class="max-h-[38vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-                                @forelse ($cart as $id => $item)
-                                    <div wire:key="wholesale-cart-{{ $id }}" class="border-b border-zinc-100 p-3 last:border-0 dark:border-zinc-800">
-                                        <div class="flex items-start justify-between gap-2">
-                                            <div class="min-w-0 flex-1">
-                                                <div class="flex items-center gap-1">
-                                                    <div class="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">{{ $item['name'] }}</div>
-                                                    <button type="button" wire:click="showLastPrice({{ $id }})" title="سجل أسعار هذا العميل" class="text-indigo-500 hover:text-indigo-700">
-                                                        <flux:icon name="clock" class="size-3.5" />
-                                                    </button>
-                                                </div>
-                                                <div class="mt-2 flex items-center gap-2">
-                                                    <label class="text-[11px] text-zinc-400">السعر</label>
-                                                    <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updatePrice({{ $id }}, $event.target.value)" class="w-24 rounded-lg border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-mono dark:border-zinc-700 dark:bg-zinc-800" />
-                                                </div>
-                                            </div>
-                                            <button type="button" wire:click="removeFromCart({{ $id }})" class="text-zinc-400 hover:text-rose-500">
-                                                <flux:icon name="trash" class="size-4" />
+                            {{-- ================================================= --}}
+                            {{-- Customer --}}
+                            {{-- ================================================= --}}
+
+                            <div
+                                class="relative"
+                                x-data="{ open: @entangle('showCustomerDropdown') }"
+                            >
+
+                                <div
+                                    class="mb-1 flex items-center justify-between"
+                                >
+                                    <label
+                                        class="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+                                    >
+                                        العميل
+                                    </label>
+
+                                    @if ($selectedCustomerId)
+                                        <button
+                                            type="button"
+                                            wire:click="clearCustomer"
+                                            class="text-xs text-rose-500 hover:underline"
+                                        >
+                                            إزالة
+                                        </button>
+                                    @endif
+                                </div>
+
+
+                                <div class="relative">
+
+                                    <input
+                                        type="text"
+                                        wire:model.live.debounce.300ms="customerSearch"
+                                        wire:focus="openCustomerDropdown"
+                                        placeholder="ابحث عن العميل بالاسم أو الهاتف..."
+                                        class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                                    />
+
+                                    @if ($selectedCustomerId)
+                                        <div
+                                            class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-emerald-500"
+                                        >
+                                            ✓
+                                        </div>
+                                    @endif
+
+                                </div>
+
+
+                                @if ($showCustomerDropdown)
+
+                                    <div
+                                        class="absolute inset-x-0 top-full z-40 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                                    >
+
+                                        @if ($customerSearch === '')
+
+                                            <button
+                                                type="button"
+                                                wire:click="clearCustomer"
+                                                class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                                            >
+                                                <span>
+                                                    زبون عابر
+                                                </span>
+
+                                                <span
+                                                    class="text-xs text-zinc-400"
+                                                >
+                                                    بدون حساب
+                                                </span>
                                             </button>
-                                        </div>
-                                        <div class="mt-2 flex items-center justify-between">
-                                            <div class="flex items-center gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-                                                <button type="button" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})" class="size-7 rounded-md hover:bg-white dark:hover:bg-zinc-700">−</button>
-                                                <span class="min-w-8 text-center text-sm font-bold font-mono">{{ rtrim(rtrim(number_format($item['quantity'], 2), '0'), '.') }}</span>
-                                                <button type="button" wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})" class="size-7 rounded-md hover:bg-white dark:hover:bg-zinc-700">+</button>
+
+                                        @endif
+
+
+                                        @forelse ($customers as $customer)
+
+                                            <button
+                                                type="button"
+                                                wire:click="selectCustomer({{ $customer->id }})"
+                                                class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right transition hover:bg-indigo-50 dark:border-zinc-800 dark:hover:bg-indigo-950/30"
+                                            >
+
+                                                <div>
+                                                    <div
+                                                        class="text-sm font-semibold text-zinc-800 dark:text-zinc-100"
+                                                    >
+                                                        {{ $customer->name }}
+                                                    </div>
+
+                                                    @if ($customer->phone)
+                                                        <div
+                                                            class="mt-0.5 text-xs text-zinc-400"
+                                                        >
+                                                            {{ $customer->phone }}
+                                                        </div>
+                                                    @endif
+                                                </div>
+
+                                                <div
+                                                    class="font-mono text-xs font-bold {{ $customer->current_balance > 0 ? 'text-rose-500' : 'text-emerald-500' }}"
+                                                >
+                                                    {{ number_format($customer->current_balance, 2) }}
+                                                </div>
+
+                                            </button>
+
+                                        @empty
+
+                                            <div
+                                                class="px-4 py-8 text-center text-sm text-zinc-400"
+                                            >
+                                                لا يوجد عملاء مطابقون.
                                             </div>
-                                            <div class="text-left">
-                                                <div class="text-[10px] text-zinc-400">{{ number_format($item['price'], 2) }} × {{ $item['quantity'] }}</div>
-                                                <div class="font-mono font-bold text-zinc-900 dark:text-zinc-100">{{ number_format($item['price'] * $item['quantity'], 2) }}</div>
-                                            </div>
-                                        </div>
+
+                                        @endforelse
+
                                     </div>
-                                @empty
-                                    <div class="py-12 text-center text-sm text-zinc-400">لم تتم إضافة أي أصناف.</div>
-                                @endforelse
+
+                                @endif
+
+
+                                @if ($selectedCustomerId)
+
+                                    <div
+                                        class="mt-2 flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-xs dark:bg-zinc-800/60"
+                                    >
+                                        <span class="text-zinc-500">
+                                            الرصيد السابق
+                                        </span>
+
+                                        <span
+                                            class="font-mono font-bold {{ $this->selectedCustomerBalance > 0 ? 'text-rose-600' : 'text-emerald-600' }}"
+                                        >
+                                            {{ number_format($this->selectedCustomerBalance, 2) }}
+                                            ₪
+                                        </span>
+                                    </div>
+
+                                @endif
+
                             </div>
 
-                            <div class="grid grid-cols-2 gap-2">
+
+                            {{-- ================================================= --}}
+                            {{-- Cart --}}
+                            {{-- ================================================= --}}
+
+                            <div
+                                class="max-h-[38vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800"
+                            >
+
+                                @forelse ($cart as $id => $item)
+
+                                    <div
+                                        wire:key="wholesale-cart-{{ $id }}"
+                                        class="border-b border-zinc-100 p-3 last:border-0 dark:border-zinc-800"
+                                    >
+
+                                        <div
+                                            class="flex items-start justify-between gap-2"
+                                        >
+
+                                            <div
+                                                class="min-w-0 flex-1"
+                                            >
+
+                                                <div
+                                                    class="flex items-center gap-1"
+                                                >
+
+                                                    <div
+                                                        class="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100"
+                                                    >
+                                                        {{ $item['name'] }}
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        wire:click="showLastPrice({{ $id }})"
+                                                        title="سجل أسعار هذا العميل"
+                                                        class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/30"
+                                                    >
+                                                        <flux:icon
+                                                            name="clock"
+                                                            class="size-3.5"
+                                                        />
+                                                    </button>
+
+                                                </div>
+
+
+                                                {{-- Price --}}
+                                                <div
+                                                    class="mt-2 flex items-center gap-2"
+                                                >
+                                                    <label
+                                                        class="text-[11px] text-zinc-400"
+                                                    >
+                                                        السعر
+                                                    </label>
+
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value="{{ $item['price'] }}"
+                                                        wire:change="updatePrice({{ $id }}, $event.target.value)"
+                                                        class="w-24 rounded-lg border border-zinc-300 bg-zinc-50 px-2 py-1.5 text-xs font-mono dark:border-zinc-700 dark:bg-zinc-800"
+                                                    />
+
+                                                    @if (($item['price'] ?? 0) < ($item['cost'] ?? 0))
+                                                        <span
+                                                            class="rounded-md bg-rose-50 px-1.5 py-1 text-[10px] font-bold text-rose-600 dark:bg-rose-950/30 dark:text-rose-400"
+                                                        >
+                                                            أقل من التكلفة
+                                                        </span>
+                                                    @endif
+
+                                                </div>
+
+                                            </div>
+
+
+                                            {{-- Remove --}}
+                                            <button
+                                                type="button"
+                                                wire:click="removeFromCart({{ $id }})"
+                                                class="rounded-lg p-1.5 text-zinc-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30"
+                                            >
+                                                <flux:icon
+                                                    name="trash"
+                                                    class="size-4"
+                                                />
+                                            </button>
+
+                                        </div>
+
+
+                                        {{-- Quantity --}}
+                                        <div
+                                            class="mt-2 flex items-center justify-between"
+                                        >
+
+                                            <div
+                                                class="flex items-center gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800"
+                                            >
+
+                                                <button
+                                                    type="button"
+                                                    wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] - 1 }})"
+                                                    class="size-8 rounded-md text-base font-bold transition hover:bg-white dark:hover:bg-zinc-700"
+                                                >
+                                                    −
+                                                </button>
+
+                                                <span
+                                                    class="min-w-10 text-center text-sm font-bold font-mono"
+                                                >
+                                                    {{ rtrim(rtrim(number_format($item['quantity'], 2), '0'), '.') }}
+                                                </span>
+
+                                                <button
+                                                    type="button"
+                                                    wire:click="updateQuantity({{ $id }}, {{ $item['quantity'] + 1 }})"
+                                                    class="size-8 rounded-md text-base font-bold transition hover:bg-white dark:hover:bg-zinc-700"
+                                                >
+                                                    +
+                                                </button>
+
+                                            </div>
+
+
+                                            <div class="text-left">
+
+                                                <div
+                                                    class="text-[10px] text-zinc-400"
+                                                >
+                                                    {{ number_format($item['price'], 2) }}
+                                                    ×
+                                                    {{ $item['quantity'] }}
+                                                </div>
+
+                                                <div
+                                                    class="font-mono font-bold text-zinc-900 dark:text-zinc-100"
+                                                >
+                                                    {{ number_format($item['price'] * $item['quantity'], 2) }}
+                                                </div>
+
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+
+                                @empty
+
+                                    <div
+                                        class="py-12 text-center text-sm text-zinc-400"
+                                    >
+                                        لم تتم إضافة أي أصناف.
+                                    </div>
+
+                                @endforelse
+
+                            </div>
+
+
+                            {{-- ================================================= --}}
+                            {{-- Discount + Payment --}}
+                            {{-- ================================================= --}}
+
+                            <div
+                                class="grid grid-cols-2 gap-2"
+                            >
+
                                 <div>
-                                    <label class="mb-1 block text-xs text-zinc-500">الخصم</label>
+                                    <label
+                                        class="mb-1 block text-xs text-zinc-500"
+                                    >
+                                        الخصم
+                                    </label>
+
                                     <div class="flex gap-1">
-                                        <input type="number" min="0" step="0.01" wire:model.live="{{ $discountType === 'percentage' ? 'discountRate' : 'discountAmount' }}" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-mono dark:border-zinc-700 dark:bg-zinc-800" />
-                                        <select wire:model.live="discountType" class="w-20 rounded-xl border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-                                            <option value="fixed">₪</option>
-                                            <option value="percentage">%</option>
+
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            wire:model.live.debounce.250ms="{{ $discountType === 'percentage' ? 'discountRate' : 'discountAmount' }}"
+                                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm font-mono dark:border-zinc-700 dark:bg-zinc-800"
+                                        />
+
+                                        <select
+                                            wire:model.live="discountType"
+                                            class="w-20 rounded-xl border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                                        >
+                                            <option value="fixed">
+                                                ₪
+                                            </option>
+
+                                            <option value="percentage">
+                                                %
+                                            </option>
                                         </select>
+
                                     </div>
                                 </div>
+
+
                                 <div>
-                                    <label class="mb-1 block text-xs text-zinc-500">طريقة الدفع</label>
-                                    <select wire:model.live="paymentMethod" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-                                        <option value="cash">نقداً</option>
-                                        <option value="card">بطاقة</option>
-                                        <option value="bank_transfer">تحويل بنكي</option>
-                                        <option value="cheque">شيك</option>
+                                    <label
+                                        class="mb-1 block text-xs text-zinc-500"
+                                    >
+                                        طريقة الدفع
+                                    </label>
+
+                                    <select
+                                        wire:model.live="paymentMethod"
+                                        class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                                    >
+                                        <option value="cash">
+                                            نقداً
+                                        </option>
+
+                                        <option value="card">
+                                            بطاقة
+                                        </option>
+
+                                        <option value="bank_transfer">
+                                            تحويل بنكي
+                                        </option>
+
+                                        <option value="cheque">
+                                            شيك
+                                        </option>
                                     </select>
                                 </div>
+
                             </div>
 
-                            <div class="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
-                                <div class="flex justify-between text-sm"><span class="text-zinc-500">الإجمالي قبل الخصم</span><span class="font-mono">{{ number_format($this->subtotal, 2) }}</span></div>
-                                <div class="mt-1 flex justify-between text-sm"><span class="text-zinc-500">الخصم</span><span class="font-mono text-rose-600">- {{ number_format($this->discount, 2) }}</span></div>
-                                <div class="mt-2 flex justify-between border-t border-zinc-200 pt-2 text-lg font-black dark:border-zinc-700"><span>الصافي</span><span class="font-mono text-indigo-600 dark:text-indigo-400">{{ number_format($this->total, 2) }} ₪</span></div>
+
+                            {{-- ================================================= --}}
+                            {{-- Totals --}}
+                            {{-- ================================================= --}}
+
+                            <div
+                                class="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60"
+                            >
+
+                                <div
+                                    class="flex justify-between text-sm"
+                                >
+                                    <span class="text-zinc-500">
+                                        الإجمالي قبل الخصم
+                                    </span>
+
+                                    <span class="font-mono">
+                                        {{ number_format($this->subtotal, 2) }}
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="mt-1 flex justify-between text-sm"
+                                >
+                                    <span class="text-zinc-500">
+                                        الخصم
+                                    </span>
+
+                                    <span class="font-mono text-rose-600">
+                                        -
+                                        {{ number_format($this->discount, 2) }}
+                                    </span>
+                                </div>
+
+                                <div
+                                    class="mt-2 flex justify-between border-t border-zinc-200 pt-2 text-lg font-black dark:border-zinc-700"
+                                >
+                                    <span>
+                                        الصافي
+                                    </span>
+
+                                    <span
+                                        class="font-mono text-indigo-600 dark:text-indigo-400"
+                                    >
+                                        {{ number_format($this->total, 2) }}
+                                        ₪
+                                    </span>
+                                </div>
+
                             </div>
+
+
+                            {{-- ================================================= --}}
+                            {{-- Payment --}}
+                            {{-- ================================================= --}}
 
                             <div>
-                                <div class="mb-1 flex items-center justify-between">
-                                    <label class="text-xs font-medium text-zinc-600 dark:text-zinc-300">المبلغ المدفوع</label>
-                                    <button type="button" wire:click="setFullPayment" class="text-xs font-semibold text-indigo-600 hover:underline">دفع كامل</button>
+
+                                <div
+                                    class="mb-1 flex items-center justify-between"
+                                >
+                                    <label
+                                        class="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+                                    >
+                                        المبلغ المدفوع
+                                    </label>
+
+                                    <button
+                                        type="button"
+                                        wire:click="setFullPayment"
+                                        class="text-xs font-semibold text-indigo-600 hover:underline"
+                                    >
+                                        دفع كامل
+                                    </button>
                                 </div>
-                                <input type="number" min="0" step="0.01" wire:model.live="paidAmount" class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-lg font-bold font-mono dark:border-zinc-700 dark:bg-zinc-800" />
-                                <div class="mt-1 flex justify-between text-xs"><span class="text-zinc-500">المتبقي على الحساب</span><span class="font-mono font-bold {{ $this->remaining > 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ number_format($this->remaining, 2) }} ₪</span></div>
+
+
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    wire:model.live.debounce.250ms="paidAmount"
+                                    class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-lg font-bold font-mono dark:border-zinc-700 dark:bg-zinc-800"
+                                />
+
+
+                                {{-- Quick Payment --}}
+                                <div
+                                    class="mt-2 grid grid-cols-4 gap-1.5"
+                                >
+
+                                    <button
+                                        type="button"
+                                        wire:click="setPaymentAmount(50)"
+                                        class="rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-xs font-bold hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                                    >
+                                        50
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        wire:click="setPaymentAmount(100)"
+                                        class="rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-xs font-bold hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                                    >
+                                        100
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        wire:click="setPaymentAmount(200)"
+                                        class="rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-xs font-bold hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                                    >
+                                        200
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        wire:click="setFullPayment"
+                                        class="rounded-lg border border-indigo-200 bg-indigo-50 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"
+                                    >
+                                        كامل
+                                    </button>
+
+                                </div>
+
+
+                                <div
+                                    class="mt-1 flex justify-between text-xs"
+                                >
+
+                                    <span class="text-zinc-500">
+                                        المتبقي على الحساب
+                                    </span>
+
+                                    <span
+                                        class="font-mono font-bold {{ $this->remaining > 0 ? 'text-rose-600' : 'text-emerald-600' }}"
+                                    >
+                                        {{ number_format($this->remaining, 2) }}
+                                        ₪
+                                    </span>
+
+                                </div>
+
                             </div>
 
-                            <textarea wire:model.live="notes" rows="2" placeholder="ملاحظات الفاتورة..." class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"></textarea>
 
-                            <label class="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-                                <input type="checkbox" wire:model.live="sendWhatsapp" class="rounded border-zinc-300 text-indigo-600" />
+                            {{-- ================================================= --}}
+                            {{-- Notes --}}
+                            {{-- ================================================= --}}
+
+                            <textarea
+                                wire:model.live.debounce.500ms="notes"
+                                rows="2"
+                                placeholder="ملاحظات الفاتورة..."
+                                class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                            ></textarea>
+
+
+                            {{-- ================================================= --}}
+                            {{-- WhatsApp --}}
+                            {{-- ================================================= --}}
+
+                            <label
+                                class="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"
+                            >
+
+                                <input
+                                    type="checkbox"
+                                    wire:model.live="sendWhatsapp"
+                                    class="rounded border-zinc-300 text-indigo-600"
+                                />
+
                                 فتح واتساب للعميل بعد الحفظ إذا كان لديه رقم
+
                             </label>
 
-                            <div class="grid grid-cols-2 gap-2 pt-1">
-                                <flux:button variant="filled" class="w-full" wire:click="completeSale(false)" :disabled="empty($cart) || !$this->branchId()">
-                                    حفظ الفاتورة
+
+                            {{-- ================================================= --}}
+                            {{-- Buttons --}}
+                            {{-- ================================================= --}}
+
+                            <div
+                                class="grid grid-cols-2 gap-2 pt-1"
+                            >
+
+                                <flux:button
+                                    variant="filled"
+                                    class="w-full"
+                                    wire:click="completeSale(false)"
+                                    wire:loading.attr="disabled"
+                                    wire:target="completeSale"
+                                    :disabled="empty($cart) || !$this->branchId()"
+                                >
+                                    <span wire:loading.remove wire:target="completeSale">
+                                        حفظ الفاتورة
+                                    </span>
+
+                                    <span wire:loading wire:target="completeSale">
+                                        جارٍ الحفظ...
+                                    </span>
                                 </flux:button>
-                                <flux:button variant="primary" icon="printer" class="w-full" wire:click="completeSale(true)" :disabled="empty($cart) || !$this->branchId()">
-                                    حفظ وطباعة
+
+
+                                <flux:button
+                                    variant="primary"
+                                    icon="printer"
+                                    class="w-full"
+                                    wire:click="completeSale(true)"
+                                    wire:loading.attr="disabled"
+                                    wire:target="completeSale"
+                                    :disabled="empty($cart) || !$this->branchId()"
+                                >
+                                    <span wire:loading.remove wire:target="completeSale">
+                                        حفظ وطباعة
+                                    </span>
+
+                                    <span wire:loading wire:target="completeSale">
+                                        جارٍ الحفظ...
+                                    </span>
                                 </flux:button>
+
                             </div>
+
                         </div>
+
                     </div>
                 </aside>
+
             </div>
         </div>
     </div>
 
-    @if ($showPriceHistoryModal)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
-            <div class="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-                <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-                    <div>
-                        <div class="font-bold">سجل أسعار البيع</div>
-                        <div class="text-xs text-zinc-500">{{ $selectedHistoryItem['product_name'] ?? '-' }} — {{ $selectedHistoryItem['customer_name'] ?? '-' }}</div>
-                    </div>
-                    <button type="button" wire:click="closePriceHistoryModal" class="text-zinc-400 hover:text-zinc-700">✕</button>
+
+    {{-- ================================================================ --}}
+    {{-- New Invoice Confirmation --}}
+    {{-- ================================================================ --}}
+
+    @if ($showNewInvoiceConfirm)
+
+        <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            dir="rtl"
+        >
+
+            <div
+                class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            >
+
+                <div
+                    class="mb-4 text-lg font-bold"
+                >
+                    بدء فاتورة جديدة؟
                 </div>
-                <div class="p-5">
-                    @if ($selectedHistoryItem['has_history'] ?? false)
-                        <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-                            <table class="w-full text-right text-sm">
-                                <thead class="bg-zinc-50 dark:bg-zinc-800/70">
-                                    <tr><th class="px-3 py-2">السعر</th><th class="px-3 py-2">الكمية</th><th class="px-3 py-2">التاريخ</th></tr>
-                                </thead>
-                                <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                    @foreach ($selectedHistoryItem['history'] as $row)
-                                        <tr><td class="px-3 py-2 font-mono font-bold text-emerald-600">{{ number_format($row['price'], 2) }}</td><td class="px-3 py-2 font-mono">{{ $row['quantity'] }}</td><td class="px-3 py-2 text-xs text-zinc-500">{{ $row['date'] }}</td></tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="rounded-xl bg-zinc-50 py-10 text-center text-sm text-zinc-400 dark:bg-zinc-800/50">لا يوجد بيع سابق لهذا الصنف مع هذا العميل.</div>
-                    @endif
+
+                <p
+                    class="text-sm leading-6 text-zinc-500"
+                >
+                    توجد أصناف وبيانات في الفاتورة الحالية.
+                    بدء فاتورة جديدة سيؤدي إلى مسح البيانات الحالية.
+                </p>
+
+                <div
+                    class="mt-5 grid grid-cols-2 gap-2"
+                >
+
+                    <flux:button
+                        variant="subtle"
+                        wire:click="cancelNewInvoice"
+                    >
+                        إلغاء
+                    </flux:button>
+
+                    <flux:button
+                        variant="danger"
+                        wire:click="confirmNewInvoice"
+                    >
+                        نعم، ابدأ
+                    </flux:button>
+
                 </div>
+
             </div>
+
         </div>
+
     @endif
+
+
+    {{-- ================================================================ --}}
+    {{-- Below Cost Confirmation --}}
+    {{-- ================================================================ --}}
+
+    @if ($showBelowCostConfirm)
+
+        <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            dir="rtl"
+        >
+
+            <div
+                class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            >
+
+                <div
+                    class="mb-2 text-lg font-bold text-amber-600"
+                >
+                    تنبيه: البيع بأقل من التكلفة
+                </div>
+
+                <p
+                    class="text-sm leading-6 text-zinc-500"
+                >
+                    السعر الذي أدخلته أقل من تكلفة المنتج.
+                    لا يمكن اعتماد هذا السعر إلا إذا كانت لديك الصلاحية المناسبة.
+                </p>
+
+                <div
+                    class="mt-4 rounded-xl bg-amber-50 p-3 text-sm dark:bg-amber-950/20"
+                >
+                    السعر:
+                    <strong>
+                        {{ number_format($pendingBelowCostPrice, 2) }}
+                        ₪
+                    </strong>
+                </div>
+
+                <div
+                    class="mt-5 grid grid-cols-2 gap-2"
+                >
+
+                    <flux:button
+                        variant="subtle"
+                        wire:click="cancelBelowCostPrice"
+                    >
+                        إلغاء
+                    </flux:button>
+
+                    <flux:button
+                        variant="danger"
+                        wire:click="confirmBelowCostPrice"
+                    >
+                        اعتماد السعر
+                    </flux:button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    @endif
+
+
+    {{-- ================================================================ --}}
+    {{-- Price History --}}
+    {{-- ================================================================ --}}
+
+    @if ($showPriceHistoryModal)
+
+        <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            dir="rtl"
+        >
+
+            <div
+                class="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            >
+
+                <div
+                    class="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800"
+                >
+
+                    <div>
+
+                        <div class="font-bold">
+                            سجل أسعار البيع
+                        </div>
+
+                        <div
+                            class="text-xs text-zinc-500"
+                        >
+                            {{ $selectedHistoryItem['product_name'] ?? '-' }}
+                            —
+                            {{ $selectedHistoryItem['customer_name'] ?? '-' }}
+                        </div>
+
+                    </div>
+
+                    <button
+                        type="button"
+                        wire:click="closePriceHistoryModal"
+                        class="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                        ✕
+                    </button>
+
+                </div>
+
+
+                <div class="p-5">
+
+                    @if ($selectedHistoryItem['has_history'] ?? false)
+
+                        <div
+                            class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
+                        >
+
+                            <table
+                                class="w-full text-right text-sm"
+                            >
+
+                                <thead
+                                    class="bg-zinc-50 dark:bg-zinc-800/70"
+                                >
+
+                                    <tr>
+                                        <th class="px-3 py-2">
+                                            السعر
+                                        </th>
+
+                                        <th class="px-3 py-2">
+                                            الكمية
+                                        </th>
+
+                                        <th class="px-3 py-2">
+                                            التاريخ
+                                        </th>
+                                    </tr>
+
+                                </thead>
+
+                                <tbody
+                                    class="divide-y divide-zinc-100 dark:divide-zinc-800"
+                                >
+
+                                    @foreach ($selectedHistoryItem['history'] as $row)
+
+                                        <tr>
+
+                                            <td
+                                                class="px-3 py-2 font-mono font-bold text-emerald-600"
+                                            >
+                                                {{ number_format($row['price'], 2) }}
+                                            </td>
+
+                                            <td
+                                                class="px-3 py-2 font-mono"
+                                            >
+                                                {{ rtrim(rtrim(number_format($row['quantity'], 2), '0'), '.') }}
+                                            </td>
+
+                                            <td
+                                                class="px-3 py-2 text-xs text-zinc-500"
+                                            >
+                                                {{ $row['date'] }}
+                                            </td>
+
+                                        </tr>
+
+                                    @endforeach
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                    @else
+
+                        <div
+                            class="rounded-xl bg-zinc-50 py-10 text-center text-sm text-zinc-400 dark:bg-zinc-800/50"
+                        >
+                            @if (!$selectedCustomerId)
+                                اختر العميل أولاً لعرض أسعار البيع السابقة.
+                            @else
+                                لا يوجد بيع سابق لهذا الصنف مع هذا العميل.
+                            @endif
+                        </div>
+
+                    @endif
+
+                </div>
+
+            </div>
+
+        </div>
+
+    @endif
+
 </flux:main>
+
 
 @script
 <script>
+
+    /*
+    |--------------------------------------------------------------------------
+    | Focus Search
+    |--------------------------------------------------------------------------
+    */
+
     Livewire.hook('commit', ({ respond }) => {
+
         respond(() => {
-            const active = document.activeElement;
-            const isTyping = active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
-            if (!isTyping) document.getElementById('wholesale-product-search')?.focus();
+
+            const active =
+                document.activeElement;
+
+            const isTyping =
+                active &&
+                [
+                    'INPUT',
+                    'TEXTAREA',
+                    'SELECT'
+                ].includes(
+                    active.tagName
+                );
+
+            if (!isTyping) {
+                document
+                    .getElementById(
+                        'wholesale-product-search'
+                    )
+                    ?.focus();
+            }
+
         });
+
     });
 
-    $wire.on('do-kiosk-print', (event) => {
-        const inv = event.data;
-        const line = (label, value, width = 32) => {
-            const l = String(label ?? '');
-            const r = String(value ?? '');
-            const spaces = Math.max(1, width - l.length - r.length);
-            return r + ' '.repeat(spaces) + l + '\n';
-        };
-        const shortName = (name) => {
-            const words = String(name || '').trim().split(/\s+/);
-            return words.length > 3 ? words.slice(0, 3).join(' ') + '...' : String(name || '');
-        };
 
-        let text = '';
-        text += '================================\n';
-        text += '        فاتورة مبيعات جملة\n';
-        text += '================================\n';
-        text += line('رقم الفاتورة:', inv.invoice_no);
-        text += line('التاريخ:', inv.date);
-        text += line('العميل:', inv.customer_name);
-        text += '--------------------------------\n';
-        text += 'الصنف                 الكمية  المجموع\n';
-        text += '--------------------------------\n';
-        (inv.items || []).forEach(item => {
-            const qty = Number(item.quantity || 0);
-            const total = Number(item.total_price || 0);
-            text += line(`${shortName(item.name)} ×${qty}`, total.toFixed(2));
-        });
-        text += '================================\n';
-        text += line('الإجمالي قبل الخصم:', Number(inv.subtotal || 0).toFixed(2) + ' ₪');
-        text += line('الخصم:', Number(inv.discount || 0).toFixed(2) + ' ₪');
-        text += line('الصافي:', Number(inv.total || 0).toFixed(2) + ' ₪');
-        text += line('المدفوع:', Number(inv.paid_amount || 0).toFixed(2) + ' ₪');
-        text += line('المتبقي:', Number(inv.remaining_amount || 0).toFixed(2) + ' ₪');
-        text += line('طريقة الدفع:', inv.payment_method || 'نقداً');
-        if (Number(inv.previous_balance || 0) !== 0 || Number(inv.current_balance || 0) !== 0) {
-            text += '--------------------------------\n';
-            text += line('الرصيد السابق:', Number(inv.previous_balance || 0).toFixed(2) + ' ₪');
-            text += line('الرصيد الحالي:', Number(inv.current_balance || 0).toFixed(2) + ' ₪');
+    /*
+    |--------------------------------------------------------------------------
+    | Keyboard Shortcuts
+    |--------------------------------------------------------------------------
+    */
+
+    document.addEventListener(
+        'keydown',
+        function (event) {
+
+            const target =
+                event.target;
+
+            const isTyping =
+                target &&
+                [
+                    'INPUT',
+                    'TEXTAREA',
+                    'SELECT'
+                ].includes(
+                    target.tagName
+                );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | F2 = Product Search
+            |--------------------------------------------------------------------------
+            */
+
+            if (event.key === 'F2') {
+
+                event.preventDefault();
+
+                document
+                    .getElementById(
+                        'wholesale-product-search'
+                    )
+                    ?.focus();
+
+                return;
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Escape
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                event.key === 'Escape' &&
+                !isTyping
+            ) {
+
+                window.dispatchEvent(
+                    new CustomEvent(
+                        'close-wholesale-modals'
+                    )
+                );
+
+            }
+
         }
-        if (inv.notes) text += '\nملاحظات: ' + inv.notes + '\n';
-        text += '================================\n\n\n';
+    );
 
-        const intentUrl = 'intent:' + encodeURIComponent(text) + '#Intent;' +
-            'scheme=rawbt;package=ru.a402d.rawbtprinter;S.type=text/plain;end;';
-        window.location.href = intentUrl;
-    });
 
-    $wire.on('open-whatsapp-url', (event) => window.open(event.url, '_blank', 'noopener,noreferrer'));
+    /*
+    |--------------------------------------------------------------------------
+    | Close Modals
+    |--------------------------------------------------------------------------
+    */
+
+    window.addEventListener(
+        'close-wholesale-modals',
+        function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Livewire 4 dispatch
+            |--------------------------------------------------------------------------
+            */
+
+            $wire.closePriceHistoryModal();
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Kiosk / RawBT Printing
+    |--------------------------------------------------------------------------
+    */
+
+    $wire.on(
+        'do-kiosk-print',
+        (event) => {
+
+            const inv =
+                event.data;
+
+
+            const line = (
+                label,
+                value,
+                width = 32
+            ) => {
+
+                const l =
+                    String(
+                        label ?? ''
+                    );
+
+                const r =
+                    String(
+                        value ?? ''
+                    );
+
+                const spaces =
+                    Math.max(
+                        1,
+                        width -
+                        l.length -
+                        r.length
+                    );
+
+                return (
+                    r +
+                    ' '.repeat(
+                        spaces
+                    ) +
+                    l +
+                    '\n'
+                );
+            };
+
+
+            const shortName =
+                (name) => {
+
+                    const words =
+                        String(
+                            name || ''
+                        )
+                            .trim()
+                            .split(
+                                /\s+/
+                            );
+
+                    return words.length > 3
+                        ? words
+                            .slice(0, 3)
+                            .join(' ') +
+                            '...'
+                        : String(
+                            name || ''
+                        );
+                };
+
+
+            let text = '';
+
+
+            text +=
+                '================================\n';
+
+            text +=
+                '        فاتورة مبيعات جملة\n';
+
+            text +=
+                '================================\n';
+
+
+            text += line(
+                'رقم الفاتورة:',
+                inv.invoice_no
+            );
+
+            text += line(
+                'التاريخ:',
+                inv.date
+            );
+
+            text += line(
+                'العميل:',
+                inv.customer_name
+            );
+
+
+            text +=
+                '--------------------------------\n';
+
+            text +=
+                'الصنف                 الكمية  المجموع\n';
+
+            text +=
+                '--------------------------------\n';
+
+
+            (
+                inv.items || []
+            ).forEach(
+                item => {
+
+                    const qty =
+                        Number(
+                            item.quantity ||
+                            0
+                        );
+
+                    const total =
+                        Number(
+                            item.total_price ||
+                            0
+                        );
+
+                    text +=
+                        line(
+                            `${shortName(item.name)} ×${qty}`,
+                            total.toFixed(2)
+                        );
+                }
+            );
+
+
+            text +=
+                '================================\n';
+
+
+            text += line(
+                'الإجمالي قبل الخصم:',
+                Number(
+                    inv.subtotal || 0
+                ).toFixed(2) +
+                ' ₪'
+            );
+
+
+            text += line(
+                'الخصم:',
+                Number(
+                    inv.discount || 0
+                ).toFixed(2) +
+                ' ₪'
+            );
+
+
+            text += line(
+                'الصافي:',
+                Number(
+                    inv.total || 0
+                ).toFixed(2) +
+                ' ₪'
+            );
+
+
+            text += line(
+                'المدفوع:',
+                Number(
+                    inv.paid_amount || 0
+                ).toFixed(2) +
+                ' ₪'
+            );
+
+
+            text += line(
+                'المتبقي:',
+                Number(
+                    inv.remaining_amount || 0
+                ).toFixed(2) +
+                ' ₪'
+            );
+
+
+            text += line(
+                'طريقة الدفع:',
+                inv.payment_method ||
+                'نقداً'
+            );
+
+
+            if (
+                Number(
+                    inv.previous_balance ||
+                    0
+                ) !== 0 ||
+                Number(
+                    inv.current_balance ||
+                    0
+                ) !== 0
+            ) {
+
+                text +=
+                    '--------------------------------\n';
+
+                text += line(
+                    'الرصيد السابق:',
+                    Number(
+                        inv.previous_balance ||
+                        0
+                    ).toFixed(2) +
+                    ' ₪'
+                );
+
+                text += line(
+                    'الرصيد الحالي:',
+                    Number(
+                        inv.current_balance ||
+                        0
+                    ).toFixed(2) +
+                    ' ₪'
+                );
+            }
+
+
+            if (inv.notes) {
+
+                text +=
+                    '\nملاحظات: ' +
+                    inv.notes +
+                    '\n';
+            }
+
+
+            text +=
+                '================================\n\n\n';
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | RawBT
+            |--------------------------------------------------------------------------
+            */
+
+            const intentUrl =
+                'intent:' +
+                encodeURIComponent(
+                    text
+                ) +
+                '#Intent;' +
+                'scheme=rawbt;' +
+                'package=ru.a402d.rawbtprinter;' +
+                'S.type=text/plain;' +
+                'end;';
+
+
+            window.location.href =
+                intentUrl;
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | WhatsApp
+    |--------------------------------------------------------------------------
+    */
+
+    $wire.on(
+        'open-whatsapp-url',
+        (event) => {
+
+            if (!event?.url) {
+                return;
+            }
+
+            window.open(
+                event.url,
+                '_blank',
+                'noopener,noreferrer'
+            );
+
+        }
+    );
+
 </script>
 @endscript

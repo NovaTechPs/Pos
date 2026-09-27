@@ -72,7 +72,7 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/store/{slug}', 'pages::tenant.stores.index')
             ->name('store');
 
-        Route::livewire('/online-orders', 'pages::tenant.orders.online')
+        Route::livewire('/online-orders', 'pages::tenant.stores.online')
             ->name('online-orders');
 
         // Reports

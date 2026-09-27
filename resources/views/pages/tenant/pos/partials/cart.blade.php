@@ -52,16 +52,30 @@
                         </td>
                         <td class="px-2 py-2 text-center">
                             <div class="inline-flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                <button wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] - 1 }})" class="px-2 py-1.5 font-black text-rose-600 hover:bg-rose-50">−</button>
-                                <span class="min-w-10 px-1 text-center font-mono font-black">{{ $item['quantity'] }}</span>
-                                <button wire:click="updateQuantity({{ $item['id'] }}, {{ $item['quantity'] + 1 }})" class="px-2 py-1.5 font-black text-emerald-600 hover:bg-emerald-50">＋</button>
+                                <input
+                                    type="number"
+                                    step="1"
+                                    min="{{ $isReturnMode ? '-999999' : '1' }}"
+                                    value="{{ $item['quantity'] }}"
+                                    data-pos-field="quantity"
+                                    data-product-id="{{ $item['id'] }}"
+                                    data-row-index="{{ $loop->index }}"
+                                    wire:change="updateQuantity({{ $item['id'] }}, $event.target.value)"
+                                    class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black outline-none focus:ring-0"
+                                    inputmode="numeric"
+                                    autocomplete="off">
                             </div>
                         </td>
                         <td class="px-2 py-2 text-center">
                             <input type="number" step="0.01" value="{{ $item['cost_price'] ?? 0 }}" wire:change="updateCostPrice({{ $item['id'] }}, $event.target.value)" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-center font-mono text-[11px] font-bold text-slate-600 focus:border-indigo-500 focus:outline-none">
                         </td>
                         <td class="px-2 py-2 text-center">
-                            <input type="number" step="0.01" value="{{ $item['price'] }}" wire:change="updateUnitPrice({{ $item['id'] }}, $event.target.value)" class="w-20 rounded-lg border {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }} px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none">
+                            <input
+                                type="number" step="0.01" min="0" value="{{ $item['price'] }}"
+                                data-pos-field="price" data-product-id="{{ $item['id'] }}" data-row-index="{{ $loop->index }}"
+                                wire:change="updateUnitPrice({{ $item['id'] }}, $event.target.value)"
+                                class="pos-cart-field w-20 rounded-lg border {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }} px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none"
+                                inputmode="decimal" autocomplete="off">
                         </td>
                         <td class="px-2 py-2 text-center font-mono font-black {{ $item['subtotal'] < 0 ? 'text-rose-600' : 'text-indigo-700' }}">{{ number_format($item['subtotal'], 2) }}</td>
                         <td class="px-2 py-2 text-center">
@@ -116,3 +130,84 @@
         </div>
     </div>
 </div>
+
+<style>
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: none;
+}
+</style>
+
+<script>
+(function () {
+    if (window.__posCartKeyboardNavigation) return;
+    window.__posCartKeyboardNavigation = true;
+
+    const FIELD_SELECTOR = '[data-pos-field]';
+
+    function rows() {
+        const grouped = new Map();
+        document.querySelectorAll(FIELD_SELECTOR).forEach(function (field) {
+            const row = Number(field.dataset.rowIndex);
+            if (!Number.isFinite(row)) return;
+            if (!grouped.has(row)) grouped.set(row, {});
+            grouped.get(row)[field.dataset.posField] = field;
+        });
+        return Array.from(grouped.entries()).sort((a,b) => a[0]-b[0]).map(function (entry) {
+            return { index: entry[0], quantity: entry[1].quantity || null, price: entry[1].price || null };
+        });
+    }
+
+    function focusInput(input) {
+        if (!input || !document.contains(input)) return;
+        input.focus({ preventScroll: true });
+        input.select?.();
+        input.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+    }
+
+    document.addEventListener('keydown', function (event) {
+        const current = event.target?.closest?.(FIELD_SELECTOR);
+        const key = event.key;
+
+        if (!current && key === 'ArrowUp') {
+            const allRows = rows();
+            if (!allRows.length) return;
+            event.preventDefault();
+            focusInput(allRows[allRows.length - 1].quantity || allRows[allRows.length - 1].price);
+            return;
+        }
+
+        if (!current || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Home','End'].includes(key)) return;
+        const allRows = rows();
+        if (!allRows.length) return;
+
+        const rowIndex = Number(current.dataset.rowIndex);
+        const type = current.dataset.posField;
+        const pos = allRows.findIndex(r => r.index === rowIndex);
+        if (pos < 0) return;
+
+        let target = null;
+        if (key === 'ArrowLeft' || key === 'ArrowRight') {
+            target = type === 'quantity' ? allRows[pos].price : allRows[pos].quantity;
+        } else {
+            let targetPos = pos;
+            if (key === 'ArrowUp') targetPos = pos <= 0 ? allRows.length - 1 : pos - 1;
+            if (key === 'ArrowDown' || key === 'Enter') targetPos = pos >= allRows.length - 1 ? 0 : pos + 1;
+            if (key === 'Home') targetPos = 0;
+            if (key === 'End') targetPos = allRows.length - 1;
+            target = allRows[targetPos][type];
+        }
+
+        if (target) {
+            event.preventDefault();
+            event.stopPropagation();
+            focusInput(target);
+        }
+    }, true);
+})();
+</script>

@@ -1,97 +1,82 @@
 <?php
 
 use Livewire\Component;
-
-use App\Models\Product;
-use App\Models\Party;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\PaymentTransaction;
+use App\Models\Branch;
 use App\Models\BranchProduct;
-
-use Illuminate\Support\Facades\Auth;
+use App\Models\Party;
+use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
-new class extends Component
-{
+new class extends Component {
+
     /*
     |--------------------------------------------------------------------------
-    | Invoice
+    | الفاتورة
     |--------------------------------------------------------------------------
     */
 
-    public string $invoice_number = '';
-    public string $date = '';
+    public ?int $currentPurchaseId = null;
 
-    /*
-     * ID من جدول parties.
-     *
-     * أبقينا اسم customer_id هنا لأننا سنستخدمه
-     * مع أعمدة customer_id الحالية في orders/payment_transactions.
-     */
-    public ?int $customer_id = null;
+    public string $invoiceNumber = '';
 
-    public string $currency = 'USD';
-    public float $exchange_rate = 1.0;
+    public string $invoiceDate = '';
 
-    /*
-    |--------------------------------------------------------------------------
-    | Payment
-    |--------------------------------------------------------------------------
-    */
+    public ?int $selectedBranchId = null;
 
-    public bool $is_cash = true;
+    public ?int $selectedSupplierId = null;
 
-    /*
-    |--------------------------------------------------------------------------
-    | Product row
-    |--------------------------------------------------------------------------
-    */
+    public string $supplierSearch = '';
 
-    public ?int $selected_product_id = null;
+    public string $rowSearch = '';
 
-    public string $item_barcode = '';
+    public ?int $selectedProductId = null;
 
-    public string $warehouse = 'الرئيسي';
+    public string $selectedProductName = '';
 
-    public string $unit = 'حبة';
+    public float $selectedPurchasePrice = 0.0;
 
-    public float $item_quantity = 1.0;
+    public float $selectedRetailPrice = 0.0;
 
-    public float $item_price = 0.0;
+    public float $selectedStock = 0.0;
 
-    public float $item_discount = 0.0;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Cart
-    |--------------------------------------------------------------------------
-    */
+    public float $selectedQuantity = 1.0;
 
     public array $cart = [];
 
+    public float $discount = 0.0;
+
+    public string $discountType = 'fixed';
+
+    public float $taxPercent = 16.0;
+
+    public bool $taxable = true;
+
+    public float $paidAmount = 0.0;
+
+    public string $paymentMethod = 'cash';
+
+    public string $notes = '';
+
     /*
     |--------------------------------------------------------------------------
-    | Invoice totals
+    | البحث والتنقل بين الفواتير
     |--------------------------------------------------------------------------
     */
 
-    public float $invoice_discount_val = 0.0;
+    public string $searchPurchaseQuery = '';
 
-    public float $invoice_discount_percent = 0.0;
-
-    public float $tax_percent = 16.0;
+    public bool $showPurchaseSearch = false;
 
     /*
     |--------------------------------------------------------------------------
-    | Messages
+    | رسائل
     |--------------------------------------------------------------------------
     */
 
     public ?string $errorMessage = null;
 
     public ?string $successMessage = null;
-
 
     /*
     |--------------------------------------------------------------------------
@@ -101,1078 +86,927 @@ new class extends Component
 
     public function mount(): void
     {
-        $this->date = now()->format('Y-m-d');
-
-        $this->invoice_number = 'INV-' . time();
+        $this->selectedBranchId = $this->resolveBranchId();
+        $this->startNewInvoice(false);
     }
-
 
     /*
     |--------------------------------------------------------------------------
-    | Tenant
+    | Tenant / Branch
     |--------------------------------------------------------------------------
     */
 
-    private function getTenantId(): ?int
+    private function tenantId(): ?int
     {
+        $user = auth()->user();
+
         $tenantId = session('active_tenant_id');
 
         if ($tenantId) {
             return (int) $tenantId;
         }
 
-        $user = Auth::user();
-
         if ($user?->tenant_id) {
             return (int) $user->tenant_id;
+        }
+
+        if ($user && method_exists($user, 'tenants')) {
+            $tenant = $user->tenants()->first();
+
+            if ($tenant) {
+                return (int) $tenant->id;
+            }
         }
 
         return null;
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Branch
-    |--------------------------------------------------------------------------
-    */
-
-    private function getBranchId(): ?int
+    private function resolveBranchId(): ?int
     {
-        $branchId = session('active_branch_id');
+        $tenantId = $this->tenantId();
+        $user = auth()->user();
 
-        if ($branchId) {
-            return (int) $branchId;
+        if (!$tenantId) {
+            return null;
         }
-
-        $user = Auth::user();
 
         if ($user?->branch_id) {
             return (int) $user->branch_id;
         }
 
-        return null;
+        $sessionBranchId = session('active_branch_id');
+
+        if ($sessionBranchId && Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($sessionBranchId)
+            ->exists()) {
+            return (int) $sessionBranchId;
+        }
+
+        return Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->orderBy('id')
+            ->value('id');
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Customers / Parties
-    |--------------------------------------------------------------------------
-    */
-
-    public function getCustomersProperty()
+    public function updatedSelectedBranchId($value): void
     {
-        $tenantId = $this->getTenantId();
+        $tenantId = $this->tenantId();
+        $user = auth()->user();
 
         if (!$tenantId) {
-            return collect();
+            $this->selectedBranchId = null;
+            return;
         }
 
-        return Party::query()
-            ->where('tenant_id', $tenantId)
-            ->whereIn('type', ['customer', 'both'])
-            ->where('is_active', true)
-            ->select([
-                'id',
-                'name',
-                'phone',
-                'current_balance',
-            ])
-            ->orderBy('name')
-            ->get();
-    }
+        if ($user?->branch_id) {
+            $this->selectedBranchId = (int) $user->branch_id;
+            return;
+        }
 
+        $branchId = (int) $value;
+
+        $valid = Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($branchId)
+            ->exists();
+
+        if (!$valid) {
+            $this->selectedBranchId = $this->resolveBranchId();
+            $this->errorMessage = 'الفرع المحدد غير صالح لهذا المتجر.';
+            return;
+        }
+
+        session(['active_branch_id' => $branchId]);
+
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0;
+        $this->selectedRetailPrice = 0;
+        $this->selectedStock = 0;
+        $this->rowSearch = '';
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | Products
-    |--------------------------------------------------------------------------
-    |
-    | products:
-    |   id
-    |   name
-    |   cost_price
-    |
-    | product_barcodes:
-    |   barcode
-    |
-    | branch_products:
-    |   quantity
-    |   retail_price
-    |   wholesale_price
-    |
+    | فاتورة جديدة
     |--------------------------------------------------------------------------
     */
 
-    public function getProductsProperty()
+    public function startNewInvoice(bool $showMessage = true): void
     {
-        $tenantId = $this->getTenantId();
+        $this->currentPurchaseId = null;
+        $this->invoiceNumber = $this->makeInvoiceNumber();
+        $this->invoiceDate = now()->format('Y-m-d');
 
-        $branchId = $this->getBranchId();
+        $this->selectedSupplierId = null;
+        $this->supplierSearch = '';
 
-        if (!$tenantId || !$branchId) {
-            return collect();
-        }
+        $this->rowSearch = '';
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0.0;
+        $this->selectedRetailPrice = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = 1.0;
 
-        return Product::query()
-            ->where('tenant_id', $tenantId)
-            ->select([
-                'id',
-                'name',
-                'cost_price',
-            ])
-            ->with([
-                'barcodes',
-                'branchProducts' => function ($query) use ($branchId) {
-                    $query->where('branch_id', $branchId);
-                },
-            ])
-            ->orderBy('name')
-            ->get();
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Scan barcode
-    |--------------------------------------------------------------------------
-    */
-
-    public function scanBarcode(): void
-    {
+        $this->cart = [];
+        $this->discount = 0.0;
+        $this->discountType = 'fixed';
+        $this->taxable = true;
+        $this->taxPercent = 16.0;
+        $this->paidAmount = 0.0;
+        $this->paymentMethod = 'cash';
+        $this->notes = '';
+        $this->searchPurchaseQuery = '';
+        $this->showPurchaseSearch = false;
         $this->errorMessage = null;
 
-        $barcode = trim($this->item_barcode);
-
-        if ($barcode === '') {
-            return;
+        if ($showMessage) {
+            $this->successMessage = 'تم فتح فاتورة مشتريات جديدة.';
+        } else {
+            $this->successMessage = null;
         }
 
-        $tenantId = $this->getTenantId();
-
-        $branchId = $this->getBranchId();
-
-        if (!$tenantId) {
-            $this->errorMessage =
-                'لم يتم تحديد المتجر الحالي.';
-
-            return;
-        }
-
-        if (!$branchId) {
-            $this->errorMessage =
-                'لم يتم تحديد الفرع الحالي.';
-
-            return;
-        }
-
-        /*
-         * البحث في product_barcodes وليس products.
-         */
-        $product = Product::query()
-            ->where('tenant_id', $tenantId)
-
-            ->whereHas('barcodes', function ($query) use (
-                $tenantId,
-                $barcode
-            ) {
-                $query
-                    ->where('tenant_id', $tenantId)
-                    ->where('barcode', $barcode);
-            })
-
-            ->with([
-                'barcodes',
-
-                'branchProducts' => function ($query) use ($branchId) {
-                    $query->where('branch_id', $branchId);
-                },
-            ])
-
-            ->first();
-
-        if (!$product) {
-            $this->errorMessage =
-                'لم يتم العثور على المنتج برقم الباركود: '
-                . $barcode;
-
-            return;
-        }
-
-        /*
-         * بيانات المنتج في الفرع.
-         */
-        $branchProduct = $product->branchProducts->first();
-
-        if (!$branchProduct) {
-            $this->errorMessage =
-                'المنتج غير مرتبط بالفرع الحالي.';
-
-            return;
-        }
-
-        /*
-         * سعر البيع من branch_products.
-         */
-        $price = (float) $branchProduct->retail_price;
-
-        /*
-         * المخزون من branch_products.quantity.
-         */
-        $stock = (float) $branchProduct->quantity;
-
-        if ($stock <= 0) {
-            $this->errorMessage =
-                'المنتج غير متوفر في المخزون.';
-
-            return;
-        }
-
-        $this->pushToCart(
-            $product,
-            1.0,
-            $price
-        );
-
-        $this->item_barcode = '';
-
-        $this->dispatch('focus-barcode');
+        $this->dispatch('focus-product-search');
     }
 
+    private function makeInvoiceNumber(): string
+    {
+        return 'PUR-' . now()->format('YmdHis') . '-' . random_int(100, 999);
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | Product selected
+    | المورد
     |--------------------------------------------------------------------------
     */
 
-    public function updatedSelectedProductId($productId): void
+    public function selectSupplier(int $supplierId): void
     {
-        if (!$productId) {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
             return;
         }
 
-        $tenantId = $this->getTenantId();
+        $supplier = Party::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('type', ['supplier', 'both'])
+            ->where('is_active', true)
+            ->find($supplierId);
 
-        $branchId = $this->getBranchId();
+        if (!$supplier) {
+            $this->errorMessage = 'المورد المحدد غير صالح.';
+            return;
+        }
 
-        if (!$tenantId || !$branchId) {
+        $this->selectedSupplierId = $supplier->id;
+        $this->supplierSearch = $supplier->name;
+        $this->errorMessage = null;
+
+        $this->dispatch('focus-product-search');
+    }
+
+    public function clearSupplier(): void
+    {
+        $this->selectedSupplierId = null;
+        $this->supplierSearch = '';
+        $this->dispatch('focus-supplier-search');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | المنتج
+    |--------------------------------------------------------------------------
+    */
+
+    public function selectProduct(int $productId): void
+    {
+        $tenantId = $this->tenantId();
+        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
+
+        if (!$tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
             return;
         }
 
         $product = Product::query()
             ->where('tenant_id', $tenantId)
-
             ->with([
-                'barcodes',
-
-                'branchProducts' => function ($query) use ($branchId) {
-                    $query->where('branch_id', $branchId);
-                },
+                'branchProducts' => fn ($query) => $query->where('branch_id', $branchId),
             ])
-
             ->find($productId);
 
         if (!$product) {
+            $this->errorMessage = 'المادة المحددة غير متاحة.';
             return;
         }
 
-        /*
-         * الباركود من product_barcodes.
-         */
-        $this->item_barcode =
-            $product->barcodes->first()?->barcode ?? '';
+        $branchProduct = $product->branchProducts->first();
 
-        /*
-         * بيانات الفرع.
-         */
-        $branchProduct =
-            $product->branchProducts->first();
-
-        if (!$branchProduct) {
-            $this->item_price = 0.0;
-
-            $this->errorMessage =
-                'المنتج غير مرتبط بالفرع الحالي.';
-
-            return;
-        }
-
-        /*
-         * سعر البيع من branch_products.
-         */
-        $this->item_price =
-            (float) $branchProduct->retail_price;
-
+        $this->selectedProductId = $product->id;
+        $this->selectedProductName = $product->name;
+        $this->selectedPurchasePrice = (float) ($product->cost_price ?? 0);
+        $this->selectedRetailPrice = (float) ($branchProduct?->retail_price ?? 0);
+        $this->selectedStock = (float) ($branchProduct?->stock_quantity ?? 0);
+        $this->selectedQuantity = 1.0;
+        $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
-        $this->dispatch('focus-qty');
+        $this->dispatch('focus-quantity');
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Add item
-    |--------------------------------------------------------------------------
-    */
-
-    public function addItemRow(): void
+    public function commitRowToCart(): void
     {
+        if (!$this->selectedProductId) {
+            $this->dispatch('focus-product-search');
+            return;
+        }
+
+        if ($this->selectedPurchasePrice < 0) {
+            $this->errorMessage = 'سعر التكلفة غير صالح.';
+            return;
+        }
+
+        if ($this->selectedQuantity <= 0) {
+            $this->errorMessage = 'الكمية يجب أن تكون أكبر من صفر.';
+            return;
+        }
+
+        $cartKey = $this->selectedProductId . '-' . Str::uuid()->toString();
+
+        $this->cart[$cartKey] = [
+            'id' => $this->selectedProductId,
+            'name' => $this->selectedProductName,
+            'price' => round((float) $this->selectedPurchasePrice, 2),
+            'retail_price' => round((float) $this->selectedRetailPrice, 2),
+            'quantity' => round((float) $this->selectedQuantity, 2),
+            'discount' => 0.0,
+            'stock' => round((float) $this->selectedStock, 2),
+        ];
+
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0.0;
+        $this->selectedRetailPrice = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = 1.0;
+        $this->rowSearch = '';
         $this->errorMessage = null;
 
-        if (!$this->selected_product_id) {
-            $this->errorMessage =
-                'يرجى اختيار صنف أولاً.';
+        $this->dispatch('focus-product-search');
+    }
 
+    public function removeItem(string $cartKey): void
+    {
+        if (!isset($this->cart[$cartKey])) {
             return;
         }
 
-        if ($this->item_quantity <= 0) {
-            $this->errorMessage =
-                'الكمية يجب أن تكون أكبر من صفر.';
+        unset($this->cart[$cartKey]);
+    }
 
+    public function updateItemQuantity(string $cartKey, $quantity): void
+    {
+        if (!isset($this->cart[$cartKey])) {
             return;
         }
 
-        if ($this->item_price < 0) {
-            $this->errorMessage =
-                'سعر البيع غير صحيح.';
+        $quantity = (float) $quantity;
 
+        if ($quantity <= 0) {
+            unset($this->cart[$cartKey]);
             return;
         }
 
-        $tenantId = $this->getTenantId();
+        $this->cart[$cartKey]['quantity'] = round($quantity, 2);
+    }
 
-        $branchId = $this->getBranchId();
-
-        if (!$tenantId) {
-            $this->errorMessage =
-                'لم يتم تحديد المتجر الحالي.';
-
+    public function incrementItem(string $cartKey): void
+    {
+        if (!isset($this->cart[$cartKey])) {
             return;
         }
 
-        if (!$branchId) {
-            $this->errorMessage =
-                'لم يتم تحديد الفرع الحالي.';
+        $this->cart[$cartKey]['quantity'] = round(
+            (float) $this->cart[$cartKey]['quantity'] + 1,
+            2
+        );
+    }
 
+    public function decrementItem(string $cartKey): void
+    {
+        if (!isset($this->cart[$cartKey])) {
             return;
         }
 
-        $product = Product::query()
-            ->where('tenant_id', $tenantId)
-
-            ->with([
-                'barcodes',
-
-                'branchProducts' => function ($query) use ($branchId) {
-                    $query->where('branch_id', $branchId);
-                },
-            ])
-
-            ->find($this->selected_product_id);
-
-        if (!$product) {
-            $this->errorMessage =
-                'المنتج غير موجود.';
-
-            return;
-        }
-
-        $branchProduct =
-            $product->branchProducts->first();
-
-        if (!$branchProduct) {
-            $this->errorMessage =
-                'المنتج غير مرتبط بالفرع الحالي.';
-
-            return;
-        }
-
-        /*
-         * التأكد من المخزون.
-         */
-        $existingQuantity = 0;
-
-        foreach ($this->cart as $item) {
-            if (
-                (int) $item['product_id']
-                === (int) $product->id
-                &&
-                $item['unit'] === $this->unit
-            ) {
-                $existingQuantity +=
-                    (float) $item['quantity'];
-            }
-        }
-
-        $requestedQuantity =
-            $existingQuantity
-            + $this->item_quantity;
-
-        $availableQuantity =
-            (float) $branchProduct->quantity;
-
-        if ($requestedQuantity > $availableQuantity) {
-            $this->errorMessage =
-                'الكمية المطلوبة أكبر من الكمية المتوفرة. '
-                . 'المتوفر: '
-                . $availableQuantity;
-
-            return;
-        }
-
-        $this->pushToCart(
-            $product,
-            $this->item_quantity,
-            $this->item_price,
-            $this->item_discount
+        $quantity = round(
+            (float) $this->cart[$cartKey]['quantity'] - 1,
+            2
         );
 
-        $this->resetInputRow();
+        if ($quantity <= 0) {
+            unset($this->cart[$cartKey]);
+            return;
+        }
 
-        $this->dispatch('focus-barcode');
+        $this->cart[$cartKey]['quantity'] = $quantity;
     }
 
+    public function updateItemPrice(string $cartKey, $price): void
+    {
+        if (!isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['price'] = max(0, round((float) $price, 2));
+    }
+
+    public function updateItemDiscount(string $cartKey, $discount): void
+    {
+        if (!isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['discount'] = max(0, round((float) $discount, 2));
+    }
 
     /*
     |--------------------------------------------------------------------------
-    | Push product to cart
+    | الحسابات
     |--------------------------------------------------------------------------
     */
 
-    private function pushToCart(
-        Product $product,
-        float $qty,
-        float $price,
-        float $discount = 0.0
-    ): void {
-        /*
-         * الباركود من product_barcodes.
-         */
-        $barcode =
-            $product->barcodes->first()?->barcode;
+    private function calculateTotals(): array
+    {
+        $subtotal = 0.0;
+        $totalQuantity = 0.0;
 
-        /*
-         * إذا كان المنتج موجودًا مسبقًا في السلة،
-         * نزيد الكمية.
-         */
-        foreach ($this->cart as $index => $item) {
+        foreach ($this->cart as $item) {
+            $price = max(0, (float) ($item['price'] ?? 0));
+            $quantity = max(0, (float) ($item['quantity'] ?? 0));
+            $lineDiscount = max(0, (float) ($item['discount'] ?? 0));
 
-            if (
-                (int) $item['product_id']
-                === (int) $product->id
-                &&
-                $item['unit'] === $this->unit
-            ) {
+            $lineTotal = max(
+                0,
+                ($price * $quantity) - $lineDiscount
+            );
 
-                $this->cart[$index]['quantity'] += $qty;
+            $subtotal += $lineTotal;
+            $totalQuantity += $quantity;
+        }
 
-                $this->cart[$index]['subtotal'] =
-                    max(
-                        0,
-                        (
-                            $this->cart[$index]['price']
-                            *
-                            $this->cart[$index]['quantity']
-                        )
-                        -
-                        $this->cart[$index]['discount']
-                    );
+        $base = max(0, $subtotal);
 
+        $invoiceDiscount = $this->discountType === 'percentage'
+            ? min($base, $base * (max(0, $this->discount) / 100))
+            : min($base, max(0, $this->discount));
+
+        $taxableAmount = max(0, $base - $invoiceDiscount);
+
+        $taxAmount = $this->taxable
+            ? $taxableAmount * (max(0, $this->taxPercent) / 100)
+            : 0.0;
+
+        $grandTotal = $taxableAmount + $taxAmount;
+
+        $paid = min(max(0, (float) $this->paidAmount), $grandTotal);
+
+        $remaining = max(0, $grandTotal - $paid);
+
+        $paymentStatus = $remaining <= 0.009
+            ? 'paid'
+            : ($paid > 0 ? 'partial' : 'unpaid');
+
+        return [
+            'subtotal' => round($base, 2),
+            'discount' => round($invoiceDiscount, 2),
+            'tax' => round($taxAmount, 2),
+            'total' => round($grandTotal, 2),
+            'paid' => round($paid, 2),
+            'remaining' => round($remaining, 2),
+            'payment_status' => $paymentStatus,
+            'total_quantity' => round($totalQuantity, 2),
+        ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | حفظ الفاتورة
+    |--------------------------------------------------------------------------
+    */
+
+    public function saveInvoice(bool $shouldPrint = false): void
+    {
+        $this->errorMessage = null;
+        $this->successMessage = null;
+
+        if (empty($this->cart)) {
+            $this->errorMessage = 'أضف مادة واحدة على الأقل إلى الفاتورة.';
+            $this->dispatch('focus-product-search');
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            return;
+        }
+
+        if (!$this->selectedBranchId) {
+            $this->errorMessage = 'يرجى تحديد الفرع قبل حفظ الفاتورة.';
+            return;
+        }
+
+        $supplier = null;
+
+        if ($this->selectedSupplierId) {
+            $supplier = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', ['supplier', 'both'])
+                ->where('is_active', true)
+                ->find($this->selectedSupplierId);
+
+            if (!$supplier) {
+                $this->errorMessage = 'المورد المحدد غير صالح.';
                 return;
             }
         }
 
-        $rowSubtotal =
-            ($price * $qty)
-            - $discount;
-
-        $this->cart[] = [
-            'product_id' => $product->id,
-
-            'name' => $product->name,
-
-            'barcode' => $barcode,
-
-            'warehouse' => $this->warehouse,
-
-            'unit' => $this->unit,
-
-            'quantity' => $qty,
-
-            'price' => $price,
-
-            'discount' => $discount,
-
-            'subtotal' => max(
-                0,
-                $rowSubtotal
-            ),
-        ];
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Reset product row
-    |--------------------------------------------------------------------------
-    */
-
-    private function resetInputRow(): void
-    {
-        $this->selected_product_id = null;
-
-        $this->item_barcode = '';
-
-        $this->item_quantity = 1.0;
-
-        $this->item_price = 0.0;
-
-        $this->item_discount = 0.0;
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Remove item
-    |--------------------------------------------------------------------------
-    */
-
-    public function removeItemRow($index): void
-    {
-        if (!isset($this->cart[$index])) {
-            return;
-        }
-
-        unset($this->cart[$index]);
-
-        $this->cart = array_values(
-            $this->cart
-        );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Update quantity
-    |--------------------------------------------------------------------------
-    */
-
-    public function updateCartQty(
-        $index,
-        $qty
-    ): void {
-        if (!isset($this->cart[$index])) {
-            return;
-        }
-
-        $qty = (float) $qty;
-
-        if ($qty <= 0) {
-            return;
-        }
-
-        $tenantId = $this->getTenantId();
-
-        $branchId = $this->getBranchId();
-
-        if (!$tenantId || !$branchId) {
-            return;
-        }
-
-        /*
-         * التأكد من المخزون قبل تعديل الكمية.
-         */
-        $branchProduct = BranchProduct::query()
-            ->where('branch_id', $branchId)
-            ->where(
-                'product_id',
-                $this->cart[$index]['product_id']
-            )
-            ->first();
-
-        if (!$branchProduct) {
-            $this->errorMessage =
-                'المنتج غير موجود في مخزون الفرع.';
-
-            return;
-        }
-
-        if (
-            $qty > (float) $branchProduct->quantity
-        ) {
-            $this->errorMessage =
-                'الكمية المطلوبة أكبر من المخزون. '
-                . 'المتوفر: '
-                . $branchProduct->quantity;
-
-            return;
-        }
-
-        $this->cart[$index]['quantity'] = $qty;
-
-        $this->cart[$index]['subtotal'] =
-            max(
-                0,
-                (
-                    $this->cart[$index]['price']
-                    *
-                    $this->cart[$index]['quantity']
-                )
-                -
-                $this->cart[$index]['discount']
-            );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Subtotal
-    |--------------------------------------------------------------------------
-    */
-
-    public function getSubtotalBeforeDiscountProperty(): float
-    {
-        return (float) array_sum(
-            array_column(
-                $this->cart,
-                'subtotal'
-            )
-        );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Invoice discount
-    |--------------------------------------------------------------------------
-    */
-
-    public function getFinalDiscountProperty(): float
-    {
-        if ($this->invoice_discount_percent > 0) {
-
-            return (
-                $this->subtotalBeforeDiscount
-                *
-                $this->invoice_discount_percent
-            ) / 100;
-        }
-
-        return max(
-            0,
-            $this->invoice_discount_val
-        );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Tax
-    |--------------------------------------------------------------------------
-    */
-
-    public function getTaxValueProperty(): float
-    {
-        $afterDiscount = max(
-            0,
-            $this->subtotalBeforeDiscount
-            -
-            $this->finalDiscount
-        );
-
-        return (
-            $afterDiscount
-            *
-            $this->tax_percent
-        ) / 100;
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Total
-    |--------------------------------------------------------------------------
-    */
-
-    public function getTotalProperty(): float
-    {
-        return max(
-            0,
-            (
-                $this->subtotalBeforeDiscount
-                -
-                $this->finalDiscount
-            )
-            +
-            $this->taxValue
-        );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Save invoice
-    |--------------------------------------------------------------------------
-    */
-
-    public function saveInvoice(): void
-    {
-        $this->errorMessage = null;
-
-        $this->successMessage = null;
-
-        /*
-         * يجب أن تحتوي الفاتورة على أصناف.
-         */
-        if (empty($this->cart)) {
-
-            $this->errorMessage =
-                'لا يمكن حفظ فاتورة فارغة!';
-
-            return;
-        }
-
-        /*
-         * يجب اختيار عميل.
-         */
-        if (!$this->customer_id) {
-
-            $this->errorMessage =
-                'يرجى تحديد العميل أولاً!';
-
-            return;
-        }
-
-        $user = Auth::user();
-
-        if (!$user) {
-
-            $this->errorMessage =
-                'يجب تسجيل الدخول أولاً.';
-
-            return;
-        }
-
-        $tenantId = $this->getTenantId();
-
-        $branchId = $this->getBranchId();
-
-        if (!$tenantId) {
-
-            $this->errorMessage =
-                'لم يتم تحديد المتجر الحالي.';
-
-            return;
-        }
-
-        if (!$branchId) {
-
-            $this->errorMessage =
-                'لم يتم تحديد الفرع الحالي.';
-
-            return;
-        }
-
-        /*
-         * التحقق من العميل.
-         */
-        $party = Party::query()
-            ->where('tenant_id', $tenantId)
-            ->where('id', $this->customer_id)
-            ->whereIn(
-                'type',
-                ['customer', 'both']
-            )
-            ->where('is_active', true)
-            ->first();
-
-        if (!$party) {
-
-            $this->errorMessage =
-                'العميل المحدد غير صالح.';
-
-            return;
-        }
+        $totals = $this->calculateTotals();
 
         try {
+            $purchaseId = DB::transaction(function () use ($tenantId, $supplier, $totals) {
 
-            DB::transaction(function () use (
-                $user,
-                $tenantId,
-                $branchId,
-                $party
-            ) {
+                $purchase = null;
 
-                $totalAmount =
-                    (float) $this->total;
+                $oldSupplierId = null;
+                $oldOutstanding = 0.0;
 
-                $paidAmount =
-                    $this->is_cash
-                        ? $totalAmount
-                        : 0.0;
+                if ($this->currentPurchaseId) {
+                    $purchase = DB::table('purchases')
+                        ->where('tenant_id', $tenantId)
+                        ->where('id', $this->currentPurchaseId)
+                        ->lockForUpdate()
+                        ->first();
 
+                    if (!$purchase) {
+                        throw new \RuntimeException('فاتورة المشتريات المطلوب تعديلها غير موجودة.');
+                    }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Create Order
-                |--------------------------------------------------------------------------
-                */
+                    $oldSupplierId = $purchase->supplier_id;
+                    $oldOutstanding = max(
+                        0,
+                        (float) $purchase->total - (float) $purchase->paid_amount
+                    );
 
-                $order = Order::create([
+                    $oldItems = DB::table('purchase_items')
+                        ->where('purchase_id', $purchase->id)
+                        ->lockForUpdate()
+                        ->get(['id', 'product_id', 'quantity']);
 
-                    'tenant_id' => $tenantId,
-
-                    'branch_id' => $branchId,
-
-                    'user_id' => $user->id,
-
-                    /*
-                     * ID من parties.
-                     */
-                    'customer_id' => $party->id,
-
-                    'invoice_number' =>
-                        $this->invoice_number,
-
-                    'type' => 'retail',
-
-                    'subtotal' =>
-                        $this->subtotalBeforeDiscount,
-
-                    'discount' =>
-                        $this->finalDiscount,
-
-                    /*
-                     * إذا كان migration orders عندك
-                     * يستخدم tax_amount بدل tax،
-                     * غيّر هذا السطر إلى tax_amount.
-                     */
-                    'tax' =>
-                        $this->taxValue,
-
-                    'total' =>
-                        $totalAmount,
-
-                    'paid_amount' =>
-                        $paidAmount,
-
-                    'payment_status' =>
-                        $this->is_cash
-                            ? 'paid'
-                            : 'unpaid',
-
-                    'currency' =>
-                        $this->currency,
-
-                    'exchange_rate' =>
-                        $this->exchange_rate,
-                ]);
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Order Items + Stock
-                |--------------------------------------------------------------------------
-                */
-
-                foreach ($this->cart as $item) {
-
-                    /*
-                     * قفل سجل المخزون لمنع
-                     * عمليات البيع المتزامنة.
-                     */
-                    $branchProduct =
-                        BranchProduct::query()
-                            ->where(
-                                'branch_id',
-                                $branchId
-                            )
-                            ->where(
-                                'product_id',
-                                $item['product_id']
-                            )
+                    foreach ($oldItems as $oldItem) {
+                        $branchProduct = DB::table('branch_products')
+                            ->where('tenant_id', $tenantId)
+                            ->where('branch_id', $purchase->branch_id)
+                            ->where('product_id', $oldItem->product_id)
                             ->lockForUpdate()
                             ->first();
 
-                    if (!$branchProduct) {
+                        if (!$branchProduct) {
+                            throw new \RuntimeException('تعذر العثور على مخزون أحد أصناف الفاتورة السابقة.');
+                        }
 
-                        throw new \RuntimeException(
-                            'المنتج '
-                            . $item['name']
-                            . ' غير موجود في مخزون الفرع.'
+                        $newStock = max(
+                            0,
+                            (float) $branchProduct->stock_quantity - (float) $oldItem->quantity
                         );
+
+                        DB::table('branch_products')
+                            ->where('id', $branchProduct->id)
+                            ->update([
+                                'stock_quantity' => $newStock,
+                                'updated_at' => now(),
+                            ]);
                     }
 
-                    /*
-                     * التحقق من المخزون.
-                     */
-                    if (
-                        (float) $branchProduct->quantity
-                        <
-                        (float) $item['quantity']
-                    ) {
+                    DB::table('purchase_items')
+                        ->where('purchase_id', $purchase->id)
+                        ->delete();
 
-                        throw new \RuntimeException(
-                            'الكمية المتوفرة من المنتج '
-                            . $item['name']
-                            . ' غير كافية. '
-                            . 'المتوفر: '
-                            . $branchProduct->quantity
-                        );
+                    DB::table('purchases')
+                        ->where('id', $purchase->id)
+                        ->where('tenant_id', $tenantId)
+                        ->update([
+                            'branch_id' => $this->selectedBranchId,
+                            'supplier_id' => $supplier?->id,
+                            'reference_number' => $this->invoiceNumber,
+                            'total' => $totals['total'],
+                            'paid_amount' => $totals['paid'],
+                            'payment_status' => $totals['payment_status'],
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    $exists = DB::table('purchases')
+                        ->where('tenant_id', $tenantId)
+                        ->where('reference_number', $this->invoiceNumber)
+                        ->exists();
+
+                    if ($exists) {
+                        $this->invoiceNumber = $this->makeInvoiceNumber();
                     }
 
-
-                    /*
-                     * إنشاء OrderItem.
-                     */
-                    OrderItem::create([
-
-                        'tenant_id' =>
-                            $tenantId,
-
-                        'order_id' =>
-                            $order->id,
-
-                        'product_id' =>
-                            $item['product_id'],
-
-                        'quantity' =>
-                            $item['quantity'],
-
-                        'unit_price' =>
-                            $item['price'],
-
-                        'discount' =>
-                            $item['discount'],
-
-                        'total_price' =>
-                            $item['subtotal'],
+                    $purchaseId = DB::table('purchases')->insertGetId([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $this->selectedBranchId,
+                        'supplier_id' => $supplier?->id,
+                        'created_by' => auth()->id(),
+                        'reference_number' => $this->invoiceNumber,
+                        'total' => $totals['total'],
+                        'paid_amount' => $totals['paid'],
+                        'payment_status' => $totals['payment_status'],
+                        'created_at' => now(),
+                        'updated_at' => now(),
                     ]);
 
-
-                    /*
-                     * خصم المخزون.
-                     *
-                     * حسب بنية branch_products
-                     * عندك العمود هو quantity.
-                     */
-                    $branchProduct->decrement(
-                        'quantity',
-                        $item['quantity']
-                    );
+                    $purchase = DB::table('purchases')
+                        ->where('id', $purchaseId)
+                        ->where('tenant_id', $tenantId)
+                        ->lockForUpdate()
+                        ->first();
                 }
 
+                $purchaseId = $purchase->id;
+
+                foreach ($this->cart as $item) {
+                    $quantity = max(0, (float) ($item['quantity'] ?? 0));
+                    $unitCost = max(0, (float) ($item['price'] ?? 0));
+                    $lineDiscount = max(0, (float) ($item['discount'] ?? 0));
+                    $lineTotal = max(
+                        0,
+                        ($unitCost * $quantity) - $lineDiscount
+                    );
+
+                    if ($quantity <= 0) {
+                        continue;
+                    }
+
+                    $productId = (int) ($item['id'] ?? 0);
+
+                    $product = Product::query()
+                        ->where('tenant_id', $tenantId)
+                        ->whereKey($productId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$product) {
+                        throw new \RuntimeException('أحد المنتجات غير موجود في المتجر.');
+                    }
+
+                    DB::table('purchase_items')->insert([
+                        'purchase_id' => $purchaseId,
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'unit_cost' => $unitCost,
+                        'subtotal' => $lineTotal,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $branchProduct = DB::table('branch_products')
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $this->selectedBranchId)
+                        ->where('product_id', $productId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$branchProduct) {
+                        throw new \RuntimeException("المادة {$product->name} غير مرتبطة بالفرع الحالي.");
+                    }
+
+                    DB::table('branch_products')
+                        ->where('id', $branchProduct->id)
+                        ->update([
+                            'stock_quantity' => (float) $branchProduct->stock_quantity + $quantity,
+                            'updated_at' => now(),
+                        ]);
+                }
 
                 /*
-                |--------------------------------------------------------------------------
-                | Cash Payment
-                |--------------------------------------------------------------------------
+                | لا نعدل رصيد المورد إلا بالنسبة لصافي المديونية الناتجة
+                | عن الفاتورة نفسها: total - paid_amount.
                 */
+                $newOutstanding = $totals['remaining'];
 
-                if ($this->is_cash) {
+                if ($oldSupplierId && $oldOutstanding > 0) {
+                    $oldParty = Party::query()
+                        ->where('tenant_id', $tenantId)
+                        ->whereKey($oldSupplierId)
+                        ->lockForUpdate()
+                        ->first();
 
-                    PaymentTransaction::create([
-
-                        'tenant_id' =>
-                            $tenantId,
-
-                        'branch_id' =>
-                            $branchId,
-
-                        /*
-                         * ID من parties.
-                         *
-                         * نستخدم customer_id طالما
-                         * جدول payment_transactions
-                         * عندك لم يتغير بعد.
-                         */
-                        'customer_id' =>
-                            $party->id,
-
-                        'type' =>
-                            'receipt',
-
-                        'amount' =>
-                            $totalAmount,
-
-                        'reference_type' =>
-                            'order',
-
-                        'reference_id' =>
-                            $order->id,
-
-                        'description' =>
-                            'سند قبض آلي ناتج عن '
-                            . 'الفاتورة رقم: '
-                            . $order->invoice_number,
-
-                        'payment_date' =>
-                            $this->date,
-                    ]);
-
-                } else {
-
-                    /*
-                     |--------------------------------------------------------------------------
-                     | Credit Sale
-                     |--------------------------------------------------------------------------
-                     |
-                     | parties.current_balance
-                     |
-                     */
-
-                    $party->increment(
-                        'current_balance',
-                        $totalAmount
-                    );
+                    if ($oldParty) {
+                        $oldParty->current_balance = (float) $oldParty->current_balance - $oldOutstanding;
+                        $oldParty->save();
+                    }
                 }
+
+                if ($supplier && $newOutstanding > 0) {
+                    $supplier = Party::query()
+                        ->where('tenant_id', $tenantId)
+                        ->whereKey($supplier->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($supplier) {
+                        $supplier->current_balance = (float) $supplier->current_balance + $newOutstanding;
+                        $supplier->save();
+                    }
+                }
+
+                return $purchaseId;
             });
 
+            $this->currentPurchaseId = $purchaseId;
 
-            /*
-            |--------------------------------------------------------------------------
-            | Success
-            |--------------------------------------------------------------------------
-            */
+            $this->successMessage = 'تم حفظ فاتورة المشتريات بنجاح.';
 
-            $this->successMessage =
-                'تم حفظ الفاتورة بنجاح!';
-
-
-            /*
-             * إعادة الفاتورة لحالة جديدة.
-             */
-            $this->cart = [];
-
-            $this->customer_id = null;
-
-            $this->invoice_discount_val = 0.0;
-
-            $this->invoice_discount_percent = 0.0;
-
-            $this->invoice_number =
-                'INV-' . time();
-
-            $this->date =
-                now()->format('Y-m-d');
-
-            $this->resetInputRow();
-
-            $this->dispatch('focus-barcode');
+            if ($shouldPrint) {
+                $this->printCurrentInvoice();
+            }
 
         } catch (\Throwable $e) {
-
             report($e);
-
-            $this->errorMessage =
-                'حدث خطأ أثناء حفظ الفاتورة: '
-                . $e->getMessage();
+            $this->errorMessage = 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
         }
     }
 
+    public function saveAndPrint(): void
+    {
+        $this->saveInvoice(true);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | البحث والتنقل
+    |--------------------------------------------------------------------------
+    */
+
+    public function togglePurchaseSearch(): void
+    {
+        $this->showPurchaseSearch = !$this->showPurchaseSearch;
+
+        if ($this->showPurchaseSearch) {
+            $this->dispatch('focus-purchase-search');
+        }
+    }
+
+    public function searchPurchase(): void
+    {
+        $search = trim($this->searchPurchaseQuery);
+        $tenantId = $this->tenantId();
+
+        if ($search === '' || !$tenantId) {
+            return;
+        }
+
+        $query = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->where(function ($q) use ($search) {
+                $q->where('reference_number', 'like', "%{$search}%");
+
+                if (is_numeric($search)) {
+                    $q->orWhere('id', (int) $search);
+                }
+            });
+
+        $purchaseId = $query
+            ->orderByDesc('id')
+            ->value('id');
+
+        if (!$purchaseId) {
+            $this->errorMessage = 'لم يتم العثور على فاتورة مشتريات مطابقة.';
+            return;
+        }
+
+        $this->loadPurchase((int) $purchaseId);
+        $this->searchPurchaseQuery = '';
+        $this->showPurchaseSearch = false;
+    }
+
+    public function loadPurchase(int $purchaseId): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            return;
+        }
+
+        $purchase = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->where('id', $purchaseId)
+            ->first();
+
+        if (!$purchase) {
+            $this->errorMessage = 'فاتورة المشتريات غير موجودة.';
+            return;
+        }
+
+        $this->currentPurchaseId = $purchase->id;
+        $this->invoiceNumber = $purchase->reference_number;
+        $this->invoiceDate = $purchase->created_at
+            ? \Carbon\Carbon::parse($purchase->created_at)->format('Y-m-d')
+            : now()->format('Y-m-d');
+        $this->selectedBranchId = $purchase->branch_id;
+        $this->selectedSupplierId = $purchase->supplier_id;
+        // purchases الحالية لا تخزن تفصيل الخصم/الضريبة؛ نحملها كقيم محلية فقط.
+        $this->discount = 0.0;
+        $this->discountType = 'fixed';
+        $this->taxPercent = 0.0;
+        $this->taxable = false;
+        $this->paidAmount = (float) $purchase->paid_amount;
+        $this->notes = '';
+
+        if ($this->selectedSupplierId) {
+            $supplier = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereKey($this->selectedSupplierId)
+                ->first();
+
+            $this->supplierSearch = $supplier?->name ?? '';
+        } else {
+            $this->supplierSearch = '';
+        }
+
+        $items = DB::table('purchase_items as pi')
+            ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
+            ->where('pi.purchase_id', $purchase->id)
+            ->orderBy('pi.id')
+            ->get([
+                'pi.id as item_id',
+                'pi.product_id',
+                'pi.quantity',
+                'pi.unit_cost',
+                'pi.subtotal',
+                'p.name as product_name',
+            ]);
+
+        $this->cart = [];
+
+        foreach ($items as $item) {
+            $key = $item->product_id . '-' . Str::uuid()->toString();
+
+            $this->cart[$key] = [
+                'id' => (int) $item->product_id,
+                'name' => $item->product_name ?? 'مادة محذوفة',
+                'price' => (float) $item->unit_cost,
+                'retail_price' => 0,
+                'quantity' => (float) $item->quantity,
+                'discount' => max(
+                    0,
+                    ((float) $item->unit_cost * (float) $item->quantity) - (float) $item->subtotal
+                ),
+                'stock' => 0,
+            ];
+        }
+
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0;
+        $this->selectedRetailPrice = 0;
+        $this->selectedStock = 0;
+        $this->selectedQuantity = 1;
+        $this->rowSearch = '';
+
+        $this->successMessage = "تم تحميل فاتورة المشتريات {$purchase->reference_number}.";
+        $this->errorMessage = null;
+    }
+
+    public function previousInvoice(): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            return;
+        }
+
+        $query = DB::table('purchases')
+            ->where('tenant_id', $tenantId);
+
+        if ($this->currentPurchaseId) {
+            $query->where('id', '<', $this->currentPurchaseId);
+        }
+
+        $purchaseId = $query->orderByDesc('id')->value('id');
+
+        if (!$purchaseId) {
+            $this->errorMessage = 'لا توجد فاتورة مشتريات أقدم.';
+            return;
+        }
+
+        $this->loadPurchase((int) $purchaseId);
+    }
+
+    public function nextInvoice(): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId || !$this->currentPurchaseId) {
+            return;
+        }
+
+        $purchaseId = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->where('id', '>', $this->currentPurchaseId)
+            ->orderBy('id')
+            ->value('id');
+
+        if (!$purchaseId) {
+            $this->successMessage = 'تم الانتقال إلى فاتورة مشتريات جديدة.';
+            $this->startNewInvoice(false);
+            return;
+        }
+
+        $this->loadPurchase((int) $purchaseId);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | طباعة
+    |--------------------------------------------------------------------------
+    */
+
+    public function printCurrentInvoice(): void
+    {
+        if (!$this->currentPurchaseId) {
+            $this->errorMessage = 'احفظ الفاتورة أولاً قبل الطباعة.';
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+
+        $purchase = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->where('id', $this->currentPurchaseId)
+            ->first();
+
+        if (!$purchase) {
+            $this->errorMessage = 'لم يتم العثور على الفاتورة.';
+            return;
+        }
+
+        $items = DB::table('purchase_items as pi')
+            ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
+            ->where('pi.purchase_id', $purchase->id)
+            ->orderBy('pi.id')
+            ->get([
+                'pi.quantity',
+                'pi.unit_cost',
+                'pi.subtotal',
+                'p.name as product_name',
+            ])
+            ->map(function ($item) {
+                $gross = (float) $item->unit_cost * (float) $item->quantity;
+                return [
+                    'name' => $item->product_name ?? 'مادة غير محددة',
+                    'quantity' => (float) $item->quantity,
+                    'price' => (float) $item->unit_cost,
+                    'discount' => max(0, $gross - (float) $item->subtotal),
+                    'total' => (float) $item->subtotal,
+                ];
+            })
+            ->all();
+
+        $supplierName = 'مورد عام';
+
+        if ($purchase->supplier_id) {
+            $supplierName = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereKey($purchase->supplier_id)
+                ->value('name') ?: 'مورد عام';
+        }
+
+        $this->dispatch(
+            'print-purchase-invoice',
+            invoice: [
+                'number' => $purchase->reference_number,
+                'date' => $purchase->created_at,
+                'supplier' => $supplierName,
+                'notes' => null,
+                'items' => $items,
+                'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
+                'discount' => 0.0,
+                'tax' => 0.0,
+                'total' => (float) $purchase->total,
+                'paid' => (float) $purchase->paid_amount,
+                'remaining' => max(0, (float) $purchase->total - (float) $purchase->paid_amount),
+            ]
+        );
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1182,835 +1016,877 @@ new class extends Component
 
     public function render()
     {
-        return $this->view()
-            ->layout('layouts::tenant');
+        $tenantId = $this->tenantId();
+        $user = auth()->user();
+        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
+
+        $branches = collect();
+
+        if ($tenantId) {
+            $branches = Branch::query()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('name')
+                ->get(['id', 'name']);
+        }
+
+        $productResults = collect();
+
+        if ($tenantId && trim($this->rowSearch) !== '' && !$this->selectedProductId) {
+            $search = trim($this->rowSearch);
+
+            $productResults = Product::query()
+                ->where('tenant_id', $tenantId)
+                ->with([
+                    'branchProducts' => fn ($query) => $query->where('branch_id', $branchId),
+                ])
+                ->where(function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%")
+                        ->orWhereHas('barcodes', function ($barcodeQuery) use ($search) {
+                            $barcodeQuery->where('barcode', 'like', "%{$search}%");
+                        });
+
+                    if (is_numeric($search)) {
+                        $query->orWhere('id', (int) $search);
+                    }
+                })
+                ->orderBy('name')
+                ->limit(12)
+                ->get();
+        }
+
+        $supplierResults = collect();
+
+        if ($tenantId && $this->selectedSupplierId === null) {
+            $search = trim($this->supplierSearch);
+
+            $supplierResults = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', ['supplier', 'both'])
+                ->where('is_active', true)
+                ->when($search !== '', function ($query) use ($search) {
+                    $query->where(function ($subQuery) use ($search) {
+                        $subQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    });
+                })
+                ->orderBy('name')
+                ->limit(20)
+                ->get(['id', 'name', 'phone', 'current_balance']);
+        }
+
+        $selectedSupplier = null;
+
+        if ($tenantId && $this->selectedSupplierId) {
+            $selectedSupplier = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', ['supplier', 'both'])
+                ->find($this->selectedSupplierId);
+        }
+
+        $totals = $this->calculateTotals();
+
+        return $this->view([
+            'branches' => $branches,
+            'productResults' => $productResults,
+            'supplierResults' => $supplierResults,
+            'selectedSupplier' => $selectedSupplier,
+            'subtotal' => $totals['subtotal'],
+            'invoiceDiscount' => $totals['discount'],
+            'taxAmount' => $totals['tax'],
+            'grandTotal' => $totals['total'],
+            'paidTotal' => $totals['paid'],
+            'remainingTotal' => $totals['remaining'],
+            'paymentStatus' => $totals['payment_status'],
+            'totalQuantity' => $totals['total_quantity'],
+            'userBranchLocked' => (bool) $user?->branch_id,
+        ])->layout('layouts::tenant');
     }
 };
 ?>
-<flux:main class="p-4 md:p-6">
-<div
-    x-data="{
-        init() {
 
-            window.addEventListener('focus-barcode', () => {
+<flux:main class="min-h-[calc(100vh-4rem)] bg-slate-100 p-2 sm:p-3 md:p-4" dir="rtl">
 
-                this.$nextTick(() => {
+    <div
+        class="mx-auto max-w-[1700px]"
+        x-data="purchaseInvoiceKeyboard()"
+        x-init="init()"
+    >
 
-                    document
-                        .getElementById('item_barcode')
-                        ?.focus();
-
-                });
-
-            });
-
-
-            window.addEventListener('focus-qty', () => {
-
-                this.$nextTick(() => {
-
-                    document
-                        .getElementById('item_quantity')
-                        ?.focus();
-
-                });
-
-            });
-
-
-            document.addEventListener('keydown', (event) => {
-
-                /*
-                 * F2 = Barcode
-                 */
-                if (event.key === 'F2') {
-
-                    event.preventDefault();
-
-                    this.$nextTick(() => {
-
-                        document
-                            .getElementById('item_barcode')
-                            ?.focus();
-
-                    });
-
-                }
-
-
-                /*
-                 * F3 = Product
-                 */
-                if (event.key === 'F3') {
-
-                    event.preventDefault();
-
-                    this.$nextTick(() => {
-
-                        document
-                            .getElementById('selected_product_id')
-                            ?.focus();
-
-                    });
-
-                }
-
-            });
-
-        }
-    }"
->
-
-
-
-        {{-- ========================================================= --}}
-        {{-- Header --}}
-        {{-- ========================================================= --}}
-
-        <div class="mb-6 flex items-center justify-between">
-
-            <div>
-
-                <flux:heading size="xl">
-                    فاتورة مبيعات
-                </flux:heading>
-
-                <flux:text class="mt-1 text-zinc-500">
-                    إنشاء فاتورة مبيعات جديدة
-                </flux:text>
-
-            </div>
-
-
-            <div class="text-left">
-
-                <div class="text-sm text-zinc-500">
-                    رقم الفاتورة
+        {{-- شريط الأدوات --}}
+        <div class="mb-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div class="flex flex-col gap-3 bg-slate-950 p-3 text-white lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl">
+                        🛒
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h1 class="truncate text-base font-black sm:text-lg">فاتورة مشتريات</h1>
+                            @if ($currentPurchaseId)
+                                <span class="rounded-full border border-amber-300/30 bg-amber-400/15 px-2.5 py-1 text-[10px] font-black text-amber-300">تعديل فاتورة</span>
+                            @else
+                                <span class="rounded-full border border-emerald-300/30 bg-emerald-400/15 px-2.5 py-1 text-[10px] font-black text-emerald-300">فاتورة جديدة</span>
+                            @endif
+                        </div>
+                        <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-300">
+                            <span>رقم: <strong class="font-mono text-white">{{ $invoiceNumber }}</strong></span>
+                            <span>التاريخ: <strong class="text-white">{{ $invoiceDate }}</strong></span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="font-semibold">
-                    {{ $invoice_number }}
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <button type="button" wire:click="startNewInvoice" class="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black transition hover:bg-emerald-500">+ جديدة</button>
+                    <button type="button" wire:click="togglePurchaseSearch" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🔎 استعلام</button>
+                    <button type="button" wire:click="previousInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">← السابقة</button>
+                    <button type="button" wire:click="nextInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">التالية →</button>
+                    <button type="button" wire:click="saveAndPrint" class="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black transition hover:bg-indigo-500">💾 حفظ وطباعة</button>
                 </div>
-
             </div>
 
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-500">
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">↑ ↓</kbd> تنقل</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">← →</kbd> الخانات</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> جديدة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F3</kbd> حفظ</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F6</kbd> حفظ وطباعة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F7</kbd> استعلام</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F8</kbd> المورد</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F9</kbd> المادة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Enter</kbd> اختيار / إضافة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Esc</kbd> إغلاق</span>
+            </div>
         </div>
 
-
-        {{-- ========================================================= --}}
-        {{-- Error --}}
-        {{-- ========================================================= --}}
-
-        @if($errorMessage)
-
-            <div
-                class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
-            >
-                {{ $errorMessage }}
+        {{-- الرسائل --}}
+        @if ($errorMessage)
+            <div class="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                <div class="flex items-center gap-2"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100">!</span><span>{{ $errorMessage }}</span></div>
+                <button type="button" wire:click="$set('errorMessage', null)" class="rounded-lg px-2 py-1 hover:bg-rose-100">✕</button>
             </div>
-
         @endif
 
-
-        {{-- ========================================================= --}}
-        {{-- Success --}}
-        {{-- ========================================================= --}}
-
-        @if($successMessage)
-
-            <div
-                class="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700"
-            >
-                {{ $successMessage }}
+        @if ($successMessage)
+            <div class="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                <div class="flex items-center gap-2"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100">✓</span><span>{{ $successMessage }}</span></div>
+                <button type="button" wire:click="$set('successMessage', null)" class="rounded-lg px-2 py-1 hover:bg-emerald-100">✕</button>
             </div>
-
         @endif
 
+        {{-- البحث عن فاتورة --}}
+        @if ($showPurchaseSearch)
+            <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <input id="purchase-search-input" x-ref="purchaseSearch" type="text" wire:model.live.debounce.200ms="searchPurchaseQuery" wire:keydown.enter="searchPurchase" placeholder="رقم فاتورة المشتريات أو رقم فاتورة المورد..." class="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
+                    <button type="button" wire:click="searchPurchase" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">بحث</button>
+                    <button type="button" wire:click="$set('showPurchaseSearch', false)" class="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">إغلاق</button>
+                </div>
+            </div>
+        @endif
 
-        {{-- ========================================================= --}}
-        {{-- Invoice Information --}}
-        {{-- ========================================================= --}}
-
-        <div
-            class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3"
-        >
-
-            {{-- Date --}}
-
-            <div>
-
-                <flux:field>
-
-                    <flux:label>
-                        التاريخ
-                    </flux:label>
-
-                    <flux:input
-                        type="date"
-                        wire:model="date"
-                    />
-
-                </flux:field>
-
+        {{-- رأس الفاتورة --}}
+        <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div class="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                    <div class="text-sm font-black text-slate-900">بيانات الفاتورة</div>
+                    <div class="mt-1 text-[11px] font-semibold text-slate-400">المورد، رقم فاتورة المورد، الفرع والتاريخ</div>
+                </div>
+                <div class="rounded-xl bg-slate-50 px-3 py-2 text-left">
+                    <div class="text-[10px] font-bold text-slate-400">رقم الفاتورة</div>
+                    <div class="font-mono text-sm font-black text-slate-900">{{ $invoiceNumber }}</div>
+                </div>
             </div>
 
+            <div class="grid gap-3 lg:grid-cols-12">
+                <div class="relative lg:col-span-4">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">المورد</label>
+                    @if ($selectedSupplier)
+                        <div class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+                            <div class="min-w-0">
+                                <div class="truncate text-sm font-black text-indigo-900">{{ $selectedSupplier->name }}</div>
+                                <div class="mt-0.5 text-[11px] font-semibold text-indigo-700">{{ $selectedSupplier->phone ?: 'بدون هاتف' }}</div>
+                            </div>
+                            <button type="button" wire:click="clearSupplier" class="rounded-lg px-2 py-1 text-xs font-black text-indigo-700 hover:bg-indigo-100">تغيير</button>
+                        </div>
+                    @else
+                        <input id="supplier-search-input" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم المورد أو الهاتف..." autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
+                        @if ($supplierSearch !== '' || count($supplierResults) > 0)
+                            <div class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                                <div class="max-h-64 overflow-y-auto p-1.5" x-ref="supplierResults">
+                                    @forelse ($supplierResults as $supplier)
+                                        <button type="button" data-supplier-result data-result-index="{{ $loop->index }}" wire:click="selectSupplier({{ $supplier->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-slate-50">
+                                            <div class="min-w-0">
+                                                <div class="truncate text-sm font-black text-slate-800">{{ $supplier->name }}</div>
+                                                <div class="mt-0.5 text-[11px] font-semibold text-slate-400">{{ $supplier->phone ?: 'بدون هاتف' }}</div>
+                                            </div>
+                                            <div class="text-left">
+                                                <div class="font-mono text-xs font-black text-slate-700">{{ number_format((float) $supplier->current_balance, 2) }}</div>
+                                                <div class="text-[10px] font-bold text-slate-400">الرصيد الحالي</div>
+                                            </div>
+                                        </button>
+                                    @empty
+                                        <div class="px-3 py-6 text-center text-xs font-bold text-slate-400">لا توجد نتائج مطابقة.</div>
+                                    @endforelse
+                                </div>
+                            </div>
+                        @endif
+                    @endif
+                </div>
 
-            {{-- Customer --}}
+                <div class="lg:col-span-2">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">مرجع الفاتورة</label>
+                    <input type="text" wire:model="invoiceNumber" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white" />
+                </div>
 
-            <div>
-
-                <flux:field>
-
-                    <flux:label>
-                        العميل
-                    </flux:label>
-
-                    <flux:select
-                        wire:model="customer_id"
-                        id="customer_id"
-                    >
-
-                        <option value="">
-                            اختر العميل
-                        </option>
-
-                        @foreach($this->customers as $cust)
-
-                            <option value="{{ $cust->id }}">
-
-                                {{ $cust->name }}
-
-                                @if($cust->phone)
-                                    - {{ $cust->phone }}
-                                @endif
-
-                            </option>
-
+                <div class="lg:col-span-2">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
+                    <select wire:model.live="selectedBranchId" @disabled($userBranchLocked) class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60">
+                        @foreach ($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
                         @endforeach
+                    </select>
+                </div>
 
-                    </flux:select>
+                <div class="lg:col-span-2">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">التاريخ</label>
+                    <input type="date" wire:model="invoiceDate" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white" />
+                </div>
 
-                </flux:field>
-
+                <div class="lg:col-span-2">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">نوع العملية</label>
+                    <div class="flex h-[46px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3">
+                        <span class="h-2.5 w-2.5 rounded-full bg-indigo-500"></span>
+                        <span class="mr-2 text-xs font-black text-indigo-800">مشتريات</span>
+                    </div>
+                </div>
             </div>
-
-
-            {{-- Currency --}}
-
-            <div>
-
-                <flux:field>
-
-                    <flux:label>
-                        العملة
-                    </flux:label>
-
-                    <flux:select
-                        wire:model="currency"
-                    >
-
-                        <option value="USD">
-                            USD
-                        </option>
-
-                        <option value="ILS">
-                            ILS
-                        </option>
-
-                        <option value="JOD">
-                            JOD
-                        </option>
-
-                    </flux:select>
-
-                </flux:field>
-
-            </div>
-
         </div>
 
-
-        {{-- ========================================================= --}}
-        {{-- Add Product --}}
-        {{-- ========================================================= --}}
-
-        <div
-            class="mb-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-        >
-
-            <flux:heading
-                size="lg"
-                class="mb-4"
-            >
-                إضافة صنف
-            </flux:heading>
-
-
-            <div
-                class="grid grid-cols-1 gap-4 md:grid-cols-5"
-            >
-
-                {{-- Barcode --}}
-
-                <div>
-
-                    <flux:field>
-
-                        <flux:label>
-                            الباركود
-                        </flux:label>
-
-                        <flux:input
-                            id="item_barcode"
-                            wire:model="item_barcode"
-                            wire:keydown.enter="scanBarcode"
-                            placeholder="امسح الباركود..."
-                            autocomplete="off"
-                        />
-
-                    </flux:field>
-
-                </div>
-
-
-                {{-- Product --}}
-
-                <div>
-
-                    <flux:field>
-
-                        <flux:label>
-                            الصنف
-                        </flux:label>
-
-                        <flux:select
-                            id="selected_product_id"
-                            wire:model="selected_product_id"
-                        >
-
-                            <option value="">
-                                اختر الصنف
-                            </option>
-
-                            @foreach($this->products as $product)
-
-                                <option
-                                    value="{{ $product->id }}"
-                                >
-                                    {{ $product->name }}
-                                </option>
-
-                            @endforeach
-
-                        </flux:select>
-
-                    </flux:field>
-
-                </div>
-
-
-                {{-- Quantity --}}
-
-                <div>
-
-                    <flux:field>
-
-                        <flux:label>
-                            الكمية
-                        </flux:label>
-
-                        <flux:input
-                            id="item_quantity"
-                            type="number"
-                            min="0.001"
-                            step="0.001"
-                            wire:model="item_quantity"
-                        />
-
-                    </flux:field>
-
-                </div>
-
-
-                {{-- Price --}}
-
-                <div>
-
-                    <flux:field>
-
-                        <flux:label>
-                            السعر
-                        </flux:label>
-
-                        <flux:input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            wire:model="item_price"
-                        />
-
-                    </flux:field>
-
-                </div>
-
-
-                {{-- Add --}}
-
-                <div class="flex items-end">
-
-                    <flux:button
-                        variant="primary"
-                        wire:click="addItemRow"
-                        class="w-full"
-                    >
-                        إضافة
-                    </flux:button>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        {{-- ========================================================= --}}
-        {{-- Cart --}}
-        {{-- ========================================================= --}}
-
-        <div
-            class="mb-6 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
-        >
-
-            <div class="overflow-x-auto">
-
-                <table class="w-full text-sm">
-
-                    <thead class="bg-zinc-50">
-
-                        <tr>
-
-                            <th class="px-4 py-3 text-right">
-                                #
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الصنف
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الباركود
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الوحدة
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الكمية
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                السعر
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الخصم
-                            </th>
-
-                            <th class="px-4 py-3 text-right">
-                                الإجمالي
-                            </th>
-
-                            <th class="px-4 py-3 text-center">
-                                حذف
-                            </th>
-
-                        </tr>
-
-                    </thead>
-
-
-                    <tbody
-                        class="divide-y divide-zinc-100"
-                    >
-
-                        @forelse(
-                            $cart
-                            as $index => $item
-                        )
-
-                            <tr
-                                wire:key="sale-item-{{ $index }}"
-                            >
-
-                                <td class="px-4 py-3">
-                                    {{ $index + 1 }}
-                                </td>
-
-
-                                <td
-                                    class="px-4 py-3 font-medium"
-                                >
-                                    {{ $item['name'] }}
-                                </td>
-
-
-                                <td
-                                    class="px-4 py-3 text-zinc-500"
-                                >
-                                    {{ $item['barcode'] ?: '-' }}
-                                </td>
-
-
-                                <td class="px-4 py-3">
-                                    {{ $item['unit'] }}
-                                </td>
-
-
-                                <td class="px-4 py-3">
-
-                                    <input
-                                        type="number"
-                                        min="0.001"
-                                        step="0.001"
-                                        value="{{ $item['quantity'] }}"
-                                        wire:change="updateCartQty(
-                                            {{ $index }},
-                                            $event.target.value
-                                        )"
-                                        class="w-24 rounded-lg border border-zinc-300 px-2 py-1"
-                                    >
-
-                                </td>
-
-
-                                <td class="px-4 py-3">
-
-                                    {{ number_format(
-                                        $item['price'],
-                                        2
-                                    ) }}
-
-                                </td>
-
-
-                                <td class="px-4 py-3">
-
-                                    {{ number_format(
-                                        $item['discount'],
-                                        2
-                                    ) }}
-
-                                </td>
-
-
-                                <td
-                                    class="px-4 py-3 font-semibold"
-                                >
-
-                                    {{ number_format(
-                                        $item['subtotal'],
-                                        2
-                                    ) }}
-
-                                </td>
-
-
-                                <td
-                                    class="px-4 py-3 text-center"
-                                >
-
-                                    <flux:button
-                                        variant="danger"
-                                        size="sm"
-                                        wire:click="removeItemRow(
-                                            {{ $index }}
-                                        )"
-                                    >
-                                        حذف
-                                    </flux:button>
-
-                                </td>
-
-                            </tr>
-
+        {{-- منطقة الإدخال --}}
+        <div class="grid gap-3 xl:grid-cols-12">
+
+            {{-- المواد --}}
+            <div class="min-w-0 xl:col-span-8">
+                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+                    <div class="border-b border-slate-200 bg-slate-50 p-3">
+                        <div class="relative">
+                            <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">🔎</div>
+                            <input
+                                id="product-search-input"
+                                x-ref="productSearch"
+                                type="text"
+                                wire:model.live.debounce.160ms="rowSearch"
+                                wire:keydown.enter="commitRowToCart"
+                                placeholder="ابحث عن مادة أو امسح الباركود ثم Enter..."
+                                autocomplete="off"
+                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-black text-slate-900 outline-none focus:border-indigo-400"
+                            />
+
+                            @if ($rowSearch !== '' && !$selectedProductId)
+                                <div class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                                    <div class="max-h-80 overflow-y-auto p-1.5" x-ref="productResults">
+                                        @forelse ($productResults as $product)
+                                            @php($branchProduct = $product->branchProducts->first())
+                                            <button type="button" data-product-result data-result-index="{{ $loop->index }}" wire:click="selectProduct({{ $product->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right hover:bg-slate-50">
+                                                <div class="min-w-0">
+                                                    <div class="truncate text-sm font-black text-slate-800">{{ $product->name }}</div>
+                                                    <div class="mt-1 flex flex-wrap gap-2 text-[10px] font-bold text-slate-400">
+                                                        <span>تكلفة: {{ number_format((float) $product->cost_price, 2) }}</span>
+                                                        <span>بيع: {{ number_format((float) ($branchProduct?->retail_price ?? 0), 2) }}</span>
+                                                    </div>
+                                                </div>
+                                                <div class="text-left">
+                                                    <div class="font-mono text-xs font-black text-indigo-700">{{ number_format((float) ($branchProduct?->stock_quantity ?? 0), 2) }}</div>
+                                                    <div class="text-[10px] font-bold text-slate-400">الرصيد الحالي</div>
+                                                </div>
+                                            </button>
+                                        @empty
+                                            <div class="px-3 py-6 text-center text-xs font-bold text-slate-400">لا توجد مادة مطابقة.</div>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    @if ($selectedProductId)
+                        <div class="border-b border-indigo-100 bg-indigo-50/50 p-3">
+                            <div class="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-12">
+                                <div class="lg:col-span-4">
+                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">المادة المحددة</label>
+                                    <div class="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black text-slate-900">{{ $selectedProductName }}</div>
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">الكمية</label>
+                                    <input id="quantity-input" x-ref="quantity" type="number" min="0.01" step="0.01" wire:model="selectedQuantity" wire:keydown.enter="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">سعر التكلفة</label>
+                                    <input type="number" min="0" step="0.01" wire:model.live="selectedPurchasePrice" wire:keydown.enter="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">المخزون قبل</label>
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black text-slate-700">{{ number_format($selectedStock, 2) }}</div>
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <button type="button" wire:click="commitRowToCart" class="w-full rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-black text-white hover:bg-indigo-500">+ إضافة</button>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- جدول المواد --}}
+                    <div class="hidden md:block">
+                        <div class="max-h-[52vh] overflow-auto">
+                            <table class="w-full min-w-[850px] text-right">
+                                <thead class="sticky top-0 z-20 border-b border-slate-200 bg-slate-50">
+                                    <tr class="text-[11px] font-black text-slate-500">
+                                        <th class="w-12 px-3 py-3">#</th>
+                                        <th class="px-3 py-3">المادة</th>
+                                        <th class="w-28 px-3 py-3">الكمية</th>
+                                        <th class="w-32 px-3 py-3">التكلفة</th>
+                                        <th class="w-28 px-3 py-3">الخصم</th>
+                                        <th class="w-36 px-3 py-3">الإجمالي</th>
+                                        <th class="w-20 px-3 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse ($cart as $key => $item)
+                                        @php($lineTotal = max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
+                                        <tr
+                                            wire:key="purchase-item-{{ $key }}"
+                                            data-cart-row="{{ $loop->index }}"
+                                            class="transition {{ $loop->first ? 'bg-indigo-50/20' : '' }}"
+                                        >
+                                            <td class="px-3 py-3 text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
+                                            <td class="px-3 py-3">
+                                                <div class="text-sm font-black text-slate-800">{{ $item['name'] }}</div>
+                                                @if(isset($item['stock']))
+                                                    <div class="mt-1 text-[10px] font-semibold text-slate-400">المخزون الحالي: {{ number_format((float) $item['stock'], 2) }}</div>
+                                                @endif
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <div class="flex items-center gap-1">
+                                                    <button type="button" wire:click="decrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">−</button>
+                                                    <input type="number" min="0.01" step="0.01" wire:model.live="cart.{{ $key }}.quantity" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
+                                                    <button type="button" wire:click="incrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">+</button>
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.price" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                            </td>
+                                            <td class="px-3 py-3">
+                                                <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.discount" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                            </td>
+                                            <td class="px-3 py-3 text-sm font-black text-slate-900">{{ number_format($lineTotal, 2) }}</td>
+                                            <td class="px-3 py-3 text-center">
+                                                <button type="button" wire:click="removeItem('{{ $key }}')" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="px-6 py-16 text-center">
+                                                <div class="mx-auto max-w-sm">
+                                                    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-2xl">＋</div>
+                                                    <div class="mt-4 text-base font-black text-slate-800">ابدأ بإضافة المواد</div>
+                                                    <div class="mt-1 text-sm font-semibold text-slate-400">ابحث عن المادة أو امسح الباركود ثم اضغط Enter.</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {{-- Mobile --}}
+                    <div class="divide-y divide-slate-100 md:hidden">
+                        @forelse ($cart as $key => $item)
+                            @php($lineTotal = max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
+                            <div wire:key="purchase-mobile-item-{{ $key }}" class="p-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-black text-slate-800">{{ $loop->iteration }}. {{ $item['name'] }}</div>
+                                        <div class="mt-1 text-xs font-semibold text-slate-400">الإجمالي: {{ number_format($lineTotal, 2) }}</div>
+                                    </div>
+                                    <button type="button" wire:click="removeItem('{{ $key }}')" class="text-xs font-black text-rose-600">حذف</button>
+                                </div>
+                                <div class="mt-3 grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
+                                        <input type="number" min="0.01" step="0.01" wire:model.live="cart.{{ $key }}.quantity" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
+                                        <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.price" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الخصم</label>
+                                        <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.discount" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                    </div>
+                                </div>
+                            </div>
                         @empty
-
-                            <tr>
-
-                                <td
-                                    colspan="9"
-                                    class="px-4 py-10 text-center text-zinc-500"
-                                >
-                                    لم تتم إضافة أي أصناف بعد.
-                                </td>
-
-                            </tr>
-
+                            <div class="px-6 py-16 text-center text-sm font-bold text-slate-400">لا توجد مواد في الفاتورة.</div>
                         @endforelse
-
-                    </tbody>
-
-                </table>
-
-            </div>
-
-        </div>
-
-
-        {{-- ========================================================= --}}
-        {{-- Bottom --}}
-        {{-- ========================================================= --}}
-
-        <div
-            class="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        >
-
-            {{-- Discounts / Tax --}}
-
-            <div
-                class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
-            >
-
-                <flux:heading
-                    size="lg"
-                    class="mb-4"
-                >
-                    الخصومات والضريبة
-                </flux:heading>
-
-
-                <div class="space-y-4">
-
-                    {{-- Percentage discount --}}
-
-                    <flux:field>
-
-                        <flux:label>
-                            خصم بالنسبة المئوية
-                        </flux:label>
-
-                        <flux:input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            wire:model.live="invoice_discount_percent"
-                        />
-
-                    </flux:field>
-
-
-                    {{-- Value discount --}}
-
-                    <flux:field>
-
-                        <flux:label>
-                            خصم بقيمة
-                        </flux:label>
-
-                        <flux:input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            wire:model.live="invoice_discount_val"
-                        />
-
-                    </flux:field>
-
-
-                    {{-- Tax --}}
-
-                    <flux:field>
-
-                        <flux:label>
-                            الضريبة %
-                        </flux:label>
-
-                        <flux:input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            wire:model.live="tax_percent"
-                        />
-
-                    </flux:field>
-
-
-                    {{-- Cash --}}
-
-                    <div class="flex items-center gap-3">
-
-                        <input
-                            type="checkbox"
-                            wire:model.live="is_cash"
-                            id="is_cash"
-                            class="rounded border-zinc-300"
-                        >
-
-                        <label
-                            for="is_cash"
-                            class="text-sm"
-                        >
-                            دفع نقدي
-                        </label>
-
                     </div>
-
                 </div>
-
             </div>
 
+            {{-- الملخص والدفع --}}
+            <div class="xl:col-span-4">
+                <div class="sticky top-3 space-y-3">
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div class="mb-3 flex items-center justify-between">
+                            <div>
+                                <div class="text-sm font-black text-slate-900">ملخص الفاتورة</div>
+                                <div class="mt-1 text-[11px] font-semibold text-slate-400">راجع الكمية والتكلفة قبل الحفظ</div>
+                            </div>
+                            <div class="rounded-xl bg-indigo-50 px-3 py-2 text-center">
+                                <div class="text-[10px] font-bold text-indigo-500">الكمية</div>
+                                <div class="text-sm font-black text-indigo-800">{{ number_format($totalQuantity, 2) }}</div>
+                            </div>
+                        </div>
 
-            {{-- Summary --}}
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="font-bold text-slate-500">المجموع الفرعي</span>
+                                <span class="font-black text-slate-900">{{ number_format($subtotal, 2) }}</span>
+                            </div>
 
-            <div
-                class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
-            >
+                            <div class="grid grid-cols-12 items-center gap-2">
+                                <div class="col-span-7">
+                                    <label class="mb-1 block text-[10px] font-black text-slate-400">خصم الفاتورة</label>
+                                    <input type="number" min="0" step="0.01" wire:model.live="discount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                                </div>
+                                <div class="col-span-5">
+                                    <label class="mb-1 block text-[10px] font-black text-slate-400">النوع</label>
+                                    <select wire:model.live="discountType" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black outline-none focus:border-indigo-400">
+                                        <option value="fixed">مبلغ</option>
+                                        <option value="percentage">%</option>
+                                    </select>
+                                </div>
+                            </div>
 
-                <flux:heading
-                    size="lg"
-                    class="mb-4"
-                >
-                    ملخص الفاتورة
-                </flux:heading>
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="font-bold text-slate-500">الخصم المحتسب</span>
+                                <span class="font-black text-rose-600">- {{ number_format($invoiceDiscount, 2) }}</span>
+                            </div>
 
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="font-bold text-slate-500">الضريبة</span>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center gap-1.5 text-[10px] font-black text-slate-500">
+                                        <input type="checkbox" wire:model.live="taxable" class="rounded border-slate-300 text-indigo-600" />
+                                        مفعلة
+                                    </label>
+                                    @if ($taxable)
+                                        <input type="number" min="0" step="0.01" wire:model.live="taxPercent" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-black" />
+                                        <span class="text-[10px] font-black text-slate-400">%</span>
+                                    @endif
+                                </div>
+                            </div>
 
-                <div class="space-y-3">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="font-bold text-slate-500">قيمة الضريبة</span>
+                                <span class="font-black text-slate-900">{{ number_format($taxAmount, 2) }}</span>
+                            </div>
 
-                    {{-- Subtotal --}}
-
-                    <div
-                        class="flex justify-between"
-                    >
-
-                        <span class="text-zinc-500">
-                            الإجمالي قبل الخصم
-                        </span>
-
-                        <span class="font-medium">
-
-                            {{ number_format(
-                                $this->subtotalBeforeDiscount,
-                                2
-                            ) }}
-
-                            {{ $currency }}
-
-                        </span>
-
+                            <div class="border-t border-slate-200 pt-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-base font-black text-slate-900">الإجمالي</span>
+                                    <span class="text-3xl font-black text-indigo-700">{{ number_format($grandTotal, 2) }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div class="mb-3 text-sm font-black text-slate-900">الدفع</div>
 
-                    {{-- Discount --}}
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                <div class="text-[10px] font-black text-emerald-700">المدفوع</div>
+                                <div class="mt-1 text-lg font-black text-emerald-800">{{ number_format($paidTotal, 2) }}</div>
+                            </div>
+                            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                                <div class="text-[10px] font-black text-rose-700">المتبقي</div>
+                                <div class="mt-1 text-lg font-black text-rose-800">{{ number_format($remainingTotal, 2) }}</div>
+                            </div>
+                        </div>
 
-                    <div
-                        class="flex justify-between"
-                    >
+                        <div class="mt-3">
+                            <label class="mb-1 block text-xs font-black text-slate-500">المبلغ المدفوع</label>
+                            <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
+                        </div>
 
-                        <span class="text-zinc-500">
-                            الخصم
-                        </span>
+                        <div class="mt-3 grid grid-cols-2 gap-2">
+                            <button type="button" wire:click="$set('paidAmount', {{ $grandTotal }})" class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-black text-emerald-700 hover:bg-emerald-100">دفع كامل</button>
+                            <button type="button" wire:click="$set('paidAmount', 0)" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-100">آجل</button>
+                        </div>
 
-                        <span
-                            class="font-medium text-red-600"
-                        >
+                        <div class="mt-3">
+                            <label class="mb-1 block text-xs font-black text-slate-500">طريقة الدفع</label>
+                            <select wire:model="paymentMethod" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black outline-none focus:border-indigo-400">
+                                <option value="cash">نقدي</option>
+                                <option value="card">بطاقة</option>
+                                <option value="bank">تحويل بنكي</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
 
-                            -
-                            {{ number_format(
-                                $this->finalDiscount,
-                                2
-                            ) }}
-
-                            {{ $currency }}
-
-                        </span>
-
-                    </div>
-
-
-                    {{-- Tax --}}
-
-                    <div
-                        class="flex justify-between"
-                    >
-
-                        <span class="text-zinc-500">
-                            الضريبة
-                        </span>
-
-                        <span class="font-medium">
-
-                            {{ number_format(
-                                $this->taxValue,
-                                2
-                            ) }}
-
-                            {{ $currency }}
-
-                        </span>
-
-                    </div>
-
-
-                    <div
-                        class="my-4 border-t border-zinc-200"
-                    ></div>
-
-
-                    {{-- Total --}}
-
-                    <div
-                        class="flex justify-between text-lg"
-                    >
-
-                        <span class="font-semibold">
-                            الإجمالي
-                        </span>
-
-                        <span class="font-bold">
-
-                            {{ number_format(
-                                $this->total,
-                                2
-                            ) }}
-
-                            {{ $currency }}
-
-                        </span>
-
-                    </div>
-
-
-                    {{-- Save --}}
-
-                    <div class="pt-4">
-
-                        <flux:button
-                            variant="primary"
-                            wire:click="saveInvoice"
-                            wire:loading.attr="disabled"
-                            class="w-full"
-                        >
-
-                            <span wire:loading.remove>
-                                حفظ الفاتورة
+                        <div class="mt-3 flex items-center justify-between rounded-xl border px-3 py-2.5 {{ $paymentStatus === 'paid' ? 'border-emerald-200 bg-emerald-50' : ($paymentStatus === 'partial' ? 'border-amber-200 bg-amber-50' : 'border-rose-200 bg-rose-50') }}">
+                            <span class="text-xs font-black text-slate-600">الحالة</span>
+                            <span class="text-xs font-black {{ $paymentStatus === 'paid' ? 'text-emerald-700' : ($paymentStatus === 'partial' ? 'text-amber-700' : 'text-rose-700') }}">
+                                {{ $paymentStatus === 'paid' ? 'مدفوعة' : ($paymentStatus === 'partial' ? 'جزئية' : 'آجلة') }}
                             </span>
-
-                            <span wire:loading>
-                                جارٍ الحفظ...
-                            </span>
-
-                        </flux:button>
-
+                        </div>
                     </div>
 
+                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <label class="mb-1.5 block text-xs font-black text-slate-600">ملاحظات</label>
+                        <textarea wire:model="notes" rows="3" placeholder="ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
+                            <span wire:loading.remove wire:target="saveInvoice">💾 حفظ</span>
+                            <span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
+                        </button>
+                        <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
+                            <span wire:loading.remove wire:target="saveAndPrint">🖨 حفظ وطباعة</span>
+                            <span wire:loading wire:target="saveAndPrint">جاري الحفظ...</span>
+                        </button>
+                    </div>
                 </div>
-
             </div>
-
         </div>
-
-
     </div>
 </flux:main>
+
+@script
+<script>
+    Alpine.data('purchaseInvoiceKeyboard', () => ({
+        supplierIndex: -1,
+        productIndex: -1,
+        rowIndex: 0,
+
+        init() {
+            this.registerKeyboard();
+
+            Livewire.on('focus-product-search', () => {
+                this.$nextTick(() => this.$refs.productSearch?.focus());
+            });
+
+            Livewire.on('focus-supplier-search', () => {
+                this.$nextTick(() => this.$refs.supplierSearch?.focus());
+            });
+
+            Livewire.on('focus-quantity', () => {
+                this.$nextTick(() => this.$refs.quantity?.focus());
+            });
+
+            Livewire.on('focus-paid-amount', () => {
+                this.$nextTick(() => this.$refs.paidAmount?.focus());
+            });
+
+            Livewire.on('focus-purchase-search', () => {
+                this.$nextTick(() => this.$refs.purchaseSearch?.focus());
+            });
+        },
+
+        registerKeyboard() {
+            window.addEventListener('keydown', (event) => {
+                const target = event.target;
+
+                const isTextField =
+                    target instanceof HTMLInputElement ||
+                    target instanceof HTMLTextAreaElement ||
+                    target instanceof HTMLSelectElement ||
+                    target?.isContentEditable;
+
+                const key = event.key;
+
+                if (key === 'F2') {
+                    event.preventDefault();
+                    this.$wire.startNewInvoice();
+                    return;
+                }
+
+                if (key === 'F3') {
+                    event.preventDefault();
+                    this.$wire.saveInvoice();
+                    return;
+                }
+
+                if (key === 'F6') {
+                    event.preventDefault();
+                    this.$wire.saveAndPrint();
+                    return;
+                }
+
+                if (key === 'F7') {
+                    event.preventDefault();
+                    this.$wire.togglePurchaseSearch();
+                    return;
+                }
+
+                if (key === 'F8') {
+                    event.preventDefault();
+                    this.$nextTick(() => this.$refs.supplierSearch?.focus());
+                    return;
+                }
+
+                if (key === 'F9') {
+                    event.preventDefault();
+                    this.$nextTick(() => this.$refs.productSearch?.focus());
+                    return;
+                }
+
+                if (key === 'Escape') {
+                    const supplierBox = this.$refs.supplierResults;
+                    const productBox = this.$refs.productResults;
+
+                    if (supplierBox || productBox) {
+                        event.preventDefault();
+                        this.supplierIndex = -1;
+                        this.productIndex = -1;
+                    }
+
+                    if (!isTextField) {
+                        this.$wire.startNewInvoice(false);
+                    }
+
+                    return;
+                }
+
+                if (isTextField) {
+                    if (key === 'ArrowDown' || key === 'ArrowUp') {
+                        if (target === this.$refs.supplierSearch) {
+                            event.preventDefault();
+                            this.moveSupplier(key === 'ArrowDown' ? 1 : -1);
+                            return;
+                        }
+
+                        if (target === this.$refs.productSearch) {
+                            event.preventDefault();
+                            this.moveProduct(key === 'ArrowDown' ? 1 : -1);
+                            return;
+                        }
+                    }
+
+                    if (key === 'Enter') {
+                        if (target === this.$refs.supplierSearch) {
+                            event.preventDefault();
+                            this.selectActiveSupplier();
+                            return;
+                        }
+
+                        if (target === this.$refs.productSearch) {
+                            event.preventDefault();
+                            const active = document.querySelector('[data-product-result][data-result-index="' + this.productIndex + '"]');
+
+                            if (active) {
+                                active.click();
+                            } else {
+                                this.$wire.commitRowToCart();
+                            }
+
+                            return;
+                        }
+                    }
+
+                    return;
+                }
+
+                if (key === 'ArrowDown') {
+                    event.preventDefault();
+                    this.$wire.nextInvoice();
+                    return;
+                }
+
+                if (key === 'ArrowUp') {
+                    event.preventDefault();
+                    this.$wire.previousInvoice();
+                    return;
+                }
+
+                if (key === 'ArrowRight') {
+                    event.preventDefault();
+                    this.$wire.nextInvoice();
+                    return;
+                }
+
+                if (key === 'ArrowLeft') {
+                    event.preventDefault();
+                    this.$wire.previousInvoice();
+                    return;
+                }
+            });
+        },
+
+        moveSupplier(direction) {
+            const nodes = [...document.querySelectorAll('[data-supplier-result]')];
+            if (!nodes.length) return;
+
+            this.supplierIndex += direction;
+
+            if (this.supplierIndex < 0) this.supplierIndex = nodes.length - 1;
+            if (this.supplierIndex >= nodes.length) this.supplierIndex = 0;
+
+            nodes.forEach((node, index) => {
+                node.classList.toggle('bg-indigo-50', index === this.supplierIndex);
+                node.classList.toggle('ring-1', index === this.supplierIndex);
+                node.classList.toggle('ring-indigo-200', index === this.supplierIndex);
+            });
+
+            nodes[this.supplierIndex]?.scrollIntoView({ block: 'nearest' });
+        },
+
+        moveProduct(direction) {
+            const nodes = [...document.querySelectorAll('[data-product-result]')];
+            if (!nodes.length) return;
+
+            this.productIndex += direction;
+
+            if (this.productIndex < 0) this.productIndex = nodes.length - 1;
+            if (this.productIndex >= nodes.length) this.productIndex = 0;
+
+            nodes.forEach((node, index) => {
+                node.classList.toggle('bg-indigo-50', index === this.productIndex);
+                node.classList.toggle('ring-1', index === this.productIndex);
+                node.classList.toggle('ring-indigo-200', index === this.productIndex);
+            });
+
+            nodes[this.productIndex]?.scrollIntoView({ block: 'nearest' });
+        },
+
+        selectActiveSupplier() {
+            const active = document.querySelector('[data-supplier-result][data-result-index="' + this.supplierIndex + '"]');
+
+            if (active) {
+                active.click();
+                return;
+            }
+
+            const first = document.querySelector('[data-supplier-result]');
+            first?.click();
+        },
+    }));
+
+    Livewire.on('print-purchase-invoice', ({ invoice }) => {
+        const esc = (value) => String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+
+        const money = (value) => Number(value || 0).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+
+        const rows = (invoice.items || []).map((item, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${esc(item.name)}</td>
+                <td>${money(item.quantity)}</td>
+                <td>${money(item.price)}</td>
+                <td>${money(item.discount)}</td>
+                <td>${money(item.total)}</td>
+            </tr>
+        `).join('');
+
+        const html = `
+            <!doctype html>
+            <html lang="ar" dir="rtl">
+            <head>
+                <meta charset="utf-8">
+                <title>فاتورة مشتريات ${esc(invoice.number)}</title>
+                <style>
+                    * { box-sizing: border-box; }
+                    body {
+                        margin: 0;
+                        padding: 14mm;
+                        color: #111827;
+                        font-family: Arial, Tahoma, sans-serif;
+                        background: #fff;
+                    }
+                    .head { display:flex; justify-content:space-between; gap:20px; border-bottom:2px solid #111827; padding-bottom:12px; margin-bottom:18px; }
+                    h1 { margin:0 0 5px; font-size:24px; }
+                    .muted { color:#6b7280; font-size:12px; }
+                    .meta { display:grid; grid-template-columns: 1fr 1fr; gap:8px 20px; margin-bottom:18px; }
+                    .meta div { padding:8px 10px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; }
+                    table { width:100%; border-collapse:collapse; }
+                    th, td { border-bottom:1px solid #e5e7eb; padding:8px 7px; font-size:12px; text-align:right; }
+                    th { background:#f8fafc; font-weight:700; }
+                    .totals { width:380px; max-width:100%; margin-top:18px; margin-right:0; margin-left:auto; }
+                    .line { display:flex; justify-content:space-between; padding:7px 0; font-size:13px; }
+                    .grand { border-top:2px solid #111827; margin-top:5px; padding-top:10px; font-size:17px; font-weight:800; }
+                    .notes { margin-top:18px; border-top:1px solid #e5e7eb; padding-top:10px; font-size:12px; }
+                    @page { size:A4; margin:10mm; }
+                    @media print { body { padding:0; } }
+                </style>
+            </head>
+            <body>
+                <div class="head">
+                    <div>
+                        <h1>فاتورة مشتريات</h1>
+                        <div class="muted">نظام إدارة المشتريات</div>
+                    </div>
+                    <div>
+                        <div><strong>رقم الفاتورة:</strong> ${esc(invoice.number)}</div>
+                        <div class="muted">${esc(invoice.date)}</div>
+                    </div>
+                </div>
+
+                <div class="meta">
+                    <div><strong>المورد:</strong> ${esc(invoice.supplier)}</div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>المادة</th>
+                            <th>الكمية</th>
+                            <th>التكلفة</th>
+                            <th>الخصم</th>
+                            <th>الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+
+                <div class="totals">
+                    <div class="line"><span>المجموع الفرعي</span><strong>${money(invoice.subtotal)}</strong></div>
+                    <div class="line"><span>الخصم</span><strong>${money(invoice.discount)}</strong></div>
+                    <div class="line"><span>الضريبة</span><strong>${money(invoice.tax)}</strong></div>
+                    <div class="line grand"><span>الإجمالي</span><strong>${money(invoice.total)}</strong></div>
+                    <div class="line"><span>المدفوع</span><strong>${money(invoice.paid)}</strong></div>
+                    <div class="line"><span>المتبقي</span><strong>${money(invoice.remaining)}</strong></div>
+                </div>
+
+                ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong> ${esc(invoice.notes)}</div>` : ''}
+
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() { window.print(); }, 200);
+                    };
+                <\/script>
+            </body>
+            </html>
+        `;
+
+        const printWindow = window.open('', '_blank', 'width=1100,height=900');
+
+        if (!printWindow) return;
+
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+    });
+</script>
+@endscript

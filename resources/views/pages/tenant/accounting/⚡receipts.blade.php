@@ -4,14 +4,18 @@ use App\Models\Party;
 use App\Models\Payment;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new class extends Component {
+new #[Layout('layouts.tenant')] class extends Component
+{
     use WithPagination;
 
     public string $partySearch = '';
     public string $tableSearch = '';
+
     public string $paymentDate = '';
     public string $paymentMethod = 'cash';
     public string $amount = '';
@@ -28,21 +32,12 @@ new class extends Component {
     public ?int $deleteId = null;
     public ?Payment $printVoucher = null;
 
-    protected $queryString = [
-        'tableSearch' => ['except' => ''],
-    ];
-
     public function mount(): void
     {
         $this->paymentDate = now()->format('Y-m-d');
     }
 
-    public function updatedTableSearch(): void
-    {
-        $this->resetPage();
-    }
-
-    public function getTenantId(): ?int
+    protected function getTenantId(): ?int
     {
         $user = Auth::user();
 
@@ -51,11 +46,76 @@ new class extends Component {
             ?: $user?->tenants?->first()?->id;
     }
 
-    public function getPartyResultsProperty()
+    #[Computed]
+    public function items()
     {
         $tenantId = $this->getTenantId();
 
-        if (!$tenantId || trim($this->partySearch) === '') {
+        if (!$tenantId) {
+            return Payment::query()
+                ->whereRaw('1 = 0')
+                ->paginate(15);
+        }
+
+        return Payment::query()
+            ->with(['payable', 'user'])
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->when(trim($this->tableSearch) !== '', function ($query) {
+                $search = trim($this->tableSearch);
+
+                $query->where(function ($q) use ($search) {
+                    $q->where('voucher_number', 'like', "%{$search}%")
+                        ->orWhereHas('payable', function ($partyQuery) use ($search) {
+                            $partyQuery
+                                ->where('name', 'like', "%{$search}%")
+                                ->orWhere('phone', 'like', "%{$search}%")
+                                ->orWhere('tax_number', 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->latest('payment_date')
+            ->latest('id')
+            ->paginate(15);
+    }
+
+    #[Computed]
+    public function voucherCount(): int
+    {
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId) {
+            return 0;
+        }
+
+        return Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->count();
+    }
+
+    #[Computed]
+    public function todayTotal(): float
+    {
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId) {
+            return 0;
+        }
+
+        return (float) Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->whereDate('payment_date', today())
+            ->sum('amount');
+    }
+
+    #[Computed]
+    public function partyResults()
+    {
+        $tenantId = $this->getTenantId();
+
+        if (!$tenantId || !$this->showForm || $this->payableId) {
             return collect();
         }
 
@@ -63,20 +123,22 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
             ->whereIn('type', ['customer', 'both'])
-            ->where(function ($query) {
+            ->when(trim($this->partySearch) !== '', function ($query) {
                 $search = trim($this->partySearch);
 
-                $query
-                    ->where('name', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhere('tax_number', 'like', "%{$search}%");
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%")
+                        ->orWhere('tax_number', 'like', "%{$search}%");
+                });
             })
             ->orderBy('name')
-            ->limit(10)
+            ->limit(30)
             ->get();
     }
 
-    public function getSelectedPartyProperty(): ?Party
+    #[Computed]
+    public function selectedParty(): ?Party
     {
         if (!$this->payableId) {
             return null;
@@ -84,45 +146,49 @@ new class extends Component {
 
         return Party::query()
             ->where('tenant_id', $this->getTenantId())
-            ->whereKey($this->payableId)
-            ->first();
+            ->find($this->payableId);
     }
 
-    public function getVoucherCountProperty(): int
+    public function updatedTableSearch(): void
     {
-        return Payment::query()
-            ->where('tenant_id', $this->getTenantId())
+        $this->resetPage();
+    }
+
+    public function updatedPartySearch(): void
+    {
+        // Livewire updates computed partyResults.
+    }
+
+    public function openCreate(): void
+    {
+        $this->resetForm();
+
+        $this->voucherNumber = $this->generateVoucherNumber();
+
+        $this->showForm = true;
+    }
+
+    public function edit(int $id): void
+    {
+        $tenantId = $this->getTenantId();
+
+        $receipt = Payment::query()
+            ->where('tenant_id', $tenantId)
             ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
-            ->count();
-    }
+            ->findOrFail($id);
 
-    public function getTodayTotalProperty(): float
-    {
-        return (float) Payment::query()
-            ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
-            ->whereDate('payment_date', today())
-            ->sum('amount');
-    }
+        $this->paymentId = $receipt->id;
+        $this->payableId = $receipt->payable_id;
+        $this->voucherNumber = $receipt->voucher_number;
+        $this->paymentDate = optional($receipt->payment_date)->format('Y-m-d')
+            ?? now()->format('Y-m-d');
 
-    public function selectParty(int $partyId): void
-    {
-        $party = Party::query()
-            ->where('tenant_id', $this->getTenantId())
-            ->where('is_active', true)
-            ->whereIn('type', ['customer', 'both'])
-            ->find($partyId);
+        $this->paymentMethod = $receipt->payment_method ?? 'cash';
+        $this->amount = (string) $receipt->amount;
+        $this->notes = $receipt->notes ?? '';
+        $this->partySearch = '';
 
-        if (!$party) {
-            $this->addError('payableId', 'تعذر العثور على العميل.');
-            return;
-        }
-
-        $this->payableId = $party->id;
-        $this->partySearch = $party->name;
-        $this->resetErrorBag('payableId');
+        $this->showForm = true;
     }
 
     public function clearParty(): void
@@ -131,266 +197,249 @@ new class extends Component {
         $this->partySearch = '';
     }
 
-    public function openCreate(): void
+    public function selectParty(int $partyId): void
     {
-        $this->resetForm();
+        $tenantId = $this->getTenantId();
 
-        $this->voucherNumber = $this->generateVoucherNumber();
-        $this->paymentDate = now()->format('Y-m-d');
+        $party = Party::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'both'])
+            ->findOrFail($partyId);
 
-        $this->showForm = true;
-    }
-
-    public function edit(int $id): void
-    {
-        $payment = Payment::query()
-            ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
-            ->with('payable')
-            ->findOrFail($id);
-
-        $this->paymentId = $payment->id;
-        $this->voucherNumber = $payment->voucher_number;
-        $this->payableId = $payment->payable_id;
-        $this->partySearch = $payment->payable?->name ?? '';
-        $this->amount = (string) $payment->amount;
-        $this->paymentMethod = $payment->payment_method ?? 'cash';
-        $this->paymentDate = optional($payment->payment_date)->format('Y-m-d')
-            ?: now()->format('Y-m-d');
-        $this->notes = $payment->notes ?? '';
-
-        $this->resetValidation();
-        $this->showForm = true;
+        $this->payableId = $party->id;
+        $this->partySearch = '';
     }
 
     public function saveReceipt(): void
     {
-        $this->validate([
-            'payableId' => ['required', 'integer'],
-            'amount' => ['required', 'numeric', 'gt:0'],
-            'paymentMethod' => ['required', 'string', 'max:50'],
-            'paymentDate' => ['required', 'date'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-        ], [
-            'payableId.required' => 'يرجى اختيار العميل.',
-            'amount.required' => 'يرجى إدخال مبلغ السند.',
-            'amount.numeric' => 'المبلغ يجب أن يكون رقمًا.',
-            'amount.gt' => 'المبلغ يجب أن يكون أكبر من صفر.',
-            'paymentDate.required' => 'يرجى تحديد تاريخ السند.',
-        ]);
-
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
-            $this->addError('general', 'تعذر تحديد المتجر الحالي.');
+            $this->dispatch(
+                'toast',
+                type: 'error',
+                message: 'لا يوجد مستأجر نشط.'
+            );
+
             return;
         }
 
-        try {
-            DB::transaction(function () use ($tenantId) {
-                $party = Party::query()
+        $validated = $this->validate([
+            'payableId' => ['required', 'integer'],
+            'voucherNumber' => ['required', 'string', 'max:50'],
+            'paymentDate' => ['required', 'date'],
+            'paymentMethod' => ['required', 'in:cash,bank,card,check'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        DB::transaction(function () use ($tenantId, $validated) {
+            $newParty = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->where('is_active', true)
+                ->whereIn('type', ['customer', 'both'])
+                ->lockForUpdate()
+                ->findOrFail($validated['payableId']);
+
+            $newAmount = (float) $validated['amount'];
+
+            if ($this->paymentId) {
+                $receipt = Payment::query()
                     ->where('tenant_id', $tenantId)
-                    ->where('is_active', true)
-                    ->whereIn('type', ['customer', 'both'])
+                    ->where('type', 'receipt')
                     ->lockForUpdate()
-                    ->find($this->payableId);
+                    ->findOrFail($this->paymentId);
 
-                if (!$party) {
-                    throw new \RuntimeException('العميل المحدد غير موجود أو غير فعال.');
-                }
+                $oldPartyId = $receipt->payable_id;
+                $oldAmount = (float) $receipt->amount;
 
-                $newAmount = (float) $this->amount;
+                if ($oldPartyId === $newParty->id) {
+                    $newParty->current_balance =
+                        (float) $newParty->current_balance
+                        + $oldAmount
+                        - $newAmount;
 
-                if ($this->paymentId) {
-                    $payment = Payment::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('type', 'receipt')
-                        ->where('payable_type', Party::class)
-                        ->lockForUpdate()
-                        ->find($this->paymentId);
-
-                    if (!$payment) {
-                        throw new \RuntimeException('سند القبض غير موجود.');
-                    }
-
-                    $oldPartyId = $payment->payable_id;
-                    $oldAmount = (float) $payment->amount;
-
-                    if ($oldPartyId === $party->id) {
-                        $party->current_balance = (float) $party->current_balance + $oldAmount - $newAmount;
-                        $party->save();
-                    } else {
-                        $oldParty = Party::query()
-                            ->where('tenant_id', $tenantId)
-                            ->lockForUpdate()
-                            ->find($oldPartyId);
-
-                        if ($oldParty) {
-                            $oldParty->current_balance = (float) $oldParty->current_balance + $oldAmount;
-                            $oldParty->save();
-                        }
-
-                        $party->current_balance = (float) $party->current_balance - $newAmount;
-                        $party->save();
-                    }
-
-                    $payment->update([
-                        'voucher_number' => $this->voucherNumber ?: $payment->voucher_number,
-                        'payable_type' => Party::class,
-                        'payable_id' => $party->id,
-                        'amount' => $newAmount,
-                        'payment_method' => $this->paymentMethod,
-                        'payment_date' => $this->paymentDate,
-                        'notes' => $this->notes ?: null,
-                    ]);
+                    $newParty->save();
                 } else {
-                    $voucherNumber = $this->voucherNumber ?: $this->generateVoucherNumber();
+                    $oldParty = Party::query()
+                        ->where('tenant_id', $tenantId)
+                        ->lockForUpdate()
+                        ->findOrFail($oldPartyId);
 
-                    Payment::create([
-                        'tenant_id' => $tenantId,
-                        'voucher_number' => $voucherNumber,
-                        'type' => 'receipt',
-                        'payable_type' => Party::class,
-                        'payable_id' => $party->id,
-                        'amount' => $newAmount,
-                        'payment_method' => $this->paymentMethod,
-                        'payment_date' => $this->paymentDate,
-                        'notes' => $this->notes ?: null,
-                        'created_by' => Auth::id(),
-                    ]);
+                    $oldParty->current_balance =
+                        (float) $oldParty->current_balance + $oldAmount;
 
-                    $party->current_balance = (float) $party->current_balance - $newAmount;
-                    $party->save();
+                    $oldParty->save();
+
+                    $newParty->current_balance =
+                        (float) $newParty->current_balance - $newAmount;
+
+                    $newParty->save();
                 }
-            });
 
-            $this->showForm = false;
+                $receipt->update([
+                    'payable_id' => $newParty->id,
+                    'voucher_number' => $validated['voucherNumber'],
+                    'payment_date' => $validated['paymentDate'],
+                    'payment_method' => $validated['paymentMethod'],
+                    'amount' => $newAmount,
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+            } else {
+                Payment::create([
+                    'tenant_id' => $tenantId,
+                    'payable_id' => $newParty->id,
+                    'type' => 'receipt',
+                    'voucher_number' => $validated['voucherNumber'],
+                    'payment_date' => $validated['paymentDate'],
+                    'payment_method' => $validated['paymentMethod'],
+                    'amount' => $newAmount,
+                    'notes' => $validated['notes'] ?? null,
+                    'user_id' => Auth::id(),
+                ]);
 
-            $this->dispatch(
-                'accounting-toast',
-                type: 'success',
-                message: $this->paymentId
-                    ? 'تم تحديث سند القبض بنجاح.'
-                    : 'تم حفظ سند القبض بنجاح.'
-            );
+                $newParty->current_balance =
+                    (float) $newParty->current_balance - $newAmount;
 
-            $this->resetForm();
-        } catch (\Throwable $e) {
-            report($e);
+                $newParty->save();
+            }
+        });
 
-            $this->addError(
-                'general',
-                $e instanceof \RuntimeException
-                    ? $e->getMessage()
-                    : 'تعذر حفظ سند القبض. يرجى المحاولة مرة أخرى.'
-            );
-        }
+        $this->showForm = false;
+
+        $this->dispatch(
+            'toast',
+            type: 'success',
+            message: $this->paymentId
+                ? 'تم تحديث سند القبض بنجاح.'
+                : 'تم إنشاء سند القبض بنجاح.'
+        );
+
+        $this->resetForm();
+        $this->resetPage();
     }
 
     public function confirmDelete(int $id): void
     {
+        $tenantId = $this->getTenantId();
+
+        Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->findOrFail($id);
+
         $this->deleteId = $id;
         $this->showDeleteModal = true;
     }
 
     public function delete(): void
     {
-        if (!$this->deleteId) {
+        $tenantId = $this->getTenantId();
+
+        if (!$this->deleteId || !$tenantId) {
             return;
         }
 
-        $tenantId = $this->getTenantId();
+        DB::transaction(function () use ($tenantId) {
+            $receipt = Payment::query()
+                ->where('tenant_id', $tenantId)
+                ->where('type', 'receipt')
+                ->lockForUpdate()
+                ->findOrFail($this->deleteId);
 
-        try {
-            DB::transaction(function () use ($tenantId) {
-                $payment = Payment::query()
-                    ->where('tenant_id', $tenantId)
-                    ->where('type', 'receipt')
-                    ->where('payable_type', Party::class)
-                    ->lockForUpdate()
-                    ->find($this->deleteId);
+            $party = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->lockForUpdate()
+                ->findOrFail($receipt->payable_id);
 
-                if (!$payment) {
-                    throw new \RuntimeException('سند القبض غير موجود.');
-                }
+            $party->current_balance =
+                (float) $party->current_balance + (float) $receipt->amount;
 
-                $party = Party::query()
-                    ->where('tenant_id', $tenantId)
-                    ->lockForUpdate()
-                    ->find($payment->payable_id);
+            $party->save();
 
-                if ($party) {
-                    $party->current_balance = (float) $party->current_balance + (float) $payment->amount;
-                    $party->save();
-                }
+            $receipt->delete();
+        });
 
-                $payment->delete();
-            });
+        $this->showDeleteModal = false;
+        $this->deleteId = null;
 
-            $this->showDeleteModal = false;
-            $this->deleteId = null;
+        $this->dispatch(
+            'toast',
+            type: 'success',
+            message: 'تم حذف سند القبض وتحديث الرصيد.'
+        );
 
-            $this->dispatch(
-                'accounting-toast',
-                type: 'success',
-                message: 'تم حذف سند القبض وعكس أثره على الرصيد.'
-            );
-        } catch (\Throwable $e) {
-            report($e);
-
-            $this->addError(
-                'general',
-                $e instanceof \RuntimeException
-                    ? $e->getMessage()
-                    : 'تعذر حذف سند القبض.'
-            );
-        }
+        $this->resetPage();
     }
 
     public function print(int $id): void
     {
+        $tenantId = $this->getTenantId();
+
         $this->printVoucher = Payment::query()
-            ->where('tenant_id', $this->getTenantId())
+            ->with(['payable', 'user'])
+            ->where('tenant_id', $tenantId)
             ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
-            ->with('payable', 'user')
             ->findOrFail($id);
 
         $this->showPrintModal = true;
     }
 
+    public function closePrint(): void
+    {
+        $this->showPrintModal = false;
+        $this->printVoucher = null;
+    }
+
     public function sendWhatsapp(int $id): void
     {
-        $payment = Payment::query()
-            ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
+        $tenantId = $this->getTenantId();
+
+        $receipt = Payment::query()
             ->with('payable')
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
             ->findOrFail($id);
 
-        $phone = preg_replace('/\D+/', '', (string) $payment->payable?->phone);
+        $phone = preg_replace('/\D+/', '', (string) $receipt->payable?->phone);
 
         if (!$phone) {
-            $this->addError('general', 'لا يوجد رقم هاتف مسجل لهذا العميل.');
+            $this->dispatch(
+                'toast',
+                type: 'error',
+                message: 'لا يوجد رقم هاتف لهذا العميل.'
+            );
+
             return;
         }
 
         $message = implode("\n", [
             'سند قبض',
-            'رقم السند: ' . $payment->voucher_number,
-            'العميل: ' . ($payment->payable?->name ?? '-'),
-            'المبلغ: ' . number_format((float) $payment->amount, 2),
-            'طريقة القبض: ' . $this->paymentMethodLabel($payment->payment_method),
-            'التاريخ: ' . optional($payment->payment_date)->format('Y-m-d'),
+            'رقم السند: ' . $receipt->voucher_number,
+            'العميل: ' . ($receipt->payable?->name ?? '-'),
+            'المبلغ: ' . number_format((float) $receipt->amount, 2),
+            'التاريخ: ' . optional($receipt->payment_date)->format('Y-m-d'),
         ]);
 
         $url = 'https://wa.me/' . $phone . '?text=' . rawurlencode($message);
 
-        $this->dispatch('open-whatsapp', url: $url);
+        $this->dispatch('open-url', url: $url);
     }
 
-    public function resetForm(): void
+    protected function generateVoucherNumber(): string
+    {
+        $tenantId = $this->getTenantId();
+
+        $lastId = Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->max('id');
+
+        return 'REC-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
+    }
+
+    protected function resetForm(): void
     {
         $this->reset([
             'partySearch',
@@ -402,126 +451,85 @@ new class extends Component {
             'payableId',
         ]);
 
-        $this->paymentMethod = 'cash';
         $this->paymentDate = now()->format('Y-m-d');
-
-        $this->resetValidation();
+        $this->paymentMethod = 'cash';
+        $this->showForm = false;
     }
 
-    private function generateVoucherNumber(): string
+    public function render()
     {
-        $lastId = Payment::query()
-            ->where('tenant_id', $this->getTenantId())
-            ->where('type', 'receipt')
-            ->max('id');
-
-        return 'REC-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
-    }
-
-    private function paymentMethodLabel(?string $method): string
-    {
-        return match ($method) {
-            'cash' => 'نقدي',
-            'bank' => 'تحويل بنكي',
-            'card' => 'بطاقة',
-            'check' => 'شيك',
-            default => $method ?: '-',
-        };
-    }
-
-    public function render(): mixed
-    {
-        $tenantId = $this->getTenantId();
-
-        $receipts = Payment::query()
-            ->where('tenant_id', $tenantId)
-            ->where('type', 'receipt')
-            ->where('payable_type', Party::class)
-            ->with('payable')
-            ->when(trim($this->tableSearch) !== '', function ($query) {
-                $search = trim($this->tableSearch);
-
-                $query->where(function ($q) use ($search) {
-                    $q->where('voucher_number', 'like', "%{$search}%")
-                        ->orWhereHas('payable', function ($partyQuery) use ($search) {
-                            $partyQuery
-                                ->where('name', 'like', "%{$search}%")
-                                ->orWhere('phone', 'like', "%{$search}%");
-                        });
-                });
-            })
-            ->latest('id')
-            ->paginate(15);
-
         return $this->view([
-            'receipts' => $receipts,
-        ])->layout('layouts::tenant');
+            'receipts' => $this->items,
+        ])->title('سندات القبض');
     }
 };
 ?>
 <flux:main class="space-y-6">
 
-<div dir="rtl" class="min-h-full bg-slate-50">
-    @include('pages.tenant.accounting.partials.voucher-table', [
-        'mode' => 'receipt',
-        'title' => 'سندات القبض',
-        'subtitle' => 'إدارة المقبوضات من العملاء وحركة الأرصدة',
-        'createLabel' => 'سند قبض جديد',
-        'items' => $receipts,
-        'todayTotal' => $this->todayTotal,
-        'voucherCount' => $this->voucherCount,
-        'tableSearch' => $tableSearch,
-    ])
+<div>
+    <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+
+        @include('pages.tenant.accounting.partials.voucher-table', [
+            'mode' => 'receipt',
+            'title' => 'سندات القبض',
+            'subtitle' => 'إدارة المقبوضات من العملاء وتحديث أرصدتهم.',
+            'items' => $receipts,
+            'todayTotal' => $this->todayTotal,
+            'voucherCount' => $this->voucherCount,
+            'createLabel' => 'سند قبض',
+        ])
+
+    </div>
 
     @include('pages.tenant.accounting.partials.voucher-form', [
         'mode' => 'receipt',
-        'title' => $paymentId ? 'تعديل سند القبض' : 'إنشاء سند قبض',
-        'partyLabel' => 'العميل',
-        'partyTypes' => ['customer', 'both'],
-        'saveMethod' => 'saveReceipt',
+        'showForm' => $showForm,
         'selectedParty' => $this->selectedParty,
         'partyResults' => $this->partyResults,
-        'showForm' => $showForm,
+        'partyLabel' => 'العميل',
+        'saveMethod' => 'saveReceipt',
+        'paymentId' => $paymentId,
+        'amount' => $amount,
     ])
 
-    @include('pages.tenant.accounting.partials.voucher-print', [
-        'mode' => 'receipt',
-        'voucher' => $printVoucher,
-        'show' => $showPrintModal,
-    ])
+    @if($showDeleteModal)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 class="text-lg font-black text-slate-900">
+                    حذف سند القبض
+                </h3>
 
-    @if ($showDeleteModal)
-        <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-                <div class="p-6">
-                    <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-                        <flux:icon name="trash" class="size-6" />
-                    </div>
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    هل أنت متأكد من حذف هذا السند؟ سيتم إعادة قيمة السند إلى رصيد العميل.
+                </p>
 
-                    <h3 class="text-lg font-bold text-slate-900">حذف سند القبض؟</h3>
-
-                    <p class="mt-2 text-sm leading-6 text-slate-500">
-                        سيتم حذف السند وعكس أثره على رصيد العميل.
-                        <strong>الرصيد الافتتاحي لن يتغير.</strong>
-                    </p>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 border-t border-slate-100 p-4">
-                    <flux:button type="button" variant="ghost" wire:click="$set('showDeleteModal', false)">
+                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        wire:click="$set('showDeleteModal', false)"
+                        class="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
                         إلغاء
-                    </flux:button>
+                    </button>
 
-                    <flux:button type="button" variant="danger" wire:click="delete">
+                    <button
+                        type="button"
+                        wire:click="delete"
+                        wire:loading.attr="disabled"
+                        class="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                    >
                         حذف السند
-                    </flux:button>
+                    </button>
                 </div>
             </div>
         </div>
     @endif
 
-    <div
-        x-data
-        x-on:open-whatsapp.window="window.open($event.detail.url, '_blank')"
-    ></div>
+    @if($showPrintModal && $printVoucher)
+        @include('pages.tenant.accounting.partials.voucher-print', [
+            'mode' => 'receipt',
+            'voucher' => $printVoucher,
+        ])
+    @endif
 </div>
 </flux:main>
