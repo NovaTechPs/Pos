@@ -42,8 +42,8 @@
     </div>
 
     <div class="mt-3 grid grid-cols-2 gap-2">
-        <button wire:click="checkout" @disabled(empty($cart) || $currentInvoiceId) class="rounded-xl bg-slate-900 px-3 py-3 text-xs font-black text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-400">حفظ <kbd class="mr-1 rounded bg-slate-700 px-1">F3</kbd></button>
-        <button wire:click="checkoutAndPrint" @disabled(empty($cart) || $currentInvoiceId) class="rounded-xl {{ $isReturnMode ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} px-3 py-3 text-xs font-black text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-400">حفظ وطباعة <kbd class="mr-1 rounded bg-black/20 px-1">F6</kbd></button>
+        <button wire:click="checkout" @disabled(empty($cart) ) class="rounded-xl bg-slate-900 px-3 py-3 text-xs font-black text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-400">حفظ <kbd class="mr-1 rounded bg-slate-700 px-1">F3</kbd></button>
+        <button wire:click="checkoutAndPrint" @disabled(empty($cart) ) class="rounded-xl {{ $isReturnMode ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700' }} px-3 py-3 text-xs font-black text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-400">حفظ وطباعة <kbd class="mr-1 rounded bg-black/20 px-1">F6</kbd></button>
     </div>
     <button wire:click="clearCart" @disabled(empty($cart)) class="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-100 disabled:opacity-40">فاتورة جديدة / تنظيف F4</button>
 </div>

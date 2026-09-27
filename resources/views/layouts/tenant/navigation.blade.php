@@ -250,5 +250,15 @@
             {{ __('Backup') }}
         </flux:sidebar.item>
     @endcan
+    @can('barcode.print')
+    <flux:sidebar.item
+        icon="printer"
+        :href="route('tenant.barcode.printer')"
+        :current="request()->routeIs('tenant.barcode.printer')"
+        wire:navigate
+    >
+        {{ __('Barcode Printer') }}
+    </flux:sidebar.item>
+@endcan
 
 </flux:sidebar.group>

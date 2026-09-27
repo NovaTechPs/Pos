@@ -49,6 +49,10 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/product', 'pages::tenant.products.index')
             ->name('product');
 
+    Route::livewire('/barcode/printer', 'pages::tenant.products.printer')
+            ->name('barcode.printer');
+
+
         // POS
         Route::livewire('/pos', 'pages::tenant.pos.sales')
             ->name('pos');
@@ -84,7 +88,7 @@ Route::middleware(['auth', 'verified'])
             ->name('daily-settlement');
         Route::livewire('/payment', 'pages::tenant.accounting.payment')
             ->name('payment');
-                 Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
+        Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
             ->name('receipts');
 
         // System
