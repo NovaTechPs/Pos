@@ -1,7 +1,7 @@
 <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     <div class="shrink-0 border-b border-slate-100 bg-slate-50 p-2.5">
         <div class="relative">
-            <input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" autofocus type="text"
+            <input data-pos-barcode-input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" autofocus type="text"
                 placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
                 class="w-full rounded-xl border-2 {{ $isReturnMode ? 'border-rose-300 focus:border-rose-500' : 'border-indigo-200 focus:border-indigo-500' }} bg-white px-4 py-2.5 text-sm font-black text-slate-900 outline-none placeholder:text-slate-400">
             @if ($barcode)
@@ -142,72 +142,3 @@ input[type="number"] {
     appearance: none;
 }
 </style>
-
-<script>
-(function () {
-    if (window.__posCartKeyboardNavigation) return;
-    window.__posCartKeyboardNavigation = true;
-
-    const FIELD_SELECTOR = '[data-pos-field]';
-
-    function rows() {
-        const grouped = new Map();
-        document.querySelectorAll(FIELD_SELECTOR).forEach(function (field) {
-            const row = Number(field.dataset.rowIndex);
-            if (!Number.isFinite(row)) return;
-            if (!grouped.has(row)) grouped.set(row, {});
-            grouped.get(row)[field.dataset.posField] = field;
-        });
-        return Array.from(grouped.entries()).sort((a,b) => a[0]-b[0]).map(function (entry) {
-            return { index: entry[0], quantity: entry[1].quantity || null, price: entry[1].price || null };
-        });
-    }
-
-    function focusInput(input) {
-        if (!input || !document.contains(input)) return;
-        input.focus({ preventScroll: true });
-        input.select?.();
-        input.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
-    }
-
-    document.addEventListener('keydown', function (event) {
-        const current = event.target?.closest?.(FIELD_SELECTOR);
-        const key = event.key;
-
-        if (!current && key === 'ArrowUp') {
-            const allRows = rows();
-            if (!allRows.length) return;
-            event.preventDefault();
-            focusInput(allRows[allRows.length - 1].quantity || allRows[allRows.length - 1].price);
-            return;
-        }
-
-        if (!current || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Home','End'].includes(key)) return;
-        const allRows = rows();
-        if (!allRows.length) return;
-
-        const rowIndex = Number(current.dataset.rowIndex);
-        const type = current.dataset.posField;
-        const pos = allRows.findIndex(r => r.index === rowIndex);
-        if (pos < 0) return;
-
-        let target = null;
-        if (key === 'ArrowLeft' || key === 'ArrowRight') {
-            target = type === 'quantity' ? allRows[pos].price : allRows[pos].quantity;
-        } else {
-            let targetPos = pos;
-            if (key === 'ArrowUp') targetPos = pos <= 0 ? allRows.length - 1 : pos - 1;
-            if (key === 'ArrowDown' || key === 'Enter') targetPos = pos >= allRows.length - 1 ? 0 : pos + 1;
-            if (key === 'Home') targetPos = 0;
-            if (key === 'End') targetPos = allRows.length - 1;
-            target = allRows[targetPos][type];
-        }
-
-        if (target) {
-            event.preventDefault();
-            event.stopPropagation();
-            focusInput(target);
-        }
-    }, true);
-})();
-</script>

@@ -415,6 +415,54 @@ new class extends Component {
         }
     }
 
+    /**
+     * Update one editable field inside the current cart row.
+     *
+     * The cart is also used while editing a saved invoice, so we deliberately
+     * do not touch currentInvoiceId here.
+     */
+    public function updateCartField(int $productId, string $field, $value): void
+    {
+        if (!isset($this->cart[$productId])) {
+            return;
+        }
+
+        $value = str_replace(',', '.', trim((string) $value));
+
+        switch ($field) {
+            case 'quantity':
+                $quantity = (float) $value;
+
+                if ($quantity <= 0) {
+                    $this->removeFromCart($productId);
+                    return;
+                }
+
+                $this->cart[$productId]['quantity'] = $this->isReturnMode
+                    ? -abs($quantity)
+                    : abs($quantity);
+                break;
+
+            case 'price':
+                $this->cart[$productId]['price'] = max(0, (float) $value);
+                break;
+
+            case 'cost_price':
+                $this->cart[$productId]['cost_price'] = max(0, (float) $value);
+                break;
+
+            default:
+                return;
+        }
+
+        $this->recalculatePrices();
+    }
+
+    public function updatedCart(): void
+    {
+        $this->recalculatePrices();
+    }
+
     public function updatedProductSearchQuery(): void
     {
         $this->loadQuickProducts();
@@ -563,12 +611,14 @@ new class extends Component {
             ->all();
     }
 
-    public function scanBarcode(): void
+    public function scanBarcode(?string $barcodeValue = null): void
     {
         $this->errorMessage = null;
         $this->successMessage = null;
 
-        $barcode = trim($this->barcode);
+        // يسمح هذا للماسح بإرسال القيمة مباشرة من أي مكان في الصفحة،
+        // مع إبقاء الحقل الحالي متوافقاً مع الإدخال اليدوي و Enter.
+        $barcode = trim($barcodeValue ?? $this->barcode);
 
         if ($barcode === '') {
             return;
@@ -667,47 +717,17 @@ new class extends Component {
 
     public function updateQuantity(int $productId, $qty): void
     {
-        if (!isset($this->cart[$productId])) {
-            return;
-        }
-
-        $quantity = (int) $qty;
-
-        if ($quantity === 0) {
-            $this->removeFromCart($productId);
-            return;
-        }
-
-        if (!$this->isReturnMode && $quantity < 0) {
-            $quantity = abs($quantity);
-        }
-
-        if ($this->isReturnMode && $quantity > 0) {
-            $quantity = -$quantity;
-        }
-
-        $this->cart[$productId]['quantity'] = $quantity;
-        $this->recalculatePrices();
+        $this->updateCartField($productId, 'quantity', $qty);
     }
 
     public function updateUnitPrice(int $productId, $newPrice): void
     {
-        if (!isset($this->cart[$productId])) {
-            return;
-        }
-
-        $this->cart[$productId]['price'] = max(0, (float) $newPrice);
-        $this->recalculatePrices();
+        $this->updateCartField($productId, 'price', $newPrice);
     }
 
     public function updateCostPrice(int $productId, $newCost): void
     {
-        if (!isset($this->cart[$productId])) {
-            return;
-        }
-
-        $this->cart[$productId]['cost_price'] = max(0, (float) $newCost);
-        $this->recalculatePrices();
+        $this->updateCartField($productId, 'cost_price', $newCost);
     }
 
     public function removeFromCart(int $productId): void
@@ -908,7 +928,7 @@ new class extends Component {
                     $item->cost_price
                     ?? ($item->product?->cost_price ?? 0)
                 ),
-                'quantity' => (int) $item->quantity,
+                'quantity' => (float) $item->quantity,
                 'subtotal' => (float) $item->total_price,
             ];
         }
@@ -1052,7 +1072,7 @@ new class extends Component {
         $total = 0;
 
         foreach ($this->cart as $item) {
-            $total += (float) ($item['cost_price'] ?? 0) * (int) $item['quantity'];
+            $total += (float) ($item['cost_price'] ?? 0) * (float) $item['quantity'];
         }
 
         return $this->roundMoney($total);
@@ -1130,7 +1150,7 @@ new class extends Component {
     {
         foreach ($this->cart as $item) {
             if (
-                (int) $item['quantity'] > 0 &&
+                (float) $item['quantity'] > 0 &&
                 (float) $item['price'] < (float) ($item['cost_price'] ?? 0)
             ) {
                 return true;
@@ -1384,10 +1404,10 @@ new class extends Component {
 
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
-                    $quantity = (int) ($rawItem['quantity'] ?? 0);
+                    $quantity = (float) ($rawItem['quantity'] ?? 0);
                     $price = max(0, (float) ($rawItem['price'] ?? 0));
 
-                    if (!$productId || $quantity === 0) {
+                    if (!$productId || abs($quantity) < 0.000001) {
                         throw new \RuntimeException(
                             'يوجد صنف أو كمية غير صالحة في الفاتورة.'
                         );
@@ -1730,7 +1750,7 @@ new class extends Component {
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
                 'user_id' => $user->id,
-                'shift_id' => $shift?->id,
+                'shift_id' => $currentShift?->id,
                 'editing_invoice_id' => $editingInvoiceId,
                 'message' => $e->getMessage(),
             ]);
@@ -1899,11 +1919,21 @@ new class extends Component {
 
 <flux:main dir="rtl" class="h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 font-sans select-none">
     <div
-        x-data="posKeyboard()"
+        x-data="posInvoiceKeyboard()"
         x-cloak
+        x-init="init()"
         x-on:keydown.window.escape="closePopups()"
-        x-on:keydown.window="handleGlobalKeydown($event)"
-        class="flex h-full min-h-0 flex-col gap-2 p-2 md:p-3"
+        x-on:keydown.window.f1.prevent="toggleHeldInvoices()"
+        x-on:keydown.window.f2.prevent="startNewFromKeyboard()"
+        x-on:keydown.window.f3.prevent="holdCurrentInvoice()"
+        x-on:keydown.window.f4.prevent="startNewFromKeyboard()"
+        x-on:keydown.window.f6.prevent="saveFromKeyboard(false)"
+        x-on:keydown.window.f7.prevent="saveFromKeyboard(true)"
+        x-on:keydown.window.f8.prevent="deleteFocusedItem()"
+        x-on:keydown.window.f9.prevent="focusBarcode()"
+        x-on:keydown.window.f10.prevent="openProducts()"
+        x-on:keydown="handleGridKeydown($event)"
+        class="flex h-full min-h-0 flex-col gap-2 p-2 md:p-3 select-text"
     >
         @include('pages.tenant.pos.partials.toolbar')
 
@@ -1911,7 +1941,7 @@ new class extends Component {
             <div class="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 shadow-sm">
                 <div class="flex items-center gap-2">
                     <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100">✎</span>
-                    <span>أنت الآن تعدّل الفاتورة المحفوظة رقم #{{ $currentInvoiceId }}. عند الحفظ سيتم تحديث نفس الفاتورة وليس إنشاء فاتورة جديدة.</span>
+                    <span>أنت الآن تعدّل الفاتورة المحفوظة رقم #{{ $currentInvoiceId }}. يمكنك تعديل الكمية والسعر والتكلفة، وسيتم حفظ التعديلات على نفس الفاتورة.</span>
                 </div>
                 <button type="button" wire:click="startNewInvoice" class="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 hover:bg-amber-100">فاتورة جديدة</button>
             </div>
@@ -1963,94 +1993,6 @@ new class extends Component {
 
     @include('pages.tenant.pos.partials.thermal-receipt')
 </flux:main>
-
-<script>
-    function posKeyboard() {
-        return {
-            closePopups() {
-                this.$wire.set('showProductsModal', false);
-                this.$wire.set('showHeldModal', false);
-                this.$wire.set('showCostModal', false);
-                this.$wire.set('showBelowCostModal', false);
-            },
-
-            focusProductSearch() {
-                const input = document.querySelector('input[wire\:model="barcode"]');
-                if (input) {
-                    input.focus({ preventScroll: true });
-                    input.select?.();
-                }
-            },
-
-            async deleteFocusedItem() {
-                const input = document.activeElement?.closest?.('[data-pos-field]');
-                if (!input) return;
-
-                const productId = Number(input.dataset.productId);
-                if (!productId) return;
-
-                const field = input.dataset.posField;
-                const row = Number(input.dataset.rowIndex);
-
-                await this.$wire.removeFromCart(productId);
-
-                requestAnimationFrame(() => {
-                    const candidates = Array.from(document.querySelectorAll('[data-pos-field]'))
-                        .filter(el => el.dataset.posField === field)
-                        .sort((a,b) => Number(a.dataset.rowIndex) - Number(b.dataset.rowIndex));
-
-                    const target = candidates.find(el => Number(el.dataset.rowIndex) >= row)
-                        || candidates[candidates.length - 1];
-
-                    if (target) {
-                        target.focus({ preventScroll: true });
-                        target.select?.();
-                    } else {
-                        this.focusProductSearch();
-                    }
-                });
-            },
-
-            async handleGlobalKeydown(event) {
-                const key = event.key;
-                if (!['F1','F2','F3','F4','F6','F7','F8','F9','F10'].includes(key)) return;
-
-                event.preventDefault();
-                event.stopPropagation();
-
-                switch (key) {
-                    case 'F1':
-                        this.$wire.set('showHeldModal', !this.$wire.showHeldModal);
-                        break;
-                    case 'F2':
-                        this.$wire.startNewInvoice();
-                        break;
-                    case 'F3':
-                        this.$wire.holdInvoice();
-                        break;
-                    case 'F4':
-                        this.$wire.startNewInvoice();
-                        break;
-                    case 'F6':
-                        this.$wire.checkout();
-                        break;
-                    case 'F7':
-                        this.$wire.checkoutAndPrint();
-                        break;
-                    case 'F8':
-                        await this.deleteFocusedItem();
-                        break;
-                    case 'F9':
-                        this.focusProductSearch();
-                        break;
-                    case 'F10':
-                        this.$wire.set('showProductsModal', true);
-                        break;
-                }
-            }
-        };
-    }
-</script>
 
 <style>
     [x-cloak] {
@@ -2104,6 +2046,310 @@ new class extends Component {
 </style>
 
 <script>
+    function posInvoiceKeyboard() {
+        return {
+            init() {
+                this.initGlobalBarcodeScanner();
+            },
+
+            focusBarcode() {
+                const input = document.querySelector('input[data-pos-barcode-input]');
+                if (!input) return;
+
+                input.focus({ preventScroll: true });
+                input.select?.();
+                input.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+            },
+
+            initGlobalBarcodeScanner() {
+                if (window.__posGlobalBarcodeScannerV2) return;
+
+                const state = {
+                    buffer: '',
+                    startedAt: 0,
+                    lastAt: 0,
+                    timer: null,
+                    candidate: false,
+                    activeElement: null,
+                    originalValue: null,
+                    originalStart: null,
+                    originalEnd: null,
+                };
+
+                const reset = () => {
+                    if (state.timer) clearTimeout(state.timer);
+                    state.buffer = '';
+                    state.startedAt = 0;
+                    state.lastAt = 0;
+                    state.timer = null;
+                    state.candidate = false;
+                    state.activeElement = null;
+                    state.originalValue = null;
+                    state.originalStart = null;
+                    state.originalEnd = null;
+                };
+
+                const input = () => document.querySelector('input[data-pos-barcode-input]');
+
+                const component = () => {
+                    const barcodeInput = input();
+                    const host = barcodeInput?.closest('[wire\\:id]');
+                    const id = host?.getAttribute('wire:id');
+                    return id && window.Livewire ? window.Livewire.find(id) : null;
+                };
+
+                const restoreOriginalInput = () => {
+                    const element = state.activeElement;
+                    if (!element || !document.contains(element) || state.originalValue === null) return;
+
+                    if ('value' in element) {
+                        element.value = state.originalValue;
+                        if (state.originalStart !== null) {
+                            try {
+                                element.setSelectionRange(state.originalStart, state.originalEnd);
+                            } catch (_) {}
+                        }
+                    }
+                };
+
+                const finish = () => {
+                    const value = state.buffer.trim();
+                    const duration = state.lastAt && state.startedAt
+                        ? state.lastAt - state.startedAt
+                        : Infinity;
+
+                    const valid = value.length >= 3 && duration <= 800;
+                    const wire = component();
+
+                    restoreOriginalInput();
+                    reset();
+
+                    if (!valid || !wire) return;
+
+                    wire.call('scanBarcode', value);
+                };
+
+                const handler = (event) => {
+                    const key = event.key;
+                    const now = performance.now();
+
+                    if (key === 'F9' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) {
+                        return;
+                    }
+
+                    if (key === 'Enter') {
+                        if (state.buffer.length >= 3) {
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            finish();
+                        }
+                        return;
+                    }
+
+                    if (key.length !== 1) return;
+
+                    const gap = state.lastAt ? now - state.lastAt : Infinity;
+
+                    // بداية قراءة محتملة. لا نمنع أول حرف حتى لا نكسر الكتابة اليدوية.
+                    if (!state.lastAt || gap > 90) {
+                        reset();
+                        state.startedAt = now;
+                        state.lastAt = now;
+                        state.buffer = key;
+                        state.activeElement = document.activeElement;
+
+                        if (state.activeElement && 'value' in state.activeElement) {
+                            state.originalValue = state.activeElement.value;
+                            try {
+                                state.originalStart = state.activeElement.selectionStart;
+                                state.originalEnd = state.activeElement.selectionEnd;
+                            } catch (_) {}
+                        }
+
+                        state.timer = setTimeout(reset, 900);
+                        return;
+                    }
+
+                    // إذا وصلت الأحرف بسرعة، نعتبرها قراءة ماسح ونبدأ بمنعها من الحقل الحالي.
+                    state.candidate = true;
+                    state.buffer += key;
+                    state.lastAt = now;
+
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+
+                    restoreOriginalInput();
+
+                    if (state.timer) clearTimeout(state.timer);
+                    state.timer = setTimeout(reset, 900);
+                };
+
+                window.__posGlobalBarcodeScannerV2 = true;
+                document.addEventListener('keydown', handler, true);
+            },
+
+            closePopups() {
+                this.$wire.set('showProductsModal', false);
+                this.$wire.set('showHeldModal', false);
+                this.$wire.set('showCostModal', false);
+                this.$wire.set('showBelowCostModal', false);
+            },
+
+            toggleHeldInvoices() {
+                this.$wire.set('showHeldModal', !this.$wire.showHeldModal);
+            },
+
+            holdCurrentInvoice() {
+                this.$wire.holdInvoice();
+            },
+
+            startNewFromKeyboard() {
+                this.$wire.startNewInvoice();
+            },
+
+            openProducts() {
+                this.$wire.set('showProductsModal', true);
+            },
+
+            deleteFocusedItem() {
+                const active = document.activeElement;
+                const input = active?.closest?.('[data-grid-input], [data-pos-field]');
+                const productId = input?.dataset?.productId;
+
+                if (!productId) return;
+
+                this.$wire.removeFromCart(Number(productId));
+            },
+
+            isTypingElement(element) {
+                return element && element.matches('input, textarea, select, [contenteditable="true"]');
+            },
+
+            gridInputs() {
+                const modern = Array.from(document.querySelectorAll('[data-grid-input]'));
+                if (modern.length) return modern;
+                return Array.from(document.querySelectorAll('[data-pos-field]'));
+            },
+
+            rowInputs(row, field) {
+                return this.gridInputs().filter((input) =>
+                    Number(input.dataset.row ?? input.dataset.rowIndex) === Number(row)
+                    && (input.dataset.field ?? input.dataset.posField) === field
+                );
+            },
+
+            findInput(row, field) {
+                return this.gridInputs().find((input) =>
+                    Number(input.dataset.row ?? input.dataset.rowIndex) === Number(row)
+                    && (input.dataset.field ?? input.dataset.posField) === field
+                ) || null;
+            },
+
+            focusInput(input) {
+                if (!input) return;
+                input.focus({ preventScroll: true });
+                input.select?.();
+                input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            },
+
+            async syncInput(input) {
+                if (!input) return;
+                const productId = Number(input.dataset.productId);
+                const field = input.dataset.field ?? input.dataset.posField;
+                if (!productId || !field) return;
+                await this.$wire.updateCartField(productId, field, input.value);
+            },
+
+            async moveRow(currentInput, direction) {
+                await this.syncInput(currentInput);
+                const rows = [...new Set(this.gridInputs().map((input) => Number(input.dataset.row ?? input.dataset.rowIndex)))].sort((a,b) => a-b);
+                if (!rows.length) return;
+                const currentRow = Number(currentInput.dataset.row ?? currentInput.dataset.rowIndex);
+                const currentField = currentInput.dataset.field ?? currentInput.dataset.posField;
+                let index = rows.indexOf(currentRow);
+                if (index < 0) index = 0;
+                let next = index + direction;
+                if (next < 0) next = rows.length - 1;
+                if (next >= rows.length) next = 0;
+                this.focusInput(this.findInput(rows[next], currentField));
+            },
+
+            async moveField(currentInput) {
+                await this.syncInput(currentInput);
+                const row = Number(currentInput.dataset.row ?? currentInput.dataset.rowIndex);
+                const currentField = currentInput.dataset.field ?? currentInput.dataset.posField;
+                const targetField = currentField === 'quantity' ? 'price' : 'quantity';
+                this.focusInput(this.findInput(row, targetField));
+            },
+
+            async handleGridKeydown(event) {
+                const input = event.target?.closest?.('[data-grid-input], [data-pos-field]');
+                if (!input) return;
+
+                switch (event.key) {
+                    case 'ArrowUp':
+                        event.preventDefault();
+                        await this.moveRow(input, -1);
+                        break;
+                    case 'ArrowDown':
+                        event.preventDefault();
+                        await this.moveRow(input, 1);
+                        break;
+                    case 'ArrowLeft':
+                    case 'ArrowRight':
+                        event.preventDefault();
+                        await this.moveField(input);
+                        break;
+                    case 'Enter':
+                        event.preventDefault();
+                        await this.moveRow(input, 1);
+                        break;
+                    case 'Home': {
+                        event.preventDefault();
+                        await this.syncInput(input);
+                        const rows = [...new Set(this.gridInputs().map((node) => Number(node.dataset.row ?? node.dataset.rowIndex)))].sort((a,b) => a-b);
+                        if (rows.length) this.focusInput(this.findInput(rows[0], input.dataset.field ?? input.dataset.posField));
+                        break;
+                    }
+                    case 'End': {
+                        event.preventDefault();
+                        await this.syncInput(input);
+                        const rows = [...new Set(this.gridInputs().map((node) => Number(node.dataset.row ?? node.dataset.rowIndex)))].sort((a,b) => a-b);
+                        const last = rows.at(-1);
+                        if (last !== undefined) this.focusInput(this.findInput(last, input.dataset.field ?? input.dataset.posField));
+                        break;
+                    }
+                }
+            },
+
+            async saveFromKeyboard(printAfterSave = false) {
+                const active = document.activeElement;
+                if (active?.matches('[data-grid-input], [data-pos-field]')) {
+                    await this.syncInput(active);
+                }
+                if (printAfterSave) await this.$wire.checkoutAndPrint();
+                else await this.$wire.checkout();
+            }
+        };
+    }
+
+    // F9 must remain available even if Alpine is re-initialized by Livewire.
+    if (!window.__posF9Shortcut) {
+        window.__posF9Shortcut = true;
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'F9') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const input = document.querySelector('input[data-pos-barcode-input]');
+            if (!input) return;
+
+            input.focus({ preventScroll: true });
+            input.select?.();
+            input.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+        }, true);
+    }
+
     document.addEventListener('livewire:init', () => {
         Livewire.on('print-receipt', () => {
             const receiptElement = document.getElementById('thermal-receipt');
@@ -2113,21 +2359,30 @@ new class extends Component {
 
             const frameDoc = printFrame.contentWindow.document;
             frameDoc.open();
+
             frameDoc.write(`
                 <html dir="rtl">
                     <head>
                         <title>فاتورة</title>
                         <style>
                             body{font-family:Tahoma,Arial,sans-serif;width:80mm;margin:0;padding:2mm;font-size:10px;color:#000;direction:rtl}
-                            .center{text-align:center}.bold{font-weight:700}.black{font-weight:900}.between{display:flex;justify-content:space-between}
-                            .line{border-top:1px solid #000}.dash{border-top:1px dashed #000}.small{font-size:9px}.tiny{font-size:8px}
-                            table{width:100%;border-collapse:collapse;text-align:right}th,td{padding:2px 0}
+                            .center{text-align:center}
+                            .bold{font-weight:700}
+                            .black{font-weight:900}
+                            .between{display:flex;justify-content:space-between}
+                            .line{border-top:1px solid #000}
+                            .dash{border-top:1px dashed #000}
+                            .small{font-size:9px}
+                            .tiny{font-size:8px}
+                            table{width:100%;border-collapse:collapse;text-align:right}
+                            th,td{padding:2px 0}
                             @page{size:80mm auto;margin:0}
                         </style>
                     </head>
                     <body>${receiptElement.innerHTML}</body>
                 </html>
             `);
+
             frameDoc.close();
 
             setTimeout(() => {
@@ -2136,4 +2391,5 @@ new class extends Component {
             }, 120);
         });
     });
+
 </script>

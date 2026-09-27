@@ -1,4 +1,4 @@
-    <flux:sidebar.group
+<flux:sidebar.group
     :heading="__('Platform')"
     class="grid"
 >
@@ -6,7 +6,7 @@
     {{-- Dashboard --}}
     @can('dashboard.view')
         <flux:sidebar.item
-            icon="home"
+            icon="squares-2x2"
             :href="route('tenant.dashboard')"
             :current="request()->routeIs('tenant.dashboard')"
             wire:navigate
@@ -19,12 +19,25 @@
     {{-- Branches --}}
     @can('branches.view')
         <flux:sidebar.item
-            icon="building-storefront"
+            icon="building-office-2"
             :href="route('tenant.branch')"
             :current="request()->routeIs('tenant.branch')"
             wire:navigate
         >
             {{ __('Branches') }}
+        </flux:sidebar.item>
+    @endcan
+
+
+    {{-- Categories --}}
+    @can('category.view')
+        <flux:sidebar.item
+            icon="tag"
+            :href="route('tenant.category')"
+            :current="request()->routeIs('tenant.category')"
+            wire:navigate
+        >
+            {{ __('Category') }}
         </flux:sidebar.item>
     @endcan
 
@@ -110,7 +123,7 @@
     {{-- Online Orders --}}
     @can('store_order.view')
         <flux:sidebar.item
-            icon="clipboard-document-list"
+            icon="shopping-cart"
             :href="route('tenant.online-orders')"
             :current="request()->routeIs('tenant.online-orders')"
             wire:navigate
@@ -123,7 +136,7 @@
     {{-- Store --}}
     @can('store.view')
         <flux:sidebar.item
-            icon="shopping-bag"
+            icon="building-storefront"
             :href="route('tenant.store', [
                 'slug' => session('active_tenant_slug') ?? 'default',
             ])"
@@ -138,7 +151,7 @@
     {{-- Wholesale Sales --}}
     @can('wholesale_sales.view')
         <flux:sidebar.item
-            icon="building-office-2"
+            icon="building-office"
             :href="route('tenant.wholesale-sales')"
             :current="request()->routeIs('tenant.wholesale-sales')"
             wire:navigate
@@ -203,7 +216,7 @@
     {{-- Vouchers --}}
     @can('vouchers.view')
         <flux:sidebar.item
-            icon="credit-card"
+            icon="banknotes"
             :href="route('tenant.payment')"
             :current="request()->routeIs('tenant.payment')"
             wire:navigate
@@ -211,9 +224,12 @@
             {{ __('Vouchers') }}
         </flux:sidebar.item>
     @endcan
-       @can('receipts.view')
+
+
+    {{-- Receipts --}}
+    @can('receipts.view')
         <flux:sidebar.item
-            icon="building-storefront"
+            icon="receipt-percent"
             :href="route('tenant.receipts')"
             :current="request()->routeIs('tenant.receipts')"
             wire:navigate
