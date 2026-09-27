@@ -26,6 +26,16 @@
                         {{ __('Point of Sale') }}
                     </flux:heading>
                 </div>
+                <div class="hidden border-s border-zinc-200 ps-4 dark:border-zinc-700 md:block">
+                  <flux:sidebar.item
+            icon="home"
+            :href="route('tenant.dashboard')"
+            :current="request()->routeIs('tenant.dashboard')"
+            wire:navigate
+        >
+            {{ __('Dashboard') }}
+        </flux:sidebar.item>
+                </div>
             </div>
 
 
