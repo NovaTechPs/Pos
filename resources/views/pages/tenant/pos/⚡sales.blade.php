@@ -71,6 +71,29 @@ new class extends Component {
         $this->checkActiveShift();
         $this->loadQuickProducts();
     }
+    public function updateCartField(int $productId, string $field, $value): void
+{
+    if (!isset($this->cart[$productId])) {
+        return;
+    }
+
+    switch ($field) {
+        case 'quantity':
+            $this->updateQuantity($productId, $value);
+            break;
+
+        case 'price':
+            $this->updateUnitPrice($productId, $value);
+            break;
+
+        case 'cost_price':
+            $this->updateCostPrice($productId, $value);
+            break;
+
+        default:
+            return;
+    }
+}
 
     protected function tenantId(): ?int
     {
