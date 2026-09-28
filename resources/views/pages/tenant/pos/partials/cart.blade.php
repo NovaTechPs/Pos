@@ -124,8 +124,7 @@
             </thead>
 
 
-            <tbody class="divide-y divide-slate-100">
-
+<tbody class="divide-y divide-slate-300">
                 @forelse ($cart as $item)
 
                     @php
@@ -135,15 +134,15 @@
                     @endphp
 
 
-                    <tr
-                        wire:key="pos-cart-{{ $item['id'] }}"
-                        class="
-                            {{ $item['quantity'] < 0
-                                ? 'bg-rose-50'
-                                : ($belowCost ? 'bg-amber-50' : 'bg-white') }}
-                            hover:bg-indigo-50
-                        "
-                    >
+                  <tr
+    wire:key="pos-cart-{{ $item['id'] }}"
+    class="
+        {{ $item['quantity'] < 0
+            ? 'bg-rose-50'
+            : ($belowCost ? 'bg-amber-50' : 'bg-white') }}
+        hover:bg-indigo-50
+    "
+>
 
                         {{-- =================================================
                             Product
