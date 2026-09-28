@@ -1272,6 +1272,7 @@ new class extends Component {
             'date' => $createdAt->format('Y/m/d'),
             'time' => $createdAt->format('h:i A'),
             'cashier' => $order->user?->name ?? 'الكاشير',
+            'notes' => trim((string) ($order->notes ?? '')),
             'items' => $items,
             'total_qty' => $totalQty,
             'subtotal' => number_format((float) $order->subtotal, 2),
@@ -1452,29 +1453,4 @@ new class extends Component {
     }
 </style>
 
-<script>
-    document.addEventListener('livewire:init', () => {
-        Livewire.on('print-receipt', () => {
-            const receiptElement = document.getElementById('thermal-receipt');
-            const printFrame = document.getElementById('silent-print-frame');
-            if (!receiptElement || !printFrame) return;
 
-            const frameDoc = printFrame.contentWindow.document;
-            frameDoc.open();
-            frameDoc.write(`
-                <html dir="rtl"><head><title>فاتورة</title><style>
-                    body{font-family:Tahoma,Arial,sans-serif;width:80mm;margin:0;padding:2mm;font-size:10px;color:#000;direction:rtl}
-                    .center{text-align:center}.bold{font-weight:700}.black{font-weight:900}.between{display:flex;justify-content:space-between}
-                    .line{border-top:1px solid #000}.dash{border-top:1px dashed #000}.small{font-size:9px}.tiny{font-size:8px}
-                    table{width:100%;border-collapse:collapse;text-align:right}th,td{padding:2px 0}
-                    @page{size:80mm auto;margin:0}
-                </style></head><body>${receiptElement.innerHTML}</body></html>
-            `);
-            frameDoc.close();
-            setTimeout(() => {
-                printFrame.contentWindow.focus();
-                printFrame.contentWindow.print();
-            }, 120);
-        });
-    });
-</script>
