@@ -15,6 +15,29 @@
         @endforeach
     </div>
 
+    @if (!$isReturnMode && !empty($cart))
+        <div class="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2">
+            <div class="mb-1 flex items-center justify-between">
+                <label class="text-[10px] font-black text-slate-600">القيمة النهائية</label>
+                <span class="text-[9px] font-bold text-slate-400">عدّلها والخصم يُحسب تلقائيًا</span>
+            </div>
+            <input
+                wire:model.live.debounce.150ms="custom_final_total"
+                type="number"
+                min="0"
+                max="{{ $this->subtotal }}"
+                step="0.01"
+                inputmode="decimal"
+                class="w-full rounded-xl border-2 border-indigo-200 bg-white px-3 py-2.5 text-left font-mono text-lg font-black text-indigo-800 focus:border-indigo-500 focus:outline-none"
+                placeholder="{{ number_format($this->subtotal, 2) }}"
+            >
+            <div class="mt-1 flex items-center justify-between text-[10px] font-black">
+                <span class="text-slate-500">قبل الخصم: <b class="font-mono">{{ number_format($this->subtotal, 2) }}</b></span>
+                <span class="text-rose-700">الخصم: <b class="font-mono">{{ number_format($this->calculated_discount, 2) }}</b></span>
+            </div>
+        </div>
+    @endif
+
     <div class="mt-3">
         <div class="mb-1 flex items-center justify-between">
             <label class="text-[10px] font-black text-slate-500">المبلغ {{ $isReturnMode ? 'المصروف' : 'المدفوع' }}</label>
