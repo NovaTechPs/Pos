@@ -86,6 +86,10 @@ new class extends Component {
             $this->updateUnitPrice($productId, $value);
             break;
 
+        case 'subtotal':
+            $this->updateLineTotal($productId, $value);
+            break;
+
         case 'cost_price':
             $this->updateCostPrice($productId, $value);
             break;
@@ -636,6 +640,36 @@ new class extends Component {
         $this->cart[$productId]['price'] = max(0, (float) $newPrice);
         $this->currentInvoiceId = null;
         $this->recalculatePrices();
+    }
+
+    /**
+     * تعديل إجمالي الصنف مباشرة.
+     * يتم تحويل الإجمالي الجديد إلى سعر وحدة مع الحفاظ على إشارة المرتجع.
+     */
+    public function updateLineTotal(int $productId, $newTotal): void
+    {
+        if (!isset($this->cart[$productId])) {
+            return;
+        }
+
+        $quantity = (int) ($this->cart[$productId]['quantity'] ?? 0);
+
+        if ($quantity === 0) {
+            return;
+        }
+
+        $targetTotal = (float) $newTotal;
+
+        // في وضع المرتجع يبقى إجمالي الصنف سالباً.
+        if ($quantity < 0) {
+            $targetTotal = -abs($targetTotal);
+        } else {
+            $targetTotal = max(0, $targetTotal);
+        }
+
+        $this->cart[$productId]['price'] = $this->roundMoney(abs($targetTotal / $quantity));
+        $this->cart[$productId]['subtotal'] = $this->roundMoney($targetTotal);
+        $this->currentInvoiceId = null;
     }
 
     public function updateCostPrice(int $productId, $newCost): void

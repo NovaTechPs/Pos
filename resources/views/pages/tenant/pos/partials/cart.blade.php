@@ -263,15 +263,24 @@
                         {{-- =================================================
                             Subtotal
                         ================================================== --}}
-                        <td
-                            class="
-                                px-2 py-2 text-center font-mono font-black
-                                {{ $item['subtotal'] < 0
-                                    ? 'text-rose-600'
-                                    : 'text-indigo-700' }}
-                            "
-                        >
-                            {{ number_format($item['subtotal'], 2) }}
+                        <td class="px-2 py-2 text-center">
+
+                            <input
+                                type="number"
+                                step="0.01"
+                                value="{{ $item['subtotal'] }}"
+                                data-pos-field="subtotal"
+                                data-product-id="{{ $item['id'] }}"
+                                data-row-index="{{ $loop->index }}"
+                                wire:change="updateCartField({{ $item['id'] }}, 'subtotal', $event.target.value)"
+                                class="pos-cart-field w-24 rounded-lg border px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none
+                                    {{ $item['subtotal'] < 0
+                                        ? 'border-rose-300 bg-rose-50 text-rose-700'
+                                        : 'border-slate-200 bg-slate-50 text-indigo-700' }}"
+                                inputmode="decimal"
+                                autocomplete="off"
+                            >
+
                         </td>
 
 
@@ -538,7 +547,8 @@ input[type="number"] {
                 return {
                     index: entry[0],
                     quantity: entry[1].quantity || null,
-                    price: entry[1].price || null
+                    price: entry[1].price || null,
+                    subtotal: entry[1].subtotal || null
                 };
 
             });
@@ -765,10 +775,51 @@ input[type="number"] {
             key === 'ArrowRight'
         ) {
 
-            target =
-                type === 'quantity'
-                    ? allRows[pos].price
-                    : allRows[pos].quantity;
+            /*
+             * الترتيب ثابت وواضح:
+             *
+             * → الكمية  →  السعر  →  الإجمالي  →  كمية الصنف التالي
+             * ← الإجمالي →  السعر  →  الكمية  →  إجمالي الصنف السابق
+             *
+             * لا نستخدم هنا دوراناً عاماً بين الحقول حتى لا يقفز
+             * التركيز من الكمية إلى الإجمالي بالخطأ.
+             */
+
+            if (key === 'ArrowLeft') {
+
+                if (type === 'quantity') {
+                    target = allRows[pos].price;
+                }
+                else if (type === 'price') {
+                    target = allRows[pos].subtotal;
+                }
+                else if (type === 'subtotal') {
+                    const nextPos =
+                        pos >= allRows.length - 1
+                            ? 0
+                            : pos + 1;
+
+                    target = allRows[nextPos].quantity;
+                }
+
+            } else {
+
+                if (type === 'subtotal') {
+                    target = allRows[pos].price;
+                }
+                else if (type === 'price') {
+                    target = allRows[pos].quantity;
+                }
+                else if (type === 'quantity') {
+                    const previousPos =
+                        pos <= 0
+                            ? allRows.length - 1
+                            : pos - 1;
+
+                    target = allRows[previousPos].subtotal;
+                }
+
+            }
 
         }
 
@@ -793,10 +844,26 @@ input[type="number"] {
             }
 
 
-            if (
-                key === 'ArrowDown' ||
-                key === 'Enter'
-            ) {
+            if (key === 'Enter') {
+
+                // داخل نفس الصنف: الكمية ← السعر ← الإجمالي
+                // وبعد الإجمالي ننتقل إلى كمية الصنف التالي.
+                const fields = ['quantity', 'price', 'subtotal'];
+                const currentFieldIndex = fields.indexOf(type);
+
+                if (currentFieldIndex >= 0 && currentFieldIndex < fields.length - 1) {
+                    target = allRows[pos][fields[currentFieldIndex + 1]];
+                } else {
+                    targetPos =
+                        pos >= allRows.length - 1
+                            ? 0
+                            : pos + 1;
+                }
+
+            }
+
+
+            if (key === 'ArrowDown') {
 
                 targetPos =
                     pos >= allRows.length - 1
