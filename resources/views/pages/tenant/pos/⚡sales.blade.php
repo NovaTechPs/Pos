@@ -669,28 +669,37 @@ new class extends Component {
         $this->successMessage = 'تم تجهيز فاتورة جديدة.';
     }
 
-    private function clearCartState(bool $reloadProducts = true): void
-    {
-        $this->cart = [];
-        $this->receipt = [];
-        $this->paid_amount = 0;
-        $this->payment_method = 'cash';
-        $this->discount_amount = 0;
-        $this->discount_type = 'fixed';
-        $this->custom_final_total = null;
-        $this->currentInvoiceId = null;
-        $this->isReturnMode = false;
-        $this->notes = '';
-        $this->searchInvoiceQuery = '';
-        $this->barcode = '';
-        $this->inlineSearchQuery = '';
-        $this->inlineSearchResults = [];
-        $this->showBelowCostModal = false;
+   private function clearCartState(bool $reloadProducts = true): void
+{
+    $this->cart = [];
+    $this->receipt = [];
+    $this->paid_amount = 0;
+    $this->payment_method = 'cash';
+    $this->discount_amount = 0;
+    $this->discount_type = 'fixed';
+    $this->custom_final_total = null;
+    $this->currentInvoiceId = null;
+    $this->isReturnMode = false;
+    $this->notes = '';
+    $this->searchInvoiceQuery = '';
+    $this->barcode = '';
+    $this->inlineSearchQuery = '';
+    $this->inlineSearchResults = [];
+    $this->showBelowCostModal = false;
 
-        if ($reloadProducts) {
-            $this->loadQuickProducts();
-        }
-    }
+    // مهم: تنظيف القيم المحسوبة المخزنة مؤقتاً في Livewire
+    unset(
+        $this->subtotal,
+        $this->total_cost,
+        $this->expected_profit,
+        $this->calculated_discount,
+        $this->total,
+        $this->amountDue,
+        $this->change,
+        $this->remaining,
+        $this->hasBelowCostItem
+    );
+}
 
     public function holdInvoice(): void
     {
