@@ -54,9 +54,11 @@ new class extends Component {
     public float $shift_cash_receipts = 0;
     public float $shift_cash_payments = 0;
     public float $shift_expected_cash = 0;
+    public bool $allowNegativeStock = false;
 
     public function mount(): void
     {
+        $this->allowNegativeStock = (bool) config('app.allow_negative_stock', env('ALLOW_NEGATIVE_STOCK', false));
         $user = Auth::user();
         $this->selectedBranchId = $user?->branch_id ?: session('active_branch_id');
         $tenantId = $this->tenantId();
@@ -121,103 +123,74 @@ new class extends Component {
         $this->heldInvoices = $key ? (array) session($key, []) : [];
     }
 
-   public function activeShift(): ?Shift
-{
-    $tenantId = $this->tenantId();
-    $branchId = $this->getActiveBranchId();
-    $userId = Auth::id();
+    public function activeShift(): ?Shift
+    {
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+        $userId = Auth::id();
 
-    if (!$tenantId || !$branchId || !$userId) {
-        return null;
-    }
+        if (!$tenantId || !$branchId || !$userId) {
+            return null;
+        }
 
-    $shift = Shift::query()
-        ->where('tenant_id', $tenantId)
-        ->where('branch_id', $branchId)
-        ->where('opened_by', $userId)
-        ->where('status', 'open')
-        ->latest('id')
-        ->first();
+        $shift = Shift::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('opened_by', $userId)->where('status', 'open')->latest('id')->first();
 
-    if (!$shift) {
-        return null;
-    }
+        if (!$shift) {
+            return null;
+        }
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | المبيعات
     |--------------------------------------------------------------------------
     | نحسبها مباشرة من الفواتير الخاصة بهذا الشيفت.
     */
-    $sales = (float) Order::query()
-        ->where('tenant_id', $tenantId)
-        ->where('branch_id', $branchId)
-        ->where('shift_id', $shift->id)
-        ->where('type', 'pos')
-        ->sum('total');
+        $sales = (float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'pos')->sum('total');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | المرتجعات
     |--------------------------------------------------------------------------
     | فواتير المرتجع غالباً تكون قيمتها سالبة،
     | لذلك نعرضها كمبلغ موجب.
     */
-    $returns = abs((float) Order::query()
-        ->where('tenant_id', $tenantId)
-        ->where('branch_id', $branchId)
-        ->where('shift_id', $shift->id)
-        ->where('type', 'return')
-        ->sum('total'));
+        $returns = abs((float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'return')->sum('total'));
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | المقبوض النقدي
     |--------------------------------------------------------------------------
     */
-    $cashSales = (float) Payment::query()
-        ->where('tenant_id', $tenantId)
-        ->where('shift_id', $shift->id)
-        ->where('type', 'receipt')
-        ->where('payment_method', 'cash')
-        ->sum('amount');
+        $cashSales = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'receipt')->where('payment_method', 'cash')->sum('amount');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | المدفوع النقدي للمرتجعات
     |--------------------------------------------------------------------------
     */
-    $cashReturns = (float) Payment::query()
-        ->where('tenant_id', $tenantId)
-        ->where('shift_id', $shift->id)
-        ->where('type', 'payment')
-        ->where('payment_method', 'cash')
-        ->sum('amount');
+        $cashReturns = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | الكاش المتوقع
     |--------------------------------------------------------------------------
     */
-    $expectedCash =
-        (float) $shift->opening_cash
-        + $cashSales
-        - $cashReturns;
+        $expectedCash = (float) $shift->opening_cash + $cashSales - $cashReturns;
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | نضع القيم على نسخة الشيفت الموجودة في الذاكرة
     | بدون UPDATE على قاعدة البيانات.
     |--------------------------------------------------------------------------
     */
-    $shift->setAttribute('live_total_sales', $sales);
-    $shift->setAttribute('live_total_returns', $returns);
-    $shift->setAttribute('live_cash_sales', $cashSales);
-    $shift->setAttribute('live_cash_returns', $cashReturns);
-    $shift->setAttribute('live_expected_cash', $expectedCash);
+        $shift->setAttribute('live_total_sales', $sales);
+        $shift->setAttribute('live_total_returns', $returns);
+        $shift->setAttribute('live_cash_sales', $cashSales);
+        $shift->setAttribute('live_cash_returns', $cashReturns);
+        $shift->setAttribute('live_expected_cash', $expectedCash);
 
-    return $shift;
-}
+        return $shift;
+    }
 
     public function updatedSelectedBranchId($value): void
     {
@@ -1140,7 +1113,7 @@ new class extends Component {
                     $costPrice = max(0, (float) ($rawItem['cost_price'] ?? ($product->cost_price ?? 0)));
                     $lineTotal = $this->roundMoney($price * $quantity);
 
-                    if ($quantity > 0 && (float) $branchProduct->stock_quantity < $quantity) {
+                    if (!$this->allowNegativeStock && $quantity > 0 && (float) $branchProduct->stock_quantity < $quantity) {
                         throw new \RuntimeException("المخزون غير كافٍ للمنتج {$product->name}. المتوفر: {$branchProduct->stock_quantity}.");
                     }
 
