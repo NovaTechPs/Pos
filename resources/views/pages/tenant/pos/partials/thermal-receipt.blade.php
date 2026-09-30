@@ -62,9 +62,6 @@
         <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
     </div>
 
-
-
-
     @if (!empty($receipt['notes']))
         <div class="notes-box">
             <span class="notes-title">ملاحظات:</span>
@@ -74,6 +71,7 @@
 
     <div class="barcode-section">
         <svg id="receipt-barcode"></svg>
+
         <p class="print-time">
             تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
         </p>
@@ -81,7 +79,9 @@
 </div>
 
 <div class="no-print" style="display:none !important;">
-    <button type="button" wire:click="printReceipt">طباعة الفاتورة</button>
+    <button type="button" wire:click="printReceipt">
+        طباعة الفاتورة
+    </button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -233,8 +233,11 @@
         #thermal-receipt {
             display: block !important;
             position: absolute !important;
-            right: 0 !important;
+
+            /* تحريك الفاتورة إلى اليمين */
+            right: -5mm !important;
             left: auto !important;
+
             top: 0 !important;
             width: 80mm !important;
             padding: 0 !important;
