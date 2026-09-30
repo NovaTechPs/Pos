@@ -29,7 +29,7 @@
         {{-- =====================================================
             Inline Search
         ====================================================== --}}
-        <div class="relative mt-2">
+        {{-- <div class="relative mt-2">
 
             <input wire:model.live.debounce.250ms="inlineSearchQuery" type="text" autocomplete="off"
                 placeholder="بحث مباشر باسم المنتج أو الباركود..."
@@ -61,7 +61,7 @@
 
             @endif
 
-        </div>
+        </div> --}}
 
     </div>
 
