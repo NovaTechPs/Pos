@@ -1,6 +1,6 @@
 <div id="thermal-receipt" class="receipt-box" dir="rtl">
     <div class="header">
-        <h2 class="store-title">{{ $receipt['store_name'] ?? 'نقطة البيع' }}</h2>
+        {{-- <h2 class="store-title">{{ $receipt['store_name'] ?? 'نقطة البيع' }}</h2> --}}
         <p class="notice">{{ $receipt['notice'] ?? 'شكراً لتعاملكم معنا' }}</p>
         <p class="copy-type">{{ $receipt['copy_type'] ?? 'فاتورة بيع' }}</p>
     </div>
@@ -11,9 +11,9 @@
         <span>{{ $receipt['time'] ?? '' }}</span>
     </div>
 
-    @if (!empty($receipt['cashier']))
+    {{-- @if (!empty($receipt['cashier']))
         <div class="cashier">الكاشير: {{ $receipt['cashier'] }}</div>
-    @endif
+    @endif --}}
 
     <table class="items-table">
         <thead>
