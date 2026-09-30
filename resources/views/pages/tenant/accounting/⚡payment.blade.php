@@ -9,13 +9,12 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Layout('layouts.tenant')] class extends Component
+new class extends Component
 {
     use WithPagination;
 
     public string $partySearch = '';
     public string $tableSearch = '';
-
     public string $paymentDate = '';
     public string $paymentMethod = 'cash';
     public string $amount = '';
@@ -58,20 +57,23 @@ new #[Layout('layouts.tenant')] class extends Component
         }
 
         return Payment::query()
-            ->with(['payable', 'user'])
+            ->with(['payable'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->when(trim($this->tableSearch) !== '', function ($query) {
                 $search = trim($this->tableSearch);
 
                 $query->where(function ($q) use ($search) {
-                    $q->where('voucher_number', 'like', "%{$search}%")
-                        ->orWhereHas('payable', function ($partyQuery) use ($search) {
-                            $partyQuery
-                                ->where('name', 'like', "%{$search}%")
-                                ->orWhere('phone', 'like', "%{$search}%")
-                                ->orWhere('tax_number', 'like', "%{$search}%");
-                        });
+                    $q->where(
+                        'voucher_number',
+                        'like',
+                        "%{$search}%"
+                    )->orWhereHas('payable', function ($partyQuery) use ($search) {
+                        $partyQuery
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('tax_number', 'like', "%{$search}%");
+                    });
                 });
             })
             ->latest('payment_date')
@@ -180,11 +182,14 @@ new #[Layout('layouts.tenant')] class extends Component
         $this->paymentId = $payment->id;
         $this->payableId = $payment->payable_id;
         $this->voucherNumber = $payment->voucher_number;
-        $this->paymentDate = optional($payment->payment_date)->format('Y-m-d') ?? now()->format('Y-m-d');
+
+        $this->paymentDate =
+            optional($payment->payment_date)->format('Y-m-d')
+            ?? now()->format('Y-m-d');
+
         $this->paymentMethod = $payment->payment_method ?? 'cash';
         $this->amount = (string) $payment->amount;
         $this->notes = $payment->notes ?? '';
-
         $this->partySearch = '';
 
         $this->showForm = true;
@@ -215,7 +220,12 @@ new #[Layout('layouts.tenant')] class extends Component
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
-            $this->dispatch('toast', type: 'error', message: 'لا يوجد مستأجر نشط.');
+            $this->dispatch(
+                'toast',
+                type: 'error',
+                message: 'لا يوجد مستأجر نشط.'
+            );
+
             return;
         }
 
@@ -229,6 +239,7 @@ new #[Layout('layouts.tenant')] class extends Component
         ]);
 
         DB::transaction(function () use ($tenantId, $validated) {
+
             $newParty = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
@@ -238,7 +249,11 @@ new #[Layout('layouts.tenant')] class extends Component
 
             $newAmount = (float) $validated['amount'];
 
+            /*
+             * تعديل سند دفع موجود
+             */
             if ($this->paymentId) {
+
                 $payment = Payment::query()
                     ->where('tenant_id', $tenantId)
                     ->where('type', 'payment')
@@ -248,26 +263,43 @@ new #[Layout('layouts.tenant')] class extends Component
                 $oldPartyId = $payment->payable_id;
                 $oldAmount = (float) $payment->amount;
 
+                /*
+                 * نفس المورد
+                 */
                 if ($oldPartyId === $newParty->id) {
+
                     $newParty->current_balance =
                         (float) $newParty->current_balance
                         + $oldAmount
                         - $newAmount;
 
                     $newParty->save();
+
+                /*
+                 * تغيير المورد
+                 */
                 } else {
+
                     $oldParty = Party::query()
                         ->where('tenant_id', $tenantId)
                         ->lockForUpdate()
                         ->findOrFail($oldPartyId);
 
+                    /*
+                     * إعادة تأثير سند الدفع القديم للمورد القديم
+                     */
                     $oldParty->current_balance =
-                        (float) $oldParty->current_balance + $oldAmount;
+                        (float) $oldParty->current_balance
+                        + $oldAmount;
 
                     $oldParty->save();
 
+                    /*
+                     * تطبيق سند الدفع الجديد على المورد الجديد
+                     */
                     $newParty->current_balance =
-                        (float) $newParty->current_balance - $newAmount;
+                        (float) $newParty->current_balance
+                        - $newAmount;
 
                     $newParty->save();
                 }
@@ -280,7 +312,12 @@ new #[Layout('layouts.tenant')] class extends Component
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
                 ]);
+
+            /*
+             * إنشاء سند دفع جديد
+             */
             } else {
+
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'payable_id' => $newParty->id,
@@ -290,24 +327,29 @@ new #[Layout('layouts.tenant')] class extends Component
                     'payment_method' => $validated['paymentMethod'],
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
-                    'user_id' => Auth::id(),
                 ]);
 
+                /*
+                 * سند الدفع يقلل رصيد المورد
+                 */
                 $newParty->current_balance =
-                    (float) $newParty->current_balance - $newAmount;
+                    (float) $newParty->current_balance
+                    - $newAmount;
 
                 $newParty->save();
             }
         });
+
+        $message = $this->paymentId
+            ? 'تم تحديث سند الدفع بنجاح.'
+            : 'تم إنشاء سند الدفع بنجاح.';
 
         $this->showForm = false;
 
         $this->dispatch(
             'toast',
             type: 'success',
-            message: $this->paymentId
-                ? 'تم تحديث سند الدفع بنجاح.'
-                : 'تم إنشاء سند الدفع بنجاح.'
+            message: $message
         );
 
         $this->resetForm();
@@ -336,6 +378,7 @@ new #[Layout('layouts.tenant')] class extends Component
         }
 
         DB::transaction(function () use ($tenantId) {
+
             $payment = Payment::query()
                 ->where('tenant_id', $tenantId)
                 ->where('type', 'payment')
@@ -347,8 +390,12 @@ new #[Layout('layouts.tenant')] class extends Component
                 ->lockForUpdate()
                 ->findOrFail($payment->payable_id);
 
+            /*
+             * إعادة قيمة سند الدفع إلى رصيد المورد
+             */
             $party->current_balance =
-                (float) $party->current_balance + (float) $payment->amount;
+                (float) $party->current_balance
+                + (float) $payment->amount;
 
             $party->save();
 
@@ -372,7 +419,7 @@ new #[Layout('layouts.tenant')] class extends Component
         $tenantId = $this->getTenantId();
 
         $this->printVoucher = Payment::query()
-            ->with(['payable', 'user'])
+            ->with(['payable'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);
@@ -396,7 +443,14 @@ new #[Layout('layouts.tenant')] class extends Component
             ->where('type', 'payment')
             ->findOrFail($id);
 
-        $phone = preg_replace('/\D+/', '', (string) $payment->payable?->phone);
+        /*
+         * تنظيف رقم الهاتف
+         */
+        $phone = preg_replace(
+            '/\D+/',
+            '',
+            (string) $payment->payable?->phone
+        );
 
         if (!$phone) {
             $this->dispatch(
@@ -413,12 +467,22 @@ new #[Layout('layouts.tenant')] class extends Component
             'رقم السند: ' . $payment->voucher_number,
             'المورد: ' . ($payment->payable?->name ?? '-'),
             'المبلغ: ' . number_format((float) $payment->amount, 2),
-            'التاريخ: ' . optional($payment->payment_date)->format('Y-m-d'),
+            'التاريخ: ' . (
+                optional($payment->payment_date)->format('Y-m-d')
+                ?? '-'
+            ),
         ]);
 
-        $url = 'https://wa.me/' . $phone . '?text=' . rawurlencode($message);
+        $url =
+            'https://wa.me/'
+            . $phone
+            . '?text='
+            . rawurlencode($message);
 
-        $this->dispatch('open-url', url: $url);
+        $this->dispatch(
+            'open-url',
+            url: $url
+        );
     }
 
     protected function generateVoucherNumber(): string
@@ -430,7 +494,12 @@ new #[Layout('layouts.tenant')] class extends Component
             ->where('type', 'payment')
             ->max('id');
 
-        return 'PAY-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
+        return 'PAY-' . str_pad(
+            (string) (($lastId ?? 0) + 1),
+            6,
+            '0',
+            STR_PAD_LEFT
+        );
     }
 
     protected function resetForm(): void
@@ -454,76 +523,92 @@ new #[Layout('layouts.tenant')] class extends Component
     {
         return $this->view([
             'payments' => $this->items,
-        ])->title('سندات الدفع');
+        ])->layout('layouts::tenant');
     }
 };
+
 ?>
+
 <flux:main class="space-y-6">
 
-<div>
-    <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+    <div>
 
-        @include('pages.tenant.accounting.partials.voucher-table', [
+        <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+
+            @include('pages.tenant.accounting.partials.voucher-table', [
+                'mode' => 'payment',
+                'title' => 'سندات الدفع',
+                'subtitle' => 'إدارة دفعات الموردين وتحديث أرصدتهم.',
+                'items' => $payments,
+                'todayTotal' => $this->todayTotal,
+                'voucherCount' => $this->voucherCount,
+                'createLabel' => 'سند دفع',
+            ])
+
+        </div>
+
+        @include('pages.tenant.accounting.partials.voucher-form', [
             'mode' => 'payment',
-            'title' => 'سندات الدفع',
-            'subtitle' => 'إدارة دفعات الموردين وتحديث أرصدتهم.',
-            'items' => $payments,
-            'todayTotal' => $this->todayTotal,
-            'voucherCount' => $this->voucherCount,
-            'createLabel' => 'سند دفع',
+            'showForm' => $showForm,
+            'selectedParty' => $this->selectedParty,
+            'partyResults' => $this->partyResults,
+            'partyLabel' => 'المورد',
+            'saveMethod' => 'savePayment',
+            'paymentId' => $paymentId,
+            'amount' => $amount,
         ])
+
+        @if($showDeleteModal)
+
+            <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+
+                <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+
+                    <h3 class="text-lg font-black text-slate-900">
+                        حذف سند الدفع
+                    </h3>
+
+                    <p class="mt-2 text-sm leading-6 text-slate-500">
+                        هل أنت متأكد من حذف هذا السند؟
+                        سيتم إعادة قيمة السند إلى رصيد المورد.
+                    </p>
+
+                    <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+
+                        <button
+                            type="button"
+                            wire:click="$set('showDeleteModal', false)"
+                            class="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                            إلغاء
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="delete"
+                            wire:loading.attr="disabled"
+                            class="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                        >
+                            حذف السند
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        @endif
+
+        @if($showPrintModal && $printVoucher)
+
+            @include('pages.tenant.accounting.partials.voucher-print', [
+                'mode' => 'payment',
+                'voucher' => $printVoucher,
+            ])
+
+        @endif
 
     </div>
 
-    @include('pages.tenant.accounting.partials.voucher-form', [
-        'mode' => 'payment',
-        'showForm' => $showForm,
-        'selectedParty' => $this->selectedParty,
-        'partyResults' => $this->partyResults,
-        'partyLabel' => 'المورد',
-        'saveMethod' => 'savePayment',
-        'paymentId' => $paymentId,
-        'amount' => $amount,
-    ])
-
-    @if($showDeleteModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 class="text-lg font-black text-slate-900">
-                    حذف سند الدفع
-                </h3>
-
-                <p class="mt-2 text-sm leading-6 text-slate-500">
-                    هل أنت متأكد من حذف هذا السند؟ سيتم إعادة قيمة السند إلى رصيد المورد.
-                </p>
-
-                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                    <button
-                        type="button"
-                        wire:click="$set('showDeleteModal', false)"
-                        class="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                        إلغاء
-                    </button>
-
-                    <button
-                        type="button"
-                        wire:click="delete"
-                        wire:loading.attr="disabled"
-                        class="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                    >
-                        حذف السند
-                    </button>
-                </div>
-            </div>
-        </div>
-    @endif
-
-    @if($showPrintModal && $printVoucher)
-        @include('pages.tenant.accounting.partials.voucher-print', [
-            'mode' => 'payment',
-            'voucher' => $printVoucher,
-        ])
-    @endif
-</div>
 </flux:main>

@@ -9,13 +9,11 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Layout('layouts.tenant')] class extends Component
-{
+new class extends Component {
     use WithPagination;
 
     public string $partySearch = '';
     public string $tableSearch = '';
-
     public string $paymentDate = '';
     public string $paymentMethod = 'cash';
     public string $amount = '';
@@ -58,20 +56,23 @@ new #[Layout('layouts.tenant')] class extends Component
         }
 
         return Payment::query()
-            ->with(['payable', 'user'])
+            ->with(['payable'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'receipt')
             ->when(trim($this->tableSearch) !== '', function ($query) {
                 $search = trim($this->tableSearch);
 
                 $query->where(function ($q) use ($search) {
-                    $q->where('voucher_number', 'like', "%{$search}%")
-                        ->orWhereHas('payable', function ($partyQuery) use ($search) {
-                            $partyQuery
-                                ->where('name', 'like', "%{$search}%")
-                                ->orWhere('phone', 'like', "%{$search}%")
-                                ->orWhere('tax_number', 'like', "%{$search}%");
-                        });
+                    $q->where(
+                        'voucher_number',
+                        'like',
+                        "%{$search}%"
+                    )->orWhereHas('payable', function ($partyQuery) use ($search) {
+                        $partyQuery
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('tax_number', 'like', "%{$search}%");
+                    });
                 });
             })
             ->latest('payment_date')
@@ -180,7 +181,9 @@ new #[Layout('layouts.tenant')] class extends Component
         $this->paymentId = $receipt->id;
         $this->payableId = $receipt->payable_id;
         $this->voucherNumber = $receipt->voucher_number;
-        $this->paymentDate = optional($receipt->payment_date)->format('Y-m-d')
+
+        $this->paymentDate =
+            optional($receipt->payment_date)->format('Y-m-d')
             ?? now()->format('Y-m-d');
 
         $this->paymentMethod = $receipt->payment_method ?? 'cash';
@@ -235,6 +238,7 @@ new #[Layout('layouts.tenant')] class extends Component
         ]);
 
         DB::transaction(function () use ($tenantId, $validated) {
+
             $newParty = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
@@ -244,7 +248,11 @@ new #[Layout('layouts.tenant')] class extends Component
 
             $newAmount = (float) $validated['amount'];
 
+            /*
+             * تعديل سند موجود
+             */
             if ($this->paymentId) {
+
                 $receipt = Payment::query()
                     ->where('tenant_id', $tenantId)
                     ->where('type', 'receipt')
@@ -254,26 +262,43 @@ new #[Layout('layouts.tenant')] class extends Component
                 $oldPartyId = $receipt->payable_id;
                 $oldAmount = (float) $receipt->amount;
 
+                /*
+                 * نفس العميل
+                 */
                 if ($oldPartyId === $newParty->id) {
+
                     $newParty->current_balance =
                         (float) $newParty->current_balance
                         + $oldAmount
                         - $newAmount;
 
                     $newParty->save();
+
+                /*
+                 * تغيير العميل
+                 */
                 } else {
+
                     $oldParty = Party::query()
                         ->where('tenant_id', $tenantId)
                         ->lockForUpdate()
                         ->findOrFail($oldPartyId);
 
+                    /*
+                     * إعادة تأثير السند القديم للعميل القديم
+                     */
                     $oldParty->current_balance =
-                        (float) $oldParty->current_balance + $oldAmount;
+                        (float) $oldParty->current_balance
+                        + $oldAmount;
 
                     $oldParty->save();
 
+                    /*
+                     * تطبيق السند الجديد على العميل الجديد
+                     */
                     $newParty->current_balance =
-                        (float) $newParty->current_balance - $newAmount;
+                        (float) $newParty->current_balance
+                        - $newAmount;
 
                     $newParty->save();
                 }
@@ -286,7 +311,12 @@ new #[Layout('layouts.tenant')] class extends Component
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
                 ]);
+
+            /*
+             * إنشاء سند جديد
+             */
             } else {
+
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'payable_id' => $newParty->id,
@@ -296,24 +326,29 @@ new #[Layout('layouts.tenant')] class extends Component
                     'payment_method' => $validated['paymentMethod'],
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
-                    'user_id' => Auth::id(),
                 ]);
 
+                /*
+                 * سند القبض يقلل رصيد العميل
+                 */
                 $newParty->current_balance =
-                    (float) $newParty->current_balance - $newAmount;
+                    (float) $newParty->current_balance
+                    - $newAmount;
 
                 $newParty->save();
             }
         });
+
+        $message = $this->paymentId
+            ? 'تم تحديث سند القبض بنجاح.'
+            : 'تم إنشاء سند القبض بنجاح.';
 
         $this->showForm = false;
 
         $this->dispatch(
             'toast',
             type: 'success',
-            message: $this->paymentId
-                ? 'تم تحديث سند القبض بنجاح.'
-                : 'تم إنشاء سند القبض بنجاح.'
+            message: $message
         );
 
         $this->resetForm();
@@ -342,6 +377,7 @@ new #[Layout('layouts.tenant')] class extends Component
         }
 
         DB::transaction(function () use ($tenantId) {
+
             $receipt = Payment::query()
                 ->where('tenant_id', $tenantId)
                 ->where('type', 'receipt')
@@ -353,8 +389,12 @@ new #[Layout('layouts.tenant')] class extends Component
                 ->lockForUpdate()
                 ->findOrFail($receipt->payable_id);
 
+            /*
+             * إعادة قيمة سند القبض إلى رصيد العميل
+             */
             $party->current_balance =
-                (float) $party->current_balance + (float) $receipt->amount;
+                (float) $party->current_balance
+                + (float) $receipt->amount;
 
             $party->save();
 
@@ -378,7 +418,7 @@ new #[Layout('layouts.tenant')] class extends Component
         $tenantId = $this->getTenantId();
 
         $this->printVoucher = Payment::query()
-            ->with(['payable', 'user'])
+            ->with(['payable'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'receipt')
             ->findOrFail($id);
@@ -402,7 +442,14 @@ new #[Layout('layouts.tenant')] class extends Component
             ->where('type', 'receipt')
             ->findOrFail($id);
 
-        $phone = preg_replace('/\D+/', '', (string) $receipt->payable?->phone);
+        /*
+         * تنظيف رقم الهاتف من أي أحرف أو رموز
+         */
+        $phone = preg_replace(
+            '/\D+/',
+            '',
+            (string) $receipt->payable?->phone
+        );
 
         if (!$phone) {
             $this->dispatch(
@@ -419,12 +466,22 @@ new #[Layout('layouts.tenant')] class extends Component
             'رقم السند: ' . $receipt->voucher_number,
             'العميل: ' . ($receipt->payable?->name ?? '-'),
             'المبلغ: ' . number_format((float) $receipt->amount, 2),
-            'التاريخ: ' . optional($receipt->payment_date)->format('Y-m-d'),
+            'التاريخ: ' . (
+                optional($receipt->payment_date)->format('Y-m-d')
+                ?? '-'
+            ),
         ]);
 
-        $url = 'https://wa.me/' . $phone . '?text=' . rawurlencode($message);
+        $url =
+            'https://wa.me/'
+            . $phone
+            . '?text='
+            . rawurlencode($message);
 
-        $this->dispatch('open-url', url: $url);
+        $this->dispatch(
+            'open-url',
+            url: $url
+        );
     }
 
     protected function generateVoucherNumber(): string
@@ -436,7 +493,12 @@ new #[Layout('layouts.tenant')] class extends Component
             ->where('type', 'receipt')
             ->max('id');
 
-        return 'REC-' . str_pad((string) (($lastId ?? 0) + 1), 6, '0', STR_PAD_LEFT);
+        return 'REC-' . str_pad(
+            (string) (($lastId ?? 0) + 1),
+            6,
+            '0',
+            STR_PAD_LEFT
+        );
     }
 
     protected function resetForm(): void
@@ -460,76 +522,101 @@ new #[Layout('layouts.tenant')] class extends Component
     {
         return $this->view([
             'receipts' => $this->items,
-        ])->title('سندات القبض');
+        ])->layout('layouts::tenant');
     }
 };
+
 ?>
+
 <flux:main class="space-y-6">
 
-<div>
-    <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+    <div>
 
-        @include('pages.tenant.accounting.partials.voucher-table', [
-            'mode' => 'receipt',
-            'title' => 'سندات القبض',
-            'subtitle' => 'إدارة المقبوضات من العملاء وتحديث أرصدتهم.',
-            'items' => $receipts,
-            'todayTotal' => $this->todayTotal,
-            'voucherCount' => $this->voucherCount,
-            'createLabel' => 'سند قبض',
-        ])
+        <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
+
+            @include(
+                'pages.tenant.accounting.partials.voucher-table',
+                [
+                    'mode' => 'receipt',
+                    'title' => 'سندات القبض',
+                    'subtitle' => 'إدارة المقبوضات من العملاء وتحديث أرصدتهم.',
+                    'items' => $receipts,
+                    'todayTotal' => $this->todayTotal,
+                    'voucherCount' => $this->voucherCount,
+                    'createLabel' => 'سند قبض',
+                ]
+            )
+
+        </div>
+
+        @include(
+            'pages.tenant.accounting.partials.voucher-form',
+            [
+                'mode' => 'receipt',
+                'showForm' => $showForm,
+                'selectedParty' => $this->selectedParty,
+                'partyResults' => $this->partyResults,
+                'partyLabel' => 'العميل',
+                'saveMethod' => 'saveReceipt',
+                'paymentId' => $paymentId,
+                'amount' => $amount,
+            ]
+        )
+
+        @if ($showDeleteModal)
+
+            <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+
+                <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+
+                    <h3 class="text-lg font-black text-slate-900">
+                        حذف سند القبض
+                    </h3>
+
+                    <p class="mt-2 text-sm leading-6 text-slate-500">
+                        هل أنت متأكد من حذف هذا السند؟
+                        سيتم إعادة قيمة السند إلى رصيد العميل.
+                    </p>
+
+                    <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+
+                        <button
+                            type="button"
+                            wire:click="$set('showDeleteModal', false)"
+                            class="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                            إلغاء
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="delete"
+                            wire:loading.attr="disabled"
+                            class="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                        >
+                            حذف السند
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        @endif
+
+        @if ($showPrintModal && $printVoucher)
+
+            @include(
+                'pages.tenant.accounting.partials.voucher-print',
+                [
+                    'mode' => 'receipt',
+                    'voucher' => $printVoucher,
+                ]
+            )
+
+        @endif
 
     </div>
 
-    @include('pages.tenant.accounting.partials.voucher-form', [
-        'mode' => 'receipt',
-        'showForm' => $showForm,
-        'selectedParty' => $this->selectedParty,
-        'partyResults' => $this->partyResults,
-        'partyLabel' => 'العميل',
-        'saveMethod' => 'saveReceipt',
-        'paymentId' => $paymentId,
-        'amount' => $amount,
-    ])
-
-    @if($showDeleteModal)
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
-            <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 class="text-lg font-black text-slate-900">
-                    حذف سند القبض
-                </h3>
-
-                <p class="mt-2 text-sm leading-6 text-slate-500">
-                    هل أنت متأكد من حذف هذا السند؟ سيتم إعادة قيمة السند إلى رصيد العميل.
-                </p>
-
-                <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                    <button
-                        type="button"
-                        wire:click="$set('showDeleteModal', false)"
-                        class="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                        إلغاء
-                    </button>
-
-                    <button
-                        type="button"
-                        wire:click="delete"
-                        wire:loading.attr="disabled"
-                        class="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                    >
-                        حذف السند
-                    </button>
-                </div>
-            </div>
-        </div>
-    @endif
-
-    @if($showPrintModal && $printVoucher)
-        @include('pages.tenant.accounting.partials.voucher-print', [
-            'mode' => 'receipt',
-            'voucher' => $printVoucher,
-        ])
-    @endif
-</div>
 </flux:main>
