@@ -1908,11 +1908,19 @@ new class extends Component {
 
     private function makeInvoiceNumber(string $type, int $tenantId): string
     {
-        $prefix = $type === 'return' ? 'RET-' : 'POS-';
+        // البيع يبدأ بحرف A، والمرتجع يبدأ بحرف R.
+        // مثال: A100001858
+        $prefix = $type === 'return' ? 'R' : 'A';
 
         do {
-            $number = $prefix . now()->format('YmdHis') . '-' . random_int(1000, 9999);
-        } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
+            // 9 أرقام بعد الحرف.
+            $number = $prefix . random_int(100000000, 999999999);
+        } while (
+            Order::query()
+                ->where('tenant_id', $tenantId)
+                ->where('invoice_number', $number)
+                ->exists()
+        );
 
         return $number;
     }
