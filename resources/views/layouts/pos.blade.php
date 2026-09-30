@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
-
 <head>
     @include('layouts.partials.head')
 </head>
@@ -9,12 +8,13 @@
 
     {{-- POS Header --}}
     <flux:header
-        class="border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950"
+        class="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
     >
-        <div class="flex w-full items-center justify-between gap-4">
+        <div class="flex w-full items-center justify-between">
 
             {{-- Brand --}}
-            <div class="flex items-center gap-4">
+            <div class="flex items-center">
+
                 <x-app-logo
                     href="{{ route('tenant.dashboard') }}"
                     wire:navigate
@@ -26,21 +26,23 @@
                         {{ __('Point of Sale') }}
                     </flux:heading>
                 </div>
-                <div class="hidden border-s border-zinc-200 ps-4 dark:border-zinc-700 md:block">
-                  <flux:sidebar.item
-            icon="home"
-            :href="route('tenant.dashboard')"
-            :current="request()->routeIs('tenant.dashboard')"
-            wire:navigate
-        >
-            {{ __('Dashboard') }}
-        </flux:sidebar.item>
-                </div>
-            </div>
 
+                <div class="hidden border-s border-zinc-200 ps-4 dark:border-zinc-700 md:block">
+                    <flux:sidebar.item
+                        icon="home"
+                        :href="route('tenant.dashboard')"
+                        :current="request()->routeIs('tenant.dashboard')"
+                        wire:navigate
+                    >
+                        {{ __('Dashboard') }}
+                    </flux:sidebar.item>
+                </div>
+
+            </div>
 
             {{-- User Menu --}}
             <flux:dropdown position="top" align="end">
+
                 <flux:profile
                     :name="auth()->user()->name"
                     :initials="auth()->user()->initials()"
@@ -83,17 +85,17 @@
                     </form>
 
                 </flux:menu>
+
             </flux:dropdown>
 
         </div>
     </flux:header>
 
-
     {{-- POS Content --}}
-    <main class="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
+    <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
+
         {{ $slot }}
     </main>
-
 
     {{-- Toasts --}}
     @persist('toast')
@@ -101,7 +103,6 @@
             <flux:toast />
         </flux:toast.group>
     @endpersist
-
 
     @fluxScripts
 
