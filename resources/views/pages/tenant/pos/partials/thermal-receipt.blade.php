@@ -6,7 +6,7 @@
     </div>
 
     <div class="meta-info">
-      <span>{{ str_replace('POS-', '', $receipt['invoice_no'] ?? '-') }}</span>
+        <span> {{ $receipt['invoice_no'] ?? '-' }}</span>
         <span>{{ $receipt['date'] ?? '' }}</span>
         <span>{{ $receipt['time'] ?? '' }}</span>
     </div>
