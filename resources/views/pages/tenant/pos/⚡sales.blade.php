@@ -511,24 +511,25 @@ new class extends Component {
             return;
         }
 
-        // البحث بالكلمات المفتاحية: يجب أن يحتوي الصنف على كل الكلمات المكتوبة.
-        // مثال: "اكياس 5" يبحث عن الصنف حتى لو لم تكن الكلمات متجاورة.
+        // بحث بالكلمات المفتاحية:
+        // يجب أن تكون كل الكلمات موجودة داخل اسم الصنف نفسه.
+        // مثال: "سطل تركي 10 لتر" لا يظهر إلا إذا احتوى اسم الصنف
+        // على الكلمات الأربع كلها، بغض النظر عن ترتيبها.
         $keywords = preg_split('/\\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
         $this->inlineSearchResults = Product::query()
             ->where('tenant_id', $tenantId)
-            ->where(function ($query) use ($keywords, $tenantId): void {
-                foreach ($keywords as $keyword) {
-                    $query->where(function ($keywordQuery) use ($keyword, $tenantId): void {
-                        $keywordQuery
-                            ->where('name', 'like', "%{$keyword}%")
-                            ->orWhereHas('barcodes', function ($barcodeQuery) use ($keyword, $tenantId): void {
-                                $barcodeQuery
-                                    ->where('tenant_id', $tenantId)
-                                    ->where('barcode', 'like', "%{$keyword}%");
-                            });
-                    });
-                }
+            ->where(function ($query) use ($keywords, $search, $tenantId): void {
+                $query->where(function ($nameQuery) use ($keywords): void {
+                    foreach ($keywords as $keyword) {
+                        $nameQuery->where('name', 'like', "%{$keyword}%");
+                    }
+                })
+                ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
+                    $barcodeQuery
+                        ->where('tenant_id', $tenantId)
+                        ->where('barcode', 'like', "%{$search}%");
+                });
             })
             ->with([
                 'barcodes' => fn($query) => $query->where('tenant_id', $tenantId),
@@ -610,21 +611,22 @@ new class extends Component {
 
         $search = trim($this->productSearchQuery);
         if ($search !== '') {
-            // البحث بالكلمات المفتاحية: كل كلمة يجب أن تطابق الاسم أو الباركود.
+            // بحث بالكلمات المفتاحية:
+            // كل الكلمات يجب أن تكون داخل اسم الصنف نفسه.
+            // والباركود يبقى مسار بحث مستقل عند إدخال باركود كامل/جزئي.
             $keywords = preg_split('/\\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
-            $query->where(function ($q) use ($keywords, $tenantId): void {
-                foreach ($keywords as $keyword) {
-                    $q->where(function ($keywordQuery) use ($keyword, $tenantId): void {
-                        $keywordQuery
-                            ->where('name', 'like', "%{$keyword}%")
-                            ->orWhereHas('barcodes', function ($barcodeQuery) use ($keyword, $tenantId): void {
-                                $barcodeQuery
-                                    ->where('tenant_id', $tenantId)
-                                    ->where('barcode', 'like', "%{$keyword}%");
-                            });
-                    });
-                }
+            $query->where(function ($q) use ($keywords, $search, $tenantId): void {
+                $q->where(function ($nameQuery) use ($keywords): void {
+                    foreach ($keywords as $keyword) {
+                        $nameQuery->where('name', 'like', "%{$keyword}%");
+                    }
+                })
+                ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
+                    $barcodeQuery
+                        ->where('tenant_id', $tenantId)
+                        ->where('barcode', 'like', "%{$search}%");
+                });
             });
         }
 
