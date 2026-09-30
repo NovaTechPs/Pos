@@ -39,6 +39,8 @@ new class extends Component {
     public ?string $errorMessage = null;
     public ?string $successMessage = null;
     public ?int $currentInvoiceId = null;
+    // معرف الفاتورة التي تم تحميلها للتعديل، مستقل عن عرض الفاتورة الحالي.
+    public ?int $editingInvoiceId = null;
     public array $heldInvoices = [];
     public bool $showHeldModal = false;
     public bool $showCostModal = false;
@@ -77,11 +79,40 @@ new class extends Component {
         $this->checkActiveShift();
         $this->loadQuickProducts();
     }
+    /**
+     * تحويل القيمة القادمة من واجهة السلة إلى مفتاح السطر الحقيقي داخل $cart.
+     * بعض نسخ cart partial ترسل product id بدلاً من array key.
+     */
+    private function resolveCartLineKey(string $lineKeyOrProductId): ?string
+    {
+        if (array_key_exists($lineKeyOrProductId, $this->cart)) {
+            return $lineKeyOrProductId;
+        }
+
+        $productId = (int) $lineKeyOrProductId;
+
+        if ($productId <= 0) {
+            return null;
+        }
+
+        foreach ($this->cart as $key => $item) {
+            if ((int) ($item['id'] ?? 0) === $productId) {
+                return (string) $key;
+            }
+        }
+
+        return null;
+    }
+
     public function updateCartField(string $lineKey, string $field, $value): void
     {
-        if (!isset($this->cart[$lineKey])) {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null || !isset($this->cart[$resolvedKey])) {
             return;
         }
+
+        $lineKey = $resolvedKey;
 
         // توحيد الفاصلة العشرية حتى يعمل التعديل المتكرر بنفس الطريقة
         // سواء أدخل المستخدم 12.50 أو 12,50.
@@ -171,8 +202,9 @@ new class extends Component {
                 continue;
             }
 
-            // لا نخلط سطر بيع مع سطر مرتجع لنفس المنتج.
-            $groupKey = $productId . ':' . ($quantity < 0 ? 'return' : 'sale');
+            // داخل الفاتورة الواحدة وضع البيع/المرتجع موحد، لذلك مفتاح الصنف هو product_id.
+            // هذا يتوافق مع cart partial الذي يرسل product id إلى دوال التعديل.
+            $groupKey = (string) $productId;
 
             if (!isset($merged[$groupKey])) {
                 $merged[$groupKey] = $item;
@@ -703,7 +735,6 @@ new class extends Component {
         }
 
         $this->showProductsModal = false;
-        $this->currentInvoiceId = null;
         $changeQty = $this->isReturnMode ? -1 : 1;
 
         $existingLineKey = null;
@@ -753,6 +784,14 @@ new class extends Component {
 
     public function updateQuantity(string $lineKey, $qty): void
     {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null) {
+            return;
+        }
+
+        $lineKey = $resolvedKey;
+
         if (!isset($this->cart[$lineKey])) {
             return;
         }
@@ -772,12 +811,19 @@ new class extends Component {
         }
 
         $this->cart[$lineKey]['quantity'] = $quantity;
-        $this->currentInvoiceId = null;
         $this->recalculatePrices();
     }
 
     public function updateUnitPrice(string $lineKey, $newPrice): void
     {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null) {
+            return;
+        }
+
+        $lineKey = $resolvedKey;
+
         if (!isset($this->cart[$lineKey])) {
             return;
         }
@@ -786,7 +832,6 @@ new class extends Component {
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney(
             (float) $this->cart[$lineKey]['quantity'] * (float) $this->cart[$lineKey]['price']
         );
-        $this->currentInvoiceId = null;
         $this->recalculatePrices();
     }
 
@@ -796,6 +841,14 @@ new class extends Component {
      */
     public function updateLineTotal(string $lineKey, $newTotal): void
     {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null) {
+            return;
+        }
+
+        $lineKey = $resolvedKey;
+
         if (!isset($this->cart[$lineKey])) {
             return;
         }
@@ -817,24 +870,37 @@ new class extends Component {
 
         $this->cart[$lineKey]['price'] = $this->roundMoney(abs($targetTotal / $quantity));
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney($targetTotal);
-        $this->currentInvoiceId = null;
     }
 
     public function updateCostPrice(string $lineKey, $newCost): void
     {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null) {
+            return;
+        }
+
+        $lineKey = $resolvedKey;
+
         if (!isset($this->cart[$lineKey])) {
             return;
         }
 
         $this->cart[$lineKey]['cost_price'] = max(0, (float) $newCost);
-        $this->currentInvoiceId = null;
         $this->recalculatePrices();
     }
 
     public function removeFromCart(string $lineKey): void
     {
+        $resolvedKey = $this->resolveCartLineKey($lineKey);
+
+        if ($resolvedKey === null) {
+            return;
+        }
+
+        $lineKey = $resolvedKey;
+
         unset($this->cart[$lineKey]);
-        $this->currentInvoiceId = null;
 
         if (empty($this->cart)) {
             $this->clearCartState();
@@ -861,6 +927,7 @@ new class extends Component {
         $this->discount_type = 'fixed';
         $this->custom_final_total = null;
         $this->currentInvoiceId = null;
+        $this->editingInvoiceId = null;
         $this->isReturnMode = false;
         $this->notes = '';
         $this->selectedCustomerId = null;
@@ -1005,6 +1072,7 @@ new class extends Component {
         }
 
         $this->currentInvoiceId = $invoice->id;
+        $this->editingInvoiceId = $invoice->id;
         $this->cart = [];
 
         foreach ($invoice->items as $item) {
@@ -1043,7 +1111,12 @@ new class extends Component {
         }
 
         $this->paid_amount = (float) $invoice->paid_amount;
-        $this->payment_method = 'cash';
+
+        $this->payment_method = Payment::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('order_id', $invoice->id)
+            ->latest('id')
+            ->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->custom_final_total = null;
@@ -1052,7 +1125,7 @@ new class extends Component {
         $this->customerSearch = '';
         $this->isReturnMode = $invoice->type === 'return';
         $this->errorMessage = null;
-        $this->successMessage = "تم عرض الفاتورة {$invoice->invoice_number} للقراءة فقط.";
+        $this->successMessage = "تم تحميل الفاتورة {$invoice->invoice_number} ويمكن تعديلها ثم حفظها بنفس الرقم.";
     }
 
     public function startNewInvoice(): void
@@ -1343,10 +1416,8 @@ new class extends Component {
         $this->errorMessage = null;
         $this->successMessage = null;
 
-        if ($this->currentInvoiceId) {
-            $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «فاتورة جديدة» قبل الحفظ.';
-            return null;
-        }
+        // نستخدم المعرف المحمّل للتعديل، ولا نعتمد على رقم الفاتورة المعروض فقط.
+        $editingInvoiceId = $this->editingInvoiceId ?: ($this->currentInvoiceId ? (int) $this->currentInvoiceId : null);
 
         $shift = $this->activeShift();
         if (!$shift) {
@@ -1381,7 +1452,6 @@ new class extends Component {
 
         $invoiceType = $this->isReturnMode ? 'return' : 'pos';
         $paidInput = max(0, (float) ($this->paid_amount ?: 0));
-        $invoiceNumber = $this->makeInvoiceNumber($invoiceType, $tenantId);
 
         $customer = null;
         if ($this->selectedCustomerId) {
@@ -1398,17 +1468,103 @@ new class extends Component {
         }
 
         try {
-            $order = DB::transaction(function () use ($tenantId, $branchId, $user, $shift, $invoiceType, $invoiceNumber, $paidInput, $customer): Order {
-                $lockedShift = Shift::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->whereKey($shift->id)->lockForUpdate()->first();
+            $order = DB::transaction(function () use (
+                $tenantId,
+                $branchId,
+                $user,
+                $shift,
+                $invoiceType,
+                $paidInput,
+                $customer,
+                $editingInvoiceId
+            ): Order {
+                $lockedShift = Shift::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('branch_id', $branchId)
+                    ->whereKey($shift->id)
+                    ->lockForUpdate()
+                    ->first();
 
                 if (!$lockedShift || $lockedShift->status !== 'open' || (int) $lockedShift->opened_by !== (int) $user->id) {
                     throw new \RuntimeException('الشيفت غير مفتوح أو لم يعد تابعاً للمستخدم الحالي.');
+                }
+
+                $order = null;
+
+                /*
+                 |--------------------------------------------------------------------------
+                 | تحميل الفاتورة الأصلية عند التعديل
+                 |--------------------------------------------------------------------------
+                 */
+                if ($editingInvoiceId) {
+                    $order = Order::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->whereIn('type', ['pos', 'return'])
+                        ->whereKey($editingInvoiceId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$order) {
+                        throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
+                    }
+
+                    /*
+                     |--------------------------------------------------------------------------
+                     | إعادة المخزون إلى وضع ما قبل الفاتورة القديمة
+                     |--------------------------------------------------------------------------
+                     */
+                    $oldItems = OrderItem::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('order_id', $order->id)
+                        ->get();
+
+                    foreach ($oldItems as $oldItem) {
+                        $oldQuantity = (int) $oldItem->quantity;
+
+                        if ($oldQuantity === 0) {
+                            continue;
+                        }
+
+                        $oldBranchProduct = BranchProduct::query()
+                            ->where('tenant_id', $tenantId)
+                            ->where('branch_id', $branchId)
+                            ->where('product_id', $oldItem->product_id)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (!$oldBranchProduct) {
+                            $productName = Product::query()
+                                ->where('tenant_id', $tenantId)
+                                ->whereKey($oldItem->product_id)
+                                ->value('name') ?? $oldItem->product_id;
+
+                            throw new \RuntimeException("المنتج {$productName} في الفاتورة القديمة غير مرتبط بالفرع الحالي.");
+                        }
+
+                        if ($oldQuantity > 0) {
+                            $oldBranchProduct->increment('stock_quantity', $oldQuantity);
+                        } else {
+                            $oldBranchProduct->decrement('stock_quantity', abs($oldQuantity));
+                        }
+                    }
+
+                    // حذف تفاصيل الفاتورة القديمة فقط بعد إرجاع أثرها على المخزون.
+                    OrderItem::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('order_id', $order->id)
+                        ->delete();
                 }
 
                 $validatedItems = [];
                 $subtotal = 0;
                 $totalCost = 0;
 
+                /*
+                 |--------------------------------------------------------------------------
+                 | التحقق من السلة الجديدة
+                 |--------------------------------------------------------------------------
+                 */
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
                     $quantity = (int) ($rawItem['quantity'] ?? 0);
@@ -1418,22 +1574,27 @@ new class extends Component {
                         throw new \RuntimeException('يوجد صنف أو كمية غير صالحة في الفاتورة.');
                     }
 
-                    $product = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->first();
+                    $product = Product::query()
+                        ->where('tenant_id', $tenantId)
+                        ->whereKey($productId)
+                        ->first();
 
                     if (!$product) {
                         throw new \RuntimeException('أحد المنتجات لم يعد متاحاً.');
                     }
 
-                    $branchProduct = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('product_id', $productId)->lockForUpdate()->first();
+                    $branchProduct = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $productId)
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$branchProduct) {
                         throw new \RuntimeException("المنتج {$product->name} غير مرتبط بالفرع الحالي.");
                     }
 
                     $costPrice = max(0, (float) ($rawItem['cost_price'] ?? ($product->cost_price ?? 0)));
-
-                    // الإجمالي دائماً ناتج عن السعر × الكمية.
-                    // عند تعديل الإجمالي يدوياً يتم تحويله أولاً إلى سعر وحدة.
                     $lineTotal = $this->roundMoney($price * $quantity);
 
                     if ($quantity < 0) {
@@ -1442,12 +1603,19 @@ new class extends Component {
                         $lineTotal = max(0, $lineTotal);
                     }
 
-                    if (!$this->allowNegativeStock && $quantity > 0 && (float) $branchProduct->stock_quantity < $quantity) {
-                        throw new \RuntimeException("المخزون غير كافٍ للمنتج {$product->name}. المتوفر: {$branchProduct->stock_quantity}.");
+                    if (
+                        !$this->allowNegativeStock &&
+                        $quantity > 0 &&
+                        (float) $branchProduct->stock_quantity < $quantity
+                    ) {
+                        throw new \RuntimeException(
+                            "المخزون غير كافٍ للمنتج {$product->name}. المتوفر: {$branchProduct->stock_quantity}."
+                        );
                     }
 
                     $subtotal += $lineTotal;
                     $totalCost += $costPrice * $quantity;
+
                     $validatedItems[] = [
                         'product_id' => $productId,
                         'quantity' => $quantity,
@@ -1460,43 +1628,129 @@ new class extends Component {
                 $subtotal = $this->roundMoney($subtotal);
                 $totalCost = $this->roundMoney($totalCost);
                 $discount = $invoiceType === 'pos' ? $this->calculated_discount : 0;
-                $total = $invoiceType === 'return' ? -abs($subtotal) : $this->roundMoney(max(0, $subtotal - $discount));
+                $total = $invoiceType === 'return'
+                    ? -abs($subtotal)
+                    : $this->roundMoney(max(0, $subtotal - $discount));
 
                 if ($invoiceType === 'pos' && $this->custom_final_total !== null) {
-                    $customTotal = max(0, min($subtotal, (float) $this->custom_final_total));
+                    $customTotal = max(
+                        0,
+                        min($subtotal, (float) $this->custom_final_total)
+                    );
+
                     $total = $this->roundMoney($customTotal);
                     $discount = $this->roundMoney($subtotal - $customTotal);
                 }
 
                 $requiredPayment = abs($total);
-                $paid = min($requiredPayment, $paidInput > 0 ? $paidInput : $requiredPayment);
-                $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
+                $paid = min(
+                    $requiredPayment,
+                    $paidInput > 0 ? $paidInput : $requiredPayment
+                );
 
-                $order = Order::create([
-                    'tenant_id' => $tenantId,
-                    'branch_id' => $branchId,
-                    'shift_id' => $lockedShift->id,
-                    'created_by' => $user->id,
-                    'customer_id' => $customer?->id,
-                    'customer_name' => $customer?->name ?? 'زبون عام',
-                    'customer_phone' => $customer?->phone,
-                    'customer_address' => $customer?->address,
-                    'invoice_number' => $invoiceNumber,
-                    'type' => $invoiceType,
-                    'status' => 'completed',
-                    'subtotal' => $subtotal,
-                    'tax_amount' => 0,
-                    'discount_type' => $this->discount_type,
-                    'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, $this->discount_amount)) : 0,
-                    'discount' => $discount,
-                    'total' => $total,
-                    'total_cost' => $totalCost,
-                    'total_profit' => $this->roundMoney($total - $totalCost),
-                    'paid_amount' => $paid,
-                    'payment_status' => $paymentStatus,
-                    'notes' => trim($this->notes) ?: null,
-                ]);
+                $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment
+                    ? 'paid'
+                    : ($paid > 0 ? 'partial' : 'unpaid');
 
+                /*
+                 |--------------------------------------------------------------------------
+                 | إنشاء فاتورة جديدة أو تحديث نفس الفاتورة القديمة
+                 |--------------------------------------------------------------------------
+                 | نستخدم query builder في التحديث لتجاوز أي مشكلة fillable في Model Order.
+                 */
+                if (!$order) {
+                    $order = Order::create([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $branchId,
+                        'shift_id' => $lockedShift->id,
+                        'created_by' => $user->id,
+                        'customer_id' => $customer?->id,
+                        'customer_name' => $customer?->name ?? 'زبون عام',
+                        'customer_phone' => $customer?->phone,
+                        'customer_address' => $customer?->address,
+                        'invoice_number' => $this->makeInvoiceNumber($invoiceType, $tenantId),
+                        'type' => $invoiceType,
+                        'status' => 'completed',
+                        'subtotal' => $subtotal,
+                        'tax_amount' => 0,
+                        'discount_type' => $this->discount_type,
+                        'discount_rate' => $this->discount_type === 'percentage'
+                            ? min(100, max(0, $this->discount_amount))
+                            : 0,
+                        'discount' => $discount,
+                        'total' => $total,
+                        'total_cost' => $totalCost,
+                        'total_profit' => $this->roundMoney($total - $totalCost),
+                        'paid_amount' => $paid,
+                        'payment_status' => $paymentStatus,
+                        'notes' => trim($this->notes) ?: null,
+                    ]);
+                } else {
+                    $updateData = [
+                        'customer_id' => $customer?->id,
+                        'customer_name' => $customer?->name ?? 'زبون عام',
+                        'customer_phone' => $customer?->phone,
+                        'customer_address' => $customer?->address,
+                        'type' => $invoiceType,
+                        'status' => 'completed',
+                        'subtotal' => $subtotal,
+                        'tax_amount' => 0,
+                        'discount_type' => $this->discount_type,
+                        'discount_rate' => $this->discount_type === 'percentage'
+                            ? min(100, max(0, $this->discount_amount))
+                            : 0,
+                        'discount' => $discount,
+                        'total' => $total,
+                        'total_cost' => $totalCost,
+                        'total_profit' => $this->roundMoney($total - $totalCost),
+                        'paid_amount' => $paid,
+                        'payment_status' => $paymentStatus,
+                        'notes' => trim($this->notes) ?: null,
+                        'updated_at' => now(),
+                    ];
+
+                    $affected = Order::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->whereKey($order->id)
+                        ->update($updateData);
+
+                    if ($affected === 0) {
+                        // عدم وجود صف متأثر لا يعني فشلًا بالضرورة إذا لم تتغير القيم،
+                        // لذلك نتحقق فعليًا من قاعدة البيانات بعد التحديث.
+                        $verify = Order::query()
+                            ->whereKey($order->id)
+                            ->first();
+
+                        if (!$verify) {
+                            throw new \RuntimeException('تعذر العثور على الفاتورة بعد محاولة تحديثها.');
+                        }
+
+                        $sameValues =
+                            $this->roundMoney((float) $verify->subtotal) === $subtotal &&
+                            $this->roundMoney((float) $verify->total) === $total &&
+                            $this->roundMoney((float) $verify->paid_amount) === $paid;
+
+                        if (!$sameValues) {
+                            throw new \RuntimeException('لم يتم تحديث بيانات الفاتورة فعلياً.');
+                        }
+                    }
+
+                    $order = Order::query()
+                        ->whereKey($order->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$order) {
+                        throw new \RuntimeException('اختفت الفاتورة أثناء عملية التحديث.');
+                    }
+                }
+
+                /*
+                 |--------------------------------------------------------------------------
+                 | إضافة تفاصيل الفاتورة الجديدة وتطبيق المخزون
+                 |--------------------------------------------------------------------------
+                 */
                 foreach ($validatedItems as $item) {
                     OrderItem::create([
                         'tenant_id' => $tenantId,
@@ -1508,37 +1762,87 @@ new class extends Component {
                         'total_price' => $item['total_price'],
                     ]);
 
-                    $branchProductQuery = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('product_id', $item['product_id']);
+                    $branchProductQuery = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $item['product_id']);
 
                     if ($item['quantity'] > 0) {
-                        $branchProductQuery->decrement('stock_quantity', $item['quantity']);
+                        $branchProductQuery->decrement(
+                            'stock_quantity',
+                            $item['quantity']
+                        );
                     } else {
-                        $branchProductQuery->increment('stock_quantity', abs($item['quantity']));
+                        $branchProductQuery->increment(
+                            'stock_quantity',
+                            abs($item['quantity'])
+                        );
                     }
                 }
 
+                /*
+                 |--------------------------------------------------------------------------
+                 | تحديث الدفعة الموجودة بنفس voucher_number
+                 |--------------------------------------------------------------------------
+                 */
+                $voucherNumber = 'PAY-' . $order->invoice_number;
+
+                $existingPayment = Payment::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where(function ($query) use ($voucherNumber, $order): void {
+                        $query->where('voucher_number', $voucherNumber)
+                            ->orWhere('order_id', $order->id);
+                    })
+                    ->lockForUpdate()
+                    ->first();
+
                 if ($paid > 0) {
-                    Payment::create([
+                    $paymentData = [
                         'tenant_id' => $tenantId,
                         'branch_id' => $branchId,
-                        'shift_id' => $lockedShift->id,
+                        'shift_id' => (int) ($order->shift_id ?: $lockedShift->id),
                         'created_by' => $user->id,
                         'type' => $invoiceType === 'return' ? 'payment' : 'receipt',
-                        'voucher_number' => 'PAY-' . $order->invoice_number,
+                        'voucher_number' => $voucherNumber,
                         'amount' => $paid,
                         'payment_method' => $this->payment_method,
                         'order_id' => $order->id,
                         'notes' => trim($this->notes) ?: null,
                         'payment_date' => now(),
-                    ]);
+                        'updated_at' => now(),
+                    ];
+
+                    if ($existingPayment) {
+                        $existingPayment->update($paymentData);
+                    } else {
+                        Payment::create($paymentData);
+                    }
+                } elseif ($existingPayment) {
+                    $existingPayment->delete();
                 }
 
-                return $order;
+                return Order::query()
+                    ->whereKey($order->id)
+                    ->with(['items.product', 'user', 'branch'])
+                    ->firstOrFail();
             });
 
+            $savedInvoiceNumber = (string) $order->invoice_number;
+            $wasEditing = (bool) $editingInvoiceId;
+
+            $this->activeShiftId = $shift->id;
+
+            // لا نحتفظ بمعرف الفاتورة القديمة بعد نجاح F3؛ نجهز فاتورة جديدة مباشرة.
             $this->clearCartState();
             $this->activeShiftId = $shift->id;
-            $this->successMessage = $invoiceType === 'return' ? "تم حفظ المرتجع {$order->invoice_number} وتحديث المخزون." : "تم حفظ الفاتورة {$order->invoice_number} وتحديث المخزون.";
+
+            $this->successMessage = $wasEditing
+                ? ($invoiceType === 'return'
+                    ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة."
+                    : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.")
+                : ($invoiceType === 'return'
+                    ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة."
+                    : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
 
             return $order;
         } catch (\Throwable $e) {
@@ -1547,10 +1851,14 @@ new class extends Component {
                 'branch_id' => $branchId,
                 'user_id' => $user->id,
                 'shift_id' => $shift->id,
+                'editing_invoice_id' => $editingInvoiceId,
                 'message' => $e->getMessage(),
+                'cart' => $this->cart,
             ]);
 
-            $this->errorMessage = app()->environment('local') ? 'تعذر حفظ الفاتورة: ' . $e->getMessage() : 'تعذر حفظ الفاتورة. يرجى المحاولة مرة أخرى.';
+            $this->errorMessage = app()->environment('local')
+                ? 'تعذر حفظ الفاتورة: ' . $e->getMessage()
+                : 'تعذر حفظ الفاتورة. يرجى المحاولة مرة أخرى.';
 
             return null;
         }
@@ -1729,7 +2037,16 @@ new class extends Component {
         <div x-data x-cloak
             x-on:keydown.window.escape="$wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
-            x-on:keydown.window.f2.prevent="$wire.holdInvoice()" x-on:keydown.window.f3.prevent="$wire.checkout()"
+            x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
+            x-on:keydown.window.f3.prevent="
+                (async () => {
+                    const field = document.activeElement?.closest?.('[data-pos-field]');
+                    if (field && field.dataset.productId && field.dataset.posField) {
+                        await $wire.updateCartField(field.dataset.productId, field.dataset.posField, field.value);
+                    }
+                    await $wire.checkout();
+                })()
+            "
             x-on:keydown.window.f4.prevent="$wire.clearCart()" x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()"
             x-on:keydown.window.f10.prevent="$nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
             class="flex h-full min-h-0 flex-col gap-1.5">
