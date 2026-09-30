@@ -1,6 +1,6 @@
 <div id="thermal-receipt" class="receipt-box" dir="rtl">
     <div class="header">
-        {{-- <h2 class="store-title">{{ $receipt['store_name'] ?? 'نقطة البيع' }}</h2> --}}
+        <h2 class="store-title">{{ $receipt['store_name'] ?? 'نقطة البيع' }}</h2>
         <p class="notice">{{ $receipt['notice'] ?? 'شكراً لتعاملكم معنا' }}</p>
         <p class="copy-type">{{ $receipt['copy_type'] ?? 'فاتورة بيع' }}</p>
     </div>
@@ -11,9 +11,9 @@
         <span>{{ $receipt['time'] ?? '' }}</span>
     </div>
 
-    {{-- @if (!empty($receipt['cashier']))
+    @if (!empty($receipt['cashier']))
         <div class="cashier">الكاشير: {{ $receipt['cashier'] }}</div>
-    @endif --}}
+    @endif
 
     <table class="items-table">
         <thead>
@@ -25,6 +25,7 @@
                 <th style="width:16%">مبلغ</th>
             </tr>
         </thead>
+
         <tbody>
             @foreach (($receipt['items'] ?? []) as $item)
                 <tr>
@@ -50,7 +51,10 @@
         </div>
     @endif
 
-    @if (isset($receipt['discount']) && (float) str_replace(',', '', $receipt['discount']) > 0)
+    @if (
+        isset($receipt['discount']) &&
+        (float) str_replace(',', '', $receipt['discount']) > 0
+    )
         <div class="info-box">
             <span>الخصم :</span>
             <strong>{{ $receipt['discount'] }}</strong>
@@ -58,8 +62,13 @@
     @endif
 
     <div class="net-box">
-        <span>الصافي للدفع ({{ $receipt['currency'] ?? 'ش.ض' }}) :</span>
-        <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
+        <span>
+            الصافي للدفع ({{ $receipt['currency'] ?? 'ش.ض' }}) :
+        </span>
+
+        <strong class="net-value">
+            {{ $receipt['total_amount'] ?? 0 }}
+        </strong>
     </div>
 
     @if (!empty($receipt['notes']))
@@ -73,10 +82,13 @@
         <svg id="receipt-barcode"></svg>
 
         <p class="print-time">
-            تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
+            تاريخ ووقت الطباعة
+            {{ $receipt['date'] ?? '' }}
+            {{ $receipt['time'] ?? '' }}
         </p>
     </div>
 </div>
+
 
 <div class="no-print" style="display:none !important;">
     <button type="button" wire:click="printReceipt">
@@ -84,7 +96,9 @@
     </button>
 </div>
 
+
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
 
 <style>
     .receipt-box {
@@ -220,7 +234,9 @@
         margin: 2px 0;
     }
 
+
     @media print {
+
         body * {
             visibility: hidden !important;
         }
@@ -234,14 +250,20 @@
             display: block !important;
             position: absolute !important;
 
-            /* تحريك الفاتورة إلى اليمين */
-            right: -5mm !important;
+            right: 0 !important;
             left: auto !important;
-
             top: 0 !important;
+
             width: 80mm !important;
+
             padding: 0 !important;
             margin: 0 !important;
+
+            /*
+             * تحريك الفاتورة 2mm إلى اليسار
+             * حتى لا يتم أكل الطرف الأيمن أثناء الطباعة.
+             */
+            transform: translateX(-2mm) !important;
         }
 
         @page {
@@ -251,37 +273,63 @@
     }
 </style>
 
-<script>
-    function generatePosReceiptBarcode() {
-        const barcode = document.getElementById('receipt-barcode');
-        const invoiceNo = @js($receipt['invoice_no'] ?? '');
 
-        if (!barcode || !invoiceNo || typeof JsBarcode === 'undefined') {
+<script>
+
+    function generatePosReceiptBarcode() {
+
+        const barcode =
+            document.getElementById('receipt-barcode');
+
+        const invoiceNo =
+            @js($receipt['invoice_no'] ?? '');
+
+        if (
+            !barcode ||
+            !invoiceNo ||
+            typeof JsBarcode === 'undefined'
+        ) {
             return;
         }
 
-        JsBarcode(barcode, String(invoiceNo), {
-            format: 'CODE128',
-            displayValue: false,
-            height: 40,
-            margin: 0,
-            width: 1.5
-        });
+        JsBarcode(
+            barcode,
+            String(invoiceNo),
+            {
+                format: 'CODE128',
+                displayValue: false,
+                height: 40,
+                margin: 0,
+                width: 1.5
+            }
+        );
     }
 
+
     function printPosReceipt() {
+
         generatePosReceiptBarcode();
+
         window.print();
     }
 
+
     document.addEventListener('livewire:init', () => {
+
         generatePosReceiptBarcode();
 
         Livewire.on('print-receipt', () => {
+
             setTimeout(() => {
+
                 generatePosReceiptBarcode();
+
                 printPosReceipt();
+
             }, 80);
+
         });
+
     });
+
 </script>
