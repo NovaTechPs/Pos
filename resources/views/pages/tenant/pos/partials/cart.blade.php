@@ -74,8 +74,9 @@
             <div>
                 <div class="flex items-center gap-2 text-xs font-black text-slate-800">
                     <span>تجميع الأصناف المتشابهة</span>
-                    <span class="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
-                        الكمية: {{ collect($cart)->sum(fn ($item) => abs((float) ($item['quantity'] ?? 0))) }}
+                    <span
+                        class="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
+                        الكمية: {{ collect($cart)->sum(fn($item) => abs((float) ($item['quantity'] ?? 0))) }}
                     </span>
                 </div>
                 <div class="text-[10px] font-bold text-slate-400">
@@ -83,14 +84,13 @@
                 </div>
             </div>
 
-            <button type="button"
-                wire:click="toggleMergeSimilarProducts"
-                role="switch"
+            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch"
                 aria-checked="{{ $mergeSimilarProducts ? 'true' : 'false' }}"
                 class="relative h-7 w-12 shrink-0 rounded-full transition
                     {{ $mergeSimilarProducts ? 'bg-indigo-600' : 'bg-slate-300' }}"
                 title="{{ $mergeSimilarProducts ? 'إيقاف التجميع' : 'تشغيل التجميع' }}">
-                <span class="absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition
+                <span
+                    class="absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition
                     {{ $mergeSimilarProducts ? 'right-1' : 'right-6' }}"></span>
             </button>
         </div>
@@ -146,7 +146,6 @@
             <tbody class="divide-y divide-slate-300">
 
                 @forelse ($cart as $lineKey => $item)
-
                     @php
 
                         /*
@@ -237,18 +236,12 @@
                                 class="inline-flex items-center overflow-hidden
                                     rounded-lg border border-slate-200 bg-white">
 
-                                <input type="number" step="1" min="{{ $isReturnMode ? '-999999' : '1' }}"
+                                <input type="number" step="0.01" min="{{ $isReturnMode ? '-999999.99' : '0.01' }}"
                                     value="{{ $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
-                                    wire:change="updateCartField(
-                                        '{{ $lineKey }}',
-                                        'quantity',
-                                        $event.target.value
-                                    )"
-                                    class="pos-cart-field w-16 border-0 bg-transparent
-                                        px-1 py-1.5 text-center font-mono font-black
-                                        outline-none focus:ring-0"
-                                    inputmode="numeric" autocomplete="off">
+                                    wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)"
+                                    class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black outline-none focus:ring-0"
+                                    inputmode="decimal" autocomplete="off">
 
                             </div>
 
@@ -261,7 +254,7 @@
                         <td class="px-2 py-2 text-center">
 
                             <input type="number" step="0.01" min="0" value="{{ $item['price'] }}"
-                                data-pos-field="price" data-product-id="{{ $item['id'] }}"
+                                data-pos-field="price" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
                                 data-row-index="{{ $loop->index }}"
                                 wire:change="updateCartField(
                                     '{{ $lineKey }}',
@@ -285,7 +278,7 @@
                         <td class="px-2 py-2 text-center">
 
                             <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
-                                data-pos-field="subtotal" data-product-id="{{ $item['id'] }}"
+                                data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
                                 data-row-index="{{ $loop->index }}"
                                 wire:change="updateCartField(
                                     '{{ $lineKey }}',
@@ -393,6 +386,84 @@
             */
             const FIELD_SELECTOR = '[data-pos-field]';
             const BARCODE_SELECTOR = '[data-pos-barcode-input]';
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Return to barcode after editing cart fields
+            |--------------------------------------------------------------------------
+            | عند تعديل الكمية أو السعر أو الإجمالي، wire:change يرسل طلب Livewire.
+            | ننتظر انتهاء تحديث Livewire ثم نعيد التركيز إلى الباركود، حتى لا
+            | يقوم Livewire بإرجاع التركيز إلى الحقل القديم.
+            |--------------------------------------------------------------------------
+            */
+            let focusBarcodeAfterCartChange = false;
+            let barcodeFocusTimer = null;
+
+            function focusBarcodeNow() {
+                const input = document.querySelector(BARCODE_SELECTOR);
+                if (!input) return;
+
+                input.focus({ preventScroll: true });
+                if (typeof input.select === 'function') {
+                    input.select();
+                }
+            }
+
+            function restoreBarcodeAfterLivewire() {
+                if (!focusBarcodeAfterCartChange) return;
+
+                focusBarcodeAfterCartChange = false;
+
+                if (barcodeFocusTimer) {
+                    clearTimeout(barcodeFocusTimer);
+                }
+
+                barcodeFocusTimer = setTimeout(function() {
+                    barcodeFocusTimer = null;
+                    focusBarcodeNow();
+
+                    setTimeout(function() {
+                        focusBarcodeNow();
+                    }, 120);
+                }, 40);
+            }
+
+            // طلب صريح من Livewire بعد نجاح تعديل الكمية/السعر/الإجمالي.
+            window.addEventListener('pos-focus-barcode', function() {
+                focusBarcodeAfterCartChange = true;
+
+                // إذا كان الحدث وصل بعد الـ morph بالفعل.
+                restoreBarcodeAfterLivewire();
+            });
+
+            document.addEventListener('change', function(event) {
+                const field = event.target?.closest?.(FIELD_SELECTOR);
+                if (!field) return;
+                focusBarcodeAfterCartChange = true;
+            }, true);
+
+            function registerLivewireBarcodeFocus() {
+                if (!window.Livewire || typeof window.Livewire.hook !== 'function') {
+                    return;
+                }
+
+                window.Livewire.hook('morph.updated', function() {
+                    restoreBarcodeAfterLivewire();
+                });
+
+                window.Livewire.hook('commit', ({ succeed }) => {
+                    succeed(() => {
+                        restoreBarcodeAfterLivewire();
+                    });
+                });
+            }
+
+            if (window.Livewire) {
+                registerLivewireBarcodeFocus();
+            } else {
+                document.addEventListener('livewire:init', registerLivewireBarcodeFocus, { once: true });
+            }
 
 
             /*
@@ -634,6 +705,11 @@
                 }
 
 
+                if (key === 'ArrowUp' || key === 'ArrowDown') {
+                    event.preventDefault();
+                }
+
+
                 const rowIndex =
                     Number(current.dataset.rowIndex);
 
@@ -743,6 +819,9 @@
                             allRows.length - 1 :
                             pos - 1;
 
+                        target =
+                            allRows[targetPos][type];
+
                     }
 
 
@@ -844,6 +923,7 @@
 
                     event.preventDefault();
                     event.stopPropagation();
+                    event.stopImmediatePropagation();
 
                     focusInput(target);
 
@@ -1392,6 +1472,60 @@
                 focusBarcode(true);
 
             });
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | بعد تعديل الكمية / السعر / الإجمالي
+            |
+            | عند تغيير أي حقل في السلة، ننتظر انتهاء تحديث Livewire
+            | ثم نعيد التركيز تلقائياً إلى الباركود.
+            |--------------------------------------------------------------------------
+            */
+            let returnToBarcodeAfterEdit = false;
+            let editComponentId = null;
+
+            document.addEventListener('change', function(event) {
+
+                const field = event.target?.closest?.(FIELD_SELECTOR);
+
+                if (!field) {
+                    return;
+                }
+
+                const root = field.closest('[wire\:id]');
+
+                returnToBarcodeAfterEdit = true;
+                editComponentId = root?.getAttribute('wire:id') || null;
+
+            }, true);
+
+            if (window.Livewire && typeof window.Livewire.hook === 'function') {
+
+                window.Livewire.hook('commit', ({ component, succeed }) => {
+
+                    if (!returnToBarcodeAfterEdit) {
+                        return;
+                    }
+
+                    if (editComponentId && component?.id !== editComponentId) {
+                        return;
+                    }
+
+                    succeed(() => {
+
+                        returnToBarcodeAfterEdit = false;
+                        editComponentId = null;
+
+                        setTimeout(function() {
+                            focusBarcode(false);
+                        }, 30);
+
+                    });
+
+                });
+
+            }
 
 
             /*

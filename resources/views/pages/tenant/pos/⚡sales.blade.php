@@ -138,6 +138,12 @@ new class extends Component {
             default:
                 return;
         }
+
+        // بعد نجاح تعديل الكمية أو السعر أو الإجمالي،
+        // أبلغ الواجهة لتعيد التركيز إلى الباركود بعد انتهاء Livewire.
+        if (in_array($field, ['quantity', 'price', 'subtotal'], true)) {
+            $this->dispatch('pos-focus-barcode');
+        }
     }
 
     public function toggleMergeSimilarProducts(): void
@@ -165,23 +171,40 @@ new class extends Component {
         $split = [];
 
         foreach ($this->cart as $item) {
-            $quantity = (int) ($item['quantity'] ?? 0);
+            $quantity = (float) ($item['quantity'] ?? 0);
 
             if ($quantity === 0) {
                 continue;
             }
 
-            $unitCount = abs($quantity);
-            $unitQuantity = $quantity < 0 ? -1 : 1;
+            $absoluteQuantity = abs($quantity);
+            $sign = $quantity < 0 ? -1 : 1;
             $unitPrice = (float) ($item['price'] ?? 0);
 
-            for ($i = 0; $i < $unitCount; $i++) {
+            // عند إيقاف التجميع نقسم الوحدات الصحيحة إلى أسطر مستقلة،
+            // ونُبقي الكسر (مثل 0.5 أو 1.5) دون تحويله إلى عدد صحيح.
+            $wholeUnits = (int) floor($absoluteQuantity);
+            $fraction = round($absoluteQuantity - $wholeUnits, 3);
+
+            for ($i = 0; $i < $wholeUnits; $i++) {
                 $lineKey = 'line_' . str()->uuid()->toString();
 
                 $newItem = $item;
-                $newItem['quantity'] = $unitQuantity;
+                $newItem['quantity'] = $sign;
                 $newItem['price'] = $unitPrice;
-                $newItem['subtotal'] = $this->roundMoney($unitPrice * $unitQuantity);
+                $newItem['subtotal'] = $this->roundMoney($unitPrice * $sign);
+
+                $split[$lineKey] = $newItem;
+            }
+
+            if ($fraction > 0) {
+                $lineKey = 'line_' . str()->uuid()->toString();
+
+                $newItem = $item;
+                $fractionQuantity = $fraction * $sign;
+                $newItem['quantity'] = $fractionQuantity;
+                $newItem['price'] = $unitPrice;
+                $newItem['subtotal'] = $this->roundMoney($unitPrice * $fractionQuantity);
 
                 $split[$lineKey] = $newItem;
             }
@@ -196,7 +219,7 @@ new class extends Component {
 
         foreach ($this->cart as $item) {
             $productId = (int) ($item['id'] ?? 0);
-            $quantity = (int) ($item['quantity'] ?? 0);
+            $quantity = (float) ($item['quantity'] ?? 0);
 
             if (!$productId || $quantity === 0) {
                 continue;
@@ -211,14 +234,14 @@ new class extends Component {
                 continue;
             }
 
-            $oldQuantity = (int) $merged[$groupKey]['quantity'];
+            $oldQuantity = (float) $merged[$groupKey]['quantity'];
             $oldSubtotal = (float) ($merged[$groupKey]['subtotal'] ?? 0);
             $newSubtotal = (float) ($item['subtotal'] ?? 0);
 
             $merged[$groupKey]['quantity'] = $oldQuantity + $quantity;
             $merged[$groupKey]['subtotal'] = $this->roundMoney($oldSubtotal + $newSubtotal);
 
-            $totalQuantity = (int) $merged[$groupKey]['quantity'];
+            $totalQuantity = (float) $merged[$groupKey]['quantity'];
             if ($totalQuantity !== 0) {
                 $merged[$groupKey]['price'] = $this->roundMoney(
                     abs((float) $merged[$groupKey]['subtotal'] / $totalQuantity)
@@ -585,8 +608,14 @@ new class extends Component {
     public function selectInlineProduct(int $productId): void
     {
         $this->addToCart($productId);
+
+        // بعد اختيار الصنف من البحث:
+        // تفريغ البحث والعودة مباشرة إلى خانة الباركود.
         $this->inlineSearchQuery = '';
+        $this->productSearchQuery = '';
         $this->inlineSearchResults = [];
+
+        $this->dispatch('pos-focus-barcode');
     }
 
     public function selectCategory(?int $categoryId = null): void
@@ -743,7 +772,7 @@ new class extends Component {
             foreach ($this->cart as $lineKey => $item) {
                 if (
                     (int) ($item['id'] ?? 0) === $productId &&
-                    (((int) ($item['quantity'] ?? 0) < 0) === ($changeQty < 0))
+                    (((float) ($item['quantity'] ?? 0) < 0) === ($changeQty < 0))
                 ) {
                     $existingLineKey = (string) $lineKey;
                     break;
@@ -754,7 +783,7 @@ new class extends Component {
         if ($existingLineKey !== null) {
             $this->cart[$existingLineKey]['quantity'] += $changeQty;
 
-            if ((int) $this->cart[$existingLineKey]['quantity'] === 0) {
+            if (abs((float) $this->cart[$existingLineKey]['quantity']) < 0.000001) {
                 unset($this->cart[$existingLineKey]);
             }
         } else {
@@ -796,8 +825,8 @@ new class extends Component {
             return;
         }
 
-        $quantity = (int) $qty;
-        if ($quantity === 0) {
+        $quantity = round((float) str_replace(',', '.', (string) $qty), 3);
+        if (abs($quantity) < 0.000001) {
             $this->removeFromCart($lineKey);
             return;
         }
@@ -810,7 +839,12 @@ new class extends Component {
             $quantity = -$quantity;
         }
 
-        $this->cart[$lineKey]['quantity'] = $quantity;
+        $this->cart[$lineKey]['quantity'] = round($quantity, 3);
+        $this->cart[$lineKey]['subtotal'] = $this->roundMoney(
+            (float) $this->cart[$lineKey]['quantity'] *
+            (float) ($this->cart[$lineKey]['price'] ?? 0)
+        );
+
         $this->recalculatePrices();
     }
 
@@ -837,39 +871,47 @@ new class extends Component {
 
     /**
      * تعديل إجمالي الصنف مباشرة.
-     * يتم تحويل الإجمالي الجديد إلى سعر وحدة مع الحفاظ على إشارة المرتجع.
+     *
+     * مهم: لا نستدعي recalculatePrices() هنا، لأن تلك الدالة تعيد
+     * حساب subtotal من (quantity × price) وقد تلغي الإجمالي الذي أدخله
+     * المستخدم، خصوصاً مع الكميات العشرية.
      */
     public function updateLineTotal(string $lineKey, $newTotal): void
     {
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
-        if ($resolvedKey === null) {
+        if ($resolvedKey === null || !isset($this->cart[$resolvedKey])) {
             return;
         }
 
         $lineKey = $resolvedKey;
 
-        if (!isset($this->cart[$lineKey])) {
+        $quantity = (float) ($this->cart[$lineKey]['quantity'] ?? 0);
+
+        if (abs($quantity) < 0.000001) {
             return;
         }
 
-        $quantity = (int) ($this->cart[$lineKey]['quantity'] ?? 0);
+        $targetTotal = (float) str_replace(',', '.', (string) $newTotal);
 
-        if ($quantity === 0) {
-            return;
-        }
-
-        $targetTotal = (float) $newTotal;
-
-        // في وضع المرتجع يبقى إجمالي الصنف سالباً.
+        // في وضع المرتجع يبقى إجمالي السطر سالباً.
         if ($quantity < 0) {
             $targetTotal = -abs($targetTotal);
         } else {
             $targetTotal = max(0, $targetTotal);
         }
 
-        $this->cart[$lineKey]['price'] = $this->roundMoney(abs($targetTotal / $quantity));
-        $this->cart[$lineKey]['subtotal'] = $this->roundMoney($targetTotal);
+        $targetTotal = $this->roundMoney($targetTotal);
+
+        // نحتفظ بدقة كافية في سعر الوحدة حتى لا يضيع الإجمالي
+        // المدخل عند وجود كمية عشرية.
+        $unitPrice = abs($targetTotal / $quantity);
+
+        $this->cart[$lineKey]['price'] = round($unitPrice, 6);
+        $this->cart[$lineKey]['subtotal'] = $targetTotal;
+
+        // لا تستدعِ recalculatePrices() هنا، لأنه سيعيد كتابة subtotal
+        // من quantity × price وقد يحول 20.02 مثلاً إلى 20.01 مع بعض الكسور.
     }
 
     public function updateCostPrice(string $lineKey, $newCost): void
@@ -1084,12 +1126,12 @@ new class extends Component {
                 $this->mergeSimilarProducts &&
                 isset($this->cart[$lineKey])
             ) {
-                $this->cart[$lineKey]['quantity'] += (int) $item->quantity;
+                $this->cart[$lineKey]['quantity'] += (float) $item->quantity;
                 $this->cart[$lineKey]['subtotal'] = $this->roundMoney(
                     (float) $this->cart[$lineKey]['subtotal'] + (float) $item->total_price
                 );
 
-                $quantity = (int) $this->cart[$lineKey]['quantity'];
+                $quantity = (float) $this->cart[$lineKey]['quantity'];
                 if ($quantity !== 0) {
                     $this->cart[$lineKey]['price'] = $this->roundMoney(
                         abs((float) $this->cart[$lineKey]['subtotal'] / $quantity)
@@ -1105,7 +1147,7 @@ new class extends Component {
                 'barcode' => '',
                 'price' => (float) $item->unit_price,
                 'cost_price' => (float) ($item->cost_price ?? ($item->product?->cost_price ?? 0)),
-                'quantity' => (int) $item->quantity,
+                'quantity' => (float) $item->quantity,
                 'subtotal' => (float) $item->total_price,
             ];
         }
@@ -1292,7 +1334,7 @@ new class extends Component {
     {
         $total = 0;
         foreach ($this->cart as $item) {
-            $total += (float) ($item['cost_price'] ?? 0) * (int) $item['quantity'];
+            $total += (float) ($item['cost_price'] ?? 0) * (float) $item['quantity'];
         }
         return $this->roundMoney($total);
     }
@@ -1520,7 +1562,7 @@ new class extends Component {
                         ->get();
 
                     foreach ($oldItems as $oldItem) {
-                        $oldQuantity = (int) $oldItem->quantity;
+                        $oldQuantity = (float) $oldItem->quantity;
 
                         if ($oldQuantity === 0) {
                             continue;
@@ -1567,7 +1609,7 @@ new class extends Component {
                  */
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
-                    $quantity = (int) ($rawItem['quantity'] ?? 0);
+                    $quantity = (float) ($rawItem['quantity'] ?? 0);
                     $price = max(0, (float) ($rawItem['price'] ?? 0));
 
                     if (!$productId || $quantity === 0) {
@@ -1894,7 +1936,7 @@ new class extends Component {
         $items = [];
         $totalQty = 0;
         foreach ($order->items as $index => $item) {
-            $totalQty += abs((int) $item->quantity);
+            $totalQty += abs((float) $item->quantity);
             $items[] = [
                 'id' => $index + 1,
                 'name' => $item->product?->name ?? 'منتج غير محدد',
@@ -2041,8 +2083,8 @@ new class extends Component {
             x-on:keydown.window.f3.prevent="
                 (async () => {
                     const field = document.activeElement?.closest?.('[data-pos-field]');
-                    if (field && field.dataset.productId && field.dataset.posField) {
-                        await $wire.updateCartField(field.dataset.productId, field.dataset.posField, field.value);
+                    if (field && field.dataset.lineKey && field.dataset.posField) {
+                        await $wire.updateCartField(field.dataset.lineKey, field.dataset.posField, field.value);
                     }
                     await $wire.checkout();
                 })()
@@ -2112,6 +2154,7 @@ new class extends Component {
 
                                 <input
                                     data-pos-product-panel-search
+                                    x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
                                     wire:model.live.debounce.250ms="productSearchQuery"
                                     type="text"
                                     autocomplete="off"
@@ -2149,14 +2192,23 @@ new class extends Component {
                                 </div>
                             </div>
 
-                            <div class="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-2">
-                                <div class="grid grid-cols-2 gap-2 xl:grid-cols-3">
+                            <div
+                                data-pos-products-panel
+                                class="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-2"
+                                tabindex="0"
+                            >
+                                <div
+                                    data-pos-product-grid
+                                    class="grid grid-cols-2 gap-2 xl:grid-cols-3"
+                                >
                                     @forelse ($quickProducts as $product)
                                         <button
                                             type="button"
+                                            data-pos-product
+                                            data-product-index="{{ $loop->index }}"
                                             wire:click="selectInlineProduct({{ $product->id }})"
                                             wire:key="pos-quick-product-{{ $product->id }}"
-                                            class="min-h-[78px] rounded-xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98]"
+                                            class="min-h-[78px] rounded-xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
                                         >
                                             <div class="line-clamp-2 min-h-[30px] text-[11px] font-black leading-4 text-slate-800">
                                                 {{ $product->name }}
@@ -2211,6 +2263,422 @@ new class extends Component {
                         }
                     </style>
 
+
+                    <script>
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Keyboard navigation - Product list ONLY
+                        |--------------------------------------------------------------------------
+                        | ↑ / ↓  = move between products
+                        | Enter  = add selected product
+                        |
+                        | مهم:
+                        | - هذا النظام يعمل فقط عندما يكون التركيز داخل قائمة المنتجات.
+                        | - لا يتدخل في أسهم الكمية/السعر/الإجمالي داخل السلة.
+                        | - لا يغيّر wire:click الموجود على كروت المنتجات.
+                        |--------------------------------------------------------------------------
+                        */
+                        (function () {
+                            'use strict';
+
+                            const PANEL_SELECTOR = '[data-pos-products-panel]';
+                            const PRODUCT_SELECTOR = '[data-pos-product]';
+                            const SEARCH_SELECTOR = '[data-pos-product-panel-search]';
+
+                            /*
+                             * بعد اختيار صنف من قائمة البحث:
+                             * - تفريغ خانة البحث يتم من Livewire.
+                             * - يعود التركيز مباشرة إلى خانة الباركود.
+                             */
+                            window.addEventListener('pos-focus-barcode', function () {
+                                setTimeout(function () {
+                                    const barcode = document.querySelector(
+                                        '[data-pos-barcode-input]'
+                                    );
+
+                                    if (!barcode) {
+                                        return;
+                                    }
+
+                                    barcode.focus();
+                                    barcode.select?.();
+                                }, 50);
+                            });
+
+                            function getPanel() {
+                                return document.querySelector(PANEL_SELECTOR);
+                            }
+
+                            function getProducts(panel) {
+                                if (!panel) {
+                                    return [];
+                                }
+
+                                return Array.from(
+                                    panel.querySelectorAll(PRODUCT_SELECTOR)
+                                );
+                            }
+
+                            function focusProduct(product, selectIndex = true) {
+                                if (!product || !document.contains(product)) {
+                                    return;
+                                }
+
+                                product.focus({
+                                    preventScroll: true
+                                });
+
+                                if (selectIndex) {
+                                    const panel = product.closest(PANEL_SELECTOR);
+
+                                    if (panel) {
+                                        panel.dataset.selectedProductIndex =
+                                            product.dataset.productIndex ?? '0';
+                                    }
+                                }
+
+                                product.scrollIntoView({
+                                    behavior: 'auto',
+                                    block: 'nearest',
+                                    inline: 'nearest'
+                                });
+                            }
+
+                            function getColumnCount(panel) {
+                                const grid = panel?.querySelector('[data-pos-product-grid]');
+
+                                if (!grid) {
+                                    return 1;
+                                }
+
+                                const products = getProducts(panel);
+
+                                if (products.length < 2) {
+                                    return 1;
+                                }
+
+                                const firstTop = products[0].getBoundingClientRect().top;
+                                let columns = 0;
+
+                                for (const product of products) {
+                                    const top = product.getBoundingClientRect().top;
+
+                                    if (Math.abs(top - firstTop) <= 2) {
+                                        columns++;
+                                    } else {
+                                        break;
+                                    }
+                                }
+
+                                return Math.max(1, columns);
+                            }
+
+                            function moveProduct(panel, direction) {
+                                const products = getProducts(panel);
+
+                                if (!products.length) {
+                                    return;
+                                }
+
+                                const active = document.activeElement;
+                                let currentIndex = products.indexOf(active);
+
+                                if (currentIndex < 0) {
+                                    const savedIndex = Number(
+                                        panel.dataset.selectedProductIndex ?? 0
+                                    );
+
+                                    currentIndex = Number.isFinite(savedIndex)
+                                        ? Math.min(
+                                            Math.max(savedIndex, 0),
+                                            products.length - 1
+                                        )
+                                        : 0;
+                                }
+
+                                /*
+                                 * بسبب وجود عمودين أو ثلاثة حسب عرض الشاشة:
+                                 * ArrowUp / ArrowDown يتحركان صفاً كاملاً،
+                                 * وليس منتجاً واحداً فقط.
+                                 */
+                                const columns = getColumnCount(panel);
+
+                                let targetIndex;
+
+                                if (direction === 'up') {
+                                    targetIndex = currentIndex - columns;
+
+                                    if (targetIndex < 0) {
+                                        targetIndex = 0;
+                                    }
+                                } else {
+                                    targetIndex = currentIndex + columns;
+
+                                    if (targetIndex >= products.length) {
+                                        targetIndex = products.length - 1;
+                                    }
+                                }
+
+                                focusProduct(products[targetIndex]);
+                            }
+
+                            function activateCurrentProduct(panel) {
+                                const products = getProducts(panel);
+
+                                if (!products.length) {
+                                    return;
+                                }
+
+                                let current = document.activeElement;
+
+                                if (!current?.matches?.(PRODUCT_SELECTOR)) {
+                                    const savedIndex = Number(
+                                        panel.dataset.selectedProductIndex ?? 0
+                                    );
+
+                                    current =
+                                        products[
+                                            Number.isFinite(savedIndex)
+                                                ? Math.min(
+                                                    Math.max(savedIndex, 0),
+                                                    products.length - 1
+                                                )
+                                                : 0
+                                        ];
+                                }
+
+                                if (current) {
+                                    current.click();
+                                }
+                            }
+
+                            document.addEventListener('focusin', function (event) {
+                                const product = event.target?.closest?.(
+                                    PRODUCT_SELECTOR
+                                );
+
+                                if (!product) {
+                                    return;
+                                }
+
+                                const panel = product.closest(PANEL_SELECTOR);
+
+                                if (panel) {
+                                    panel.dataset.selectedProductIndex =
+                                        product.dataset.productIndex ?? '0';
+                                }
+                            });
+
+                            document.addEventListener('keydown', function (event) {
+                                const key = event.key;
+
+                                /*
+                                 * لا نتدخل إطلاقاً في حقول السلة.
+                                 * هذا يحافظ على ArrowUp/Down/Left/Right الموجودة
+                                 * للكمية والسعر والإجمالي.
+                                 */
+                                if (event.target?.closest?.('[data-pos-field]')) {
+                                    return;
+                                }
+
+                                /*
+                                 * عندما يكون التركيز داخل لوحة المنتجات،
+                                 * لا نسمح لأي نظام لوحة مفاتيح آخر في الصفحة
+                                 * بالتقاط الأسهم بدلاً من المنتجات.
+                                 */
+                                const panelTarget = event.target?.closest?.(PANEL_SELECTOR);
+
+                                /*
+                                 * إذا كان التركيز على مساحة قائمة الأصناف نفسها،
+                                 * أول ضغطة سهم تدخل إلى أول صنف بدلاً من تمرير الصفحة.
+                                 */
+                                if (panelTarget && !event.target?.closest?.(PRODUCT_SELECTOR)) {
+                                    const products = getProducts(panelTarget);
+
+                                    if (products.length && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        event.stopImmediatePropagation();
+
+                                        const savedIndex = Number(
+                                            panelTarget.dataset.selectedProductIndex ?? 0
+                                        );
+
+                                        const startIndex = Number.isFinite(savedIndex)
+                                            ? Math.min(Math.max(savedIndex, 0), products.length - 1)
+                                            : 0;
+
+                                        focusProduct(products[startIndex]);
+                                        return;
+                                    }
+                                }
+
+                                const product = event.target?.closest?.(
+                                    PRODUCT_SELECTOR
+                                );
+
+                                /*
+                                 * عندما يكون التركيز على مربع بحث المنتجات:
+                                 * ArrowDown يبدأ قائمة المنتجات.
+                                 * باقي الأسهم تبقى طبيعية داخل حقل البحث.
+                                 */
+                                if (
+                                    !product &&
+                                    event.target?.matches?.(SEARCH_SELECTOR) &&
+                                    key === 'ArrowDown'
+                                ) {
+                                    const panel = event.target.closest(PANEL_SELECTOR);
+                                    const products = getProducts(panel);
+
+                                    if (!products.length) {
+                                        return;
+                                    }
+
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    event.stopImmediatePropagation();
+
+                                    focusProduct(products[0]);
+                                    return;
+                                }
+
+                                if (!product) {
+                                    return;
+                                }
+
+                                const panel = product.closest(PANEL_SELECTOR);
+
+                                if (!panel) {
+                                    return;
+                                }
+
+                                if (key === 'ArrowDown') {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    moveProduct(panel, 'down');
+                                    return;
+                                }
+
+                                if (key === 'ArrowUp') {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    moveProduct(panel, 'up');
+                                    return;
+                                }
+
+                                /*
+                                 * داخل شبكة المنتجات:
+                                 * ← / → يتحركان بين المنتجات في نفس الصف.
+                                 * ↑ / ↓ يتحركان بين الصفوف.
+                                 *
+                                 * نستخدم موقع العنصر الحقيقي في الشبكة حتى يعمل
+                                 * بشكل صحيح مع RTL ومع عمودين أو ثلاثة أعمدة.
+                                 */
+                                if (key === 'ArrowLeft' || key === 'ArrowRight') {
+                                    const products = getProducts(panel);
+
+                                    if (!products.length) {
+                                        return;
+                                    }
+
+                                    const currentIndex = products.indexOf(product);
+
+                                    if (currentIndex < 0) {
+                                        return;
+                                    }
+
+                                    const currentRect =
+                                        product.getBoundingClientRect();
+
+                                    const sameRow = products
+                                        .map((item, index) => ({
+                                            item,
+                                            index,
+                                            rect: item.getBoundingClientRect(),
+                                        }))
+                                        .filter(({ rect }) =>
+                                            Math.abs(
+                                                rect.top - currentRect.top
+                                            ) <= 2
+                                        )
+                                        .sort((a, b) => a.rect.left - b.rect.left);
+
+                                    const rowPosition = sameRow.findIndex(
+                                        ({ index }) => index === currentIndex
+                                    );
+
+                                    if (rowPosition < 0) {
+                                        return;
+                                    }
+
+                                    /*
+                                     * في RTL:
+                                     * ArrowLeft  -> المنتج الموجود إلى اليسار.
+                                     * ArrowRight -> المنتج الموجود إلى اليمين.
+                                     */
+                                    const step = key === 'ArrowLeft' ? -1 : 1;
+                                    const targetPosition =
+                                        rowPosition + step;
+
+                                    if (
+                                        targetPosition >= 0 &&
+                                        targetPosition < sameRow.length
+                                    ) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+
+                                        focusProduct(
+                                            sameRow[targetPosition].item
+                                        );
+                                    }
+
+                                    return;
+                                }
+
+                                if (key === 'Enter') {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    activateCurrentProduct(panel);
+                                    return;
+                                }
+                            }, true);
+
+                            /*
+                             * بعد إعادة رسم Livewire للمنتجات، نحافظ على آخر
+                             * فهرس محدد قدر الإمكان، بدون لمس تركيز السلة.
+                             */
+                            document.addEventListener('livewire:navigated', function () {
+                                const panel = getPanel();
+
+                                if (!panel) {
+                                    return;
+                                }
+
+                                const products = getProducts(panel);
+
+                                if (!products.length) {
+                                    return;
+                                }
+
+                                const index = Number(
+                                    panel.dataset.selectedProductIndex ?? 0
+                                );
+
+                                if (
+                                    Number.isFinite(index) &&
+                                    products[index]
+                                ) {
+                                    panel.dataset.selectedProductIndex =
+                                        String(
+                                            Math.min(
+                                                Math.max(index, 0),
+                                                products.length - 1
+                                            )
+                                        );
+                                }
+                            });
+                        })();
+                    </script>
 
                     <script>
                         (function() {
