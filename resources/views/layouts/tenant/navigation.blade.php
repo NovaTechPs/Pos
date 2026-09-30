@@ -9,7 +9,7 @@
             icon="squares-2x2"
             :href="route('tenant.dashboard')"
             :current="request()->routeIs('tenant.dashboard')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Dashboard') }}
         </flux:sidebar.item>
@@ -22,7 +22,7 @@
             icon="building-office-2"
             :href="route('tenant.branch')"
             :current="request()->routeIs('tenant.branch')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Branches') }}
         </flux:sidebar.item>
@@ -35,7 +35,7 @@
             icon="tag"
             :href="route('tenant.category')"
             :current="request()->routeIs('tenant.category')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Category') }}
         </flux:sidebar.item>
@@ -48,7 +48,7 @@
             icon="shield-check"
             :href="route('tenant.role')"
             :current="request()->routeIs('tenant.role')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Roles') }}
         </flux:sidebar.item>
@@ -61,7 +61,7 @@
             icon="user-group"
             :href="route('tenant.employees')"
             :current="request()->routeIs('tenant.employees')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Employees') }}
         </flux:sidebar.item>
@@ -74,7 +74,7 @@
             icon="cube"
             :href="route('tenant.product')"
             :current="request()->routeIs('tenant.product')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Products') }}
         </flux:sidebar.item>
@@ -87,7 +87,7 @@
             icon="calculator"
             :href="route('tenant.pos')"
             :current="request()->routeIs('tenant.pos')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('POS') }}
         </flux:sidebar.item>
@@ -100,7 +100,7 @@
             icon="chart-bar-square"
             :href="route('tenant.analytics')"
             :current="request()->routeIs('tenant.analytics')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Analytics') }}
         </flux:sidebar.item>
@@ -113,7 +113,7 @@
             icon="scale"
             :href="route('tenant.daily-settlement')"
             :current="request()->routeIs('tenant.daily-settlement')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Daily Settlement') }}
         </flux:sidebar.item>
@@ -126,7 +126,7 @@
             icon="shopping-cart"
             :href="route('tenant.online-orders')"
             :current="request()->routeIs('tenant.online-orders')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Online Orders') }}
         </flux:sidebar.item>
@@ -141,7 +141,7 @@
                 'slug' => session('active_tenant_slug') ?? 'default',
             ])"
             :current="request()->routeIs('tenant.store')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Store') }}
         </flux:sidebar.item>
@@ -154,7 +154,7 @@
             icon="building-office"
             :href="route('tenant.wholesale-sales')"
             :current="request()->routeIs('tenant.wholesale-sales')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Wholesale Sales') }}
         </flux:sidebar.item>
@@ -167,7 +167,7 @@
             icon="truck"
             :href="route('tenant.wholesale-invoices')"
             :current="request()->routeIs('tenant.wholesale-invoices')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Van Sales') }}
         </flux:sidebar.item>
@@ -180,7 +180,7 @@
             icon="document-text"
             :href="route('tenant.sale-invoices')"
             :current="request()->routeIs('tenant.sale-invoices')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Sales Invoices') }}
         </flux:sidebar.item>
@@ -193,7 +193,7 @@
             icon="arrow-down-tray"
             :href="route('tenant.purchase-invoices')"
             :current="request()->routeIs('tenant.purchase-invoices')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Purchase Invoices') }}
         </flux:sidebar.item>
@@ -206,7 +206,7 @@
             icon="users"
             :href="route('tenant.customer')"
             :current="request()->routeIs('tenant.customer')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Customers') }}
         </flux:sidebar.item>
@@ -219,7 +219,7 @@
             icon="banknotes"
             :href="route('tenant.payment')"
             :current="request()->routeIs('tenant.payment')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Vouchers') }}
         </flux:sidebar.item>
@@ -232,9 +232,9 @@
             icon="receipt-percent"
             :href="route('tenant.receipts')"
             :current="request()->routeIs('tenant.receipts')"
-            wire:navigate
+            target="_blank"
         >
-            {{ __('receipts') }}
+            {{ __('Receipts') }}
         </flux:sidebar.item>
     @endcan
 
@@ -245,20 +245,23 @@
             icon="server-stack"
             :href="route('tenant.backup')"
             :current="request()->routeIs('tenant.backup')"
-            wire:navigate
+            target="_blank"
         >
             {{ __('Backup') }}
         </flux:sidebar.item>
     @endcan
+
+
+    {{-- Barcode Printer --}}
     @can('barcode.print')
-    <flux:sidebar.item
-        icon="printer"
-        :href="route('tenant.barcode.printer')"
-        :current="request()->routeIs('tenant.barcode.printer')"
-        wire:navigate
-    >
-        {{ __('Barcode Printer') }}
-    </flux:sidebar.item>
-@endcan
+        <flux:sidebar.item
+            icon="printer"
+            :href="route('tenant.barcode.printer')"
+            :current="request()->routeIs('tenant.barcode.printer')"
+            target="_blank"
+        >
+            {{ __('Barcode Printer') }}
+        </flux:sidebar.item>
+    @endcan
 
 </flux:sidebar.group>
