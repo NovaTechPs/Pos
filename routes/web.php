@@ -68,7 +68,9 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/wholesale-invoices', 'pages::tenant.wholesale.invoices')
             ->name('wholesale-invoices');
 
-        // Purchases
+     Route::livewire('/stock-transfers', 'pages::tenant.stock-transfers.index')
+    ->name('tenant.stock-transfers');
+       // Purchases
         Route::livewire('/purchase-invoices', 'pages::tenant.purchases.invoices')
             ->name('purchase-invoices');
 

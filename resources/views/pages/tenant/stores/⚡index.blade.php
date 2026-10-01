@@ -78,19 +78,22 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    public function mount(string $slug): void
+    public function mount(): void
     {
-        $this->slug = $slug;
+        $slug = request()->route('slug');
 
-        $tenant = Tenant::query()
-            ->where('domain', $slug)
+        abort_unless(filled($slug), 404);
+
+        $this->slug = strtolower(trim((string) $slug));
+
+        $branch = DB::table('branches')
+            ->where('domain', $this->slug)
             ->first();
 
-        abort_unless($tenant, 404);
+        abort_unless($branch, 404);
 
-        $this->tenantId = (int) $tenant->id;
-
-        $this->branchId = $this->resolveBranchId();
+        $this->tenantId = (int) $branch->tenant_id;
+        $this->branchId = (int) $branch->id;
     }
 
     /*

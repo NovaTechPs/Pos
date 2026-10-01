@@ -11,6 +11,15 @@ class Branch extends Model
     use BelongsToTenant, SoftDeletes;
 
     protected $guarded = [];
+    protected $fillable = [
+    'tenant_id',
+    'name',
+    'domain',
+    'phone',
+    'address',
+    'type',
+    'created_by',
+];
 
     public function stocks()
     {

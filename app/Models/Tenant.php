@@ -54,4 +54,8 @@ class Tenant extends Model
 
         return $this->plan->getFeatureValue($key, $default);
     }
+    public function settings()
+{
+    return $this->hasOne(TenantSetting::class);
+}
 }

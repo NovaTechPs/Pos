@@ -13,6 +13,8 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('phone')->nullable();
+                        $table->string('domain')->unique();
+
             $table->text('address')->nullable();
             $table->enum('type', ['branch', 'warehouse'])->default('branch');
             $table->unsignedBigInteger('created_by')->nullable();

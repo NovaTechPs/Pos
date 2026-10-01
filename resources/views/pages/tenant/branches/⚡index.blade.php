@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\Attributes\On;
 use App\Models\Branch;
+use Illuminate\Validation\Rule;
 
 new class extends Component
 {
@@ -23,8 +24,20 @@ new class extends Component
     public $branch_id = null;
 
     public string $name = '';
+
+    /**
+     * امتداد صفحة المشروع
+     * مثال:
+     * nablus
+     * ramallah
+     * main-store
+     */
+    public string $domain = '';
+
     public string $phone = '';
+
     public string $address = '';
+
     public string $type = 'branch';
 
     /*
@@ -34,6 +47,7 @@ new class extends Component
     */
 
     public bool $showModal = false;
+
     public bool $isEditing = false;
 
     /*
@@ -43,6 +57,7 @@ new class extends Component
     */
 
     public string $search = '';
+
     public string $typeFilter = 'all';
 
     /*
@@ -71,6 +86,37 @@ new class extends Component
                 'max:255',
             ],
 
+            'domain' => [
+                'required',
+                'string',
+                'max:100',
+
+                /*
+                 * يسمح فقط بـ:
+                 * a-z
+                 * A-Z
+                 * 0-9
+                 * -
+                 *
+                 * ويمنع:
+                 * المسافات
+                 * /
+                 * .
+                 * https://
+                 * الرموز الخاصة
+                 */
+                'regex:/^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$/',
+
+                Rule::unique('branches', 'domain')
+                    ->where(function ($query) {
+                        return $query->where(
+                            'tenant_id',
+                            $this->getTenantId()
+                        );
+                    })
+                    ->ignore($this->branch_id),
+            ],
+
             'phone' => [
                 'nullable',
                 'string',
@@ -90,6 +136,38 @@ new class extends Component
         ];
     }
 
+    protected function messages(): array
+    {
+        return [
+            'name.required' =>
+                'اسم الموقع مطلوب.',
+
+            'domain.required' =>
+                'امتداد المشروع مطلوب.',
+
+            'domain.regex' =>
+                'امتداد المشروع يجب أن يحتوي على أحرف وأرقام وشرطة (-) فقط. مثال: nablus أو main-store.',
+
+            'domain.unique' =>
+                'هذا الامتداد مستخدم بالفعل في موقع آخر داخل هذا المتجر.',
+
+            'domain.max' =>
+                'امتداد المشروع طويل جدًا.',
+
+            'phone.max' =>
+                'رقم الهاتف طويل جدًا.',
+
+            'address.max' =>
+                'العنوان طويل جدًا.',
+
+            'type.required' =>
+                'يرجى اختيار نوع الموقع.',
+
+            'type.in' =>
+                'نوع الموقع غير صالح.',
+        ];
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Tenant
@@ -100,12 +178,66 @@ new class extends Component
     {
         $tenantId = session('active_tenant_id');
 
-        return $tenantId ? (int) $tenantId : null;
+        return $tenantId
+            ? (int) $tenantId
+            : null;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Load
+    | Domain / Slug
+    |--------------------------------------------------------------------------
+    */
+
+    private function normalizeDomain(?string $domain): string
+    {
+        $domain = trim((string) $domain);
+
+        /*
+         * تحويل الأحرف إلى lowercase
+         */
+        $domain = strtolower($domain);
+
+        /*
+         * إزالة المسافات
+         */
+        $domain = preg_replace('/\s+/', '', $domain);
+
+        /*
+         * إزالة أي شيء غير:
+         * a-z
+         * 0-9
+         * -
+         */
+        $domain = preg_replace(
+            '/[^a-z0-9-]/',
+            '',
+            $domain
+        );
+
+        /*
+         * منع أكثر من - متتالية
+         */
+        $domain = preg_replace(
+            '/-+/',
+            '-',
+            $domain
+        );
+
+        /*
+         * إزالة - من البداية والنهاية
+         */
+        $domain = trim(
+            $domain,
+            '-'
+        );
+
+        return $domain;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Load Branches
     |--------------------------------------------------------------------------
     */
 
@@ -132,19 +264,40 @@ new class extends Component
 
                     $query->where(function ($query) use ($search) {
                         $query
-                            ->where('name', 'like', "%{$search}%")
-                            ->orWhere('phone', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
+                            ->where(
+                                'name',
+                                'like',
+                                "%{$search}%"
+                            )
+
+                            ->orWhere(
+                                'domain',
+                                'like',
+                                "%{$search}%"
+                            )
+
+                            ->orWhere(
+                                'phone',
+                                'like',
+                                "%{$search}%"
+                            )
+
+                            ->orWhere(
+                                'address',
+                                'like',
+                                "%{$search}%"
+                            );
                     });
                 }
             )
 
             ->when(
                 $this->typeFilter !== 'all',
-                fn ($query) => $query->where(
-                    'type',
-                    $this->typeFilter
-                )
+                fn ($query) =>
+                    $query->where(
+                        'type',
+                        $this->typeFilter
+                    )
             )
 
             ->orderBy('type')
@@ -171,6 +324,7 @@ new class extends Component
     public function clearFilters(): void
     {
         $this->search = '';
+
         $this->typeFilter = 'all';
 
         $this->loadBranches();
@@ -187,6 +341,7 @@ new class extends Component
         $this->resetInputFields();
 
         $this->isEditing = false;
+
         $this->showModal = true;
     }
 
@@ -213,14 +368,21 @@ new class extends Component
             ->findOrFail($id);
 
         $this->branch_id = $branch->id;
+
         $this->name = $branch->name;
+
+        $this->domain = $branch->domain ?? '';
+
         $this->phone = $branch->phone ?? '';
+
         $this->address = $branch->address ?? '';
+
         $this->type = $branch->type;
 
         $this->resetValidation();
 
         $this->isEditing = true;
+
         $this->showModal = true;
     }
 
@@ -242,6 +404,22 @@ new class extends Component
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Normalize domain before validation
+        |--------------------------------------------------------------------------
+        */
+
+        $this->domain = $this->normalizeDomain(
+            $this->domain
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Validate
+        |--------------------------------------------------------------------------
+        */
+
         $validated = $this->validate();
 
         /*
@@ -258,13 +436,18 @@ new class extends Component
 
             $branch->update([
                 'name' => $validated['name'],
+
+                'domain' => $validated['domain'],
+
                 'phone' => $validated['phone'] ?? null,
+
                 'address' => $validated['address'] ?? null,
+
                 'type' => $validated['type'],
             ]);
 
-            $message = 'تم تحديث بيانات الموقع بنجاح.';
-
+            $message =
+                'تم تحديث بيانات الموقع بنجاح.';
         }
 
         /*
@@ -277,19 +460,36 @@ new class extends Component
 
             Branch::create([
                 'tenant_id' => $tenantId,
+
                 'name' => $validated['name'],
+
+                'domain' => $validated['domain'],
+
                 'phone' => $validated['phone'] ?? null,
+
                 'address' => $validated['address'] ?? null,
+
                 'type' => $validated['type'],
             ]);
 
-            $message = 'تم إضافة الموقع بنجاح.';
+            $message =
+                'تم إضافة الموقع بنجاح.';
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Close
+        |--------------------------------------------------------------------------
+        */
+
         $this->closeModal();
+
         $this->loadBranches();
 
-        session()->flash('message', $message);
+        session()->flash(
+            'message',
+            $message
+        );
     }
 
     /*
@@ -339,7 +539,7 @@ new class extends Component
 
     /*
     |--------------------------------------------------------------------------
-    | Helpers
+    | Reset Form
     |--------------------------------------------------------------------------
     */
 
@@ -348,16 +548,30 @@ new class extends Component
         $this->branch_id = null;
 
         $this->name = '';
+
+        $this->domain = '';
+
         $this->phone = '';
+
         $this->address = '';
+
         $this->type = 'branch';
 
         $this->resetValidation();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Flash Error
+    |--------------------------------------------------------------------------
+    */
+
     private function flashError(string $message): void
     {
-        session()->flash('error', $message);
+        session()->flash(
+            'error',
+            $message
+        );
     }
 
     /*
@@ -368,7 +582,8 @@ new class extends Component
 
     public function render()
     {
-        return $this->view()->layout('layouts::tenant');
+        return $this->view()
+            ->layout('layouts::tenant');
     }
 };
 
@@ -428,15 +643,14 @@ new class extends Component
         </div>
 
 
-        {{-- ========================================================
-            FLASH SUCCESS
-        ========================================================= --}}
+        {{-- Success --}}
 
         @if (session()->has('message'))
 
             <div
                 class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
             >
+
                 <div class="flex items-center gap-2">
 
                     <flux:icon.check-circle class="size-5 shrink-0" />
@@ -446,20 +660,20 @@ new class extends Component
                     </span>
 
                 </div>
+
             </div>
 
         @endif
 
 
-        {{-- ========================================================
-            FLASH ERROR
-        ========================================================= --}}
+        {{-- Error --}}
 
         @if (session()->has('error'))
 
             <div
                 class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
             >
+
                 <div class="flex items-center gap-2">
 
                     <flux:icon.exclamation-triangle class="size-5 shrink-0" />
@@ -469,6 +683,7 @@ new class extends Component
                     </span>
 
                 </div>
+
             </div>
 
         @endif
@@ -481,6 +696,7 @@ new class extends Component
     ============================================================= --}}
 
     @php
+
         $totalLocations = $branches->count();
 
         $totalBranches = $branches
@@ -490,12 +706,11 @@ new class extends Component
         $totalWarehouses = $branches
             ->where('type', 'warehouse')
             ->count();
+
     @endphp
 
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-
-        {{-- Total --}}
 
         <div
             class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
@@ -526,8 +741,6 @@ new class extends Component
         </div>
 
 
-        {{-- Branches --}}
-
         <div
             class="rounded-2xl border border-emerald-200/70 bg-emerald-50/60 p-5 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/20"
         >
@@ -556,8 +769,6 @@ new class extends Component
 
         </div>
 
-
-        {{-- Warehouses --}}
 
         <div
             class="rounded-2xl border border-indigo-200/70 bg-indigo-50/60 p-5 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-950/20"
@@ -600,20 +811,16 @@ new class extends Component
 
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
 
-            {{-- Search --}}
-
             <div class="min-w-0 flex-1">
 
                 <flux:input
                     wire:model.live.debounce.350ms="search"
                     icon="magnifying-glass"
-                    placeholder="ابحث باسم الموقع أو الهاتف أو العنوان..."
+                    placeholder="ابحث باسم الموقع أو الامتداد أو الهاتف أو العنوان..."
                 />
 
             </div>
 
-
-            {{-- Type --}}
 
             <div class="w-full lg:w-48">
 
@@ -635,8 +842,6 @@ new class extends Component
 
             </div>
 
-
-            {{-- Clear --}}
 
             @if (
                 filled($search) ||
@@ -670,8 +875,11 @@ new class extends Component
                 wire:target="search,typeFilter,clearFilters"
                 class="inline-flex items-center gap-2"
             >
+
                 <flux:icon.arrow-path class="size-3.5 animate-spin" />
+
                 جاري تحديث النتائج...
+
             </span>
 
         </div>
@@ -680,7 +888,7 @@ new class extends Component
 
 
     {{-- ============================================================
-        LOCATIONS TABLE
+        TABLE
     ============================================================= --}}
 
     <div
@@ -697,6 +905,10 @@ new class extends Component
 
                 <flux:table.column>
                     النوع
+                </flux:table.column>
+
+                <flux:table.column>
+                    امتداد المشروع
                 </flux:table.column>
 
                 <flux:table.column>
@@ -722,7 +934,9 @@ new class extends Component
                         wire:key="branch-{{ $branch->id }}"
                     >
 
-                        {{-- Name --}}
+                        {{-- =================================================
+                            Name
+                        ================================================== --}}
 
                         <flux:table.cell>
 
@@ -730,9 +944,10 @@ new class extends Component
 
                                 <div
                                     class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
-                                    {{ $branch->type === 'branch'
-                                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
-                                        : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                                    {{
+                                        $branch->type === 'branch'
+                                            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                            : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
                                     }}"
                                 >
 
@@ -747,6 +962,7 @@ new class extends Component
                                     @endif
 
                                 </div>
+
 
                                 <div class="min-w-0">
 
@@ -765,7 +981,9 @@ new class extends Component
                         </flux:table.cell>
 
 
-                        {{-- Type --}}
+                        {{-- =================================================
+                            Type
+                        ================================================== --}}
 
                         <flux:table.cell>
 
@@ -794,7 +1012,57 @@ new class extends Component
                         </flux:table.cell>
 
 
-                        {{-- Phone --}}
+                        {{-- =================================================
+                            Domain / Project Extension
+                        ================================================== --}}
+
+                        <flux:table.cell>
+
+                            @if (filled($branch->domain))
+
+                                <div class="flex items-center gap-2">
+
+                                    <div
+                                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                                    >
+
+                                        <flux:icon.link class="size-4" />
+
+                                    </div>
+
+
+                                    <div class="min-w-0">
+
+                                        <div
+                                            dir="ltr"
+                                            class="max-w-[220px] truncate text-sm font-bold text-zinc-700 dark:text-zinc-200"
+                                            title="/{{ $branch->domain }}"
+                                        >
+                                            /{{ $branch->domain }}
+                                        </div>
+
+                                        <div class="mt-0.5 text-xs text-zinc-400">
+                                            امتداد صفحة المشروع
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+                            @else
+
+                                <span class="text-xs text-zinc-400">
+                                    غير محدد
+                                </span>
+
+                            @endif
+
+                        </flux:table.cell>
+
+
+                        {{-- =================================================
+                            Phone
+                        ================================================== --}}
 
                         <flux:table.cell>
 
@@ -818,7 +1086,9 @@ new class extends Component
                         </flux:table.cell>
 
 
-                        {{-- Address --}}
+                        {{-- =================================================
+                            Address
+                        ================================================== --}}
 
                         <flux:table.cell>
 
@@ -839,7 +1109,9 @@ new class extends Component
                         </flux:table.cell>
 
 
-                        {{-- Actions --}}
+                        {{-- =================================================
+                            Actions
+                        ================================================== --}}
 
                         <flux:table.cell align="end">
 
@@ -878,7 +1150,7 @@ new class extends Component
                     <flux:table.row>
 
                         <flux:table.cell
-                            colspan="5"
+                            colspan="6"
                             align="center"
                             class="py-16"
                         >
@@ -963,7 +1235,7 @@ new class extends Component
             class="space-y-6"
         >
 
-            {{-- Modal Header --}}
+            {{-- Header --}}
 
             <div>
 
@@ -971,9 +1243,10 @@ new class extends Component
 
                     <div
                         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl
-                        {{ $isEditing
-                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
-                            : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        {{
+                            $isEditing
+                                ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                                : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
                         }}"
                     >
 
@@ -989,22 +1262,25 @@ new class extends Component
 
                     </div>
 
+
                     <div>
 
                         <flux:heading size="lg">
 
-                            {{ $isEditing
-                                ? 'تعديل بيانات الموقع'
-                                : 'إضافة موقع جديد'
+                            {{
+                                $isEditing
+                                    ? 'تعديل بيانات الموقع'
+                                    : 'إضافة موقع جديد'
                             }}
 
                         </flux:heading>
 
                         <flux:subheading class="mt-1">
 
-                            {{ $isEditing
-                                ? 'حدّث بيانات الفرع أو المخزن ومعلومات التواصل.'
-                                : 'أدخل بيانات الفرع أو المخزن الجديد.'
+                            {{
+                                $isEditing
+                                    ? 'حدّث بيانات الفرع أو المخزن ومعلومات صفحة المشروع.'
+                                    : 'أدخل بيانات الفرع أو المخزن الجديد.'
                             }}
 
                         </flux:subheading>
@@ -1016,7 +1292,9 @@ new class extends Component
             </div>
 
 
-            {{-- Location Type --}}
+            {{-- ========================================================
+                TYPE
+            ========================================================= --}}
 
             <div class="space-y-4">
 
@@ -1027,15 +1305,16 @@ new class extends Component
 
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 
-                    {{-- Branch Option --}}
+                    {{-- Branch --}}
 
                     <button
                         type="button"
                         wire:click="$set('type', 'branch')"
                         class="rounded-xl border p-4 text-right transition
-                        {{ $type === 'branch'
-                            ? 'border-emerald-300 bg-emerald-50 ring-2 ring-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:ring-emerald-950'
-                            : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
+                        {{
+                            $type === 'branch'
+                                ? 'border-emerald-300 bg-emerald-50 ring-2 ring-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:ring-emerald-950'
+                                : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
                         }}"
                     >
 
@@ -1043,9 +1322,10 @@ new class extends Component
 
                             <div
                                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
-                                {{ $type === 'branch'
-                                    ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
-                                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
+                                {{
+                                    $type === 'branch'
+                                        ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                        : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
                                 }}"
                             >
                                 <flux:icon.building-storefront class="size-5" />
@@ -1068,15 +1348,16 @@ new class extends Component
                     </button>
 
 
-                    {{-- Warehouse Option --}}
+                    {{-- Warehouse --}}
 
                     <button
                         type="button"
                         wire:click="$set('type', 'warehouse')"
                         class="rounded-xl border p-4 text-right transition
-                        {{ $type === 'warehouse'
-                            ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:ring-indigo-950'
-                            : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
+                        {{
+                            $type === 'warehouse'
+                                ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/30 dark:ring-indigo-950'
+                                : 'border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900'
                         }}"
                     >
 
@@ -1084,9 +1365,10 @@ new class extends Component
 
                             <div
                                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl
-                                {{ $type === 'warehouse'
-                                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
-                                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
+                                {{
+                                    $type === 'warehouse'
+                                        ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                                        : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'
                                 }}"
                             >
                                 <flux:icon.archive-box class="size-5" />
@@ -1110,6 +1392,7 @@ new class extends Component
 
                 </div>
 
+
                 @error('type')
 
                     <div class="text-sm text-red-600 dark:text-red-400">
@@ -1121,7 +1404,9 @@ new class extends Component
             </div>
 
 
-            {{-- Basic Information --}}
+            {{-- ========================================================
+                BASIC INFORMATION
+            ========================================================= --}}
 
             <div class="space-y-4">
 
@@ -1140,11 +1425,46 @@ new class extends Component
 
                     <flux:input
                         wire:model="name"
-                        placeholder="مثال: فرع وسط البلد أو المخزن المركزي"
+                        placeholder="مثال: فرع نابلس"
                         autocomplete="organization"
                     />
 
                     <flux:error name="name" />
+
+                </flux:field>
+
+
+                {{-- Domain --}}
+
+                <flux:field>
+
+                    <flux:label>
+                        امتداد صفحة المشروع
+                    </flux:label>
+
+                    <flux:input
+                        wire:model="domain"
+                        placeholder="nablus"
+                        dir="ltr"
+                        autocomplete="off"
+                    />
+
+                    <flux:description>
+                        مثال:
+                        <span dir="ltr" class="font-semibold">
+                            nablus
+                        </span>
+
+                        أو
+
+                        <span dir="ltr" class="font-semibold">
+                            main-store
+                        </span>
+
+                        — سيتم استخدامه كامتداد لصفحة المشروع.
+                    </flux:description>
+
+                    <flux:error name="domain" />
 
                 </flux:field>
 
@@ -1190,7 +1510,9 @@ new class extends Component
             </div>
 
 
-            {{-- Preview --}}
+            {{-- ========================================================
+                PREVIEW
+            ========================================================= --}}
 
             <div
                 class="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
@@ -1200,9 +1522,10 @@ new class extends Component
 
                     <div
                         class="flex h-10 w-10 items-center justify-center rounded-xl
-                        {{ $type === 'branch'
-                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
-                            : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                        {{
+                            $type === 'branch'
+                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
                         }}"
                     >
 
@@ -1218,26 +1541,49 @@ new class extends Component
 
                     </div>
 
-                    <div class="min-w-0">
+
+                    <div class="min-w-0 flex-1">
 
                         <div class="text-xs text-zinc-500">
-                            معاينة
+                            معاينة صفحة المشروع
                         </div>
+
 
                         <div class="truncate text-sm font-medium text-zinc-900 dark:text-white">
 
-                            {{ filled($name)
-                                ? $name
-                                : 'اسم الموقع'
+                            {{
+                                filled($name)
+                                    ? $name
+                                    : 'اسم الموقع'
                             }}
 
                         </div>
 
-                        <div class="mt-0.5 text-xs text-zinc-500">
 
-                            {{ $type === 'branch'
-                                ? 'فرع بيع'
-                                : 'مخزن'
+                        @if (filled($domain))
+
+                            <div
+                                dir="ltr"
+                                class="mt-1 truncate text-sm font-bold text-zinc-700 dark:text-zinc-200"
+                            >
+                                /{{ $domain }}
+                            </div>
+
+                        @else
+
+                            <div class="mt-1 text-xs text-zinc-400">
+                                لم يتم تحديد الامتداد
+                            </div>
+
+                        @endif
+
+
+                        <div class="mt-1 text-xs text-zinc-500">
+
+                            {{
+                                $type === 'branch'
+                                    ? 'فرع بيع'
+                                    : 'مخزن'
                             }}
 
                         </div>
@@ -1249,7 +1595,9 @@ new class extends Component
             </div>
 
 
-            {{-- Footer --}}
+            {{-- ========================================================
+                FOOTER
+            ========================================================= --}}
 
             <div
                 class="flex flex-col-reverse gap-2 border-t border-zinc-100 pt-5 sm:flex-row sm:justify-end dark:border-zinc-800"
@@ -1264,6 +1612,7 @@ new class extends Component
                     إلغاء
                 </flux:button>
 
+
                 <flux:button
                     type="submit"
                     variant="primary"
@@ -1272,20 +1621,28 @@ new class extends Component
                     wire:target="save"
                 >
 
-                    <span wire:loading.remove wire:target="save">
-                        {{ $isEditing
-                            ? 'حفظ التعديلات'
-                            : 'إضافة الموقع'
+                    <span
+                        wire:loading.remove
+                        wire:target="save"
+                    >
+                        {{
+                            $isEditing
+                                ? 'حفظ التعديلات'
+                                : 'إضافة الموقع'
                         }}
                     </span>
+
 
                     <span
                         wire:loading
                         wire:target="save"
                         class="inline-flex items-center gap-2"
                     >
+
                         <flux:icon.arrow-path class="size-4 animate-spin" />
+
                         جاري الحفظ...
+
                     </span>
 
                 </flux:button>
