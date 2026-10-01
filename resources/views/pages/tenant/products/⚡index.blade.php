@@ -2491,6 +2491,7 @@ new class extends Component {
 
             <form
                 wire:submit.prevent="save"
+                x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }"
                 class="space-y-6"
             >
 
@@ -2862,6 +2863,7 @@ new class extends Component {
                                     <flux:input
                                         wire:model="barcodes.{{ $index }}"
                                         placeholder="امسح الباركود أو أدخله يدوياً..."
+                                        x-on:keydown.enter.prevent.stop
                                     />
 
                                     @error('barcodes.' . $index)
