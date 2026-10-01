@@ -731,6 +731,43 @@ new class extends Component {
             return;
         }
 
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+
+        /*
+         |--------------------------------------------------------------------------
+         | أولاً: هل الباركود هو باركود فاتورة؟
+         |--------------------------------------------------------------------------
+         |
+         | الباركود المطبوع أسفل الفاتورة يحتوي على invoice_number نفسه.
+         | لذلك عند مسحه نفتح الفاتورة مباشرة بدلاً من إضافته كصنف.
+         */
+        if ($tenantId) {
+            $invoiceQuery = Order::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('type', ['pos', 'return'])
+                ->where('invoice_number', $barcode);
+
+            if ($branchId) {
+                $invoiceQuery->where('branch_id', $branchId);
+            }
+
+            $invoice = $invoiceQuery->latest('id')->first();
+
+            if ($invoice) {
+                $this->loadInvoice((int) $invoice->id);
+                $this->barcode = '';
+                $this->successMessage = "تم فتح الفاتورة {$invoice->invoice_number}.";
+                $this->dispatch('pos-focus-barcode');
+                return;
+            }
+        }
+
+        /*
+         |--------------------------------------------------------------------------
+         | ثانياً: الباركود العادي للصنف
+         |--------------------------------------------------------------------------
+         */
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً قبل البيع أو الإرجاع.';
             $this->showOpenShiftModal = true;
@@ -738,10 +775,14 @@ new class extends Component {
             return;
         }
 
-        $record = ProductBarcode::query()->where('tenant_id', $this->tenantId())->where('barcode', $barcode)->with('product')->first();
+        $record = ProductBarcode::query()
+            ->where('tenant_id', $tenantId)
+            ->where('barcode', $barcode)
+            ->with('product')
+            ->first();
 
         if (!$record?->product) {
-            $this->errorMessage = "لم يتم العثور على منتج بالباركود: {$barcode}";
+            $this->errorMessage = "لم يتم العثور على فاتورة أو منتج بهذا الباركود: {$barcode}";
             $this->barcode = '';
             return;
         }
