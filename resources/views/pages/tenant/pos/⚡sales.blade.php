@@ -876,6 +876,9 @@ new class extends Component {
 
         $this->recalculatePrices();
         $this->loadQuickProducts();
+
+        // النزول تلقائياً إلى آخر صنف تمت إضافته
+        $this->dispatch('pos-scroll-cart-bottom');
     }
 
     public function updateQuantity(string $lineKey, $qty): void
