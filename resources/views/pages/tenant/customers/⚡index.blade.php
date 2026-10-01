@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Party;
+use App\Models\Payment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -504,7 +505,15 @@ new class extends Component {
             abort(403);
         }
 
-        return Party::query()
+        /*
+         * نحمل الفواتير أولاً، ثم نقرأ السندات مباشرة من payments
+         * باستخدام party_id.
+         *
+         * ويوجد fallback للسجلات القديمة التي قد يكون party_id فيها
+         * فارغًا ولكنها مرتبطة بالفاتورة عن طريق order_id.
+         * هذا يمنع اختفاء دفعات الفواتير القديمة من كشف الحساب.
+         */
+        $party = Party::query()
             ->where('tenant_id', $tenantId)
             ->with([
                 'orders' => function ($query) {
@@ -515,19 +524,38 @@ new class extends Component {
                         'created_at'
                     );
                 },
-
-                'payments' => function ($query) {
-                    $query->select(
-                        'id',
-                        'payable_id',
-                        'payable_type',
-                        'amount',
-                        'created_at',
-                        'notes'
-                    );
-                },
             ])
             ->findOrFail($partyId);
+
+        $orderIds = $party->orders->pluck('id')->map(fn ($id) => (int) $id)->values();
+
+        $payments = Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('type', ['receipt', 'payment'])
+            ->where(function ($query) use ($party, $orderIds) {
+                $query->where('party_id', $party->id);
+
+                if ($orderIds->isNotEmpty()) {
+                    $query->orWhereIn('order_id', $orderIds);
+                }
+            })
+            ->select(
+                'id',
+                'party_id',
+                'type',
+                'amount',
+                'payment_method',
+                'order_id',
+                'voucher_number',
+                'created_at',
+                'payment_date',
+                'notes'
+            )
+            ->get();
+
+        $party->setRelation('payments', $payments);
+
+        return $party;
     }
 
 
@@ -576,7 +604,7 @@ new class extends Component {
             $transactions->push([
                 'id' => 'payment-' . $payment->id,
 
-                'date' => $payment->created_at,
+                'date' => $payment->payment_date ?? $payment->created_at,
 
                 'description' => $this->paymentDescription($payment),
 
@@ -608,7 +636,13 @@ new class extends Component {
      */
     private function paymentDescription($payment): string
     {
-        $description = 'سداد دفعة';
+        $description = $payment->type === 'payment'
+            ? 'سند دفع'
+            : 'سند قبض';
+
+        if (!empty($payment->voucher_number)) {
+            $description .= ' #' . $payment->voucher_number;
+        }
 
         if (!empty($payment->notes)) {
             $description .= ' (' . $payment->notes . ')';

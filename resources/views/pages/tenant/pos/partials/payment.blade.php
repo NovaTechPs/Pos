@@ -284,7 +284,7 @@
                     type="number"
                     min="0"
                     step="0.01"
-                    wire:model.live="discount_amount"
+                    wire:model.live.debounce.300ms="discount_amount"
                     class="mt-1 h-[38px] w-full rounded-lg border border-slate-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-700 outline-none focus:border-indigo-500"
                     placeholder="0.00"
                 >
@@ -305,11 +305,15 @@
 
                 <div class="mt-1 rounded-lg bg-white px-2 py-2 text-center">
 
-                    <span class="font-mono text-base font-black text-amber-700">
-
-                        {{ number_format($this->amountDue, 2) }}
-
-                    </span>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputmode="decimal"
+                        wire:model.live.debounce.300ms="custom_final_total"
+                        class="w-full bg-transparent text-center font-mono text-base font-black text-amber-700 outline-none"
+                        placeholder="0.00"
+                    >
 
                 </div>
 
@@ -333,7 +337,7 @@
                     min="0"
                     step="0.01"
                     inputmode="decimal"
-                    wire:model.live="paid_amount"
+                    wire:model.live.debounce.300ms="paid_amount"
                     class="mt-1 h-[38px] w-full rounded-lg border-2 border-indigo-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-800 outline-none focus:border-indigo-500"
                     placeholder="0.00"
                 >
@@ -848,5 +852,6 @@
         </div>
 
     @endif
+
 
 </div>

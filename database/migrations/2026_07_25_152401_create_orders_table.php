@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('customer_phone')->nullable();
             $table->text('customer_address')->nullable();
             $table->string('invoice_number');
-            $table->enum('type', ['pos', 'wholesale', 'online'])->default('pos');
+            $table->enum('type', ['pos', 'wholesale', 'online','return'])->default('pos');
             $table->enum('status', ['pending', 'processing', 'completed', 'cancelled'])->default('completed');
             $table->decimal('subtotal', 12, 2);
             $table->decimal('tax_amount', 12, 2)->default(0);

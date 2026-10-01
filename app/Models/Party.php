@@ -18,7 +18,7 @@ class Party extends Model
         'email',
         'tax_number',
         'address',
-        'type', // 'customer', 'supplier', 'both'
+        'type',
         'opening_balance',
         'current_balance',
         'is_active',
@@ -32,51 +32,83 @@ class Party extends Model
         'current_balance' => 'decimal:2',
     ];
 
-    protected static function boot()
+    protected static function boot(): void
     {
         parent::boot();
 
-        static::creating(function ($party) {
+        static::creating(function (Party $party): void {
             if (auth()->check() && empty($party->created_by)) {
                 $party->created_by = auth()->id();
             }
         });
 
-        static::updating(function ($party) {
+        static::updating(function (Party $party): void {
             if (auth()->check()) {
                 $party->updated_by = auth()->id();
             }
         });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | User who created the party
+    |--------------------------------------------------------------------------
+    */
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | User who last updated the party
+    |--------------------------------------------------------------------------
+    */
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant
+    |--------------------------------------------------------------------------
+    */
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Branch
+    |--------------------------------------------------------------------------
+    */
     public function branch()
     {
         return $this->belongsTo(Branch::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Customer / Supplier scopes
+    |--------------------------------------------------------------------------
+    */
+
     public function scopeCustomers($query)
     {
-        return $query->whereIn('type', ['customer', 'both']);
+        return $query->whereIn('type', [
+            'customer',
+            'both',
+        ]);
     }
 
     public function scopeSuppliers($query)
     {
-        return $query->whereIn('type', ['supplier', 'both']);
+        return $query->whereIn('type', [
+            'supplier',
+            'both',
+        ]);
     }
 
     public function scopeActive($query)
@@ -84,13 +116,29 @@ class Party extends Model
         return $query->where('is_active', true);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Sales Orders
+    |--------------------------------------------------------------------------
+    |
+    | orders.customer_id → parties.id
+    |
+    */
     public function orders()
     {
         return $this->hasMany(Order::class, 'customer_id');
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Payments / Receipts
+    |--------------------------------------------------------------------------
+    |
+    | payments.party_id → parties.id
+    |
+    */
     public function payments()
     {
-        return $this->morphMany(Payment::class, 'payable');
+        return $this->hasMany(Payment::class, 'party_id');
     }
 }

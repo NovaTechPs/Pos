@@ -17,9 +17,22 @@ class Payment extends Model
         'amount' => 'decimal:2',
     ];
 
-    public function payable()
+    /*
+    |--------------------------------------------------------------------------
+    | Party
+    |--------------------------------------------------------------------------
+    |
+    | payments.party_id → parties.id
+    |
+    */
+    public function party(): BelongsTo
     {
-        return $this->morphTo();
+        return $this->belongsTo(Party::class, 'party_id');
+    }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
     }
 
     public function branch(): BelongsTo
@@ -32,8 +45,18 @@ class Payment extends Model
         return $this->belongsTo(Shift::class);
     }
 
-    public function user(): BelongsTo
+    public function creator(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    public function purchase(): BelongsTo
+    {
+        return $this->belongsTo(Purchase::class);
     }
 }

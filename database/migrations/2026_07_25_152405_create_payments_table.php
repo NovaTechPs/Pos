@@ -6,39 +6,84 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-  public function up(): void
-{
-    Schema::create('payments', function (Blueprint $table) {
-        $table->id();
-        $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
-        $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
-        $table->foreignId('shift_id')->nullable()->constrained('shifts')->nullOnDelete();
-        $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+    public function up(): void
+    {
+        Schema::create('payments', function (Blueprint $table) {
+            $table->id();
 
-        $table->enum('type', ['receipt', 'payment']); // سند قبض أو صرف
-        $table->string('voucher_number');
+            $table->foreignId('tenant_id')
+                ->constrained()
+                ->cascadeOnDelete();
 
-        // Polymorphic relation للعميل/المورد أو أي جهة أخرى
-        $table->nullableMorphs('payable');
+            $table->foreignId('branch_id')
+                ->nullable()
+                ->constrained()
+                ->nullOnDelete();
 
-        $table->decimal('amount', 12, 2);
-        $table->enum('payment_method', ['cash', 'card', 'bank_transfer', 'cheque'])->default('cash');
+            $table->foreignId('shift_id')
+                ->nullable()
+                ->constrained('shifts')
+                ->nullOnDelete();
 
-        // ربط اختياري بفاتورة مبيعات أو مشتريات
-        $table->foreignId('order_id')->nullable()->constrained()->nullOnDelete();
-        $table->foreignId('purchase_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('created_by')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
 
-        $table->text('notes')->nullable();
-        $table->timestamp('payment_date');
-        $table->timestamps();
-        $table->softDeletes();
+            // الزبون أو المورد
+            $table->foreignId('party_id')
+                ->nullable()
+                ->constrained('parties')
+                ->nullOnDelete();
 
-        // Indexes
-        $table->unique(['tenant_id', 'voucher_number']); // ضمان عدم تكرار رقم السند للعميل الواحد
-        $table->index(['tenant_id', 'type', 'payment_date']);
-        $table->index(['tenant_id', 'branch_id', 'payment_method']);
-    });
-}
+            $table->enum('type', ['receipt', 'payment']);
+
+            $table->string('voucher_number');
+
+            $table->decimal('amount', 12, 2);
+
+            $table->enum(
+                'payment_method',
+                ['cash', 'card', 'bank_transfer', 'cheque']
+            )->default('cash');
+
+            $table->foreignId('order_id')
+                ->nullable()
+                ->constrained()
+                ->nullOnDelete();
+
+            $table->foreignId('purchase_id')
+                ->nullable()
+                ->constrained()
+                ->nullOnDelete();
+
+            $table->text('notes')->nullable();
+
+            $table->timestamp('payment_date');
+
+            $table->timestamps();
+            $table->softDeletes();
+
+            $table->unique(['tenant_id', 'voucher_number']);
+
+            $table->index([
+                'tenant_id',
+                'type',
+                'payment_date'
+            ]);
+
+            $table->index([
+                'tenant_id',
+                'branch_id',
+                'payment_method'
+            ]);
+
+            $table->index([
+                'tenant_id',
+                'party_id'
+            ]);
+        });
+    }
     public function down(): void
     {
         Schema::dropIfExists('payments');

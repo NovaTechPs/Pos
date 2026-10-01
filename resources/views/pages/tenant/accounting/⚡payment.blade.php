@@ -22,7 +22,7 @@ new class extends Component
     public string $voucherNumber = '';
 
     public ?int $paymentId = null;
-    public ?int $payableId = null;
+    public ?int $partyId = null;
 
     public bool $showForm = false;
     public bool $showDeleteModal = false;
@@ -57,7 +57,7 @@ new class extends Component
         }
 
         return Payment::query()
-            ->with(['payable'])
+            ->with(['party'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->when(trim($this->tableSearch) !== '', function ($query) {
@@ -68,7 +68,7 @@ new class extends Component
                         'voucher_number',
                         'like',
                         "%{$search}%"
-                    )->orWhereHas('payable', function ($partyQuery) use ($search) {
+                    )->orWhereHas('party', function ($partyQuery) use ($search) {
                         $partyQuery
                             ->where('name', 'like', "%{$search}%")
                             ->orWhere('phone', 'like', "%{$search}%")
@@ -117,7 +117,7 @@ new class extends Component
     {
         $tenantId = $this->getTenantId();
 
-        if (!$tenantId || !$this->showForm || $this->payableId) {
+        if (!$tenantId || !$this->showForm || $this->partyId) {
             return collect();
         }
 
@@ -142,13 +142,13 @@ new class extends Component
     #[Computed]
     public function selectedParty(): ?Party
     {
-        if (!$this->payableId) {
+        if (!$this->partyId) {
             return null;
         }
 
         return Party::query()
             ->where('tenant_id', $this->getTenantId())
-            ->find($this->payableId);
+            ->find($this->partyId);
     }
 
     public function updatedTableSearch(): void
@@ -164,9 +164,7 @@ new class extends Component
     public function openCreate(): void
     {
         $this->resetForm();
-
         $this->voucherNumber = $this->generateVoucherNumber();
-
         $this->showForm = true;
     }
 
@@ -180,24 +178,21 @@ new class extends Component
             ->findOrFail($id);
 
         $this->paymentId = $payment->id;
-        $this->payableId = $payment->payable_id;
+        $this->partyId = $payment->party_id;
         $this->voucherNumber = $payment->voucher_number;
-
         $this->paymentDate =
             optional($payment->payment_date)->format('Y-m-d')
             ?? now()->format('Y-m-d');
-
         $this->paymentMethod = $payment->payment_method ?? 'cash';
         $this->amount = (string) $payment->amount;
         $this->notes = $payment->notes ?? '';
         $this->partySearch = '';
-
         $this->showForm = true;
     }
 
     public function clearParty(): void
     {
-        $this->payableId = null;
+        $this->partyId = null;
         $this->partySearch = '';
     }
 
@@ -211,7 +206,7 @@ new class extends Component
             ->whereIn('type', ['supplier', 'both'])
             ->findOrFail($partyId);
 
-        $this->payableId = $party->id;
+        $this->partyId = $party->id;
         $this->partySearch = '';
     }
 
@@ -230,97 +225,75 @@ new class extends Component
         }
 
         $validated = $this->validate([
-            'payableId' => ['required', 'integer'],
+            'partyId' => ['required', 'integer'],
             'voucherNumber' => ['required', 'string', 'max:50'],
             'paymentDate' => ['required', 'date'],
-            'paymentMethod' => ['required', 'in:cash,bank,card,check'],
+            'paymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
             'amount' => ['required', 'numeric', 'gt:0'],
             'notes' => ['nullable', 'string', 'max:5000'],
         ]);
 
         DB::transaction(function () use ($tenantId, $validated) {
-
             $newParty = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
                 ->whereIn('type', ['supplier', 'both'])
                 ->lockForUpdate()
-                ->findOrFail($validated['payableId']);
+                ->findOrFail($validated['partyId']);
 
             $newAmount = (float) $validated['amount'];
 
-            /*
-             * تعديل سند دفع موجود
-             */
+            // تعديل سند دفع موجود
             if ($this->paymentId) {
-
                 $payment = Payment::query()
                     ->where('tenant_id', $tenantId)
                     ->where('type', 'payment')
                     ->lockForUpdate()
                     ->findOrFail($this->paymentId);
 
-                $oldPartyId = $payment->payable_id;
+                $oldPartyId = $payment->party_id;
                 $oldAmount = (float) $payment->amount;
 
-                /*
-                 * نفس المورد
-                 */
+                // نفس المورد
                 if ($oldPartyId === $newParty->id) {
-
                     $newParty->current_balance =
                         (float) $newParty->current_balance
                         + $oldAmount
                         - $newAmount;
-
                     $newParty->save();
-
-                /*
-                 * تغيير المورد
-                 */
+                // تغيير المورد
                 } else {
-
                     $oldParty = Party::query()
                         ->where('tenant_id', $tenantId)
                         ->lockForUpdate()
                         ->findOrFail($oldPartyId);
 
-                    /*
-                     * إعادة تأثير سند الدفع القديم للمورد القديم
-                     */
+                    // إعادة تأثير سند الدفع القديم للمورد القديم
                     $oldParty->current_balance =
                         (float) $oldParty->current_balance
                         + $oldAmount;
-
                     $oldParty->save();
 
-                    /*
-                     * تطبيق سند الدفع الجديد على المورد الجديد
-                     */
+                    // تطبيق سند الدفع الجديد على المورد الجديد
                     $newParty->current_balance =
                         (float) $newParty->current_balance
                         - $newAmount;
-
                     $newParty->save();
                 }
 
                 $payment->update([
-                    'payable_id' => $newParty->id,
+                    'party_id' => $newParty->id,
                     'voucher_number' => $validated['voucherNumber'],
                     'payment_date' => $validated['paymentDate'],
                     'payment_method' => $validated['paymentMethod'],
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
                 ]);
-
-            /*
-             * إنشاء سند دفع جديد
-             */
+            // إنشاء سند دفع جديد
             } else {
-
                 Payment::create([
                     'tenant_id' => $tenantId,
-                    'payable_id' => $newParty->id,
+                    'party_id' => $newParty->id,
                     'type' => 'payment',
                     'voucher_number' => $validated['voucherNumber'],
                     'payment_date' => $validated['paymentDate'],
@@ -329,13 +302,10 @@ new class extends Component
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
-                /*
-                 * سند الدفع يقلل رصيد المورد
-                 */
+                // سند الدفع يقلل رصيد المورد
                 $newParty->current_balance =
                     (float) $newParty->current_balance
                     - $newAmount;
-
                 $newParty->save();
             }
         });
@@ -378,7 +348,6 @@ new class extends Component
         }
 
         DB::transaction(function () use ($tenantId) {
-
             $payment = Payment::query()
                 ->where('tenant_id', $tenantId)
                 ->where('type', 'payment')
@@ -388,15 +357,12 @@ new class extends Component
             $party = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->lockForUpdate()
-                ->findOrFail($payment->payable_id);
+                ->findOrFail($payment->party_id);
 
-            /*
-             * إعادة قيمة سند الدفع إلى رصيد المورد
-             */
+            // إعادة قيمة سند الدفع إلى رصيد المورد
             $party->current_balance =
                 (float) $party->current_balance
                 + (float) $payment->amount;
-
             $party->save();
 
             $payment->delete();
@@ -419,7 +385,7 @@ new class extends Component
         $tenantId = $this->getTenantId();
 
         $this->printVoucher = Payment::query()
-            ->with(['payable'])
+            ->with(['party'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);
@@ -438,18 +404,16 @@ new class extends Component
         $tenantId = $this->getTenantId();
 
         $payment = Payment::query()
-            ->with('payable')
+            ->with('party')
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);
 
-        /*
-         * تنظيف رقم الهاتف
-         */
+        // تنظيف رقم الهاتف
         $phone = preg_replace(
             '/\D+/',
             '',
-            (string) $payment->payable?->phone
+            (string) $payment->party?->phone
         );
 
         if (!$phone) {
@@ -465,7 +429,7 @@ new class extends Component
         $message = implode("\n", [
             'سند دفع',
             'رقم السند: ' . $payment->voucher_number,
-            'المورد: ' . ($payment->payable?->name ?? '-'),
+            'المورد: ' . ($payment->party?->name ?? '-'),
             'المبلغ: ' . number_format((float) $payment->amount, 2),
             'التاريخ: ' . (
                 optional($payment->payment_date)->format('Y-m-d')
@@ -506,12 +470,11 @@ new class extends Component
     {
         $this->reset([
             'partySearch',
-            'tableSearch',
             'amount',
             'notes',
             'voucherNumber',
             'paymentId',
-            'payableId',
+            'partyId',
         ]);
 
         $this->paymentDate = now()->format('Y-m-d');
@@ -526,15 +489,11 @@ new class extends Component
         ])->layout('layouts::tenant');
     }
 };
-
 ?>
 
 <flux:main class="space-y-6">
-
     <div>
-
         <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
-
             @include('pages.tenant.accounting.partials.voucher-table', [
                 'mode' => 'payment',
                 'title' => 'سندات الدفع',
@@ -544,7 +503,6 @@ new class extends Component
                 'voucherCount' => $this->voucherCount,
                 'createLabel' => 'سند دفع',
             ])
-
         </div>
 
         @include('pages.tenant.accounting.partials.voucher-form', [
@@ -559,11 +517,8 @@ new class extends Component
         ])
 
         @if($showDeleteModal)
-
             <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
-
                 <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-
                     <h3 class="text-lg font-black text-slate-900">
                         حذف سند الدفع
                     </h3>
@@ -574,7 +529,6 @@ new class extends Component
                     </p>
 
                     <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-
                         <button
                             type="button"
                             wire:click="$set('showDeleteModal', false)"
@@ -591,24 +545,16 @@ new class extends Component
                         >
                             حذف السند
                         </button>
-
                     </div>
-
                 </div>
-
             </div>
-
         @endif
 
         @if($showPrintModal && $printVoucher)
-
             @include('pages.tenant.accounting.partials.voucher-print', [
                 'mode' => 'payment',
                 'voucher' => $printVoucher,
             ])
-
         @endif
-
     </div>
-
 </flux:main>

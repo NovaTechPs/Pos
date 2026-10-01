@@ -225,13 +225,15 @@ new class extends Component
 
             $this->total_sales = (float) Order::query()
                 ->whereIn('shift_id', $closedShiftIds)
-                ->where('type', 'sale')
-                ->sum('total_amount');
+                ->where('type', 'pos')
+                ->where('status', 'completed')
+                ->sum('total');
 
-            $this->total_returns = (float) Order::query()
+            $this->total_returns = abs((float) Order::query()
                 ->whereIn('shift_id', $closedShiftIds)
                 ->where('type', 'return')
-                ->sum('total_amount');
+                ->where('status', 'completed')
+                ->sum('total'));
         }
 
         /*
@@ -564,13 +566,15 @@ new class extends Component
 
                     $totalSales = (float) Order::query()
                         ->whereIn('shift_id', $closedShiftIds)
-                        ->where('type', 'sale')
-                        ->sum('total_amount');
+                        ->where('type', 'pos')
+                        ->where('status', 'completed')
+                        ->sum('total');
 
-                    $totalReturns = (float) Order::query()
+                    $totalReturns = abs((float) Order::query()
                         ->whereIn('shift_id', $closedShiftIds)
                         ->where('type', 'return')
-                        ->sum('total_amount');
+                        ->where('status', 'completed')
+                        ->sum('total'));
                 }
 
                 $expectedCash = (float) $closedShifts

@@ -45,6 +45,13 @@ new class extends Component {
     public bool $showHeldModal = false;
     public bool $showCostModal = false;
     public bool $showBelowCostModal = false;
+
+    // نافذة الدفع التي تظهر عند حفظ فاتورة مرتبطة بزبون
+    public bool $showCustomerPaymentModal = false;
+    public float $customerPaymentAmount = 0;
+    public string $pendingCustomerPaymentMode = 'checkout';
+    public bool $customerPaymentConfirmed = false;
+
     public string $pendingCheckoutMode = 'checkout';
     public bool $showProductsModal = false;
     public bool $isReturnMode = false;
@@ -641,12 +648,19 @@ new class extends Component {
 
     public function toggleReturnMode(): void
     {
+        // نوع الفاتورة يحدد الفاتورة كاملة، ولا يمكن تغييره بعد إضافة أول صنف.
+        // جميع وظائف البيع/المرتجع الأخرى تبقى كما هي: إضافة صنف، الباركود،
+        // تعديل الكمية والسعر والإجمالي، الحذف، الخصم، الدفع والطباعة.
         if (!empty($this->cart)) {
-            $this->errorMessage = 'أنشئ فاتورة جديدة قبل تغيير وضع البيع والمرتجع.';
+            $this->errorMessage = 'لا يمكن تغيير نوع الفاتورة بعد إضافة أصناف. أنشئ فاتورة جديدة أولاً.';
             return;
         }
 
         $this->isReturnMode = !$this->isReturnMode;
+        $this->errorMessage = null;
+        $this->successMessage = $this->isReturnMode
+            ? 'تم تفعيل وضع المرتجع. هذه الفاتورة بالكامل مرتجع.'
+            : 'تم تفعيل وضع البيع. هذه الفاتورة بالكامل بيع.';
     }
 
     public function loadQuickProducts(): void
@@ -980,6 +994,10 @@ new class extends Component {
         $this->inlineSearchQuery = '';
         $this->inlineSearchResults = [];
         $this->showBelowCostModal = false;
+        $this->showCustomerPaymentModal = false;
+        $this->customerPaymentAmount = 0;
+        $this->pendingCustomerPaymentMode = 'checkout';
+        $this->customerPaymentConfirmed = false;
 
         // مهم: تنظيف القيم المحسوبة المخزنة مؤقتاً في Livewire
         unset($this->subtotal, $this->total_cost, $this->expected_profit, $this->calculated_discount, $this->total, $this->amountDue, $this->change, $this->remaining, $this->hasBelowCostItem);
@@ -1161,7 +1179,11 @@ new class extends Component {
             ->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
-        $this->custom_final_total = null;
+
+        // إظهار الصافي الحالي داخل حقل الصافي عند تحميل فاتورة محفوظة.
+        $this->custom_final_total = $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount)
+        );
         $this->notes = $invoice->notes ?? '';
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
         $this->customerSearch = '';
@@ -1297,12 +1319,29 @@ new class extends Component {
 
     public function updatedDiscountAmount(): void
     {
-        $this->custom_final_total = null;
+        if ($this->subtotal <= 0) {
+            $this->custom_final_total = null;
+            return;
+        }
+
+        // الصافي النهائي دائماً يساوي الإجمالي بعد الخصم.
+        // لذلك عند تعديل الخصم يتحدث الصافي مباشرة.
+        $this->custom_final_total = $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount)
+        );
     }
 
     public function updatedDiscountType(): void
     {
-        $this->custom_final_total = null;
+        if ($this->subtotal <= 0) {
+            $this->custom_final_total = null;
+            return;
+        }
+
+        // عند تغيير نوع الخصم، حافظ على الصافي الحالي المحسوب.
+        $this->custom_final_total = $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount)
+        );
     }
 
     public function updatedCustomFinalTotal($value): void
@@ -1312,17 +1351,42 @@ new class extends Component {
             return;
         }
 
-        $target = max(0, (float) $value);
-        if ($this->subtotal > 0 && $target <= $this->subtotal) {
-            $this->discount_type = 'fixed';
-            $this->discount_amount = $this->subtotal - $target;
+        if ($this->subtotal <= 0) {
+            $this->custom_final_total = null;
+            return;
         }
+
+        // الصافي المطلوب لا يمكن أن يكون أكبر من الإجمالي قبل الخصم.
+        $target = max(
+            0,
+            min($this->subtotal, (float) $value)
+        );
+
+        $target = $this->roundMoney($target);
+
+        // تعديل الصافي يغيّر الخصم تلقائياً.
+        $this->discount_type = 'fixed';
+        $this->discount_amount = $this->roundMoney(
+            max(0, $this->subtotal - $target)
+        );
+
+        // حافظ على القيمة التي أدخلها المستخدم.
+        $this->custom_final_total = $target;
     }
 
     public function toggleDiscountType(): void
     {
-        $this->discount_type = $this->discount_type === 'fixed' ? 'percentage' : 'fixed';
-        $this->custom_final_total = null;
+        $this->discount_type = $this->discount_type === 'fixed'
+            ? 'percentage'
+            : 'fixed';
+
+        if ($this->subtotal > 0) {
+            $this->custom_final_total = $this->roundMoney(
+                max(0, $this->subtotal - $this->calculated_discount)
+            );
+        } else {
+            $this->custom_final_total = null;
+        }
     }
 
     public function getSubtotalProperty(): float
@@ -1369,10 +1433,15 @@ new class extends Component {
         }
 
         if ($this->custom_final_total !== null) {
-            return $this->roundMoney(max(0, min($this->subtotal, $this->custom_final_total)));
+            return $this->roundMoney(
+                max(0, min($this->subtotal, (float) $this->custom_final_total))
+            );
         }
 
-        return $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+        // بدون قيمة نهائية يدوية: الصافي = الإجمالي - الخصم.
+        return $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount)
+        );
     }
 
     public function getAmountDueProperty(): float
@@ -1412,8 +1481,78 @@ new class extends Component {
         return false;
     }
 
+    /**
+     * فتح نافذة الدفع قبل حفظ الفاتورة عندما يكون هناك زبون محدد.
+     * المبلغ الذي يحدده المستخدم هو نفسه الذي يسجل في الفاتورة وسند القبض.
+     */
+    private function openCustomerPaymentModal(string $mode): void
+    {
+        $this->pendingCustomerPaymentMode = $mode;
+        $this->customerPaymentConfirmed = false;
+
+        $amountDue = abs((float) $this->amountDue);
+        $currentPaid = max(0, (float) ($this->paid_amount ?: 0));
+
+        $this->customerPaymentAmount = $this->roundMoney(
+            min($amountDue, $currentPaid)
+        );
+
+        $this->showCustomerPaymentModal = true;
+    }
+
+    public function setCustomerPaymentAmount($amount): void
+    {
+        $amountDue = abs((float) $this->amountDue);
+        $amount = (float) str_replace(',', '.', (string) $amount);
+
+        $this->customerPaymentAmount = $this->roundMoney(
+            max(0, min($amountDue, $amount))
+        );
+    }
+
+    public function confirmCustomerPayment(): ?Order
+    {
+        $amountDue = abs((float) $this->amountDue);
+        $paid = (float) $this->customerPaymentAmount;
+
+        if ($paid < 0 || $paid > $amountDue) {
+            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
+            return null;
+        }
+
+        $this->paid_amount = $this->roundMoney($paid);
+        $this->customerPaymentConfirmed = true;
+
+        $mode = $this->pendingCustomerPaymentMode;
+        $this->showCustomerPaymentModal = false;
+
+        if ($this->has_below_cost_item && !$this->showBelowCostModal) {
+            $this->pendingCheckoutMode = $mode;
+            $this->showBelowCostModal = true;
+            return null;
+        }
+
+        if ($mode === 'checkoutAndPrint') {
+            $order = $this->processCheckout();
+
+            if ($order) {
+                $this->prepareReceiptFromOrder($order);
+                $this->dispatch('print-receipt');
+            }
+
+            return $order;
+        }
+
+        return $this->processCheckout();
+    }
+
     public function checkout(): ?Order
     {
+        if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
+            $this->openCustomerPaymentModal('checkout');
+            return null;
+        }
+
         if ($this->has_below_cost_item && !$this->showBelowCostModal) {
             $this->pendingCheckoutMode = 'checkout';
             $this->showBelowCostModal = true;
@@ -1426,6 +1565,11 @@ new class extends Component {
 
     public function checkoutAndPrint(): void
     {
+        if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
+            $this->openCustomerPaymentModal('checkoutAndPrint');
+            return;
+        }
+
         if ($this->has_below_cost_item && !$this->showBelowCostModal) {
             $this->pendingCheckoutMode = 'checkoutAndPrint';
             $this->showBelowCostModal = true;
@@ -1451,6 +1595,55 @@ new class extends Component {
             $this->prepareReceiptFromOrder($order);
             $this->dispatch('print-receipt');
         }
+    }
+
+    /**
+     * مزامنة الرصيد الحالي للزبون من الحركات الفعلية.
+     *
+     * الرصيد = الرصيد الافتتاحي
+     *        + إجمالي فواتير البيع/المرتجع
+     *        - إجمالي سندات القبض
+     *
+     * بهذه الطريقة يبقى current_balance صحيحاً أيضاً عند تعديل فاتورة
+     * أو تغيير الزبون أو تغيير المبلغ المدفوع.
+     */
+    private function syncCustomerBalance(?int $partyId, int $tenantId): void
+    {
+        if (!$partyId) {
+            return;
+        }
+
+        $party = Party::query()
+            ->where('tenant_id', $tenantId)
+            ->lockForUpdate()
+            ->find($partyId);
+
+        if (!$party) {
+            return;
+        }
+
+        $ordersTotal = (float) Order::query()
+            ->where('tenant_id', $tenantId)
+            ->where('customer_id', $partyId)
+            ->whereIn('type', ['pos', 'return'])
+            ->where('status', 'completed')
+            ->sum('total');
+
+        $receiptsTotal = (float) Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('party_id', $partyId)
+            ->where('type', 'receipt')
+            ->sum('amount');
+
+        $currentBalance = $this->roundMoney(
+            (float) $party->opening_balance
+            + $ordersTotal
+            - $receiptsTotal
+        );
+
+        $party->update([
+            'current_balance' => $currentBalance,
+        ]);
     }
 
     private function processCheckout(): ?Order
@@ -1532,6 +1725,7 @@ new class extends Component {
                 }
 
                 $order = null;
+                $oldCustomerId = null;
 
                 /*
                  |--------------------------------------------------------------------------
@@ -1550,6 +1744,10 @@ new class extends Component {
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
                     }
+
+                    $oldCustomerId = $order->customer_id
+                        ? (int) $order->customer_id
+                        : null;
 
                     /*
                      |--------------------------------------------------------------------------
@@ -1614,6 +1812,19 @@ new class extends Component {
 
                     if (!$productId || $quantity === 0) {
                         throw new \RuntimeException('يوجد صنف أو كمية غير صالحة في الفاتورة.');
+                    }
+
+                    // الفاتورة لها وضع واحد فقط: بيع أو مرتجع.
+                    // في المرتجع يجب أن تكون كل السطور مرتجعة (كمية سالبة)،
+                    // وفي البيع يجب أن تكون كل السطور مبيعات (كمية موجبة).
+                    // هذا تحقق نهائي على الخادم لمنع خلط النوعين حتى لو تم استدعاء
+                    // دالة Livewire مباشرة أو تغيرت قيمة الحقل من الواجهة.
+                    if ($invoiceType === 'return' && $quantity > 0) {
+                        throw new \RuntimeException('لا يمكن إضافة صنف بيع إلى فاتورة مرتجع. افتح فاتورة جديدة إذا أردت البيع.');
+                    }
+
+                    if ($invoiceType === 'pos' && $quantity < 0) {
+                        throw new \RuntimeException('لا يمكن إضافة صنف مرتجع إلى فاتورة بيع. افتح فاتورة جديدة إذا أردت الإرجاع.');
                     }
 
                     $product = Product::query()
@@ -1685,10 +1896,19 @@ new class extends Component {
                 }
 
                 $requiredPayment = abs($total);
-                $paid = min(
-                    $requiredPayment,
-                    $paidInput > 0 ? $paidInput : $requiredPayment
-                );
+
+                // عند اختيار زبون، نافذة الدفع تحدد المبلغ المدفوع صراحةً.
+                // لذلك 0 يعني فعلاً أن الزبون لم يدفع شيئاً،
+                // والمبلغ الجزئي يبقى جزئياً ولا يتحول إلى دفع كامل.
+                // بدون زبون نحافظ على السلوك السابق: 0 يعني الدفع الكامل.
+                if ($this->selectedCustomerId && $this->customerPaymentConfirmed) {
+                    $paid = min($requiredPayment, $paidInput);
+                } else {
+                    $paid = min(
+                        $requiredPayment,
+                        $paidInput > 0 ? $paidInput : $requiredPayment
+                    );
+                }
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment
                     ? 'paid'
@@ -1844,6 +2064,7 @@ new class extends Component {
                         'branch_id' => $branchId,
                         'shift_id' => (int) ($order->shift_id ?: $lockedShift->id),
                         'created_by' => $user->id,
+                        'party_id' => $customer?->id,
                         'type' => $invoiceType === 'return' ? 'payment' : 'receipt',
                         'voucher_number' => $voucherNumber,
                         'amount' => $paid,
@@ -1861,6 +2082,24 @@ new class extends Component {
                     }
                 } elseif ($existingPayment) {
                     $existingPayment->delete();
+                }
+
+                /*
+                 |--------------------------------------------------------------------------
+                 | تحديث رصيد الزبون بعد حفظ الفاتورة وسند القبض
+                 |--------------------------------------------------------------------------
+                 |
+                 | يتم إعادة حساب الرصيد من قاعدة البيانات نفسها، لذلك:
+                 | - الفاتورة تضيف قيمتها إلى رصيد الزبون.
+                 | - المبلغ المدفوع في سند القبض يُخصم من الرصيد.
+                 | - عند تعديل الفاتورة أو تغيير الزبون يُعاد ضبط الرصيدين.
+                 */
+                if ($oldCustomerId && $oldCustomerId !== ($customer?->id ? (int) $customer->id : null)) {
+                    $this->syncCustomerBalance($oldCustomerId, $tenantId);
+                }
+
+                if ($customer?->id) {
+                    $this->syncCustomerBalance((int) $customer->id, $tenantId);
                 }
 
                 return Order::query()
@@ -1933,7 +2172,20 @@ new class extends Component {
     private function recalculatePrices(): void
     {
         foreach ($this->cart as $id => $item) {
-            $this->cart[$id]['subtotal'] = $this->roundMoney((float) ($item['quantity'] ?? 0) * (float) ($item['price'] ?? 0));
+            $this->cart[$id]['subtotal'] = $this->roundMoney(
+                (float) ($item['quantity'] ?? 0) *
+                (float) ($item['price'] ?? 0)
+            );
+        }
+
+        // إبقاء حقل الصافي متزامناً مع الإجمالي والخصم.
+        // إذا كان الخصم صفراً يصبح الصافي = الإجمالي مباشرة.
+        if (!empty($this->cart)) {
+            $this->custom_final_total = $this->roundMoney(
+                max(0, $this->subtotal - $this->calculated_discount)
+            );
+        } else {
+            $this->custom_final_total = null;
         }
     }
 
@@ -3718,6 +3970,130 @@ new class extends Component {
             <div class="shrink-0">
                 @include('pages.tenant.pos.partials.payment')
             </div>
+
+            {{-- =========================================================
+                 نافذة الدفع داخل sales.blade.php
+                 تظهر عند حفظ فاتورة مرتبطة بزبون، مع الحفاظ على
+                 إمكانية تعديل الإجمالي/الصافي قبل الحفظ.
+            ========================================================== --}}
+            @if ($showCustomerPaymentModal)
+                <div
+                    class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4"
+                    wire:key="sales-customer-payment-modal"
+                >
+                    <div
+                        class="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                        dir="rtl"
+                        @click.stop
+                    >
+                        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                            <div>
+                                <div class="text-sm font-black text-slate-900">
+                                    كم دفع الزبون؟
+                                </div>
+                                <div class="mt-0.5 text-[10px] font-bold text-slate-400">
+                                    يمكنك تسجيل صفر، جزء من المبلغ، أو كامل الفاتورة
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                wire:click="$set('showCustomerPaymentModal', false)"
+                                class="rounded-lg px-2 py-1 text-lg font-black text-slate-400 hover:bg-slate-100"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div class="p-4">
+                            <div class="mb-3 grid grid-cols-2 gap-2">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                                    <div class="text-[10px] font-black text-slate-500">إجمالي الفاتورة</div>
+                                    <div class="mt-1 font-mono text-xl font-black text-slate-900">
+                                        {{ number_format($this->amountDue, 2) }}
+                                    </div>
+                                </div>
+
+                                <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-center">
+                                    <div class="text-[10px] font-black text-indigo-600">المبلغ المدفوع</div>
+                                    <div class="mt-1 font-mono text-xl font-black text-indigo-700">
+                                        {{ number_format((float) $customerPaymentAmount, 2) }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3 grid grid-cols-3 gap-2">
+                                <button
+                                    type="button"
+                                    wire:click="setCustomerPaymentAmount(0)"
+                                    class="rounded-xl border border-slate-200 bg-white px-2 py-3 text-xs font-black text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                                >
+                                    لم يدفع
+                                    <span class="mt-1 block font-mono text-[10px] text-slate-400">0.00</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    wire:click="setCustomerPaymentAmount({{ $this->amountDue / 2 }})"
+                                    class="rounded-xl border border-amber-200 bg-amber-50 px-2 py-3 text-xs font-black text-amber-800 hover:bg-amber-100"
+                                >
+                                    جزء
+                                    <span class="mt-1 block text-[10px] text-amber-600">نصف المبلغ</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    wire:click="setCustomerPaymentAmount({{ $this->amountDue }})"
+                                    class="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-3 text-xs font-black text-emerald-800 hover:bg-emerald-100"
+                                >
+                                    كامل
+                                    <span class="mt-1 block text-[10px] text-emerald-600">دفع كامل</span>
+                                </button>
+                            </div>
+
+                            <label class="mb-1 block text-[10px] font-black text-slate-600">
+                                أو أدخل المبلغ يدوياً
+                            </label>
+
+                            <input
+                                type="number"
+                                min="0"
+                                max="{{ $this->amountDue }}"
+                                step="0.01"
+                                inputmode="decimal"
+                                wire:model.live.debounce.300ms="customerPaymentAmount"
+                                class="h-12 w-full rounded-xl border-2 border-indigo-200 bg-white px-3 text-center font-mono text-xl font-black text-indigo-800 outline-none focus:border-indigo-500"
+                                autofocus
+                            >
+
+                            <div class="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-[10px] font-bold text-slate-500">
+                                المتبقي بعد الدفع:
+                                <span class="font-mono font-black text-rose-600">
+                                    {{ number_format(max(0, (float) $this->amountDue - (float) $customerPaymentAmount), 2) }}
+                                </span>
+                            </div>
+
+                            <div class="mt-4 grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    wire:click="$set('showCustomerPaymentModal', false)"
+                                    class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50"
+                                >
+                                    إلغاء
+                                </button>
+
+                                <button
+                                    type="button"
+                                    wire:click="confirmCustomerPayment"
+                                    class="rounded-xl bg-indigo-600 px-4 py-3 text-xs font-black text-white shadow-sm hover:bg-indigo-700"
+                                >
+                                    تأكيد وحفظ الفاتورة
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             @include('pages.tenant.pos.partials.shift-open-modal')
             @include('pages.tenant.pos.partials.shift-close-modal')
