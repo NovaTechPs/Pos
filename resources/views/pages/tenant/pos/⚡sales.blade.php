@@ -25,6 +25,8 @@ new class extends Component {
     public bool $showCustomerModal = false;
     public string $customerSearch = '';
     public ?int $selectedCustomerId = null;
+    public bool $showCustomerPhoneModal = false;
+    public string $customerPhoneInput = '';
     public string $inlineSearchQuery = '';
     public array $inlineSearchResults = [];
     public string $searchInvoiceQuery = '';
@@ -41,6 +43,7 @@ new class extends Component {
     public ?int $currentInvoiceId = null;
     // معرف الفاتورة التي تم تحميلها للتعديل، مستقل عن عرض الفاتورة الحالي.
     public ?int $editingInvoiceId = null;
+    public bool $invoiceEditMode = false;
     public array $heldInvoices = [];
     public bool $showHeldModal = false;
     public bool $showCostModal = false;
@@ -155,6 +158,7 @@ new class extends Component {
 
     public function toggleMergeSimilarProducts(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $this->mergeSimilarProducts = !$this->mergeSimilarProducts;
 
         if (empty($this->cart)) {
@@ -260,6 +264,43 @@ new class extends Component {
         foreach ($merged as $groupKey => $item) {
             $this->cart[(string) $groupKey] = $item;
         }
+    }
+
+    public function invoiceIsLocked(): bool
+    {
+        return $this->editingInvoiceId !== null && !$this->invoiceEditMode;
+    }
+
+    private function ensureInvoiceEditable(): bool
+    {
+        if (!$this->invoiceIsLocked()) {
+            return true;
+        }
+
+        $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً للسماح بالتغيير.';
+        return false;
+    }
+
+    public function editLoadedInvoice(): void
+    {
+        if (!$this->editingInvoiceId) {
+            return;
+        }
+
+        $this->invoiceEditMode = true;
+        $this->errorMessage = null;
+        $this->successMessage = 'تم تفعيل تعديل الفاتورة. يمكنك الآن تغيير الأصناف والمبالغ ثم الضغط على «حفظ».';
+        $this->dispatch('pos-focus-barcode');
+    }
+
+    public function saveOrEditInvoice(): ?Order
+    {
+        if ($this->invoiceIsLocked()) {
+            $this->editLoadedInvoice();
+            return null;
+        }
+
+        return $this->checkout();
     }
 
     protected function tenantId(): ?int
@@ -627,6 +668,7 @@ new class extends Component {
 
     public function selectCategory(?int $categoryId = null): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $this->selectedCategoryId = $categoryId;
         $this->loadQuickProducts();
     }
@@ -648,6 +690,7 @@ new class extends Component {
 
     public function toggleReturnMode(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         // نوع الفاتورة يحدد الفاتورة كاملة، ولا يمكن تغييره بعد إضافة أول صنف.
         // جميع وظائف البيع/المرتجع الأخرى تبقى كما هي: إضافة صنف، الباركود،
         // تعديل الكمية والسعر والإجمالي، الحذف، الخصم، الدفع والطباعة.
@@ -723,6 +766,7 @@ new class extends Component {
 
     public function scanBarcode(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $this->errorMessage = null;
         $this->successMessage = null;
         $barcode = trim($this->barcode);
@@ -731,43 +775,6 @@ new class extends Component {
             return;
         }
 
-        $tenantId = $this->tenantId();
-        $branchId = $this->getActiveBranchId();
-
-        /*
-         |--------------------------------------------------------------------------
-         | أولاً: هل الباركود هو باركود فاتورة؟
-         |--------------------------------------------------------------------------
-         |
-         | الباركود المطبوع أسفل الفاتورة يحتوي على invoice_number نفسه.
-         | لذلك عند مسحه نفتح الفاتورة مباشرة بدلاً من إضافته كصنف.
-         */
-        if ($tenantId) {
-            $invoiceQuery = Order::query()
-                ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['pos', 'return'])
-                ->where('invoice_number', $barcode);
-
-            if ($branchId) {
-                $invoiceQuery->where('branch_id', $branchId);
-            }
-
-            $invoice = $invoiceQuery->latest('id')->first();
-
-            if ($invoice) {
-                $this->loadInvoice((int) $invoice->id);
-                $this->barcode = '';
-                $this->successMessage = "تم فتح الفاتورة {$invoice->invoice_number}.";
-                $this->dispatch('pos-focus-barcode');
-                return;
-            }
-        }
-
-        /*
-         |--------------------------------------------------------------------------
-         | ثانياً: الباركود العادي للصنف
-         |--------------------------------------------------------------------------
-         */
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً قبل البيع أو الإرجاع.';
             $this->showOpenShiftModal = true;
@@ -775,14 +782,10 @@ new class extends Component {
             return;
         }
 
-        $record = ProductBarcode::query()
-            ->where('tenant_id', $tenantId)
-            ->where('barcode', $barcode)
-            ->with('product')
-            ->first();
+        $record = ProductBarcode::query()->where('tenant_id', $this->tenantId())->where('barcode', $barcode)->with('product')->first();
 
         if (!$record?->product) {
-            $this->errorMessage = "لم يتم العثور على فاتورة أو منتج بهذا الباركود: {$barcode}";
+            $this->errorMessage = "لم يتم العثور على منتج بالباركود: {$barcode}";
             $this->barcode = '';
             return;
         }
@@ -793,6 +796,7 @@ new class extends Component {
 
     public function addToCart(int $productId, string $scannedBarcode = ''): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً لإضافة المنتجات.';
             $this->showOpenShiftModal = true;
@@ -864,13 +868,11 @@ new class extends Component {
 
         $this->recalculatePrices();
         $this->loadQuickProducts();
-
-        // فقط انزل إلى آخر صنف بعد الإضافة، بدون أي تغيير في شكل السلة.
-        $this->dispatch('pos-scroll-cart-bottom');
     }
 
     public function updateQuantity(string $lineKey, $qty): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
         if ($resolvedKey === null) {
@@ -908,6 +910,7 @@ new class extends Component {
 
     public function updateUnitPrice(string $lineKey, $newPrice): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
         if ($resolvedKey === null) {
@@ -936,6 +939,7 @@ new class extends Component {
      */
     public function updateLineTotal(string $lineKey, $newTotal): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
         if ($resolvedKey === null || !isset($this->cart[$resolvedKey])) {
@@ -974,6 +978,7 @@ new class extends Component {
 
     public function updateCostPrice(string $lineKey, $newCost): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
         if ($resolvedKey === null) {
@@ -992,6 +997,7 @@ new class extends Component {
 
     public function removeFromCart(string $lineKey): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $resolvedKey = $this->resolveCartLineKey($lineKey);
 
         if ($resolvedKey === null) {
@@ -1028,11 +1034,14 @@ new class extends Component {
         $this->custom_final_total = null;
         $this->currentInvoiceId = null;
         $this->editingInvoiceId = null;
+        $this->invoiceEditMode = false;
         $this->isReturnMode = false;
         $this->notes = '';
         $this->selectedCustomerId = null;
         $this->customerSearch = '';
         $this->showCustomerModal = false;
+        $this->showCustomerPhoneModal = false;
+        $this->customerPhoneInput = '';
         $this->searchInvoiceQuery = '';
         $this->barcode = '';
         $this->inlineSearchQuery = '';
@@ -1049,6 +1058,7 @@ new class extends Component {
 
     public function holdInvoice(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         if (empty($this->cart)) {
             $this->errorMessage = 'لا يمكن تعليق فاتورة فارغة.';
             return;
@@ -1177,6 +1187,7 @@ new class extends Component {
 
         $this->currentInvoiceId = $invoice->id;
         $this->editingInvoiceId = $invoice->id;
+        $this->invoiceEditMode = false;
         $this->cart = [];
 
         foreach ($invoice->items as $item) {
@@ -1233,7 +1244,7 @@ new class extends Component {
         $this->customerSearch = '';
         $this->isReturnMode = $invoice->type === 'return';
         $this->errorMessage = null;
-        $this->successMessage = "تم تحميل الفاتورة {$invoice->invoice_number} ويمكن تعديلها ثم حفظها بنفس الرقم.";
+        $this->successMessage = "تم تحميل الفاتورة {$invoice->invoice_number} للعرض فقط. اضغط «تعديل» للسماح بالتغيير.";
     }
 
     public function startNewInvoice(): void
@@ -1281,6 +1292,7 @@ new class extends Component {
 
     public function appendNumpad(string $value): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         if ($value === 'C') {
             $this->paid_amount = 0;
             return;
@@ -1329,6 +1341,7 @@ new class extends Component {
 
     public function selectCustomer(int $customerId): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $tenantId = $this->tenantId();
 
         $customer = Party::query()
@@ -1350,13 +1363,81 @@ new class extends Component {
 
     public function clearCustomer(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $this->selectedCustomerId = null;
         $this->customerSearch = '';
         $this->showCustomerModal = false;
+        $this->showCustomerPhoneModal = false;
+        $this->customerPhoneInput = '';
+    }
+
+    public function openCustomerPhoneModal(): void
+    {
+        if (!$this->selectedCustomerId) {
+            $this->errorMessage = 'يرجى اختيار الزبون أولاً.';
+            return;
+        }
+
+        $customer = Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->whereIn('type', ['customer', 'both'])
+            ->where('is_active', true)
+            ->find($this->selectedCustomerId);
+
+        if (!$customer) {
+            $this->errorMessage = 'الزبون المحدد غير صالح.';
+            return;
+        }
+
+        $this->customerPhoneInput = (string) ($customer->phone ?? '');
+        $this->showCustomerPhoneModal = true;
+    }
+
+    public function saveCustomerPhone(): void
+    {
+        if (!$this->selectedCustomerId) {
+            $this->errorMessage = 'لم يتم تحديد زبون.';
+            return;
+        }
+
+        $validated = $this->validate([
+            'customerPhoneInput' => ['required', 'string', 'max:40'],
+        ], [
+            'customerPhoneInput.required' => 'أدخل رقم الهاتف.',
+        ]);
+
+        $customer = Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->whereIn('type', ['customer', 'both'])
+            ->where('is_active', true)
+            ->findOrFail($this->selectedCustomerId);
+
+        $customer->phone = trim($validated['customerPhoneInput']);
+        $customer->save();
+
+        $this->customerPhoneInput = $customer->phone;
+        $this->showCustomerPhoneModal = false;
+        $this->errorMessage = null;
+
+        // بعد حفظ الرقم، اطلب من المتصفح فتح واتساب مباشرة.
+        // رقم الهاتف فقط يرسل من PHP، أما نص الفاتورة فيؤخذ من payment.blade.php.
+        $whatsappPhone = preg_replace('/\D+/', '', (string) $customer->phone);
+
+        if (str_starts_with($whatsappPhone, '00')) {
+            $whatsappPhone = substr($whatsappPhone, 2);
+        }
+
+        if (str_starts_with($whatsappPhone, '0')) {
+            $whatsappPhone = '972' . substr($whatsappPhone, 1);
+        }
+
+        $this->dispatch('customer-phone-saved', phone: $whatsappPhone);
+        $this->dispatch('toast', type: 'success', message: 'تم حفظ رقم هاتف الزبون.');
     }
 
     public function openCustomerModal(): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $this->customerSearch = '';
         $this->showCustomerModal = true;
     }
@@ -1546,6 +1627,7 @@ new class extends Component {
 
     public function setCustomerPaymentAmount($amount): void
     {
+        if (!$this->ensureInvoiceEditable()) { return; }
         $amountDue = abs((float) $this->amountDue);
         $amount = (float) str_replace(',', '.', (string) $amount);
 
@@ -1592,6 +1674,7 @@ new class extends Component {
 
     public function checkout(): ?Order
     {
+        if ($this->invoiceIsLocked()) { $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً.'; return null; }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
             $this->openCustomerPaymentModal('checkout');
             return null;
@@ -1609,6 +1692,7 @@ new class extends Component {
 
     public function checkoutAndPrint(): void
     {
+        if ($this->invoiceIsLocked()) { $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً.'; return; }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
             $this->openCustomerPaymentModal('checkoutAndPrint');
             return;
@@ -1639,55 +1723,6 @@ new class extends Component {
             $this->prepareReceiptFromOrder($order);
             $this->dispatch('print-receipt');
         }
-    }
-
-    /**
-     * مزامنة الرصيد الحالي للزبون من الحركات الفعلية.
-     *
-     * الرصيد = الرصيد الافتتاحي
-     *        + إجمالي فواتير البيع/المرتجع
-     *        - إجمالي سندات القبض
-     *
-     * بهذه الطريقة يبقى current_balance صحيحاً أيضاً عند تعديل فاتورة
-     * أو تغيير الزبون أو تغيير المبلغ المدفوع.
-     */
-    private function syncCustomerBalance(?int $partyId, int $tenantId): void
-    {
-        if (!$partyId) {
-            return;
-        }
-
-        $party = Party::query()
-            ->where('tenant_id', $tenantId)
-            ->lockForUpdate()
-            ->find($partyId);
-
-        if (!$party) {
-            return;
-        }
-
-        $ordersTotal = (float) Order::query()
-            ->where('tenant_id', $tenantId)
-            ->where('customer_id', $partyId)
-            ->whereIn('type', ['pos', 'return'])
-            ->where('status', 'completed')
-            ->sum('total');
-
-        $receiptsTotal = (float) Payment::query()
-            ->where('tenant_id', $tenantId)
-            ->where('party_id', $partyId)
-            ->where('type', 'receipt')
-            ->sum('amount');
-
-        $currentBalance = $this->roundMoney(
-            (float) $party->opening_balance
-            + $ordersTotal
-            - $receiptsTotal
-        );
-
-        $party->update([
-            'current_balance' => $currentBalance,
-        ]);
     }
 
     private function processCheckout(): ?Order
@@ -1769,7 +1804,6 @@ new class extends Component {
                 }
 
                 $order = null;
-                $oldCustomerId = null;
 
                 /*
                  |--------------------------------------------------------------------------
@@ -1788,10 +1822,6 @@ new class extends Component {
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
                     }
-
-                    $oldCustomerId = $order->customer_id
-                        ? (int) $order->customer_id
-                        : null;
 
                     /*
                      |--------------------------------------------------------------------------
@@ -1940,19 +1970,10 @@ new class extends Component {
                 }
 
                 $requiredPayment = abs($total);
-
-                // عند اختيار زبون، نافذة الدفع تحدد المبلغ المدفوع صراحةً.
-                // لذلك 0 يعني فعلاً أن الزبون لم يدفع شيئاً،
-                // والمبلغ الجزئي يبقى جزئياً ولا يتحول إلى دفع كامل.
-                // بدون زبون نحافظ على السلوك السابق: 0 يعني الدفع الكامل.
-                if ($this->selectedCustomerId && $this->customerPaymentConfirmed) {
-                    $paid = min($requiredPayment, $paidInput);
-                } else {
-                    $paid = min(
-                        $requiredPayment,
-                        $paidInput > 0 ? $paidInput : $requiredPayment
-                    );
-                }
+                $paid = min(
+                    $requiredPayment,
+                    $paidInput > 0 ? $paidInput : $requiredPayment
+                );
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment
                     ? 'paid'
@@ -2126,24 +2147,6 @@ new class extends Component {
                     }
                 } elseif ($existingPayment) {
                     $existingPayment->delete();
-                }
-
-                /*
-                 |--------------------------------------------------------------------------
-                 | تحديث رصيد الزبون بعد حفظ الفاتورة وسند القبض
-                 |--------------------------------------------------------------------------
-                 |
-                 | يتم إعادة حساب الرصيد من قاعدة البيانات نفسها، لذلك:
-                 | - الفاتورة تضيف قيمتها إلى رصيد الزبون.
-                 | - المبلغ المدفوع في سند القبض يُخصم من الرصيد.
-                 | - عند تعديل الفاتورة أو تغيير الزبون يُعاد ضبط الرصيدين.
-                 */
-                if ($oldCustomerId && $oldCustomerId !== ($customer?->id ? (int) $customer->id : null)) {
-                    $this->syncCustomerBalance($oldCustomerId, $tenantId);
-                }
-
-                if ($customer?->id) {
-                    $this->syncCustomerBalance((int) $customer->id, $tenantId);
                 }
 
                 return Order::query()
@@ -2387,10 +2390,10 @@ new class extends Component {
             x-on:keydown.window.f3.prevent="
                 (async () => {
                     const field = document.activeElement?.closest?.('[data-pos-field]');
-                    if (field && field.dataset.lineKey && field.dataset.posField) {
+                    if (field && !field.disabled && field.dataset.lineKey && field.dataset.posField) {
                         await $wire.updateCartField(field.dataset.lineKey, field.dataset.posField, field.value);
                     }
-                    await $wire.checkout();
+                    await $wire.saveOrEditInvoice();
                 })()
             "
             x-on:keydown.window.f4.prevent="$wire.clearCart()" x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()"
@@ -2426,6 +2429,11 @@ new class extends Component {
             @endif
 
             {{-- الفاتورة بعرض الشاشة بالكامل --}}
+            @if ($this->invoiceIsLocked())
+                <div class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
+                    🔒 الفاتورة القديمة للعرض فقط — اضغط «تعديل» من زر F3 للسماح بالتغيير.
+                </div>
+            @endif
             <div class="min-h-0 flex-1">
                 <section class="h-full min-h-0">
                     <div class="grid h-full min-h-0 grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]" dir="ltr">
@@ -2435,7 +2443,7 @@ new class extends Component {
                     {{-- =========================================================
                          المنتجات والتصنيفات داخل شاشة الـPOS
                     ========================================================== --}}
-                    <aside class="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" dir="rtl">
+                    <aside class="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm {{ $this->invoiceIsLocked() ? 'opacity-70' : '' }}" dir="rtl">
                         <div class="flex h-full min-h-0 flex-col">
 
                             <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-2.5">
@@ -2450,6 +2458,7 @@ new class extends Component {
                                     <button
                                         type="button"
                                         wire:click="loadQuickProducts"
+                                        @disabled($this->invoiceIsLocked())
                                         class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:bg-slate-100"
                                     >
                                         ↻ تحديث
@@ -2459,7 +2468,7 @@ new class extends Component {
                                 <input
                                     data-pos-product-panel-search
                                     x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
-                                    wire:model.live.debounce.250ms="productSearchQuery"
+                                    wire:model.live.debounce.250ms="productSearchQuery" @disabled($this->invoiceIsLocked())
                                     type="text"
                                     autocomplete="off"
                                     placeholder="ابحث عن الصنف أو الباركود..."
@@ -2471,7 +2480,7 @@ new class extends Component {
                                 <div class="flex gap-1.5 overflow-x-auto pb-1" style="scrollbar-width: thin;">
                                     <button
                                         type="button"
-                                        wire:click="selectCategory(null)"
+                                        wire:click="selectCategory(null)" @disabled($this->invoiceIsLocked())
                                         wire:key="pos-category-all"
                                         class="shrink-0 rounded-lg border px-3 py-2 text-[10px] font-black transition {{ !$selectedCategoryId ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50' }}"
                                     >
@@ -2486,7 +2495,7 @@ new class extends Component {
 
                                         <button
                                             type="button"
-                                            wire:click="selectCategory({{ $categoryId }})"
+                                            wire:click="selectCategory({{ $categoryId }})" @disabled($this->invoiceIsLocked())
                                             wire:key="pos-category-{{ $categoryId }}"
                                             class="shrink-0 rounded-lg border px-3 py-2 text-[10px] font-black transition {{ (int) $selectedCategoryId === $categoryId ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50' }}"
                                         >
@@ -2510,7 +2519,7 @@ new class extends Component {
                                             type="button"
                                             data-pos-product
                                             data-product-index="{{ $loop->index }}"
-                                            wire:click="selectInlineProduct({{ $product->id }})"
+                                            wire:click="selectInlineProduct({{ $product->id }})" @disabled($this->invoiceIsLocked())
                                             wire:key="pos-quick-product-{{ $product->id }}"
                                             class="min-h-[78px] rounded-xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
                                         >

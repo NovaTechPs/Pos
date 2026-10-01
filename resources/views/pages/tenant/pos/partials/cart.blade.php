@@ -1,4 +1,5 @@
 <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    @php $invoiceLocked = $this->invoiceIsLocked(); @endphp
 
     {{-- =========================================================
         Search
@@ -8,7 +9,7 @@
         {{-- Barcode --}}
         <div class="relative">
 
-            <input data-pos-barcode-input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" type="text"
+            <input data-pos-barcode-input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
                 placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
                 class="w-full rounded-xl border-2
@@ -84,7 +85,7 @@
                 </div>
             </div>
 
-            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch"
+            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch" @disabled($invoiceLocked)
                 aria-checked="{{ $mergeSimilarProducts ? 'true' : 'false' }}"
                 class="relative h-7 w-12 shrink-0 rounded-full transition
                     {{ $mergeSimilarProducts ? 'bg-indigo-600' : 'bg-slate-300' }}"
@@ -236,7 +237,7 @@
                                 <input type="number" step="0.01" min="{{ $isReturnMode ? '-999999.99' : '0.01' }}"
                                     value="{{ $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
-                                    wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)"
+                                    wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)" @disabled($invoiceLocked)
                                     class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black outline-none focus:ring-0"
                                     inputmode="decimal" autocomplete="off">
 
@@ -258,6 +259,7 @@
                                     'price',
                                     $event.target.value
                                 )"
+                                @disabled($invoiceLocked)
                                 class="
                                     pos-cart-field w-20 rounded-lg border
                                     {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }}
@@ -282,6 +284,7 @@
                                     'subtotal',
                                     $event.target.value
                                 )"
+                                @disabled($invoiceLocked)
                                 class="
                                     pos-cart-field w-24 rounded-lg border
                                     px-1 py-1 text-center font-mono text-[11px] font-black
@@ -301,7 +304,7 @@
                         ================================================== --}}
                         <td class="px-2 py-2 text-center">
 
-                            <button type="button" wire:click="removeFromCart('{{ $lineKey }}')"
+                            <button type="button" wire:click="removeFromCart('{{ $lineKey }}')" @disabled($invoiceLocked)
                                 class="rounded-lg px-2 py-1 text-lg font-black text-rose-500 hover:bg-rose-50">
                                 ×
                             </button>
