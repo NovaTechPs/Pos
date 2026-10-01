@@ -864,6 +864,9 @@ new class extends Component {
 
         $this->recalculatePrices();
         $this->loadQuickProducts();
+
+        // فقط انزل إلى آخر صنف بعد الإضافة، بدون أي تغيير في شكل السلة.
+        $this->dispatch('pos-scroll-cart-bottom');
     }
 
     public function updateQuantity(string $lineKey, $qty): void

@@ -96,7 +96,7 @@
         </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-auto">
+    <div data-pos-cart-scroll class="min-h-0 flex-1 overflow-auto">
 
         <table class="w-full text-right text-xs" dir="rtl">
 
@@ -161,10 +161,7 @@
 
 
                     <tr wire:key="pos-cart-{{ $lineKey }}"
-                        class="
-                            {{ $item['quantity'] < 0 ? 'bg-rose-50' : ($belowCost ? 'bg-amber-50' : 'bg-white') }}
-                            hover:bg-indigo-50
-                        ">
+                        class="{{ $loop->odd ? 'bg-white' : 'bg-slate-50' }} hover:bg-indigo-50">
                         {{-- =================================================
                             Row Number
                         ================================================== --}}
@@ -464,6 +461,21 @@
             } else {
                 document.addEventListener('livewire:init', registerLivewireBarcodeFocus, { once: true });
             }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Scroll to last cart row after adding a product
+            |--------------------------------------------------------------------------
+            */
+            window.addEventListener('pos-scroll-cart-bottom', function () {
+                setTimeout(function () {
+                    const container = document.querySelector('[data-pos-cart-scroll]');
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }, 50);
+            });
 
 
             /*
