@@ -4,12 +4,13 @@ use Livewire\Component;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use Illuminate\Support\Facades\Auth;
 
 new class extends Component {
     public string $search = '';
     public ?int $selectedBranchId = null;
-    public string $labelSize = '50x30';
+    public string $labelSize = '40x30';
     public string $labelLayout = 'vertical';
     public bool $showPrice = true;
     public bool $showProductName = true;
@@ -108,6 +109,75 @@ new class extends Component {
         }
 
         session(['active_branch_id' => $branchId]);
+    }
+
+    public function generateBarcode(int $productId): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            return;
+        }
+
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($productId)
+            ->first();
+
+        if (!$product) {
+            $this->errorMessage = 'المنتج غير موجود.';
+            return;
+        }
+
+        $existing = ProductBarcode::query()
+            ->where('tenant_id', $tenantId)
+            ->where('product_id', $product->id)
+            ->first();
+
+        if ($existing) {
+            $this->successMessage = 'المنتج لديه باركود بالفعل.';
+            return;
+        }
+
+        do {
+            $barcode = '20' . str_pad(
+                (string) random_int(1, 99999999999),
+                11,
+                '0',
+                STR_PAD_LEFT
+            );
+        } while (ProductBarcode::query()
+            ->where('tenant_id', $tenantId)
+            ->where('barcode', $barcode)
+            ->exists());
+
+        try {
+            ProductBarcode::create([
+                'tenant_id' => $tenantId,
+                'product_id' => $product->id,
+                'barcode' => $barcode,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+            $this->errorMessage = 'تعذر حفظ الباركود في قاعدة البيانات: ' . $e->getMessage();
+            return;
+        }
+
+        if (!in_array((int) $product->id, array_map('intval', $this->selectedProducts), true)) {
+            $this->selectedProducts[] = (int) $product->id;
+        }
+
+        $this->printQuantities[$product->id] = max(
+            1,
+            (int) ($this->printQuantities[$product->id] ?? 1)
+        );
+
+        $this->errorMessage = null;
+        $this->successMessage = "تم إنشاء الباركود {$barcode} وحفظه للمنتج.";
+
+        // Force the browser to rebuild the SVG after Livewire updates the preview.
+        $this->dispatch('barcode-preview-refresh');
     }
 
     public function addProduct(int $productId): void
@@ -430,7 +500,11 @@ new class extends Component {
                                             <span>{{ number_format($price, 2) }}</span>
                                         </div>
                                     </div>
-                                    @if ($isSelected)
+                                    @if (!$barcode)
+                                        <button type="button" wire:click="generateBarcode({{ $product->id }})" class="shrink-0 rounded-lg bg-amber-500 px-2.5 py-2 text-[9px] font-black text-white shadow-sm hover:bg-amber-600" title="إنشاء باركود">
+                                            + إنشاء باركود
+                                        </button>
+                                    @elseif ($isSelected)
                                         <button type="button" wire:click="removeProduct({{ $product->id }})" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-rose-500 shadow-sm hover:bg-rose-50" title="إزالة">
                                             <flux:icon icon="minus" class="h-4 w-4" />
                                         </button>
@@ -486,6 +560,7 @@ new class extends Component {
                                         $sku = $product->sku ?? $product->code ?? $product->id;
                                     @endphp
 
+                                    @for ($copy = 0; $copy < $qty; $copy++)
                                     <div class="barcode-label label-{{ $labelSize }} layout-{{ $labelLayout }}">
                                         <div class="label-content">
                                             @if ($showProductName)
@@ -493,9 +568,14 @@ new class extends Component {
                                             @endif
 
                                             @if ($barcode)
-                                                <svg class="barcode-svg" data-barcode-value="{{ $barcode }}" data-barcode-text="{{ $showBarcodeText ? 'true' : 'false' }}"></svg>
+                                                <svg wire:ignore class="barcode-svg" data-barcode-value="{{ $barcode }}" data-barcode-text="{{ $showBarcodeText ? 'true' : 'false' }}"></svg>
                                             @else
-                                                <div class="no-barcode">لا يوجد باركود</div>
+                                                <div class="no-barcode">
+                                                    <div>لا يوجد باركود</div>
+                                                    <button type="button" wire:click="generateBarcode({{ $product->id }})" class="mt-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[9px] font-black text-white">
+                                                        + إنشاء باركود
+                                                    </button>
+                                                </div>
                                             @endif
 
                                             <div class="label-bottom">
@@ -508,6 +588,7 @@ new class extends Component {
                                             </div>
                                         </div>
                                     </div>
+                                    @endfor
                                 @endforeach
                             </div>
                         @endif
@@ -545,14 +626,14 @@ new class extends Component {
     [x-cloak] { display: none !important; }
 
     .barcode-label {
-        width: 50mm;
+        width: 40mm;
         height: 30mm;
         flex: 0 0 auto;
         overflow: hidden;
         background: #fff;
         border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 2.2mm;
+        border-radius: 5px;
+        padding: 1.4mm;
         box-sizing: border-box;
         color: #000;
     }
@@ -570,9 +651,9 @@ new class extends Component {
 
     .label-name {
         width: 100%;
-        margin-bottom: 1mm;
+        margin-bottom: 0.6mm;
         font-size: 8pt;
-        line-height: 1.1;
+        line-height: 1.05;
         font-weight: 900;
         white-space: nowrap;
         overflow: hidden;
@@ -582,17 +663,17 @@ new class extends Component {
     .barcode-svg {
         display: block;
         width: 100%;
-        max-width: 45mm;
-        height: 14mm;
+        max-width: 36mm;
+        height: 12mm;
     }
 
     .label-bottom {
         width: 100%;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 2mm;
-        margin-top: 1mm;
+        justify-content: center;
+        gap: 1mm;
+        margin-top: 0.5mm;
         font-size: 7pt;
         line-height: 1;
     }
@@ -600,6 +681,7 @@ new class extends Component {
     .label-price {
         font-weight: 900;
         font-size: 9pt;
+        direction: ltr;
     }
 
     .label-sku {
@@ -697,65 +779,150 @@ new class extends Component {
         .label-60x40 { width: 60mm !important; height: 40mm !important; }
 
         @page {
-            size: auto;
+            size: 40mm 30mm;
             margin: 0;
+        }
+
+        #barcode-labels {
+            display: block !important;
+            width: 40mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .barcode-label {
+            display: flex !important;
+            width: 40mm !important;
+            height: 30mm !important;
+            padding: 1.4mm !important;
+            margin: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            page-break-after: always !important;
+            break-after: page !important;
+        }
+
+        .barcode-label:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+        }
+
+        .barcode-svg {
+            width: 36mm !important;
+            max-width: 36mm !important;
+            height: 12mm !important;
+        }
+
+        .label-name {
+            font-size: 8pt !important;
+        }
+
+        .label-price {
+            font-size: 9pt !important;
         }
     }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
-    function barcodePrinterPage() {
+(function () {
+    // Alpine component used by the page root.
+    window.barcodePrinterPage = function () {
         return {
             init() {
-                this.renderBarcodes();
+                window.renderPosBarcodes?.();
 
-                if (!window.__barcodePrinterHooks) {
-                    window.__barcodePrinterHooks = true;
-
-                    document.addEventListener('livewire:init', () => {
-                        Livewire.hook('morph.updated', () => {
-                            setTimeout(() => {
-                                window.renderPosBarcodes?.();
-                            }, 30);
-                        });
-
-                        Livewire.on('barcode-print-ready', () => {
-                            setTimeout(() => {
-                                window.renderPosBarcodes?.();
-                                window.print();
-                            }, 100);
-                        });
+                document.addEventListener('livewire:init', () => {
+                    Livewire.hook('morph.updated', () => {
+                        setTimeout(() => window.renderPosBarcodes?.(), 80);
                     });
-                }
 
-                window.renderPosBarcodes = () => this.renderBarcodes();
-            },
+                    Livewire.on('barcode-preview-refresh', () => {
+                        setTimeout(() => window.renderPosBarcodes?.(), 80);
+                    });
 
-            renderBarcodes() {
-                if (typeof JsBarcode === 'undefined') return;
-
-                document.querySelectorAll('#barcode-print-area .barcode-svg').forEach((svg) => {
-                    const value = svg.dataset.barcodeValue;
-                    if (!value) return;
-
-                    try {
-                        JsBarcode(svg, value, {
-                            format: 'CODE128',
-                            displayValue: svg.dataset.barcodeText === 'true',
-                            font: 'Tahoma',
-                            fontSize: 9,
-                            fontOptions: 'bold',
-                            textMargin: 1,
-                            margin: 0,
-                            height: 42,
-                            width: 1.5,
-                        });
-                    } catch (error) {
-                        console.warn('Barcode rendering failed:', error);
-                    }
+                    Livewire.on('barcode-print-ready', () => {
+                        setTimeout(() => {
+                            window.renderPosBarcodes?.();
+                            setTimeout(() => window.print(), 250);
+                        }, 150);
+                    });
                 });
             }
         };
+    };
+
+    function renderPosBarcodes() {
+        if (typeof window.JsBarcode !== 'function') {
+            // The CDN script can finish loading after this page script.
+            return;
+        }
+
+        document.querySelectorAll('#barcode-print-area .barcode-svg').forEach(function (svg) {
+            const value = svg.getAttribute('data-barcode-value');
+            if (!value) return;
+
+            try {
+                // Livewire ignores the SVG contents after it is created, so
+                // JsBarcode can safely draw into it without being removed by morphing.
+                while (svg.firstChild) {
+                    svg.removeChild(svg.firstChild);
+                }
+
+                window.JsBarcode(svg, String(value), {
+                    format: 'CODE128',
+                    displayValue: svg.dataset.barcodeText === 'true',
+                    font: 'Tahoma',
+                    fontSize: 8,
+                    fontOptions: 'bold',
+                    textMargin: 0,
+                    margin: 0,
+                    height: 30,
+                    width: 1.2,
+                });
+            } catch (error) {
+                console.error('Barcode rendering failed:', error, value);
+            }
+        });
     }
+
+    window.renderPosBarcodes = renderPosBarcodes;
+
+    function scheduleBarcodeRender() {
+        // Render after Livewire has finished inserting the labels.
+        [0, 100, 300, 600].forEach(function (delay) {
+            setTimeout(renderPosBarcodes, delay);
+        });
+    }
+
+    // Initial page load.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scheduleBarcodeRender, { once: true });
+    } else {
+        scheduleBarcodeRender();
+    }
+
+    window.addEventListener('load', scheduleBarcodeRender);
+
+    // Livewire may navigate to this page without a full browser reload.
+    document.addEventListener('livewire:navigated', scheduleBarcodeRender);
+
+    document.addEventListener('livewire:init', function () {
+        Livewire.hook('morph.updated', function () {
+            scheduleBarcodeRender();
+        });
+
+        Livewire.on('barcode-preview-refresh', function () {
+            scheduleBarcodeRender();
+        });
+
+        Livewire.on('barcode-print-ready', function () {
+            scheduleBarcodeRender();
+            setTimeout(function () {
+                renderPosBarcodes();
+                window.print();
+            }, 900);
+        });
+    });
+})();
 </script>
