@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\TenantSetting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -143,6 +144,85 @@ new class extends Component {
     private function currentUser(): ?object
     {
         return auth()->user();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stock Settings
+    |--------------------------------------------------------------------------
+    | These settings only control stock availability for this wholesale page.
+    | The existing UI, invoice flow, payments, discounts and other tasks remain
+    | unchanged.
+    */
+
+    private function allowNegativeStock(): bool
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            return false;
+        }
+
+        return TenantSetting::getBool(
+            (int) $tenantId,
+            'allow_negative_stock',
+            false
+        );
+    }
+
+    private function unifiedStock(): bool
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            return false;
+        }
+
+        return TenantSetting::getBool(
+            (int) $tenantId,
+            'unified_stock',
+            false
+        );
+    }
+
+    private function availableStock(
+        int $tenantId,
+        int $productId,
+        int $branchId
+    ): float {
+        $query = BranchProduct::query()
+            ->where('tenant_id', $tenantId)
+            ->where('product_id', $productId);
+
+        if (!$this->unifiedStock()) {
+            $query->where('branch_id', $branchId);
+        }
+
+        return (float) $query->sum('stock_quantity');
+    }
+
+    private function saleBranchProduct(
+        int $tenantId,
+        int $productId,
+        int $branchId
+    ): ?BranchProduct {
+        $current = BranchProduct::query()
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)
+            ->where('product_id', $productId)
+            ->with('product')
+            ->first();
+
+        if ($current || !$this->unifiedStock()) {
+            return $current;
+        }
+
+        return BranchProduct::query()
+            ->where('tenant_id', $tenantId)
+            ->where('product_id', $productId)
+            ->with('product')
+            ->orderBy('id')
+            ->first();
     }
 
     /*
@@ -296,7 +376,9 @@ new class extends Component {
                 $query->where('barcode', $term);
             })
             ->whereHas('branchProducts', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
+                if (!$this->unifiedStock()) {
+                    $query->where('branch_id', $branchId);
+                }
             })
             ->first();
 
@@ -336,29 +418,35 @@ new class extends Component {
             return;
         }
 
-        $branchProduct = BranchProduct::query()
-            ->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->where('product_id', $productId)
-            ->with('product')
-            ->first();
+        $branchProduct = $this->saleBranchProduct(
+            $tenantId,
+            $productId,
+            $branchId
+        );
 
         if (!$branchProduct?->product) {
             session()->flash(
                 'error',
-                'المنتج غير مرتبط بالفرع الحالي.'
+                'المنتج غير مرتبط بأي فرع في المتجر.'
             );
 
             return;
         }
 
-        $stock = (float) $branchProduct->stock_quantity;
+        $stock = $this->availableStock(
+            $tenantId,
+            $productId,
+            $branchId
+        );
 
         $currentQty = (float) (
             $this->cart[$productId]['quantity'] ?? 0
         );
 
-        if ($stock <= $currentQty) {
+        if (
+            !$this->allowNegativeStock()
+            && $stock <= $currentQty
+        ) {
             session()->flash(
                 'error',
                 "الكمية المتوفرة من {$branchProduct->product->name} هي {$stock}."
@@ -416,22 +504,33 @@ new class extends Component {
             return;
         }
 
-        $stock = (float) (
-            $this->cart[$productId]['stock'] ?? 0
-        );
+        $tenantId = $this->tenantId();
+        $branchId = $this->branchId();
 
-        if ($stock > 0 && $qty > $stock) {
+        $stock = ($tenantId && $branchId)
+            ? $this->availableStock(
+                $tenantId,
+                $productId,
+                $branchId
+            )
+            : 0;
+
+        if (
+            !$this->allowNegativeStock()
+            && $qty > $stock
+        ) {
             $this->cart[$productId]['quantity'] = $stock;
 
             session()->flash(
                 'error',
-                "الكمية المطلوبة تتجاوز مخزون {$this->cart[$productId]['name']}."
+                "الكمية المطلوبة تتجاوز المخزون المتاح من {$this->cart[$productId]['name']}."
             );
 
             return;
         }
 
         $this->cart[$productId]['quantity'] = $qty;
+        $this->cart[$productId]['stock'] = $stock;
     }
 
     /*
@@ -828,16 +927,22 @@ new class extends Component {
                     |--------------------------------------------------------------------------
                     */
 
-                    $branchProduct = BranchProduct::query()
+                    $branchProducts = BranchProduct::query()
                         ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $branchId)
                         ->where('product_id', $productId)
+                        ->when(
+                            !$this->unifiedStock(),
+                            fn ($query) => $query->where(
+                                'branch_id',
+                                $branchId
+                            )
+                        )
                         ->lockForUpdate()
-                        ->first();
+                        ->get();
 
-                    if (!$branchProduct) {
+                    if ($branchProducts->isEmpty()) {
                         throw new \RuntimeException(
-                            "المنتج {$product->name} غير مرتبط بالفرع الحالي."
+                            "المنتج {$product->name} غير مرتبط بأي فرع في المتجر."
                         );
                     }
 
@@ -845,11 +950,19 @@ new class extends Component {
                     |--------------------------------------------------------------------------
                     | Stock
                     |--------------------------------------------------------------------------
+                    | Normal mode: current branch only.
+                    | Unified mode: total stock from all branches.
+                    | Negative stock setting: allows the sale to exceed that total.
                     */
 
-                    $available = (float) $branchProduct->stock_quantity;
+                    $available = (float) $branchProducts->sum(
+                        fn ($row) => (float) $row->stock_quantity
+                    );
 
-                    if ($available < $quantity) {
+                    if (
+                        !$this->allowNegativeStock()
+                        && $available < $quantity
+                    ) {
                         throw new \RuntimeException(
                             "الكمية المتوفرة من المنتج {$product->name} غير كافية. المتوفر: {$available}."
                         );
@@ -1170,17 +1283,88 @@ new class extends Component {
                         'discount' => 0,
                     ]);
 
-                    BranchProduct::query()
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Decrease stock
+                    |--------------------------------------------------------------------------
+                    | Current branch is consumed first. If unified stock is enabled,
+                    | the remaining quantity is taken from other branches.
+                    | If negative stock is allowed and all branches are exhausted,
+                    | the remaining amount is applied to the current branch when
+                    | available, otherwise to the first branch record.
+                    */
+
+                    $remainingQuantity = (float) $item['quantity'];
+
+                    $stockRows = BranchProduct::query()
                         ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $branchId)
-                        ->where(
-                            'product_id',
-                            $item['product_id']
+                        ->where('product_id', $item['product_id'])
+                        ->when(
+                            !$this->unifiedStock(),
+                            fn ($query) => $query->where(
+                                'branch_id',
+                                $branchId
+                            )
                         )
-                        ->decrement(
-                            'stock_quantity',
-                            $item['quantity']
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($this->unifiedStock()) {
+                        $stockRows = $stockRows
+                            ->sortByDesc(
+                                fn ($row) =>
+                                    (int) $row->branch_id === (int) $branchId
+                            )
+                            ->values();
+                    }
+
+                    foreach ($stockRows as $stockRow) {
+                        if ($remainingQuantity <= 0) {
+                            break;
+                        }
+
+                        $rowStock = (float) $stockRow->stock_quantity;
+
+                        if ($rowStock <= 0) {
+                            continue;
+                        }
+
+                        $take = min(
+                            $rowStock,
+                            $remainingQuantity
                         );
+
+                        $stockRow->decrement(
+                            'stock_quantity',
+                            $take
+                        );
+
+                        $remainingQuantity -= $take;
+                    }
+
+                    if ($remainingQuantity > 0) {
+                        if (!$this->allowNegativeStock()) {
+                            throw new \RuntimeException(
+                                "تعذر تحديث مخزون المنتج {$item['name']}."
+                            );
+                        }
+
+                        $negativeTarget = $stockRows->firstWhere(
+                            'branch_id',
+                            $branchId
+                        ) ?: $stockRows->first();
+
+                        if (!$negativeTarget) {
+                            throw new \RuntimeException(
+                                "تعذر تحديد فرع لتسجيل المخزون السالب للمنتج {$item['name']}."
+                            );
+                        }
+
+                        $negativeTarget->decrement(
+                            'stock_quantity',
+                            $remainingQuantity
+                        );
+                    }
                 }
 
                 /*
@@ -1659,6 +1843,9 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
+        $unifiedStock = $this->unifiedStock();
+        $allowNegativeStock = $this->allowNegativeStock();
+
         $products = Product::query()
             ->where(
                 'products.tenant_id',
@@ -1667,16 +1854,22 @@ new class extends Component {
 
             ->when(
                 $branchId,
-                fn ($query) =>
+                function ($query) use ($branchId, $unifiedStock) {
                     $query->whereHas(
                         'branchProducts',
-                        fn ($branchProduct) =>
-                            $branchProduct
-                                ->where(
+                        function ($branchProduct) use (
+                            $branchId,
+                            $unifiedStock
+                        ) {
+                            if (!$unifiedStock) {
+                                $branchProduct->where(
                                     'branch_id',
                                     $branchId
-                                )
-                    )
+                                );
+                            }
+                        }
+                    );
+                }
             )
 
             ->when(
@@ -1712,11 +1905,17 @@ new class extends Component {
 
             ->with([
                 'branchProducts' =>
-                    fn ($query) =>
-                        $query->where(
-                            'branch_id',
-                            $branchId
-                        ),
+                    function ($query) use (
+                        $branchId,
+                        $unifiedStock
+                    ) {
+                        if (!$unifiedStock) {
+                            $query->where(
+                                'branch_id',
+                                $branchId
+                            );
+                        }
+                    },
             ])
 
             ->orderBy('name')
@@ -1784,6 +1983,12 @@ new class extends Component {
 
             'customers' =>
                 $customers,
+
+            'unifiedStock' =>
+                $unifiedStock,
+
+            'allowNegativeStock' =>
+                $allowNegativeStock,
         ])->layout(
             'layouts::tenant'
         );
@@ -1908,7 +2113,7 @@ new class extends Component {
                                     class="text-xs text-zinc-500"
                                 >
                                     اختر الصنف لإضافته إلى الفاتورة.
-                                    الكمية محدودة بمخزون الفرع.
+                                    {{ $unifiedStock ? 'المخزون محسوب من جميع الفروع.' : 'الكمية محدودة بمخزون الفرع.' }}
                                 </p>
                             </div>
 
@@ -1931,7 +2136,8 @@ new class extends Component {
                             @forelse ($products as $product)
 
                                 @php
-                                    $bp = $product->branchProducts->first();
+                                    $bp = $product->branchProducts->firstWhere('branch_id', $branchId)
+                                        ?? ($unifiedStock ? $product->branchProducts->first() : null);
 
                                     $price = (float) (
                                         $bp?->wholesale_price > 0
@@ -1939,15 +2145,15 @@ new class extends Component {
                                             : ($bp?->retail_price ?? 0)
                                     );
 
-                                    $stock = (float) (
-                                        $bp?->stock_quantity ?? 0
-                                    );
+                                    $stock = $unifiedStock
+                                        ? (float) $product->branchProducts->sum('stock_quantity')
+                                        : (float) ($bp?->stock_quantity ?? 0);
                                 @endphp
 
                                 <button
                                     type="button"
                                     wire:click="addToCart({{ $product->id }})"
-                                    @disabled(!$bp || $stock <= 0)
+                                    @disabled(!$bp || (!$allowNegativeStock && $stock <= 0))
                                     class="group rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-right transition hover:-translate-y-0.5 hover:border-indigo-400 hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:bg-zinc-900"
                                 >
 
