@@ -1984,6 +1984,9 @@ new class extends Component {
             'customers' =>
                 $customers,
 
+            'branchId' =>
+                $branchId,
+
             'unifiedStock' =>
                 $unifiedStock,
 
