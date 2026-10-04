@@ -3370,10 +3370,10 @@ new class extends Component {
 
                     return `
                         <tr>
-                            <td>${escapeHtml(firstWordWithDots(item.name))}</td>
-                            <td>${qty}</td>
-                            <td>× ${money(price)}</td>
-                            <td>${money(total)}</td>
+                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:right; vertical-align:middle; font-weight:700; white-space:nowrap; overflow:hidden;">${escapeHtml(firstWordWithDots(item.name))}</td>
+                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">${qty}</td>
+                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">× ${money(price)}</td>
+                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">${money(total)}</td>
                         </tr>
                     `;
                 }).join('');
@@ -3427,12 +3427,53 @@ new class extends Component {
     .title { font-size: 19px; font-weight: 800; margin-bottom: 8px; }
     .meta { font-size: 12px; line-height: 1.8; }
     .line { border-top: 1px dashed #000; margin: 8px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
-    th, td { padding: 5px 2px; border: 1px solid #000; text-align: center; vertical-align: middle; font-weight: 700; }
-    th:first-child, td:first-child { text-align: right; width: 43%; }
-    th:nth-child(2), td:nth-child(2) { width: 15%; }
-    th:nth-child(3), td:nth-child(3) { width: 20%; }
-    th:nth-child(4), td:nth-child(4) { width: 22%; }
+    .items-table {
+        width: 100%;
+        border-collapse: collapse !important;
+        border-spacing: 0 !important;
+        empty-cells: show !important;
+        border: 3px solid #000 !important;
+        outline: 1px solid #000 !important;
+        font-size: 11px;
+        table-layout: fixed;
+        direction: rtl;
+        color: #000 !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    .items-table th,
+    .items-table td {
+        padding: 6px 4px !important;
+        border: 2px solid #000 !important;
+        outline: none !important;
+        text-align: center;
+        vertical-align: middle;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #000 !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    .items-table thead th {
+        border: 2px solid #000 !important;
+        font-weight: 900;
+        background: #fff !important;
+    }
+    .items-table th:first-child,
+    .items-table td:first-child {
+        text-align: right;
+        width: 43%;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+    .items-table th:nth-child(2),
+    .items-table td:nth-child(2) { width: 15%; }
+    .items-table th:nth-child(3),
+    .items-table td:nth-child(3) { width: 20%; }
+    .items-table th:nth-child(4),
+    .items-table td:nth-child(4) { width: 22%; }
     .summary { margin-top: 8px; font-size: 13px; line-height: 1.9; }
     .summary-row { display: flex; justify-content: space-between; gap: 10px; }
     .total { font-size: 17px; font-weight: 800; border-top: 2px solid #000; margin-top: 5px; padding-top: 5px; }
@@ -3463,13 +3504,13 @@ new class extends Component {
 
         <div class="line"></div>
 
-        <table>
+        <table class="items-table" style="width:100%; border-collapse:collapse; border-spacing:0; border:3px solid #000; table-layout:fixed; direction:rtl;">
             <thead>
                 <tr>
-                    <th>الصنف</th>
-                    <th>الكمية</th>
-                    <th>× السعر</th>
-                    <th>المجموع</th>
+                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">الصنف</th>
+                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">الكمية</th>
+                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">× السعر</th>
+                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">المجموع</th>
                 </tr>
             </thead>
             <tbody>${itemRows}</tbody>
