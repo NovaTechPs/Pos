@@ -322,7 +322,11 @@ new class extends Component {
 
     public function updatedPaidAmount($value): void
     {
-        $this->paidAmount = max(0, (float) $value);
+        // السماح بأن يكون المدفوع أكبر من إجمالي الفاتورة.
+        $this->paidAmount = max(
+            0,
+            round((float) $value, 2)
+        );
     }
 
     public function setFullPayment(): void
@@ -332,9 +336,9 @@ new class extends Component {
 
     public function setPaymentAmount(float $amount): void
     {
-        $this->paidAmount = min(
-            $this->total,
-            max(0, round($amount, 2))
+        $this->paidAmount = max(
+            0,
+            round($amount, 2)
         );
     }
 
@@ -470,6 +474,9 @@ new class extends Component {
         if (isset($this->cart[$productId])) {
             $this->cart[$productId]['quantity'] = $currentQty + 1;
 
+            // بعد إضافة الصنف/زيادة كميته انزل بالسلة إلى آخر صنف.
+            $this->dispatch('wholesale-cart-added');
+
             return;
         }
 
@@ -488,6 +495,9 @@ new class extends Component {
             'quantity' => 1,
             'stock' => $stock,
         ];
+
+        // بعد إضافة الصنف انزل بالسلة إلى آخر صنف مباشرة.
+        $this->dispatch('wholesale-cart-added');
     }
 
     public function updateQuantity(int $productId, $qty): void
@@ -1128,12 +1138,6 @@ new class extends Component {
                     2
                 );
 
-                if ($paid > $total) {
-                    throw new \RuntimeException(
-                        'المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة.'
-                    );
-                }
-
                 /*
                 |--------------------------------------------------------------------------
                 | Payment Status
@@ -1403,12 +1407,7 @@ new class extends Component {
                                 Str::random(4)
                             ),
 
-                        'payable_type' =>
-                            $customer
-                                ? Party::class
-                                : null,
-
-                        'payable_id' =>
+                        'party_id' =>
                             $customer?->id,
 
                         'amount' =>
@@ -1542,8 +1541,7 @@ new class extends Component {
 
         if (
             $this->sendWhatsapp &&
-            $order &&
-            $order->customer_phone
+            $order
         ) {
             $this->dispatch(
                 'open-whatsapp-url',
@@ -1575,26 +1573,28 @@ new class extends Component {
 
     private function makeInvoiceNumber(): string
     {
+        $tenantId = $this->tenantId();
+
+        $lastNumber = Order::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'wholesale')
+            ->where('invoice_number', 'like', 'W-%')
+            ->orderByDesc('id')
+            ->value('invoice_number');
+
+        $next = 1;
+
+        if (is_string($lastNumber) && preg_match('/^W-(\d+)$/', $lastNumber, $matches)) {
+            $next = ((int) $matches[1]) + 1;
+        }
+
         do {
-            $number =
-                'WS-' .
-                now()->format('Ymd') .
-                '-' .
-                now()->format('His') .
-                '-' .
-                Str::upper(
-                    Str::random(3)
-                );
+            $number = 'W-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+            $next++;
         } while (
             Order::query()
-                ->where(
-                    'tenant_id',
-                    $this->tenantId()
-                )
-                ->where(
-                    'invoice_number',
-                    $number
-                )
+                ->where('tenant_id', $tenantId)
+                ->where('invoice_number', $number)
                 ->exists()
         );
 
@@ -1716,10 +1716,24 @@ new class extends Component {
                 "ملاحظات: {$order->notes}\n";
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | With a phone number: open the customer's WhatsApp directly.
+        | Without a phone number: open WhatsApp's contact/share screen
+        | with the invoice message ready, so the user can choose a friend.
+        |--------------------------------------------------------------------------
+        */
+
+        if ($phone !== '') {
+            return
+                'https://wa.me/' .
+                $phone .
+                '?text=' .
+                urlencode($text);
+        }
+
         return
-            'https://wa.me/' .
-            $phone .
-            '?text=' .
+            'https://wa.me/?text=' .
             urlencode($text);
     }
 
@@ -2432,6 +2446,7 @@ new class extends Component {
                             {{-- ================================================= --}}
 
                             <div
+                                id="wholesale-cart"
                                 class="max-h-[38vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800"
                             >
 
@@ -2745,7 +2760,8 @@ new class extends Component {
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    wire:model.live.debounce.250ms="paidAmount"
+                                    inputmode="decimal"
+                                    wire:model.blur="paidAmount"
                                     class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-lg font-bold font-mono dark:border-zinc-700 dark:bg-zinc-800"
                                 />
 
@@ -3280,6 +3296,31 @@ new class extends Component {
 
             $wire.closePriceHistoryModal();
 
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scroll cart to the newest item after adding a product
+    |--------------------------------------------------------------------------
+    */
+
+    $wire.on(
+        'wholesale-cart-added',
+        () => {
+            setTimeout(() => {
+                const cart = document.getElementById('wholesale-cart');
+
+                if (!cart) {
+                    return;
+                }
+
+                cart.scrollTo({
+                    top: cart.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 80);
         }
     );
 
