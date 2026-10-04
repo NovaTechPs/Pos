@@ -120,6 +120,29 @@ new class extends Component {
 
     /*
     |--------------------------------------------------------------------------
+    | Receipt Voucher
+    |--------------------------------------------------------------------------
+    */
+
+    public bool $showReceiptForm = false;
+
+    public string $receiptPartySearch = '';
+
+    public ?int $receiptPartyId = null;
+
+    public string $receiptPaymentDate = '';
+
+    public string $receiptPaymentMethod = 'cash';
+
+    public string $receiptAmount = '';
+
+    public string $receiptNotes = '';
+
+    public string $receiptVoucherNumber = '';
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Tenant / Branch
     |--------------------------------------------------------------------------
     */
@@ -1839,6 +1862,204 @@ new class extends Component {
 
     /*
     |--------------------------------------------------------------------------
+    | Receipt Voucher
+    |--------------------------------------------------------------------------
+    */
+
+    public function openReceiptForm(): void
+    {
+        $this->showReceiptForm = true;
+        $this->receiptPaymentDate = now()->format('Y-m-d');
+        $this->receiptPaymentMethod = 'cash';
+        $this->receiptAmount = '';
+        $this->receiptNotes = '';
+        $this->receiptVoucherNumber = $this->generateReceiptVoucherNumber();
+
+        // إذا كان هناك عميل محدد في الفاتورة، نختاره تلقائياً في سند القبض.
+        $this->receiptPartyId = $this->selectedCustomerId;
+
+        $this->receiptPartySearch = '';
+
+        if ($this->receiptPartyId) {
+            $customer = Party::query()
+                ->where('tenant_id', $this->tenantId())
+                ->where('is_active', true)
+                ->whereIn('type', ['customer', 'both'])
+                ->find($this->receiptPartyId);
+
+            $this->receiptPartySearch = $customer?->name ?? '';
+        }
+    }
+
+    public function closeReceiptForm(): void
+    {
+        $this->showReceiptForm = false;
+    }
+
+    public function clearReceiptParty(): void
+    {
+        $this->receiptPartyId = null;
+        $this->receiptPartySearch = '';
+    }
+
+    public function selectReceiptParty(int $partyId): void
+    {
+        $tenantId = $this->tenantId();
+
+        $party = Party::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'both'])
+            ->find($partyId);
+
+        if (!$party) {
+            session()->flash('error', 'العميل المحدد غير صالح.');
+            return;
+        }
+
+        $this->receiptPartyId = $party->id;
+        $this->receiptPartySearch = $party->name;
+    }
+
+    public function getReceiptPartyResultsProperty()
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            return collect();
+        }
+
+        $search = trim($this->receiptPartySearch);
+
+        // لا تعرض أي عملاء قبل أن يبدأ المستخدم بالبحث فعلياً.
+        if ($search === '') {
+            return collect();
+        }
+
+        return Party::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'both'])
+            ->when($search !== '', function ($query) use ($search) {
+                $like = "%{$search}%";
+
+                $query->where(function ($q) use ($like) {
+                    $q->where('name', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhere('tax_number', 'like', $like);
+                });
+            })
+            ->orderBy('name')
+            ->limit(30)
+            ->get();
+    }
+
+    public function updatedReceiptPartySearch(): void
+    {
+        // Livewire يعيد تحميل قائمة العملاء تلقائياً.
+    }
+
+    private function generateReceiptVoucherNumber(): string
+    {
+        $tenantId = $this->tenantId();
+
+        $lastId = Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('type', 'receipt')
+            ->max('id');
+
+        return 'REC-' . str_pad(
+            (string) (($lastId ?? 0) + 1),
+            6,
+            '0',
+            STR_PAD_LEFT
+        );
+    }
+
+    public function saveReceipt(): void
+    {
+        $tenantId = $this->tenantId();
+        $user = $this->currentUser();
+
+        if (!$tenantId || !$user) {
+            session()->flash('error', 'لا يوجد متجر أو مستخدم حالي.');
+            return;
+        }
+
+        $validated = $this->validate([
+            'receiptPartyId' => ['required', 'integer'],
+            'receiptVoucherNumber' => ['required', 'string', 'max:50'],
+            'receiptPaymentDate' => ['required', 'date'],
+            'receiptPaymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
+            'receiptAmount' => ['required', 'numeric', 'gt:0'],
+            'receiptNotes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($tenantId, $user, $validated) {
+                $party = Party::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('is_active', true)
+                    ->whereIn('type', ['customer', 'both'])
+                    ->lockForUpdate()
+                    ->find($validated['receiptPartyId']);
+
+                if (!$party) {
+                    throw new \RuntimeException('العميل المحدد غير صالح.');
+                }
+
+                $amount = round((float) $validated['receiptAmount'], 2);
+
+                Payment::create([
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $this->branchId(),
+                    'shift_id' => null,
+                    'created_by' => $user->id,
+                    'party_id' => $party->id,
+                    'type' => 'receipt',
+                    'voucher_number' => $validated['receiptVoucherNumber'],
+                    'amount' => $amount,
+                    'payment_method' => $validated['receiptPaymentMethod'],
+                    'order_id' => null,
+                    'notes' => $validated['receiptNotes'] ?? null,
+                    'payment_date' => $validated['receiptPaymentDate'],
+                ]);
+
+                // سند القبض يقلل الرصيد المستحق على العميل.
+                $party->current_balance = round(
+                    (float) $party->current_balance - $amount,
+                    2
+                );
+
+                $party->save();
+            });
+        } catch (\Throwable $e) {
+            report($e);
+
+            session()->flash(
+                'error',
+                $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'تعذر حفظ سند القبض.'
+            );
+
+            return;
+        }
+
+        $this->showReceiptForm = false;
+        $this->receiptPartySearch = '';
+        $this->receiptPartyId = null;
+        $this->receiptAmount = '';
+        $this->receiptNotes = '';
+        $this->receiptVoucherNumber = '';
+        $this->receiptPaymentMethod = 'cash';
+        $this->receiptPaymentDate = now()->format('Y-m-d');
+
+        session()->flash('message', 'تم إنشاء سند القبض بنجاح.');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Render
     |--------------------------------------------------------------------------
     */
@@ -2278,14 +2499,25 @@ new class extends Component {
                                     </div>
                                 </div>
 
-                                <flux:button
-                                    size="sm"
-                                    variant="subtle"
-                                    wire:click="requestNewInvoice"
-                                    :disabled="$isSaving"
-                                >
-                                    فاتورة جديدة
-                                </flux:button>
+                                <div class="flex items-center gap-2">
+                                    <flux:button
+                                        size="sm"
+                                        variant="subtle"
+                                        wire:click="openReceiptForm"
+                                        :disabled="$isSaving"
+                                    >
+                                        سند قبض
+                                    </flux:button>
+
+                                    <flux:button
+                                        size="sm"
+                                        variant="subtle"
+                                        wire:click="requestNewInvoice"
+                                        :disabled="$isSaving"
+                                    >
+                                        فاتورة جديدة
+                                    </flux:button>
+                                </div>
 
                             </div>
 
@@ -3167,6 +3399,224 @@ new class extends Component {
 
         </div>
 
+    @endif
+
+    {{-- =========================================================
+         سند قبض
+         نفس فكرة نموذج سندات القبض الموجود في المحاسبة،
+         ولكن داخل صفحة بيع الجملة مباشرة.
+    ========================================================== --}}
+    @if ($showReceiptForm)
+        <div
+            class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4"
+            wire:key="wholesale-receipt-form"
+        >
+            <div
+                class="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+                dir="rtl"
+                @click.stop
+            >
+                <div class="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                    <div>
+                        <div class="text-lg font-black text-zinc-900 dark:text-zinc-100">
+                            سند قبض
+                        </div>
+                        <div class="mt-0.5 text-xs text-zinc-500">
+                            تسجيل مبلغ مقبوض من العميل وتخفيض رصيده.
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        wire:click="closeReceiptForm"
+                        class="rounded-lg px-2 py-1 text-xl font-black text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div class="space-y-4 p-4">
+                    <div class="relative">
+                        <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                            العميل
+                        </label>
+
+                        <input
+                            type="text"
+                            wire:model.live.debounce.250ms="receiptPartySearch"
+                            placeholder="ابحث عن العميل بالاسم أو الهاتف..."
+                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                        >
+
+                        @if ($receiptPartyId)
+                            <button
+                                type="button"
+                                wire:click="clearReceiptParty"
+                                class="absolute left-3 top-8 text-xs font-bold text-rose-500 hover:underline"
+                            >
+                                إزالة
+                            </button>
+                        @endif
+
+                        @if (trim($receiptPartySearch) !== '' && !$receiptPartyId)
+                            <div class="absolute inset-x-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                                @forelse ($this->receiptPartyResults as $party)
+                                    <button
+                                        type="button"
+                                        wire:click="selectReceiptParty({{ $party->id }})"
+                                        class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right hover:bg-indigo-50 dark:border-zinc-800 dark:hover:bg-indigo-950/30"
+                                    >
+                                        <div>
+                                            <div class="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                                                {{ $party->name }}
+                                            </div>
+
+                                            @if ($party->phone)
+                                                <div class="mt-0.5 text-xs text-zinc-400">
+                                                    {{ $party->phone }}
+                                                </div>
+                                            @endif
+                                        </div>
+
+                                        <div class="font-mono text-xs font-bold {{ (float) $party->current_balance > 0 ? 'text-rose-500' : 'text-emerald-500' }}">
+                                            {{ number_format((float) $party->current_balance, 2) }}
+                                        </div>
+                                    </button>
+                                @empty
+                                    <div class="px-4 py-6 text-center text-sm text-zinc-400">
+                                        لا يوجد عملاء مطابقون.
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
+
+                    @if ($receiptPartyId)
+                        @php
+                            $receiptParty = Party::query()
+                                ->where('tenant_id', $this->tenantId())
+                                ->find($receiptPartyId);
+                        @endphp
+
+                        @if ($receiptParty)
+                            <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                                        العميل المحدد
+                                    </span>
+                                    <span class="text-sm font-black text-indigo-700 dark:text-indigo-300">
+                                        {{ $receiptParty->name }}
+                                    </span>
+                                </div>
+
+                                <div class="mt-1 flex items-center justify-between gap-3 text-xs">
+                                    <span class="text-zinc-500">الرصيد الحالي</span>
+                                    <span class="font-mono font-black {{ (float) $receiptParty->current_balance > 0 ? 'text-rose-600' : 'text-emerald-600' }}">
+                                        {{ number_format((float) $receiptParty->current_balance, 2) }} ₪
+                                    </span>
+                                </div>
+                            </div>
+                        @endif
+                    @endif
+
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                                رقم السند
+                            </label>
+                            <input
+                                type="text"
+                                wire:model="receiptVoucherNumber"
+                                readonly
+                                class="w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 py-2.5 text-sm font-mono dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                            >
+                        </div>
+
+                        <div>
+                            <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                                التاريخ
+                            </label>
+                            <input
+                                type="date"
+                                wire:model="receiptPaymentDate"
+                                class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                            >
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                            المبلغ
+                        </label>
+                        <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            inputmode="decimal"
+                            wire:model="receiptAmount"
+                            autofocus
+                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 text-center font-mono text-2xl font-black text-indigo-800 outline-none focus:border-indigo-500 dark:bg-zinc-800 dark:text-indigo-300"
+                            placeholder="0.00"
+                        >
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                            طريقة الدفع
+                        </label>
+
+                        <select
+                            wire:model="receiptPaymentMethod"
+                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                        >
+                            <option value="cash">نقداً</option>
+                            <option value="card">بطاقة</option>
+                            <option value="bank_transfer">تحويل بنكي</option>
+                            <option value="cheque">شيك</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                            ملاحظات
+                        </label>
+                        <textarea
+                            wire:model="receiptNotes"
+                            rows="2"
+                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                            placeholder="ملاحظات اختيارية..."
+                        ></textarea>
+                    </div>
+
+                    @error('receiptPartyId')
+                        <div class="text-xs font-bold text-rose-600">{{ $message }}</div>
+                    @enderror
+
+                    @error('receiptAmount')
+                        <div class="text-xs font-bold text-rose-600">{{ $message }}</div>
+                    @enderror
+
+                    <div class="flex flex-col-reverse gap-2 sm:flex-row">
+                        <button
+                            type="button"
+                            wire:click="closeReceiptForm"
+                            class="flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                        >
+                            إلغاء
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="saveReceipt"
+                            wire:loading.attr="disabled"
+                            class="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            حفظ سند القبض
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     @endif
 
 </flux:main>
