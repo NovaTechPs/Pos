@@ -437,11 +437,9 @@
                 restoreBarcodeAfterLivewire();
             });
 
-            document.addEventListener('change', function(event) {
-                const field = event.target?.closest?.(FIELD_SELECTOR);
-                if (!field) return;
-                focusBarcodeAfterCartChange = true;
-            }, true);
+            // لا نعيد التركيز إلى الباركود عند تغيير أي حقل في السلة.
+            // التنقل بالأسهم يجب أن يبقى داخل السلة.
+            // الانتقال إلى الباركود يتم فقط عند الضغط على Enter أو بطلب صريح.
 
             function registerLivewireBarcodeFocus() {
                 if (!window.Livewire || typeof window.Livewire.hook !== 'function') {
@@ -842,50 +840,23 @@
 
                     /*
                     | Enter
+                    |
+                    | Enter فقط ينقل التركيز مباشرة إلى الباركود.
+                    | لا ينتقل إلى الحقل أو الصنف التالي.
                     */
                     if (key === 'Enter') {
 
-                        const fields = [
-                            'quantity',
-                            'price',
-                            'subtotal'
-                        ];
+                        const barcode =
+                            document.querySelector(BARCODE_SELECTOR);
 
-                        const currentFieldIndex =
-                            fields.indexOf(type);
-
-
-                        /*
-                        | داخل نفس الصنف:
-                        |
-                        | الكمية → السعر → الإجمالي
-                        */
-                        if (
-                            currentFieldIndex >= 0 &&
-                            currentFieldIndex < fields.length - 1
-                        ) {
-
-                            target =
-                                allRows[pos][
-                                    fields[currentFieldIndex + 1]
-                                ];
-
-                        } else {
-
-                            /*
-                            | بعد الإجمالي:
-                            | الانتقال إلى كمية الصنف التالي
-                            */
-                            targetPos =
-                                pos >= allRows.length - 1 ?
-                                0 :
-                                pos + 1;
-
-                            target =
-                                allRows[targetPos].quantity;
-
+                        if (barcode) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            focusInput(barcode);
+                            return;
                         }
 
+                        return;
                     }
 
 
@@ -1491,56 +1462,12 @@
 
             /*
             |--------------------------------------------------------------------------
-            | بعد تعديل الكمية / السعر / الإجمالي
+            | لا نعيد التركيز إلى الباركود بعد تعديل حقول السلة تلقائياً.
             |
-            | عند تغيير أي حقل في السلة، ننتظر انتهاء تحديث Livewire
-            | ثم نعيد التركيز تلقائياً إلى الباركود.
+            | ↑ ↓ ← → = تنقل حر داخل السلة.
+            | Enter فقط = انتقال مباشر إلى الباركود.
             |--------------------------------------------------------------------------
             */
-            let returnToBarcodeAfterEdit = false;
-            let editComponentId = null;
-
-            document.addEventListener('change', function(event) {
-
-                const field = event.target?.closest?.(FIELD_SELECTOR);
-
-                if (!field) {
-                    return;
-                }
-
-                const root = field.closest('[wire\:id]');
-
-                returnToBarcodeAfterEdit = true;
-                editComponentId = root?.getAttribute('wire:id') || null;
-
-            }, true);
-
-            if (window.Livewire && typeof window.Livewire.hook === 'function') {
-
-                window.Livewire.hook('commit', ({ component, succeed }) => {
-
-                    if (!returnToBarcodeAfterEdit) {
-                        return;
-                    }
-
-                    if (editComponentId && component?.id !== editComponentId) {
-                        return;
-                    }
-
-                    succeed(() => {
-
-                        returnToBarcodeAfterEdit = false;
-                        editComponentId = null;
-
-                        setTimeout(function() {
-                            focusBarcode(false);
-                        }, 30);
-
-                    });
-
-                });
-
-            }
 
 
             /*

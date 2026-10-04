@@ -160,11 +160,10 @@ new class extends Component {
                 return;
         }
 
-        // بعد نجاح تعديل الكمية أو السعر أو الإجمالي،
-        // أبلغ الواجهة لتعيد التركيز إلى الباركود بعد انتهاء Livewire.
-        if (in_array($field, ['quantity', 'price', 'subtotal'], true)) {
-            $this->dispatch('pos-focus-barcode');
-        }
+        // مهم: لا نعيد التركيز إلى الباركود بعد تعديل الحقل.
+        // عند استخدام الأسهم يجب أن يبقى التركيز في مكانه للتنقل بين
+        // الكمية / السعر / الإجمالي وباقي الأصناف.
+        // الانتقال إلى الباركود يتم فقط عند الضغط على Enter.
     }
 
     public function toggleMergeSimilarProducts(): void
@@ -288,7 +287,7 @@ new class extends Component {
             return true;
         }
 
-        $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً للسماح بالتغيير.';
+        $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. التعديل يحتاج «تعديل»، أما الطباعة وPDF وواتساب والنسخ فتعمل مباشرة.';
         return false;
     }
 
@@ -2292,6 +2291,229 @@ new class extends Component {
         $this->dispatch('print-receipt');
     }
 
+    /**
+     * نسخ الفاتورة الحالية إلى فاتورة جديدة قابلة للتعديل.
+     * يتم نسخ الأصناف والكميات والأسعار والزبون فقط،
+     * بينما يبدأ الدفع والخصم من الصفر لأنها فاتورة جديدة.
+     */
+    public function copyLoadedInvoice(): void
+    {
+        if (!$this->currentInvoiceId) {
+            $this->errorMessage = 'لا توجد فاتورة محفوظة لنسخها.';
+            return;
+        }
+
+        $invoice = Order::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->getActiveBranchId())
+            ->whereIn('type', ['pos', 'return'])
+            ->with('items.product')
+            ->find($this->currentInvoiceId);
+
+        if (!$invoice) {
+            $this->errorMessage = 'لم يتم العثور على الفاتورة المطلوبة لنسخها.';
+            return;
+        }
+
+        $this->cart = [];
+
+        foreach ($invoice->items as $item) {
+            $lineKey = $this->mergeSimilarProducts
+                ? (string) $item->product_id
+                : 'copy_' . str()->uuid()->toString();
+
+            $quantity = (float) $item->quantity;
+            $subtotal = (float) $item->total_price;
+
+            if ($this->mergeSimilarProducts && isset($this->cart[$lineKey])) {
+                $this->cart[$lineKey]['quantity'] += $quantity;
+                $this->cart[$lineKey]['subtotal'] = $this->roundMoney(
+                    (float) $this->cart[$lineKey]['subtotal'] + $subtotal
+                );
+
+                if ((float) $this->cart[$lineKey]['quantity'] !== 0.0) {
+                    $this->cart[$lineKey]['price'] = round(
+                        abs($this->cart[$lineKey]['subtotal'] / $this->cart[$lineKey]['quantity']),
+                        6
+                    );
+                }
+
+                continue;
+            }
+
+            $this->cart[$lineKey] = [
+                'id' => (int) $item->product_id,
+                'name' => $item->product?->name ?? 'منتج غير محدد',
+                'barcode' => '',
+                'price' => (float) $item->unit_price,
+                'cost_price' => (float) ($item->cost_price ?? ($item->product?->cost_price ?? 0)),
+                'quantity' => $quantity,
+                'subtotal' => $subtotal,
+            ];
+        }
+
+        // فاتورة جديدة: لا نربطها بالفاتورة الأصلية.
+        $this->currentInvoiceId = null;
+        $this->editingInvoiceId = null;
+        $this->invoiceEditMode = false;
+
+        // نسخ الزبون فقط، مع تصفير بيانات الدفع والخصم.
+        $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
+        $this->customerSearch = '';
+        $this->paid_amount = 0;
+        $this->payment_method = 'cash';
+        $this->discount_amount = 0;
+        $this->discount_type = 'fixed';
+        $this->custom_final_total = null;
+        $this->customerPaymentAmount = 0;
+        $this->customerPaymentConfirmed = false;
+        $this->showCustomerPaymentModal = false;
+        $this->showBelowCostModal = false;
+        $this->notes = '';
+        $this->receipt = [];
+        $this->isReturnMode = $invoice->type === 'return';
+        $this->errorMessage = null;
+        $this->successMessage = "تم نسخ الفاتورة {$invoice->invoice_number} إلى فاتورة جديدة. تم نسخ الأصناف والزبون فقط.";
+
+        $this->recalculatePrices();
+        $this->dispatch('pos-focus-barcode');
+    }
+
+    /**
+     * إنشاء نص واتساب مرتب وواضح مع سعر الوحدة وإجمالي كل صنف.
+     */
+    private function buildWhatsappInvoiceMessage(Order $order): string
+    {
+        $order->loadMissing('items.product');
+
+        $lines = [];
+        // بدون رموز Emoji حتى لا تظهر كرمز � في بعض أجهزة/متصفحات واتساب.
+        $lines[] = $order->type === 'return' ? 'فاتورة مرتجع' : 'فاتورة بيع';
+        $lines[] = 'رقم الفاتورة: ' . $order->invoice_number;
+
+        if ($order->customer_id) {
+            $customerName = Party::query()
+                ->where('tenant_id', $this->tenantId())
+                ->whereKey($order->customer_id)
+                ->value('name');
+
+            if ($customerName) {
+                $lines[] = 'الزبون: ' . $customerName;
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = 'الأصناف:';
+
+        foreach ($order->items as $item) {
+            $quantity = (float) $item->quantity;
+            $quantityText = rtrim(rtrim(number_format(abs($quantity), 3, '.', ''), '0'), '.');
+
+            // نأخذ أول كلمتين فقط من اسم الصنف.
+            $productName = trim((string) ($item->product?->name ?? 'منتج غير محدد'));
+            $nameWords = preg_split('/\s+/u', $productName, -1, PREG_SPLIT_NO_EMPTY);
+            $shortName = implode(' ', array_slice($nameWords ?: ['منتج'], 0, 2));
+
+            $unitPrice = number_format(abs((float) $item->unit_price), 2);
+            $lineTotal = number_format(abs((float) $item->total_price), 2);
+            $prefix = $quantity < 0 ? 'مرتجع: ' : '• ';
+
+            // الشكل المطلوب: أول كلمتين ... السعر × الكمية = الإجمالي
+            $lines[] = $prefix . $shortName
+                . ' ... ' . $unitPrice
+                . ' × ' . $quantityText
+                . ' = ' . $lineTotal;
+        }
+
+        $lines[] = '';
+        $lines[] = 'الإجمالي: ' . number_format(abs((float) $order->subtotal), 2);
+        $lines[] = 'الخصم: ' . number_format((float) $order->discount, 2);
+        $lines[] = 'الصافي: ' . number_format(abs((float) $order->total), 2);
+        $lines[] = 'المدفوع: ' . number_format((float) $order->paid_amount, 2);
+        $lines[] = 'الباقي: ' . number_format(max(0, abs((float) $order->total) - (float) $order->paid_amount), 2);
+
+        if (trim((string) $order->notes) !== '') {
+            $lines[] = '';
+            $lines[] = 'ملاحظات: ' . trim((string) $order->notes);
+        }
+
+        $lines[] = '';
+        $lines[] = 'شكراً لتعاملكم معنا';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * حفظ الفاتورة عند الحاجة قبل تنفيذ إجراء خارجي مثل واتساب أو PDF.
+     *
+     * - فاتورة محفوظة وقديمة ومقفلة: نستخدمها مباشرة بدون إعادة حفظ.
+     * - فاتورة جديدة: نحفظها أولاً.
+     * - فاتورة قديمة تم الضغط على «تعديل» فيها: نحفظ التعديلات أولاً.
+     */
+    private function saveInvoiceBeforeAction(): ?Order
+    {
+        if ($this->currentInvoiceId && !$this->invoiceEditMode) {
+            return Order::query()
+                ->where('tenant_id', $this->tenantId())
+                ->where('branch_id', $this->getActiveBranchId())
+                ->whereIn('type', ['pos', 'return'])
+                ->whereKey($this->currentInvoiceId)
+                ->with(['items.product', 'user', 'branch'])
+                ->first();
+        }
+
+        if (empty($this->cart)) {
+            $this->errorMessage = 'الفاتورة فارغة ولا توجد فاتورة محفوظة لتنفيذ هذا الإجراء.';
+            return null;
+        }
+
+        // نحفظ مباشرة باستخدام نفس منطق الحفظ الأساسي في POS.
+        // هذا يحافظ على المخزون، الدفع، الخصم، العميل، الشيفت، والتعديل.
+        return $this->processCheckout();
+    }
+
+    /**
+     * إرسال الفاتورة عبر واتساب.
+     * إذا كانت الفاتورة جديدة أو عليها تعديلات غير محفوظة، يتم حفظها أولاً.
+     * إذا كان للعميل رقم محفوظ يفتح محادثته مباشرة، وإلا يفتح واتساب لاختيار العميل.
+     */
+    public function sendInvoiceWhatsApp(): void
+    {
+        $order = $this->saveInvoiceBeforeAction();
+
+        if (!$order) {
+            if (!$this->errorMessage) {
+                $this->errorMessage = 'تعذر حفظ الفاتورة قبل إرسالها عبر واتساب.';
+            }
+            return;
+        }
+
+        $message = $this->buildWhatsappInvoiceMessage($order);
+        $phone = null;
+
+        if ($order->customer_id) {
+            $phone = Party::query()
+                ->where('tenant_id', $this->tenantId())
+                ->whereKey($order->customer_id)
+                ->value('phone');
+
+            $phone = preg_replace('/\D+/', '', (string) $phone);
+
+            if (str_starts_with($phone, '00')) {
+                $phone = substr($phone, 2);
+            }
+
+            if (str_starts_with($phone, '0')) {
+                $phone = '972' . substr($phone, 1);
+            }
+
+            $phone = $phone !== '' ? $phone : null;
+        }
+
+        $this->successMessage = 'تم حفظ الفاتورة وتجهيزها للإرسال عبر واتساب.';
+        $this->dispatch('whatsapp-invoice', phone: $phone, message: $message);
+    }
+
     public function getInvoiceCreatorProperty(): string
     {
         if ($this->currentInvoiceId) {
@@ -2315,30 +2537,13 @@ new class extends Component {
     }
     public function downloadInvoicePdf(): mixed
     {
-        $orderId = $this->currentInvoiceId;
-
-        if (!$orderId) {
-            $this->errorMessage = 'يجب حفظ الفاتورة أولاً قبل إنشاء PDF.';
-            return null;
-        }
-
-        $tenantId = $this->tenantId();
-        $branchId = $this->getActiveBranchId();
-
-        if (!$tenantId || !$branchId) {
-            $this->errorMessage = 'لم يتم تحديد المتجر أو الفرع.';
-            return null;
-        }
-
-        $order = Order::query()
-            ->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->whereKey($orderId)
-            ->with(['items.product', 'user', 'branch'])
-            ->first();
+        // إذا كانت الفاتورة جديدة أو عليها تعديلات، احفظها أولاً ثم أنشئ PDF.
+        $order = $this->saveInvoiceBeforeAction();
 
         if (!$order) {
-            $this->errorMessage = 'لم يتم العثور على الفاتورة.';
+            if (!$this->errorMessage) {
+                $this->errorMessage = 'تعذر حفظ الفاتورة قبل إنشاء PDF.';
+            }
             return null;
         }
 
@@ -2419,9 +2624,35 @@ new class extends Component {
             @if ($this->invoiceIsLocked())
                 <div
                     class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
-                    🔒 الفاتورة القديمة للعرض فقط — اضغط «تعديل» من زر F3 للسماح بالتغيير.
+                    🔒 الفاتورة القديمة للعرض فقط — التعديل يحتاج «تعديل»، أما الطباعة وPDF وواتساب والنسخ فتعمل مباشرة.
                 </div>
             @endif
+
+            {{--
+                أزرار الفاتورة القديمة:
+                نضع هنا زر "نسخ" فقط لأن الطباعة وPDF وواتساب والتعديل
+                موجودة أصلًا في شريط الإجراءات السفلي، ولا نكرر الأزرار.
+            --}}
+            @if ($currentInvoiceId)
+                <div
+                    class="shrink-0 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
+                    dir="rtl"
+                >
+                    <div class="ml-auto px-2 text-[10px] font-black text-slate-500">
+                        فاتورة #{{ $this->receipt['invoice_no'] ?? $currentInvoiceId }}
+                    </div>
+
+                    {{-- نسخ الفاتورة فقط --}}
+                    <button
+                        type="button"
+                        wire:click="copyLoadedInvoice"
+                        class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] font-black text-violet-700 hover:bg-violet-100"
+                    >
+                        📋 نسخ
+                    </button>
+                </div>
+            @endif
+
             <div class="min-h-0 flex-1">
                 <section class="h-full min-h-0">
                     <div class="grid h-full min-h-0 grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]"
@@ -3326,20 +3557,18 @@ new class extends Component {
 
                                     if (key === 'Enter') {
 
-                                        // داخل نفس الصنف: الكمية ← السعر ← الإجمالي
-                                        // وبعد الإجمالي ننتقل إلى كمية الصنف التالي.
-                                        const fields = ['quantity', 'price', 'subtotal'];
-                                        const currentFieldIndex = fields.indexOf(type);
+                                        // Enter من أي حقل داخل السلة يذهب مباشرة إلى الباركود.
+                                        // الأسهم تبقى للتنقل بحرية بين الأصناف والحقول.
+                                        target = document.querySelector(BARCODE_SELECTOR);
 
-                                        if (currentFieldIndex >= 0 && currentFieldIndex < fields.length - 1) {
-                                            target = allRows[pos][fields[currentFieldIndex + 1]];
-                                        } else {
-                                            targetPos =
-                                                pos >= allRows.length - 1 ?
-                                                0 :
-                                                pos + 1;
+                                        if (target) {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            focusInput(target);
+                                            return;
                                         }
 
+                                        return;
                                     }
 
 
@@ -4156,3 +4385,47 @@ new class extends Component {
         }
     }
 </style>
+
+<script>
+    (function () {
+        function registerPosInvoiceActions() {
+            if (!window.Livewire || window.__posInvoiceActionsRegistered) {
+                return;
+            }
+
+            window.__posInvoiceActionsRegistered = true;
+
+            Livewire.on('whatsapp-invoice', function (event) {
+                const phone = event?.phone ?? event?.detail?.phone ?? null;
+                const message = event?.message ?? event?.detail?.message ?? '';
+
+                if (!message) {
+                    return;
+                }
+
+                const target = phone
+                    ? 'https://wa.me/' + String(phone) + '?text=' + encodeURIComponent(message)
+                    : 'https://wa.me/?text=' + encodeURIComponent(message);
+
+                const popup = window.__posWhatsAppWindow;
+                window.__posWhatsAppWindow = null;
+
+                if (popup && !popup.closed) {
+                    popup.location.href = target;
+                    try {
+                        popup.focus();
+                    } catch (e) {}
+                    return;
+                }
+
+                // fallback إذا منع المتصفح فتح نافذة جديدة.
+                window.location.href = target;
+            });
+        }
+
+        document.addEventListener('livewire:init', registerPosInvoiceActions);
+        if (window.Livewire) {
+            registerPosInvoiceActions();
+        }
+    })();
+</script>

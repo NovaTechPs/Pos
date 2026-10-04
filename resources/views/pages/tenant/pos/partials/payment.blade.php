@@ -99,13 +99,21 @@
 
         foreach (($receipt['items'] ?? []) as $item) {
 
+            $nameWords = preg_split('/\s+/u', trim((string) ($item['name'] ?? 'منتج')), -1, PREG_SPLIT_NO_EMPTY);
+            $shortName = implode(' ', array_slice($nameWords, 0, 2));
+            $quantity = (float) ($item['qty'] ?? 0);
+            $unitPrice = (float) ($item['price'] ?? 0);
+            $lineTotal = (float) ($item['total'] ?? ($unitPrice * $quantity));
+
             $whatsappMessage .=
                 "• " .
-                ($item['name'] ?? 'منتج') .
+                $shortName .
+                " ... " .
+                number_format($unitPrice, 2) .
                 " × " .
-                ($item['qty'] ?? 0) .
+                $quantity .
                 " = " .
-                ($item['total'] ?? 0) .
+                number_format($lineTotal, 2) .
                 "\n";
         }
 
@@ -149,16 +157,21 @@
 
         foreach ($cart as $item) {
 
+            $nameWords = preg_split('/\s+/u', trim((string) ($item['name'] ?? 'منتج')), -1, PREG_SPLIT_NO_EMPTY);
+            $shortName = implode(' ', array_slice($nameWords, 0, 2));
+            $quantity = (float) ($item['quantity'] ?? 0);
+            $unitPrice = (float) ($item['price'] ?? 0);
+            $lineTotal = (float) ($item['subtotal'] ?? ($unitPrice * $quantity));
+
             $whatsappMessage .=
                 "• " .
-                ($item['name'] ?? 'منتج') .
+                $shortName .
+                " ... " .
+                number_format($unitPrice, 2) .
                 " × " .
-                ($item['quantity'] ?? 0) .
+                $quantity .
                 " = " .
-                number_format(
-                    (float) ($item['subtotal'] ?? 0),
-                    2
-                ) .
+                number_format($lineTotal, 2) .
                 "\n";
         }
 
@@ -601,7 +614,7 @@
              أزرار الفاتورة
         ========================================================== --}}
 
-        <div class="grid grid-cols-5 gap-1.5 xl:col-span-2">
+        <div class="grid grid-cols-6 gap-1.5 xl:col-span-2">
 
 
             {{-- حفظ --}}
@@ -625,12 +638,13 @@
 
 
 
-            {{-- حفظ وطباعة --}}
+            {{-- طباعة / حفظ وطباعة --}}
 
             <button
                 type="button"
-                wire:click="checkoutAndPrint"
-                @disabled(empty($cart) || $invoiceLocked)
+                wire:click="{{ $invoiceLocked ? 'printReceipt' : 'checkoutAndPrint' }}"
+                @disabled(empty($cart))
+                title="{{ $invoiceLocked ? 'طباعة الفاتورة القديمة' : 'حفظ الفاتورة وطباعة' }}"
                 class="rounded-xl px-1.5 py-2.5 text-[9px] font-black text-white shadow-sm transition disabled:bg-slate-200 disabled:text-slate-400
                     {{
                         $isReturnMode
@@ -640,12 +654,18 @@
             >
 
                 <span class="block">
-                    حفظ وطباعة
+                    {{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}
                 </span>
 
-                <kbd class="mt-1 inline-block rounded bg-black/20 px-1 py-0.5 text-[7px]">
-                    F6
-                </kbd>
+                @if (!$invoiceLocked)
+                    <kbd class="mt-1 inline-block rounded bg-black/20 px-1 py-0.5 text-[7px]">
+                        F6
+                    </kbd>
+                @else
+                    <span class="mt-1 block text-[7px] font-bold text-white/80">
+                        الفاتورة محفوظة
+                    </span>
+                @endif
 
             </button>
 
@@ -693,48 +713,35 @@
 
 
 
+            {{-- نسخ الفاتورة --}}
+
+            <button
+                type="button"
+                wire:click="copyLoadedInvoice"
+                @disabled(empty($cart))
+                title="نسخ الفاتورة إلى فاتورة جديدة"
+                class="rounded-xl border border-violet-200 bg-violet-50 px-1.5 py-2.5 text-[9px] font-black text-violet-700 transition hover:bg-violet-100 disabled:opacity-40"
+            >
+                <span class="block">📋 نسخ</span>
+                <span class="mt-1 block text-[7px] font-bold text-violet-600">فاتورة جديدة</span>
+            </button>
+
+
+
             {{-- واتساب --}}
 
-            @if ($whatsappPhone)
-                <button
-                    type="button"
-                    data-phone="{{ $whatsappPhone }}"
-                    data-message="{{ $whatsappMessage }}"
-                    title="إرسال الفاتورة للعميل عبر واتساب"
-                    onclick="
-                        const phone = this.dataset.phone;
-                        const message = this.dataset.message;
+            <button
+                type="button"
+                x-on:click="window.__posWhatsAppWindow = window.open('about:blank', '_blank')"
+                wire:click="sendInvoiceWhatsApp"
+                wire:loading.attr="disabled"
+                title="حفظ الفاتورة أولاً ثم إرسالها عبر واتساب"
+                class="rounded-xl border border-green-200 bg-green-50 px-1.5 py-2.5 text-[9px] font-black text-green-700 transition hover:bg-green-100 disabled:opacity-50"
+            >
+                <span class="block">🟢 واتساب</span>
+                <span class="mt-1 block text-[7px] font-bold text-green-600">حفظ وإرسال</span>
+            </button>
 
-                        if (!message) {
-                            alert('لا توجد بيانات فاتورة لإرسالها.');
-                            return;
-                        }
-
-                        const url =
-                            'https://wa.me/' +
-                            phone +
-                            '?text=' +
-                            encodeURIComponent(message);
-
-                        window.open(url, '_blank');
-                    "
-                    class="rounded-xl border border-green-200 bg-green-50 px-1.5 py-2.5 text-[9px] font-black text-green-700 transition hover:bg-green-100"
-                >
-                    <span class="block">🟢 واتساب</span>
-                    <span class="mt-1 block text-[7px] font-bold text-green-600">إرسال الفاتورة</span>
-                </button>
-            @else
-                <button
-                    type="button"
-                    wire:click="openCustomerPhoneModal"
-                    @disabled(!$selectedCustomerId)
-                    class="rounded-xl border border-green-200 bg-green-50 px-1.5 py-2.5 text-[9px] font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-40"
-                    title="إضافة رقم الهاتف أو فتح واتساب واختيار الزبون"
-                >
-                    <span class="block">🟢 واتساب</span>
-                    <span class="mt-1 block text-[7px] font-bold text-green-600">إضافة / اختيار</span>
-                </button>
-            @endif
 
 
         </div>
