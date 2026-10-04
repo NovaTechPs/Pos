@@ -3336,259 +3336,191 @@ new class extends Component {
         (event) => {
 
             const inv =
-                event.data;
+                event?.data || {};
 
+            const escapeHtml =
+                (value) => String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
 
-            const line = (
-                label,
-                value,
-                width = 32
-            ) => {
+            const money =
+                (value) => Number(value || 0).toFixed(2);
 
-                const l =
-                    String(
-                        label ?? ''
-                    );
-
-                const r =
-                    String(
-                        value ?? ''
-                    );
-
-                const spaces =
-                    Math.max(
-                        1,
-                        width -
-                        l.length -
-                        r.length
-                    );
-
-                return (
-                    r +
-                    ' '.repeat(
-                        spaces
-                    ) +
-                    l +
-                    '\n'
-                );
-            };
-
-
-            const shortName =
+            const firstWordWithDots =
                 (name) => {
+                    const value = String(name || '').trim();
+                    const firstWord = value.split(/\s+/).filter(Boolean)[0] || value;
 
-                    const words =
-                        String(
-                            name || ''
-                        )
-                            .trim()
-                            .split(
-                                /\s+/
-                            );
-
-                    return words.length > 3
-                        ? words
-                            .slice(0, 3)
-                            .join(' ') +
-                            '...'
-                        : String(
-                            name || ''
-                        );
+                    return firstWord + '................';
                 };
 
+            const items =
+                Array.isArray(inv.items)
+                    ? inv.items
+                    : [];
 
-            let text = '';
+            const itemRows =
+                items.map(item => {
+                    const qty = Number(item.quantity || 0);
+                    const price = Number(item.unit_price ?? item.price ?? 0);
+                    const total = Number(item.total_price || 0);
 
+                    return `
+                        <tr>
+                            <td>${escapeHtml(firstWordWithDots(item.name))}</td>
+                            <td>${qty}</td>
+                            <td>× ${money(price)}</td>
+                            <td>${money(total)}</td>
+                        </tr>
+                    `;
+                }).join('');
 
-            text +=
-                '==============================\n';
-
-            text +=
-                '        فاتورة مبيعات جملة\n';
-
-            text +=
-                '==============================\n';
-
-
-            text += line(
-                'رقم الفاتورة:',
-                inv.invoice_no
+            const remaining = Math.max(
+                0,
+                Number(inv.total || 0) - Number(inv.paid_amount || 0)
             );
 
-            text += line(
-                'التاريخ:',
-                inv.date
-            );
+            const previewHtml = `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>معاينة فاتورة ${escapeHtml(inv.invoice_no || '')}</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        padding: 24px;
+        background: #f3f4f6;
+        color: #111827;
+        font-family: Tahoma, Arial, sans-serif;
+    }
+    .toolbar {
+        max-width: 420px;
+        margin: 0 auto 14px;
+        display: flex;
+        gap: 8px;
+    }
+    button {
+        flex: 1;
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+    .print-btn { background: #111827; color: #fff; }
+    .close-btn { background: #e5e7eb; color: #111827; }
+    .receipt {
+        width: 80mm;
+        min-height: 100mm;
+        margin: 0 auto;
+        padding: 5mm;
+        background: #fff;
+        color: #000;
+        box-shadow: 0 2px 12px rgba(0,0,0,.12);
+    }
+    .center { text-align: center; }
+    .title { font-size: 19px; font-weight: 800; margin-bottom: 8px; }
+    .meta { font-size: 12px; line-height: 1.8; }
+    .line { border-top: 1px dashed #000; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+    th, td { padding: 5px 2px; border: 1px solid #000; text-align: center; vertical-align: middle; font-weight: 700; }
+    th:first-child, td:first-child { text-align: right; width: 43%; }
+    th:nth-child(2), td:nth-child(2) { width: 15%; }
+    th:nth-child(3), td:nth-child(3) { width: 20%; }
+    th:nth-child(4), td:nth-child(4) { width: 22%; }
+    .summary { margin-top: 8px; font-size: 13px; line-height: 1.9; }
+    .summary-row { display: flex; justify-content: space-between; gap: 10px; }
+    .total { font-size: 17px; font-weight: 800; border-top: 2px solid #000; margin-top: 5px; padding-top: 5px; }
+    .notes { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #000; white-space: pre-wrap; font-size: 12px; }
+    .footer { margin-top: 12px; text-align: center; font-size: 10px; }
+    @page { size: 80mm auto; margin: 0; }
+    @media print {
+        body { padding: 0; background: #fff; }
+        .toolbar { display: none !important; }
+        .receipt { width: 80mm; margin: 0; padding: 4mm; box-shadow: none; }
+    }
+</style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="print-btn" onclick="window.print()">طباعة الفاتورة</button>
+        <button class="close-btn" onclick="window.close()">إغلاق</button>
+    </div>
 
-            text += line(
-                'العميل:',
-                inv.customer_name
-            );
+    <section class="receipt">
+        <div class="center title">${escapeHtml(inv.header_title || 'فاتورة مبيعات جملة')}</div>
 
+        <div class="meta center">
+            <div>رقم الفاتورة: <strong>${escapeHtml(inv.invoice_no || '-')}</strong></div>
+            <div>التاريخ: ${escapeHtml(inv.date || '-')}</div>
+            <div>العميل: ${escapeHtml(inv.customer_name || 'نقدي')}</div>
+        </div>
 
-            text +=
-                '------------------------------\n';
+        <div class="line"></div>
 
-            text +=
-                'الصنف                 الكمية  المجموع\n';
+        <table>
+            <thead>
+                <tr>
+                    <th>الصنف</th>
+                    <th>الكمية</th>
+                    <th>× السعر</th>
+                    <th>المجموع</th>
+                </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+        </table>
 
-            text +=
-                '------------------------------\n';
+        <div class="line"></div>
 
+        <div class="summary">
+            <div class="summary-row"><span>الإجمالي قبل الخصم:</span><strong>${money(inv.subtotal)} ₪</strong></div>
+            <div class="summary-row"><span>الخصم:</span><strong>${money(inv.discount)} ₪</strong></div>
+            <div class="summary-row total"><span>الصافي:</span><strong>${money(inv.total)} ₪</strong></div>
+            <div class="summary-row"><span>المدفوع:</span><strong>${money(inv.paid_amount)} ₪</strong></div>
+            <div class="summary-row"><span>المتبقي:</span><strong>${money(remaining)} ₪</strong></div>
+            <div class="summary-row"><span>طريقة الدفع:</span><strong>${escapeHtml(inv.payment_method || 'نقداً')}</strong></div>
+        </div>
 
-            (
-                inv.items || []
-            ).forEach(
-                item => {
+        ${Number(inv.previous_balance || 0) !== 0 || Number(inv.current_balance || 0) !== 0 ? `
+            <div class="line"></div>
+            <div class="summary">
+                <div class="summary-row"><span>الرصيد السابق:</span><strong>${money(inv.previous_balance)} ₪</strong></div>
+                <div class="summary-row"><span>الرصيد الحالي:</span><strong>${money(inv.current_balance)} ₪</strong></div>
+            </div>
+        ` : ''}
 
-                    const qty =
-                        Number(
-                            item.quantity ||
-                            0
-                        );
+        ${inv.notes ? `<div class="notes"><strong>ملاحظات:</strong><br>${escapeHtml(inv.notes)}</div>` : ''}
 
-                    const total =
-                        Number(
-                            item.total_price ||
-                            0
-                        );
+        <div class="footer">شكراً لتعاملكم معنا</div>
+    </section>
 
-                    text +=
-                        line(
-                            `${shortName(item.name)} ×${qty}`,
-                            total.toFixed(2)
-                        );
-                }
-            );
+    <script>
+        window.addEventListener('load', () => {
+            document.title = 'فاتورة ${escapeHtml(inv.invoice_no || '')}';
+        });
+    <\/script>
+</body>
+</html>`;
 
+            const previewWindow =
+                window.open('', '_blank');
 
-            text +=
-                '==============================\n';
-
-
-            text += line(
-                'الإجمالي قبل الخصم:',
-                Number(
-                    inv.subtotal || 0
-                ).toFixed(2) +
-                ' ₪'
-            );
-
-
-            text += line(
-                'الخصم:',
-                Number(
-                    inv.discount || 0
-                ).toFixed(2) +
-                ' ₪'
-            );
-
-
-            text += line(
-                'الصافي:',
-                Number(
-                    inv.total || 0
-                ).toFixed(2) +
-                ' ₪'
-            );
-
-
-            text += line(
-                'المدفوع:',
-                Number(
-                    inv.paid_amount || 0
-                ).toFixed(2) +
-                ' ₪'
-            );
-
-
-            text += line(
-                'المتبقي:',
-                Number(
-                    inv.remaining_amount || 0
-                ).toFixed(2) +
-                ' ₪'
-            );
-
-
-            text += line(
-                'طريقة الدفع:',
-                inv.payment_method ||
-                'نقداً'
-            );
-
-
-            if (
-                Number(
-                    inv.previous_balance ||
-                    0
-                ) !== 0 ||
-                Number(
-                    inv.current_balance ||
-                    0
-                ) !== 0
-            ) {
-
-                text +=
-                    '------------------------------\n';
-
-                text += line(
-                    'الرصيد السابق:',
-                    Number(
-                        inv.previous_balance ||
-                        0
-                    ).toFixed(2) +
-                    ' ₪'
-                );
-
-                text += line(
-                    'الرصيد الحالي:',
-                    Number(
-                        inv.current_balance ||
-                        0
-                    ).toFixed(2) +
-                    ' ₪'
-                );
+            if (!previewWindow) {
+                alert('المتصفح منع نافذة معاينة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.');
+                return;
             }
 
-
-            if (inv.notes) {
-
-                text +=
-                    '\nملاحظات: ' +
-                    inv.notes +
-                    '\n';
-            }
-
-
-            text +=
-                '==============================\n\n\n';
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | RawBT
-            |--------------------------------------------------------------------------
-            */
-
-            const intentUrl =
-                'intent:' +
-                encodeURIComponent(
-                    text
-                ) +
-                '#Intent;' +
-                'scheme=rawbt;' +
-                'package=ru.a402d.rawbtprinter;' +
-                'S.type=text/plain;' +
-                'end;';
-
-
-            window.location.href =
-                intentUrl;
-
+            previewWindow.document.open();
+            previewWindow.document.write(previewHtml);
+            previewWindow.document.close();
+            previewWindow.focus();
         }
     );
-
 
     /*
     |--------------------------------------------------------------------------
