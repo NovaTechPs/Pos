@@ -20,8 +20,14 @@ WORKDIR /var/www
 COPY . .
 
 # 6. تثبيت مكتبات PHP
-RUN composer install --no-interaction --optimize-autoloader --no-dev --ignore-platform-reqs --no-scripts
-
+RUN composer install \
+    --no-interaction \
+    --prefer-dist \
+    --retry 5 \
+    --optimize-autoloader \
+    --no-dev \
+    --ignore-platform-reqs \
+    --no-scripts
 # 7. تثبيت حزم NPM وتجميع ملفات CSS/JS (Vite/Tailwind)
 RUN npm ci || npm install
 RUN npm run build
