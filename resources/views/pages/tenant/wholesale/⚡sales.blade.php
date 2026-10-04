@@ -3327,7 +3327,7 @@ new class extends Component {
 
     /*
     |--------------------------------------------------------------------------
-    | Kiosk / RawBT Printing
+    | Direct Printing - RawBT
     |--------------------------------------------------------------------------
     */
 
@@ -3335,231 +3335,120 @@ new class extends Component {
         'do-kiosk-print',
         (event) => {
 
-            const inv =
-                event?.data || {};
+            const inv = event?.data || {};
 
-            const escapeHtml =
-                (value) => String(value ?? '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
+            const money = (value) =>
+                Number(value || 0).toFixed(2);
 
-            const money =
-                (value) => Number(value || 0).toFixed(2);
+            const shortName = (name) => {
+                const words = String(name || '')
+                    .trim()
+                    .split(/\s+/)
+                    .filter(Boolean);
 
-            const firstWordWithDots =
-                (name) => {
-                    const value = String(name || '').trim();
-                    const firstWord = value.split(/\s+/).filter(Boolean)[0] || value;
+                return words.length > 1
+                    ? words[0] + '................'
+                    : (words[0] || '................');
+            };
 
-                    return firstWord + '................';
-                };
+            const padRight = (value, width) => {
+                const text = String(value ?? '');
+                return text.length >= width
+                    ? text.slice(0, width)
+                    : text + ' '.repeat(width - text.length);
+            };
 
-            const items =
-                Array.isArray(inv.items)
-                    ? inv.items
-                    : [];
+            const padLeft = (value, width) => {
+                const text = String(value ?? '');
+                return text.length >= width
+                    ? text.slice(-width)
+                    : ' '.repeat(width - text.length) + text;
+            };
 
-            const itemRows =
-                items.map(item => {
-                    const qty = Number(item.quantity || 0);
-                    const price = Number(item.unit_price ?? item.price ?? 0);
-                    const total = Number(item.total_price || 0);
+            const line = '--------------------------------';
+            const tableLine = '+----------------+------+----------+----------';
 
-                    return `
-                        <tr>
-                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:right; vertical-align:middle; font-weight:700; white-space:nowrap; overflow:hidden;">${escapeHtml(firstWordWithDots(item.name))}</td>
-                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">${qty}</td>
-                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">× ${money(price)}</td>
-                            <td style="border:2px solid #000 !important; padding:6px 4px; text-align:center; vertical-align:middle; font-weight:700;">${money(total)}</td>
-                        </tr>
-                    `;
-                }).join('');
+            let text = '';
+
+            text += '================================\n';
+            text += '       فاتورة مبيعات جملة\n';
+            text += '================================\n';
+            text += `رقم الفاتورة: ${inv.invoice_no || '-'}\n`;
+            text += `التاريخ: ${inv.date || '-'}\n`;
+            text += `العميل: ${inv.customer_name || 'نقدي'}\n`;
+            text += `${line}\n`;
+
+            /* جدول الأصناف */
+            text += `${tableLine}+\n`;
+            text += '| الصنف          | كمية | × السعر  | المجموع  |\n';
+            text += `${tableLine}+\n`;
+
+            (Array.isArray(inv.items) ? inv.items : []).forEach(item => {
+                const name = padRight(shortName(item.name), 16);
+                const qty = padLeft(
+                    Number(item.quantity || 0).toString(),
+                    5
+                );
+                const price = padLeft(
+                    '× ' + money(item.unit_price ?? item.price ?? 0),
+                    9
+                );
+                const total = padLeft(
+                    money(item.total_price || 0),
+                    9
+                );
+
+                text += `| ${name}|${qty} |${price} |${total} |\n`;
+                text += `${tableLine}+\n`;
+            });
 
             const remaining = Math.max(
                 0,
                 Number(inv.total || 0) - Number(inv.paid_amount || 0)
             );
 
-            const previewHtml = `<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>معاينة فاتورة ${escapeHtml(inv.invoice_no || '')}</title>
-<style>
-    * { box-sizing: border-box; }
-    body {
-        margin: 0;
-        padding: 24px;
-        background: #f3f4f6;
-        color: #111827;
-        font-family: Tahoma, Arial, sans-serif;
-    }
-    .toolbar {
-        max-width: 420px;
-        margin: 0 auto 14px;
-        display: flex;
-        gap: 8px;
-    }
-    button {
-        flex: 1;
-        border: 0;
-        border-radius: 8px;
-        padding: 10px 14px;
-        font-size: 14px;
-        cursor: pointer;
-    }
-    .print-btn { background: #111827; color: #fff; }
-    .close-btn { background: #e5e7eb; color: #111827; }
-    .receipt {
-        width: 80mm;
-        min-height: 100mm;
-        margin: 0 auto;
-        padding: 5mm;
-        background: #fff;
-        color: #000;
-        box-shadow: 0 2px 12px rgba(0,0,0,.12);
-    }
-    .center { text-align: center; }
-    .title { font-size: 19px; font-weight: 800; margin-bottom: 8px; }
-    .meta { font-size: 12px; line-height: 1.8; }
-    .line { border-top: 1px dashed #000; margin: 8px 0; }
-    .items-table {
-        width: 100%;
-        border-collapse: collapse !important;
-        border-spacing: 0 !important;
-        empty-cells: show !important;
-        border: 3px solid #000 !important;
-        outline: 1px solid #000 !important;
-        font-size: 11px;
-        table-layout: fixed;
-        direction: rtl;
-        color: #000 !important;
-        background: #fff !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-    }
-    .items-table th,
-    .items-table td {
-        padding: 6px 4px !important;
-        border: 2px solid #000 !important;
-        outline: none !important;
-        text-align: center;
-        vertical-align: middle;
-        font-weight: 700;
-        line-height: 1.35;
-        color: #000 !important;
-        background: #fff !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-    }
-    .items-table thead th {
-        border: 2px solid #000 !important;
-        font-weight: 900;
-        background: #fff !important;
-    }
-    .items-table th:first-child,
-    .items-table td:first-child {
-        text-align: right;
-        width: 43%;
-        white-space: nowrap;
-        overflow: hidden;
-    }
-    .items-table th:nth-child(2),
-    .items-table td:nth-child(2) { width: 15%; }
-    .items-table th:nth-child(3),
-    .items-table td:nth-child(3) { width: 20%; }
-    .items-table th:nth-child(4),
-    .items-table td:nth-child(4) { width: 22%; }
-    .summary { margin-top: 8px; font-size: 13px; line-height: 1.9; }
-    .summary-row { display: flex; justify-content: space-between; gap: 10px; }
-    .total { font-size: 17px; font-weight: 800; border-top: 2px solid #000; margin-top: 5px; padding-top: 5px; }
-    .notes { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #000; white-space: pre-wrap; font-size: 12px; }
-    .footer { margin-top: 12px; text-align: center; font-size: 10px; }
-    @page { size: 80mm auto; margin: 0; }
-    @media print {
-        body { padding: 0; background: #fff; }
-        .toolbar { display: none !important; }
-        .receipt { width: 80mm; margin: 0; padding: 4mm; box-shadow: none; }
-    }
-</style>
-</head>
-<body>
-    <div class="toolbar">
-        <button class="print-btn" onclick="window.print()">طباعة الفاتورة</button>
-        <button class="close-btn" onclick="window.close()">إغلاق</button>
-    </div>
+            text += '\n';
+            text += line + '\n';
+            text += `الإجمالي قبل الخصم: ${money(inv.subtotal)} ₪\n`;
+            text += `الخصم: ${money(inv.discount)} ₪\n`;
+            text += `الصافي: ${money(inv.total)} ₪\n`;
+            text += `المدفوع: ${money(inv.paid_amount)} ₪\n`;
+            text += `المتبقي: ${money(remaining)} ₪\n`;
+            text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
 
-    <section class="receipt">
-        <div class="center title">${escapeHtml(inv.header_title || 'فاتورة مبيعات جملة')}</div>
-
-        <div class="meta center">
-            <div>رقم الفاتورة: <strong>${escapeHtml(inv.invoice_no || '-')}</strong></div>
-            <div>التاريخ: ${escapeHtml(inv.date || '-')}</div>
-            <div>العميل: ${escapeHtml(inv.customer_name || 'نقدي')}</div>
-        </div>
-
-        <div class="line"></div>
-
-        <table class="items-table" style="width:100%; border-collapse:collapse; border-spacing:0; border:3px solid #000; table-layout:fixed; direction:rtl;">
-            <thead>
-                <tr>
-                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">الصنف</th>
-                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">الكمية</th>
-                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">× السعر</th>
-                    <th style="border:2px solid #000; padding:6px 4px; text-align:center; font-weight:900;">المجموع</th>
-                </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-        </table>
-
-        <div class="line"></div>
-
-        <div class="summary">
-            <div class="summary-row"><span>الإجمالي قبل الخصم:</span><strong>${money(inv.subtotal)} ₪</strong></div>
-            <div class="summary-row"><span>الخصم:</span><strong>${money(inv.discount)} ₪</strong></div>
-            <div class="summary-row total"><span>الصافي:</span><strong>${money(inv.total)} ₪</strong></div>
-            <div class="summary-row"><span>المدفوع:</span><strong>${money(inv.paid_amount)} ₪</strong></div>
-            <div class="summary-row"><span>المتبقي:</span><strong>${money(remaining)} ₪</strong></div>
-            <div class="summary-row"><span>طريقة الدفع:</span><strong>${escapeHtml(inv.payment_method || 'نقداً')}</strong></div>
-        </div>
-
-        ${Number(inv.previous_balance || 0) !== 0 || Number(inv.current_balance || 0) !== 0 ? `
-            <div class="line"></div>
-            <div class="summary">
-                <div class="summary-row"><span>الرصيد السابق:</span><strong>${money(inv.previous_balance)} ₪</strong></div>
-                <div class="summary-row"><span>الرصيد الحالي:</span><strong>${money(inv.current_balance)} ₪</strong></div>
-            </div>
-        ` : ''}
-
-        ${inv.notes ? `<div class="notes"><strong>ملاحظات:</strong><br>${escapeHtml(inv.notes)}</div>` : ''}
-
-        <div class="footer">شكراً لتعاملكم معنا</div>
-    </section>
-
-    <script>
-        window.addEventListener('load', () => {
-            document.title = 'فاتورة ${escapeHtml(inv.invoice_no || '')}';
-        });
-    <\/script>
-</body>
-</html>`;
-
-            const previewWindow =
-                window.open('', '_blank');
-
-            if (!previewWindow) {
-                alert('المتصفح منع نافذة معاينة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.');
-                return;
+            if (
+                Number(inv.previous_balance || 0) !== 0 ||
+                Number(inv.current_balance || 0) !== 0
+            ) {
+                text += `${line}\n`;
+                text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
+                text += `الرصيد الحالي: ${money(inv.current_balance)} ₪\n`;
             }
 
-            previewWindow.document.open();
-            previewWindow.document.write(previewHtml);
-            previewWindow.document.close();
-            previewWindow.focus();
+            if (inv.notes) {
+                text += `${line}\n`;
+                text += `ملاحظات: ${inv.notes}\n`;
+            }
+
+            text += '================================\n';
+            text += '       شكراً لتعاملكم معنا\n';
+            text += '================================\n\n\n';
+
+            /*
+            |--------------------------------------------------------------------------
+            | إرسال الفاتورة مباشرة إلى RawBT بدون فتح معاينة المتصفح
+            |--------------------------------------------------------------------------
+            */
+            const intentUrl =
+                'intent:' +
+                encodeURIComponent(text) +
+                '#Intent;' +
+                'scheme=rawbt;' +
+                'package=ru.a402d.rawbtprinter;' +
+                'S.type=text/plain;' +
+                'end;';
+
+            window.location.href = intentUrl;
         }
     );
 
