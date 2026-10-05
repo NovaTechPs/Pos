@@ -3053,9 +3053,9 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    return words.length > 1 ?
-                        words[0] + '................' :
-                        (words[0] || '................');
+                    return words.length > 2
+                        ? words.slice(0, 2).join(' ') + '...'
+                        : (words.join(' ') || '...');
                 };
 
                 const padRight = (value, width) => {
@@ -3089,8 +3089,8 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    text += `${name}`;
-                    text += `${total}  = ${price} × ${qty} \n`;
+                    // اسم الصنف ثم الكمية ثم السعر ثم المجموع
+                    text += `${name} ${qty} × ${price} = ${total}\n`;
                 });
 
                 const remaining = Math.max(
