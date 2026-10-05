@@ -1,9 +1,9 @@
 <div id="thermal-receipt" class="receipt-box" dir="rtl">
 
     <div class="header">
-        <h2 class="store-title">
+        {{-- <h2 class="store-title">
             {{ $receipt['store_name'] ?? 'نقطة البيع' }}
-        </h2>
+        </h2> --}}
 
         <p class="notice">
             {{ $receipt['notice'] ?? 'شكراً لتعاملكم معنا' }}
