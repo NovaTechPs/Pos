@@ -3090,7 +3090,7 @@ new class extends Component {
                     const total = money(item.total_price || 0);
 
                     text += `${name}`;
-                    text += `  ${qty} × ${price} = ${total}\n`;
+                    text += `${total}  = ${price} × ${qty} \n`;
                 });
 
                 const remaining = Math.max(
