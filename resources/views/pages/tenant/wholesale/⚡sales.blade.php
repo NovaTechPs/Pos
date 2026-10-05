@@ -3077,8 +3077,6 @@ new class extends Component {
 
                 let text = '';
 
-                text += '       فاتورة مبيعات جملة\n';
-                text += '=============================\n';
                 text += `رقم الفاتورة: ${inv.invoice_no || '-'}\n`;
                 text += `التاريخ: ${inv.date || '-'}\n`;
                 text += `العميل: ${inv.customer_name || 'نقدي'}\n`;
@@ -3091,7 +3089,7 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    text += `${name}\n`;
+                    text += `${name}`;
                     text += `  ${qty} × ${price} = ${total}\n`;
                 });
 
