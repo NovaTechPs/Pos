@@ -26,6 +26,8 @@ return new class extends Migration
             $table->enum('discount_type', ['fixed', 'percentage'])->default('fixed');
             $table->decimal('discount_rate', 8, 2)->default(0.00);
             $table->decimal('discount', 12, 2)->default(0.00);
+            $table->decimal('delivery_fee', 12, 2)->default(0.00);
+
             $table->decimal('total', 12, 2);
             $table->decimal('total_cost', 12, 2)->default(0.00);
             $table->decimal('total_profit', 12, 2)->default(0.00);

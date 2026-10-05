@@ -244,14 +244,14 @@
     dir="rtl"
 >
 
-    <div class="grid grid-cols-1 gap-2 xl:grid-cols-12">
+    <div class="grid grid-cols-1 gap-2 xl:grid-cols-[repeat(13,minmax(0,1fr))]">
 
 
         {{-- =========================================================
              ملخص المبالغ
         ========================================================== --}}
 
-        <div class="grid grid-cols-2 gap-2 xl:col-span-5 xl:grid-cols-5">
+        <div class="grid grid-cols-2 gap-2 xl:col-span-6 xl:grid-cols-6">
 
 
             {{-- الإجمالي --}}
@@ -300,6 +300,27 @@
                     min="0"
                     step="0.01"
                     wire:model.live.debounce.300ms="discount_amount" @disabled($invoiceLocked)
+                    class="mt-1 h-[38px] w-full rounded-lg border border-slate-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-700 outline-none focus:border-indigo-500"
+                    placeholder="0.00"
+                >
+
+            </div>
+
+
+            {{-- التوصيل --}}
+
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+
+                <div class="text-[9px] font-black text-slate-500">
+                    التوصيل
+                </div>
+
+                <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputmode="decimal"
+                    wire:model.live.debounce.300ms="delivery_fee" @disabled($invoiceLocked)
                     class="mt-1 h-[38px] w-full rounded-lg border border-slate-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-700 outline-none focus:border-indigo-500"
                     placeholder="0.00"
                 >

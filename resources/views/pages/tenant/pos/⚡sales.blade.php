@@ -35,6 +35,7 @@ new class extends Component {
     public ?int $selectedBranchId = null;
     public float $discount_amount = 0;
     public string $discount_type = 'fixed';
+    public float $delivery_fee = 0;
     public ?float $custom_final_total = null;
     public array $categories = [];
     public ?int $selectedCategoryId = null;
@@ -1046,6 +1047,7 @@ new class extends Component {
         $this->payment_method = 'cash';
         $this->discount_amount = 0;
         $this->discount_type = 'fixed';
+        $this->delivery_fee = 0;
         $this->custom_final_total = null;
         $this->currentInvoiceId = null;
         $this->editingInvoiceId = null;
@@ -1093,6 +1095,7 @@ new class extends Component {
             'payment_method' => $this->payment_method,
             'discount_amount' => $this->discount_amount,
             'discount_type' => $this->discount_type,
+            'delivery_fee' => $this->delivery_fee,
             'custom_final_total' => $this->custom_final_total,
             'is_return_mode' => $this->isReturnMode,
             'notes' => $this->notes,
@@ -1118,6 +1121,7 @@ new class extends Component {
         $this->payment_method = $held['payment_method'] ?? 'cash';
         $this->discount_amount = (float) ($held['discount_amount'] ?? 0);
         $this->discount_type = $held['discount_type'] ?? 'fixed';
+        $this->delivery_fee = (float) ($held['delivery_fee'] ?? 0);
         $this->custom_final_total = isset($held['custom_final_total']) ? (float) $held['custom_final_total'] : null;
         $this->isReturnMode = (bool) ($held['is_return_mode'] ?? false);
         $this->notes = $held['notes'] ?? '';
@@ -1238,9 +1242,10 @@ new class extends Component {
         $this->payment_method = Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $invoice->id)->latest('id')->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
+        $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
 
         // إظهار الصافي الحالي داخل حقل الصافي عند تحميل فاتورة محفوظة.
-        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
         $this->notes = $invoice->notes ?? '';
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
         $this->customerSearch = '';
@@ -1463,7 +1468,7 @@ new class extends Component {
 
         // الصافي النهائي دائماً يساوي الإجمالي بعد الخصم.
         // لذلك عند تعديل الخصم يتحدث الصافي مباشرة.
-        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
     }
 
     public function updatedDiscountType(): void
@@ -1474,7 +1479,7 @@ new class extends Component {
         }
 
         // عند تغيير نوع الخصم، حافظ على الصافي الحالي المحسوب.
-        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
     }
 
     public function updatedCustomFinalTotal($value): void
@@ -1489,17 +1494,33 @@ new class extends Component {
             return;
         }
 
-        // الصافي المطلوب لا يمكن أن يكون أكبر من الإجمالي قبل الخصم.
-        $target = max(0, min($this->subtotal, (float) $value));
+        // الصافي النهائي يشمل التوصيل، لذلك الحد الأعلى هو المنتجات بعد إضافة التوصيل.
+        $maxTotal = $this->roundMoney($this->subtotal + max(0, $this->delivery_fee));
+        $minTotal = $this->roundMoney(max(0, $this->delivery_fee));
+        $target = max($minTotal, min($maxTotal, (float) $value));
 
         $target = $this->roundMoney($target);
 
-        // تعديل الصافي يغيّر الخصم تلقائياً.
+        // تعديل الصافي يغيّر الخصم على المنتجات فقط، ولا يخصم من رسوم التوصيل.
         $this->discount_type = 'fixed';
-        $this->discount_amount = $this->roundMoney(max(0, $this->subtotal - $target));
+        $this->discount_amount = $this->roundMoney(max(0, min($this->subtotal, $this->subtotal + $this->delivery_fee - $target)));
 
         // حافظ على القيمة التي أدخلها المستخدم.
         $this->custom_final_total = $target;
+    }
+
+    public function updatedDeliveryFee($value): void
+    {
+        $this->delivery_fee = $this->roundMoney(max(0, (float) $value));
+
+        if ($this->subtotal <= 0) {
+            $this->custom_final_total = $this->delivery_fee > 0 ? $this->delivery_fee : null;
+            return;
+        }
+
+        $this->custom_final_total = $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee)
+        );
     }
 
     public function toggleDiscountType(): void
@@ -1507,7 +1528,7 @@ new class extends Component {
         $this->discount_type = $this->discount_type === 'fixed' ? 'percentage' : 'fixed';
 
         if ($this->subtotal > 0) {
-            $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+            $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
         } else {
             $this->custom_final_total = null;
         }
@@ -1557,11 +1578,18 @@ new class extends Component {
         }
 
         if ($this->custom_final_total !== null) {
-            return $this->roundMoney(max(0, min($this->subtotal, (float) $this->custom_final_total)));
+            $maxTotal = $this->roundMoney($this->subtotal + max(0, $this->delivery_fee));
+            $minTotal = $this->roundMoney(max(0, $this->delivery_fee));
+
+            return $this->roundMoney(
+                max($minTotal, min($maxTotal, (float) $this->custom_final_total))
+            );
         }
 
-        // بدون قيمة نهائية يدوية: الصافي = الإجمالي - الخصم.
-        return $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+        // الصافي = المنتجات - الخصم + التوصيل.
+        return $this->roundMoney(
+            max(0, $this->subtotal - $this->calculated_discount + max(0, $this->delivery_fee))
+        );
     }
 
     public function getAmountDueProperty(): float
@@ -1936,14 +1964,25 @@ new class extends Component {
 
                 $subtotal = $this->roundMoney($subtotal);
                 $totalCost = $this->roundMoney($totalCost);
+                $deliveryFee = $invoiceType === 'pos'
+                    ? $this->roundMoney(max(0, (float) $this->delivery_fee))
+                    : 0;
+
                 $discount = $invoiceType === 'pos' ? $this->calculated_discount : 0;
-                $total = $invoiceType === 'return' ? -abs($subtotal) : $this->roundMoney(max(0, $subtotal - $discount));
+                $total = $invoiceType === 'return'
+                    ? -abs($subtotal)
+                    : $this->roundMoney(max(0, $subtotal - $discount + $deliveryFee));
 
                 if ($invoiceType === 'pos' && $this->custom_final_total !== null) {
-                    $customTotal = max(0, min($subtotal, (float) $this->custom_final_total));
+                    $maxTotal = $this->roundMoney($subtotal + $deliveryFee);
+                    $minTotal = $deliveryFee;
+                    $customTotal = max($minTotal, min($maxTotal, (float) $this->custom_final_total));
 
                     $total = $this->roundMoney($customTotal);
-                    $discount = $this->roundMoney($subtotal - $customTotal);
+                    // رسوم التوصيل ليست خصماً، لذلك نستخرج الخصم من قيمة المنتجات فقط.
+                    $discount = $this->roundMoney(
+                        max(0, min($subtotal, $subtotal + $deliveryFee - $customTotal))
+                    );
                 }
 
                 $requiredPayment = abs($total);
@@ -1975,9 +2014,10 @@ new class extends Component {
                         'discount_type' => $this->discount_type,
                         'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, $this->discount_amount)) : 0,
                         'discount' => $discount,
+                        'delivery_fee' => $deliveryFee,
                         'total' => $total,
                         'total_cost' => $totalCost,
-                        'total_profit' => $this->roundMoney($total - $totalCost),
+                        'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
                         'payment_status' => $paymentStatus,
                         'notes' => trim($this->notes) ?: null,
@@ -1995,9 +2035,10 @@ new class extends Component {
                         'discount_type' => $this->discount_type,
                         'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, $this->discount_amount)) : 0,
                         'discount' => $discount,
+                        'delivery_fee' => $deliveryFee,
                         'total' => $total,
                         'total_cost' => $totalCost,
-                        'total_profit' => $this->roundMoney($total - $totalCost),
+                        'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
                         'payment_status' => $paymentStatus,
                         'notes' => trim($this->notes) ?: null,
@@ -2097,7 +2138,7 @@ new class extends Component {
                         'amount' => $paid,
                         'payment_method' => $this->payment_method,
                         'order_id' => $order->id,
-                        'notes' => trim($this->notes) ?: null,
+                        'notes' => 'سند قبض للفاتورة #' . $order->invoice_number,
                         'payment_date' => now(),
                         'updated_at' => now(),
                     ];
@@ -2237,16 +2278,67 @@ new class extends Component {
     {
         $order->loadMissing('items.product', 'user', 'branch');
 
+        /*
+        |----------------------------------------------------------------------
+        | تجميع الأصناف المتشابهة للطباعة فقط
+        |----------------------------------------------------------------------
+        | لا نغيّر السلة ولا OrderItem ولا طريقة الحفظ.
+        | عند الطباعة فقط: كل OrderItems التي لها نفس product_id تظهر
+        | كسطر واحد، مع جمع الكمية والإجمالي.
+        | إذا كانت الأسعار مختلفة نحسب سعر الوحدة الفعلي من:
+        | مجموع الإجمالي ÷ مجموع الكمية.
+        */
+        $groupedItems = [];
+
+        foreach ($order->items as $item) {
+            $productId = (int) $item->product_id;
+            $quantity = (float) $item->quantity;
+            $lineTotal = (float) $item->total_price;
+
+            if ($productId <= 0) {
+                $groupKey = 'item_' . $item->id;
+            } else {
+                $groupKey = 'product_' . $productId;
+            }
+
+            if (!isset($groupedItems[$groupKey])) {
+                $groupedItems[$groupKey] = [
+                    'name' => $item->product?->name ?? 'منتج غير محدد',
+                    'qty' => $quantity,
+                    'total' => $lineTotal,
+                ];
+
+                continue;
+            }
+
+            $groupedItems[$groupKey]['qty'] += $quantity;
+            $groupedItems[$groupKey]['total'] += $lineTotal;
+        }
+
         $items = [];
         $totalQty = 0;
-        foreach ($order->items as $index => $item) {
-            $totalQty += abs((float) $item->quantity);
+        $index = 1;
+
+        foreach ($groupedItems as $groupedItem) {
+            $quantity = (float) $groupedItem['qty'];
+            $total = (float) $groupedItem['total'];
+
+            if (abs($quantity) < 0.000001) {
+                continue;
+            }
+
+            $totalQty += abs($quantity);
+
+            // سعر الوحدة المتوسط يحافظ على نفس إجمالي السطر حتى لو
+            // كانت نفس السلعة قد بيعت بأسعار مختلفة داخل الفاتورة.
+            $unitPrice = abs($total / $quantity);
+
             $items[] = [
-                'id' => $index + 1,
-                'name' => $item->product?->name ?? 'منتج غير محدد',
-                'qty' => $item->quantity,
-                'price' => number_format((float) $item->unit_price, 2),
-                'total' => number_format((float) $item->total_price, 2),
+                'id' => $index++,
+                'name' => $groupedItem['name'],
+                'qty' => $quantity,
+                'price' => number_format($unitPrice, 2),
+                'total' => number_format($total, 2),
             ];
         }
 
@@ -2263,6 +2355,7 @@ new class extends Component {
             'total_qty' => $totalQty,
             'subtotal' => number_format((float) $order->subtotal, 2),
             'discount' => number_format((float) $order->discount, 2),
+            'delivery_fee' => number_format((float) ($order->delivery_fee ?? 0), 2),
             'total_amount' => number_format(abs((float) $order->total), 2),
             'paid' => number_format((float) $order->paid_amount, 2),
             'change' => number_format(max(0, (float) $order->paid_amount - abs((float) $order->total)), 2),
