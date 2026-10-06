@@ -10,7 +10,6 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\TenantSetting;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 new class extends Component {
@@ -80,7 +79,6 @@ new class extends Component {
     */
 
     public bool $sendWhatsapp = false;
-    public ?int $lastSavedOrderId = null;
 
     /*
     |--------------------------------------------------------------------------
@@ -1203,9 +1201,6 @@ new class extends Component {
             return;
         }
 
-        // حفظ آخر فاتورة حتى يستطيع زر المشاركة استخدامها بعد تفريغ السلة.
-        $this->lastSavedOrderId = $order?->id;
-
         /*
         |--------------------------------------------------------------------------
         | Print
@@ -1269,67 +1264,6 @@ new class extends Component {
         $this->isSaving = false;
 
         session()->flash('message', "تم حفظ فاتورة الجملة رقم {$invoiceNumber} بنجاح.");
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Native PDF Share
-    |--------------------------------------------------------------------------
-    */
-
-    public function shareInvoicePdf(): void
-    {
-        if (!$this->lastSavedOrderId) {
-            session()->flash('error', 'احفظ الفاتورة أولاً ثم اضغط مشاركة.');
-            return;
-        }
-
-        $tenantId = $this->tenantId();
-        $branchId = $this->branchId();
-
-        if (!$tenantId || !$branchId) {
-            session()->flash('error', 'تعذر تحديد المتجر أو الفرع.');
-            return;
-        }
-
-        $order = Order::query()
-            ->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->where('type', 'wholesale')
-            ->whereKey($this->lastSavedOrderId)
-            ->with(['items.product', 'user', 'branch'])
-            ->first();
-
-        if (!$order) {
-            session()->flash('error', 'لم يتم العثور على الفاتورة للمشاركة.');
-            return;
-        }
-
-        try {
-            $pdf = app('dompdf.wrapper');
-
-            $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
-                'order' => $order,
-            ]);
-
-            $filename = 'invoice-' . $order->invoice_number . '.pdf';
-            $path = 'invoice-share/' . $filename;
-
-            Storage::disk('public')->put($path, $pdf->output());
-
-            $url = Storage::disk('public')->url($path);
-
-            $this->dispatch(
-                'share-invoice-pdf',
-                url: url($url),
-                filename: $filename,
-                invoiceNumber: $order->invoice_number,
-                customerName: $order->customer_name,
-            );
-        } catch (\Throwable $e) {
-            report($e);
-            session()->flash('error', 'تعذر تجهيز PDF للمشاركة.');
-        }
     }
 
     /*
@@ -2037,27 +1971,10 @@ new class extends Component {
                                     </label>
 
                                     @if ($selectedCustomerId)
-                                        <div class="flex items-center gap-2">
-
-                                            <button type="button"
-                                                wire:click="$set('sendWhatsapp', {{ $sendWhatsapp ? 'false' : 'true' }})"
-                                                title="{{ $sendWhatsapp ? 'سيتم فتح واتساب بعد حفظ الفاتورة' : 'إرسال الفاتورة عبر واتساب بعد الحفظ' }}"
-                                                class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition
-                                                    {{ $sendWhatsapp
-                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                        : 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30' }}">
-                                                <span>واتساب</span>
-                                                @if ($sendWhatsapp)
-                                                    <span>✓</span>
-                                                @endif
-                                            </button>
-
-                                            <button type="button" wire:click="clearCustomer"
-                                                class="text-xs text-rose-500 hover:underline">
-                                                إزالة
-                                            </button>
-
-                                        </div>
+                                        <button type="button" wire:click="clearCustomer"
+                                            class="text-xs text-rose-500 hover:underline">
+                                            إزالة
+                                        </button>
                                     @endif
                                 </div>
 
@@ -2448,7 +2365,15 @@ new class extends Component {
                             {{-- WhatsApp --}}
                             {{-- ================================================= --}}
 
-                            {{-- WhatsApp is controlled from the customer section above. --}}
+                            <label
+                                class="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+
+                                <input type="checkbox" wire:model.live="sendWhatsapp"
+                                    class="rounded border-zinc-300 text-indigo-600" />
+
+                                فتح واتساب للعميل بعد الحفظ إذا كان لديه رقم
+
+                            </label>
 
 
                             {{-- ================================================= --}}
@@ -2483,26 +2408,6 @@ new class extends Component {
                                 </flux:button>
 
                             </div>
-
-                            {{-- ================================================= --}}
-                            {{-- Native Share --}}
-                            {{-- ================================================= --}}
-
-                            <flux:button
-                                variant="subtle"
-                                icon="share"
-                                class="w-full mt-2"
-                                wire:click="shareInvoicePdf"
-                                wire:loading.attr="disabled"
-                                wire:target="shareInvoicePdf"
-                                :disabled="!$lastSavedOrderId">
-                                <span wire:loading.remove wire:target="shareInvoicePdf">
-                                    مشاركة PDF
-                                </span>
-                                <span wire:loading wire:target="shareInvoicePdf">
-                                    جارٍ تجهيز PDF...
-                                </span>
-                            </flux:button>
 
                         </div>
 
@@ -3257,70 +3162,6 @@ new class extends Component {
                 window.print();
             }
         );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Native PDF Share
-        |--------------------------------------------------------------------------
-        */
-
-        $wire.on('share-invoice-pdf', async (event) => {
-            if (!event?.url) {
-                return;
-            }
-
-            try {
-                const response = await fetch(event.url, {
-                    credentials: 'same-origin',
-                });
-
-                if (!response.ok) {
-                    throw new Error('تعذر تحميل ملف PDF.');
-                }
-
-                const blob = await response.blob();
-                const file = new File(
-                    [blob],
-                    event.filename || 'invoice.pdf',
-                    { type: 'application/pdf' }
-                );
-
-                const shareData = {
-                    title: `فاتورة ${event.invoiceNumber || ''}`.trim(),
-                    text: event.customerName
-                        ? `فاتورة مبيعات جملة للعميل: ${event.customerName}`
-                        : 'فاتورة مبيعات جملة',
-                    files: [file],
-                };
-
-                if (
-                    navigator.share &&
-                    navigator.canShare &&
-                    navigator.canShare({ files: [file] })
-                ) {
-                    await navigator.share(shareData);
-                    return;
-                }
-
-                const downloadUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = event.filename || 'invoice.pdf';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-
-                alert('المتصفح لا يدعم مشاركة الملفات مباشرة. تم تنزيل PDF، ويمكنك مشاركته من قائمة مشاركة الجهاز.');
-            } catch (error) {
-                if (error?.name === 'AbortError') {
-                    return;
-                }
-
-                console.error(error);
-                alert('تعذر فتح قائمة المشاركة. تأكد من أن الصفحة تعمل في متصفح يدعم مشاركة الملفات.');
-            }
-        });
 
         /*
         |--------------------------------------------------------------------------
