@@ -2957,7 +2957,7 @@ new class extends Component {
 
                 let text = '';
                 text += '          سند قبض\n';
-                text += '=============================\n';
+                text += '==========================\n';
                 text += `رقم السند: ${data.voucher_number || '-'}\n`;
                 text += `التاريخ: ${data.payment_date || '-'}\n`;
                 text += `العميل: ${data.party_name || '-'}\n`;
@@ -2966,7 +2966,7 @@ new class extends Component {
                 text += `طريقة الدفع: ${data.payment_method || 'cash'}\n`;
 
                 if (data.notes) {
-                    text += '-----------------------------\n';
+                    text += '--------------------------\n';
                     text += `ملاحظات: ${data.notes}\n`;
                 }
 
