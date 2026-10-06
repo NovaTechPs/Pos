@@ -21,26 +21,20 @@ new class extends Component
             type="button"
             wire:click="print"
             class="
-                flex
-                items-center
-                justify-center
-                gap-3
-                px-10
-                py-5
+                flex items-center justify-center gap-3
                 rounded-xl
                 bg-gray-900
-                text-white
-                text-2xl
-                font-bold
+                px-12 py-6
+                text-2xl font-bold text-white
                 shadow-lg
+                transition
                 hover:bg-gray-800
                 active:scale-95
-                transition
             "
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="w-8 h-8"
+                class="h-8 w-8"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -60,47 +54,158 @@ new class extends Component
 
 
     <script>
-        document.addEventListener('livewire:init', () => {
+        document.addEventListener('livewire:init', function () {
 
-            Livewire.on('print-halwo', () => {
+            Livewire.on('print-halwo', function () {
 
                 const text = "halwo\n\n\n";
 
 
-                // AndroidPrinter
-                if (
-                    window.AndroidPrinter &&
-                    typeof window.AndroidPrinter.printText === 'function'
-                ) {
-                    window.AndroidPrinter.printText(text);
-                    return;
+                /*
+                |--------------------------------------------------------------------------
+                | 1 - AndroidPrinter
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.AndroidPrinter &&
+                        typeof window.AndroidPrinter.printText === 'function'
+                    ) {
+                        window.AndroidPrinter.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('AndroidPrinter error:', e);
                 }
 
 
-                // NativePrinter
-                if (
-                    window.NativePrinter &&
-                    typeof window.NativePrinter.printText === 'function'
-                ) {
-                    window.NativePrinter.printText(text);
-                    return;
+                /*
+                |--------------------------------------------------------------------------
+                | 2 - NativePrinter
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.NativePrinter &&
+                        typeof window.NativePrinter.printText === 'function'
+                    ) {
+                        window.NativePrinter.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('NativePrinter error:', e);
                 }
 
 
-                // Android
-                if (
-                    window.Android &&
-                    typeof window.Android.printText === 'function'
-                ) {
-                    window.Android.printText(text);
-                    return;
+                /*
+                |--------------------------------------------------------------------------
+                | 3 - Android
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.Android &&
+                        typeof window.Android.printText === 'function'
+                    ) {
+                        window.Android.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Android error:', e);
                 }
 
 
-                // لا يوجد Printer Bridge
+                /*
+                |--------------------------------------------------------------------------
+                | 4 - Printer
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.Printer &&
+                        typeof window.Printer.printText === 'function'
+                    ) {
+                        window.Printer.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Printer error:', e);
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | 5 - PrinterBridge
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.PrinterBridge &&
+                        typeof window.PrinterBridge.printText === 'function'
+                    ) {
+                        window.PrinterBridge.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('PrinterBridge error:', e);
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | 6 - AndroidBridge
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.AndroidBridge &&
+                        typeof window.AndroidBridge.printText === 'function'
+                    ) {
+                        window.AndroidBridge.printText(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('AndroidBridge error:', e);
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | 7 - print
+                |--------------------------------------------------------------------------
+                */
+
+                try {
+                    if (
+                        window.AndroidPrinter &&
+                        typeof window.AndroidPrinter.print === 'function'
+                    ) {
+                        window.AndroidPrinter.print(text);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('AndroidPrinter.print error:', e);
+                }
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | لا يوجد Bridge
+                |--------------------------------------------------------------------------
+                */
+
+                console.error(
+                    'No Android printer bridge was found.'
+                );
+
                 alert(
-                    'الطابعة الداخلية غير متصلة بتطبيق الجهاز.\n\n' +
-                    'يجب تشغيل نسخة Android التي تحتوي على Printer Bridge.'
+                    'لم يتم العثور على اتصال الطابعة الداخلية داخل تطبيق Android.'
                 );
 
             });
