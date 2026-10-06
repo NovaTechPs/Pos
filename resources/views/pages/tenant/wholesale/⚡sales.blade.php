@@ -3021,7 +3021,7 @@ new class extends Component {
                 <body>
                     <div class="center"><h2>سند قبض</h2></div>
                     <div class="line"></div>
-                    <div class="row"><b>رقم السند</b><span>${data.voucher_number || '-'}</span></div>
+                    <div class="row"><b>رقم ببسسالسند</b><span>${data.voucher_number || '-'}</span></div>
                     <div class="row"><b>التاريخ</b><span>${data.payment_date || '-'}</span></div>
                     <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
                     <div class="line"></div>
