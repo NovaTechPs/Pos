@@ -3060,9 +3060,13 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    return words.length > 1 ?
-                        words[0] + '................' :
-                        (words[0] || '................');
+                    // إظهار أول كلمتين فقط من اسم الصنف.
+                    if (words.length === 0) {
+                        return '................';
+                    }
+
+                    return words.slice(0, 2).join(' ') +
+                        (words.length > 2 ? '...' : '');
                 };
 
                 const padRight = (value, width) => {
@@ -3096,8 +3100,9 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    text += `${name}`;
-                    text += `${total}  = ${price} × ${qty} \n`;
+                    // ترتيب الفاتورة من اليمين إلى اليسار:
+                    // اسم الصنف → العدد → ص= → السعر → الإجمالي
+                    text += `${name}  ${qty} x ${price} = ${total}\n`;
                 });
 
                 const remaining = Math.max(
@@ -3114,11 +3119,10 @@ new class extends Component {
                 text += `المتبقي: ${money(remaining)} ₪\n`;
                 text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
 
-                /* رصيد العميل بعد تسجيل الدفعة */
+                /* رصيد العميل */
                 if (inv.has_customer) {
                     text += `${line}\n`;
-                    text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
-                    text += `الرصيد بعد الدفعة: ${money(inv.current_balance)} ₪\n`;
+                    text += `رصيد الزبون: ${money(inv.current_balance)} ₪\n`;
                 }
 
                 if (inv.notes) {
