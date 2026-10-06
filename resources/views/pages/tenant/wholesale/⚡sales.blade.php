@@ -1376,7 +1376,7 @@ new class extends Component {
             return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
         }
 
-        return 'https://wa.me/?text=' . urlencode($text);
+        return 'whatsapp://send?text=' . urlencode($text);
     }
 
     /*
@@ -3096,8 +3096,8 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    // اسم الصنف → الكمية → × → السعر → = → الإجمالي
-                    text += `${name}  ${qty} × ${price} = ${total}\n`;
+                    text += `${name}`;
+                    text += `${total}  = ${price} × ${qty} \n`;
                 });
 
                 const remaining = Math.max(
@@ -3128,35 +3128,295 @@ new class extends Component {
 
                 /*
                 |--------------------------------------------------------------------------
-                | Quick Printer - Android / Q6 Pro
+                | Windows / Browser Printing
                 |--------------------------------------------------------------------------
-                | Quick Printer يستقبل النص مباشرة من المتصفح عبر quickprinter://
-                | ويدعم الطباعة بدون نافذة اختيار الطابعة عند استخدام avoid_dialog.
+                | على الكمبيوتر لا نستخدم الطباعة الصامتة أو RawBT.
+                | نفتح نسخة الفاتورة في نافذة مستقلة ثم نستدعي window.print()
+                | من تلك النافذة، ليظهر مربع طباعة Windows المعتاد ويمكن اختيار
+                | الطابعة المطلوبة.
                 |--------------------------------------------------------------------------
                 */
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
-                    const quickPrinterText =
-                        '<PRINTER avoid_dialog>' + text + '<CUT>';
-
-                    const encodedText = encodeURI(quickPrinterText);
-
                     const intentUrl =
-                        'intent://' +
-                        encodedText +
+                        'intent:' +
+                        encodeURIComponent(text) +
                         '#Intent;' +
-                        'scheme=quickprinter;' +
-                        'package=pe.diegoveloper.printerserverapp;' +
-                        'type=text/plain;' +
+                        'scheme=rawbt;' +
+                        'package=ru.a402d.rawbtprinter;' +
+                        'S.type=text/plain;' +
                         'end;';
 
                     window.location.href = intentUrl;
                     return;
                 }
 
-                /* Desktop / non-Android fallback only. */
-                window.print();
+                const printWindow = window.open(
+                    '',
+                    '_blank',
+                    'width=500,height=700,scrollbars=yes,resizable=yes'
+                );
+
+                if (!printWindow) {
+                    // إذا منع المتصفح فتح النافذة، استخدم طباعة الصفحة الحالية كحل احتياطي.
+                    window.print();
+                    return;
+                }
+
+                const escapeHtml = (value) => String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+
+                const itemsHtml = (Array.isArray(inv.items) ? inv.items : [])
+                    .map(item => {
+                        const name = escapeHtml(item.name || '-');
+                        const qty = Number(item.quantity || 0);
+                        const price = money(item.unit_price ?? item.price ?? 0);
+                        const total = money(item.total_price || 0);
+
+                        return `
+                            <tr>
+                                <td class="name">${name}</td>
+                                <td>${qty}</td>
+                                <td>${price}</td>
+                                <td>${total}</td>
+                            </tr>
+                        `;
+                    })
+                    .join('');
+
+                const customerBalanceHtml = inv.has_customer ? `
+                    <div class="separator"></div>
+                    <div class="row">
+                        <span>الرصيد السابق</span>
+                        <strong>${money(inv.previous_balance)} ₪</strong>
+                    </div>
+                    <div class="row">
+                        <span>الرصيد بعد الدفعة</span>
+                        <strong>${money(inv.current_balance)} ₪</strong>
+                    </div>
+                ` : '';
+
+                const notesHtml = inv.notes ? `
+                    <div class="separator"></div>
+                    <div class="notes">
+                        <strong>ملاحظات:</strong><br>
+                        ${escapeHtml(inv.notes).replace(/\n/g, '<br>')}
+                    </div>
+                ` : '';
+
+                printWindow.document.open();
+                printWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html lang="ar" dir="rtl">
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>فاتورة ${escapeHtml(inv.invoice_no || '')}</title>
+                        <style>
+                            * {
+                                box-sizing: border-box;
+                            }
+
+                            html, body {
+                                margin: 0;
+                                padding: 0;
+                                background: #fff;
+                            }
+
+                            body {
+                                font-family: Arial, "Tahoma", sans-serif;
+                                direction: rtl;
+                                color: #000;
+                                padding: 8mm;
+                                font-size: 13px;
+                            }
+
+                            .receipt {
+                                width: 100%;
+                                max-width: 80mm;
+                                margin: 0 auto;
+                            }
+
+                            .title {
+                                text-align: center;
+                                font-size: 20px;
+                                font-weight: 900;
+                                margin-bottom: 8px;
+                            }
+
+                            .center {
+                                text-align: center;
+                            }
+
+                            .separator {
+                                border-top: 1px dashed #000;
+                                margin: 8px 0;
+                            }
+
+                            .row {
+                                display: flex;
+                                justify-content: space-between;
+                                gap: 10px;
+                                margin: 5px 0;
+                                line-height: 1.5;
+                            }
+
+                            .row span {
+                                flex: 1;
+                            }
+
+                            .row strong {
+                                white-space: nowrap;
+                            }
+
+                            table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-top: 8px;
+                            }
+
+                            th, td {
+                                padding: 5px 2px;
+                                text-align: center;
+                                vertical-align: middle;
+                                border-bottom: 1px dotted #999;
+                            }
+
+                            th {
+                                font-weight: 900;
+                                border-bottom: 1px solid #000;
+                            }
+
+                            td.name, th.name {
+                                text-align: right;
+                            }
+
+                            td.name {
+                                max-width: 34mm;
+                                word-break: break-word;
+                            }
+
+                            .total {
+                                font-size: 17px;
+                                font-weight: 900;
+                            }
+
+                            .notes {
+                                line-height: 1.6;
+                                word-break: break-word;
+                            }
+
+                            @page {
+                                margin: 6mm;
+                            }
+
+                            @media print {
+                                body {
+                                    padding: 0;
+                                }
+
+                                .receipt {
+                                    max-width: none;
+                                }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="receipt">
+                            <div class="title">فاتورة مبيعات جملة</div>
+
+                            <div class="row">
+                                <span>رقم الفاتورة</span>
+                                <strong>${escapeHtml(inv.invoice_no || '-')}</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>التاريخ</span>
+                                <strong>${escapeHtml(inv.date || '-')}</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>العميل</span>
+                                <strong>${escapeHtml(inv.customer_name || 'نقدي')}</strong>
+                            </div>
+
+                            <div class="separator"></div>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th class="name">الصنف</th>
+                                        <th>العدد</th>
+                                        <th>السعر</th>
+                                        <th>الإجمالي</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${itemsHtml}
+                                </tbody>
+                            </table>
+
+                            <div class="separator"></div>
+
+                            <div class="row">
+                                <span>الإجمالي قبل الخصم</span>
+                                <strong>${money(inv.subtotal)} ₪</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>الخصم</span>
+                                <strong>${money(inv.discount)} ₪</strong>
+                            </div>
+
+                            <div class="row total">
+                                <span>الصافي</span>
+                                <strong>${money(inv.total)} ₪</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>المدفوع</span>
+                                <strong>${money(inv.paid_amount)} ₪</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>المتبقي</span>
+                                <strong>${money(remaining)} ₪</strong>
+                            </div>
+
+                            <div class="row">
+                                <span>طريقة الدفع</span>
+                                <strong>${escapeHtml(inv.payment_method || 'نقداً')}</strong>
+                            </div>
+
+                            ${customerBalanceHtml}
+                            ${notesHtml}
+
+                            <div class="separator"></div>
+                            <div class="center">شكراً لتعاملكم معنا</div>
+                        </div>
+
+                        <script>
+                            window.addEventListener('load', function () {
+                                setTimeout(function () {
+                                    window.focus();
+                                    window.print();
+                                }, 250);
+                            });
+
+                            window.addEventListener('afterprint', function () {
+                                setTimeout(function () {
+                                    window.close();
+                                }, 300);
+                            });
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
             }
         );
 
@@ -3167,20 +3427,41 @@ new class extends Component {
         */
 
         $wire.on(
-            'open-whatsapp-url',
-            (event) => {
+    'open-whatsapp-url',
+    (event) => {
 
-                if (!event?.url) {
-                    return;
-                }
+        if (!event?.url) {
+            return;
+        }
 
+        const url = event.url;
+
+        // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
+        if (url.startsWith('whatsapp://')) {
+
+            const textPart = url.split('?text=')[1] || '';
+            const webUrl = 'https://wa.me/?text=' + textPart;
+
+            window.location.href = url;
+
+            // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
+            setTimeout(() => {
                 window.open(
-                    event.url,
+                    webUrl,
                     '_blank',
                     'noopener,noreferrer'
                 );
+            }, 1200);
 
-            }
+            return;
+        }
+
+        window.open(
+            url,
+            '_blank',
+            'noopener,noreferrer'
         );
+    }
+);
     </script>
 @endscript
