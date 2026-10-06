@@ -1376,7 +1376,7 @@ new class extends Component {
             return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
         }
 
-        return 'whatsapp://send?text=' . urlencode($text);
+        return 'https://wa.me/?text=' . urlencode($text);
     }
 
     /*
@@ -2802,10 +2802,10 @@ new class extends Component {
 @script
     <script>
         /*
-                |--------------------------------------------------------------------------
-                | Focus Search
-                |--------------------------------------------------------------------------
-                */
+            |--------------------------------------------------------------------------
+            | Focus Search
+            |--------------------------------------------------------------------------
+            */
 
         Livewire.hook('commit', ({
             respond
@@ -3060,13 +3060,9 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    // إظهار أول كلمتين فقط من اسم الصنف.
-                    if (words.length === 0) {
-                        return '................';
-                    }
-
-                    return words.slice(0, 2).join(' ') +
-                        (words.length > 2 ? '...' : '');
+                    return words.length > 1 ?
+                        words[0] + '................' :
+                        (words[0] || '................');
                 };
 
                 const padRight = (value, width) => {
@@ -3100,8 +3096,7 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    // ترتيب الفاتورة من اليمين إلى اليسار:
-                    // اسم الصنف → العدد → ص= → السعر → الإجمالي
+                    // اسم الصنف → الكمية → × → السعر → = → الإجمالي
                     text += `${name}  ${qty} × ${price} = ${total}\n`;
                 });
 
@@ -3119,10 +3114,11 @@ new class extends Component {
                 text += `المتبقي: ${money(remaining)} ₪\n`;
                 text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
 
-                /* رصيد العميل */
+                /* رصيد العميل بعد تسجيل الدفعة */
                 if (inv.has_customer) {
                     text += `${line}\n`;
-                    text += `رصيد الزبون: ${money(inv.current_balance)} ₪\n`;
+                    text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
+                    text += `الرصيد بعد الدفعة: ${money(inv.current_balance)} ₪\n`;
                 }
 
                 if (inv.notes) {
@@ -3132,30 +3128,27 @@ new class extends Component {
 
                 /*
                 |--------------------------------------------------------------------------
-                | إرسال الفاتورة مباشرة إلى RawBT بدون فتح معاينة المتصفح
+                | Quick Printer - Android / Q6 Pro
                 |--------------------------------------------------------------------------
-                */
-                /*
-                |--------------------------------------------------------------------------
-                | Q6 Pro / RawBT direct print
-                |--------------------------------------------------------------------------
-                | The Q6 Pro opens this page in Android Chrome. RawBT registers the
-                | `rawbt` scheme and receives the receipt without opening Chrome's
-                | print dialog. RawBT can then use the Q6/iPOS internal printer.
-                |
-                | Keep the normal browser fallback for PCs only.
+                | Quick Printer يستقبل النص مباشرة من المتصفح عبر quickprinter://
+                | ويدعم الطباعة بدون نافذة اختيار الطابعة عند استخدام avoid_dialog.
                 |--------------------------------------------------------------------------
                 */
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
+                    const quickPrinterText =
+                        '<PRINTER avoid_dialog>' + text + '<CUT>';
+
+                    const encodedText = encodeURI(quickPrinterText);
+
                     const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
+                        'intent://' +
+                        encodedText +
                         '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
+                        'scheme=quickprinter;' +
+                        'package=pe.diegoveloper.printerserverapp;' +
+                        'type=text/plain;' +
                         'end;';
 
                     window.location.href = intentUrl;
@@ -3181,33 +3174,12 @@ new class extends Component {
                     return;
                 }
 
-                const url = event.url;
-
-                // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
-                if (url.startsWith('whatsapp://')) {
-
-                    const textPart = url.split('?text=')[1] || '';
-                    const webUrl = 'https://wa.me/?text=' + textPart;
-
-                    window.location.href = url;
-
-                    // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
-                    setTimeout(() => {
-                        window.open(
-                            webUrl,
-                            '_blank',
-                            'noopener,noreferrer'
-                        );
-                    }, 1200);
-
-                    return;
-                }
-
                 window.open(
-                    url,
+                    event.url,
                     '_blank',
                     'noopener,noreferrer'
                 );
+
             }
         );
     </script>
