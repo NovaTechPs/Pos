@@ -2984,10 +2984,16 @@ new class extends Component {
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
-                    // RawBT direct URI - بدون intent:// حتى لا يعيد الجهاز فتح Google Play
-                    const rawbtUrl = 'rawbt:' + encodeURIComponent(text);
+                    const intentUrl =
+                        'intent:' +
+                        encodeURIComponent(text) +
+                        '#Intent;' +
+                        'scheme=rawbt;' +
+                        'package=ru.a402d.rawbtprinter;' +
+                        'S.type=text/plain;' +
+                        'end;';
 
-                    window.location.href = rawbtUrl;
+                    window.location.href = intentUrl;
                     return;
                 }
 
@@ -3054,8 +3060,9 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    // عرض أول كلمتين فقط من اسم المنتج
-                    return words.slice(0, 2).join(' ') || '................';
+                    return words.length > 1 ?
+                        words[0] + '................' :
+                        (words[0] || '................');
                 };
 
                 const padRight = (value, width) => {
@@ -3089,8 +3096,8 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    // الاسم → العدد → ص= → السعر → الإجمالي
-                    text += `${name}  ${qty}  ص= ${price}  = ${total}\n`;
+                    text += `${name}`;
+                    text += `${total}  = ${price} × ${qty} \n`;
                 });
 
                 const remaining = Math.max(
@@ -3138,10 +3145,16 @@ new class extends Component {
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
-                    // RawBT direct URI - بدون intent:// حتى لا يعيد الجهاز فتح Google Play
-                    const rawbtUrl = 'rawbt:' + encodeURIComponent(text);
+                    const intentUrl =
+                        'intent:' +
+                        encodeURIComponent(text) +
+                        '#Intent;' +
+                        'scheme=rawbt;' +
+                        'package=ru.a402d.rawbtprinter;' +
+                        'S.type=text/plain;' +
+                        'end;';
 
-                    window.location.href = rawbtUrl;
+                    window.location.href = intentUrl;
                     return;
                 }
 
