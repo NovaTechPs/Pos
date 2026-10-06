@@ -15,57 +15,53 @@ new class extends Component
     class="min-h-screen w-full flex items-center justify-center"
     dir="rtl"
 >
-    <div class="flex items-center justify-center">
-
-        <button
-            type="button"
-            wire:click="print"
-            class="
-                flex items-center justify-center gap-3
-                rounded-xl
-                bg-gray-900
-                px-12 py-6
-                text-2xl font-bold text-white
-                shadow-lg
-                transition
-                hover:bg-gray-800
-                active:scale-95
-            "
+    <button
+        type="button"
+        wire:click="print"
+        class="
+            flex items-center justify-center gap-3
+            rounded-xl
+            bg-gray-900
+            px-12 py-6
+            text-2xl font-bold text-white
+            shadow-lg
+            transition
+            hover:bg-gray-800
+            active:scale-95
+        "
+    >
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-8 w-8"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
         >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-8 w-8"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M6 9V4h12v5M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v6H6v-6z"
-                />
-            </svg>
+            <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 9V4h12v5M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v6H6v-6z"
+            />
+        </svg>
 
-            <span>طباعة</span>
-        </button>
-
-    </div>
+        <span>طباعة</span>
+    </button>
 
 
     <script>
-        document.addEventListener('livewire:init', function () {
+        document.addEventListener('livewire:init', () => {
 
-            Livewire.on('print-halwo', function () {
+            Livewire.on('print-halwo', () => {
 
                 const text = "halwo\n\n\n";
 
+                let printed = false;
 
-                /*
-                |--------------------------------------------------------------------------
-                | 1 - AndroidPrinter
-                |--------------------------------------------------------------------------
-                */
+
+                // ============================================================
+                // 1. AndroidPrinter
+                // ============================================================
 
                 try {
                     if (
@@ -73,18 +69,20 @@ new class extends Component
                         typeof window.AndroidPrinter.printText === 'function'
                     ) {
                         window.AndroidPrinter.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('AndroidPrinter error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 2 - NativePrinter
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 2. NativePrinter
+                // ============================================================
 
                 try {
                     if (
@@ -92,18 +90,20 @@ new class extends Component
                         typeof window.NativePrinter.printText === 'function'
                     ) {
                         window.NativePrinter.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('NativePrinter error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 3 - Android
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 3. Android
+                // ============================================================
 
                 try {
                     if (
@@ -111,18 +111,20 @@ new class extends Component
                         typeof window.Android.printText === 'function'
                     ) {
                         window.Android.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('Android error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 4 - Printer
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 4. Printer
+                // ============================================================
 
                 try {
                     if (
@@ -130,18 +132,20 @@ new class extends Component
                         typeof window.Printer.printText === 'function'
                     ) {
                         window.Printer.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('Printer error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 5 - PrinterBridge
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 5. PrinterBridge
+                // ============================================================
 
                 try {
                     if (
@@ -149,18 +153,20 @@ new class extends Component
                         typeof window.PrinterBridge.printText === 'function'
                     ) {
                         window.PrinterBridge.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('PrinterBridge error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 6 - AndroidBridge
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 6. AndroidBridge
+                // ============================================================
 
                 try {
                     if (
@@ -168,45 +174,23 @@ new class extends Component
                         typeof window.AndroidBridge.printText === 'function'
                     ) {
                         window.AndroidBridge.printText(text);
-                        return;
+                        printed = true;
                     }
                 } catch (e) {
-                    console.error('AndroidBridge error:', e);
+                    console.error(e);
+                }
+
+                if (printed) {
+                    return;
                 }
 
 
-                /*
-                |--------------------------------------------------------------------------
-                | 7 - print
-                |--------------------------------------------------------------------------
-                */
+                // ============================================================
+                // 7. لا يوجد Bridge
+                //    استخدم طباعة المتصفح
+                // ============================================================
 
-                try {
-                    if (
-                        window.AndroidPrinter &&
-                        typeof window.AndroidPrinter.print === 'function'
-                    ) {
-                        window.AndroidPrinter.print(text);
-                        return;
-                    }
-                } catch (e) {
-                    console.error('AndroidPrinter.print error:', e);
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | لا يوجد Bridge
-                |--------------------------------------------------------------------------
-                */
-
-                console.error(
-                    'No Android printer bridge was found.'
-                );
-
-                alert(
-                    'لم يتم العثور على اتصال الطابعة الداخلية داخل تطبيق Android.'
-                );
+                window.print();
 
             });
 
