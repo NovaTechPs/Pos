@@ -4,197 +4,186 @@ use Livewire\Component;
 
 new class extends Component
 {
-    public function print()
-    {
-        $this->dispatch('print-halwo');
-    }
+    //
 };
 ?>
 
-<div
-    class="min-h-screen w-full flex items-center justify-center"
-    dir="rtl"
->
+<div dir="rtl" style="padding:20px;">
+
+    {{-- زر الطباعة --}}
     <button
         type="button"
-        wire:click="print"
-        class="
-            flex items-center justify-center gap-3
-            rounded-xl
-            bg-gray-900
-            px-12 py-6
-            text-2xl font-bold text-white
-            shadow-lg
-            transition
-            hover:bg-gray-800
-            active:scale-95
+        onclick="printTestInvoice()"
+        class="no-print"
+        style="
+            background:#198754;
+            color:#fff;
+            border:0;
+            border-radius:8px;
+            padding:12px 25px;
+            font-size:18px;
+            cursor:pointer;
         "
     >
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-8 w-8"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="2"
-        >
-            <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 9V4h12v5M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v6H6v-6z"
-            />
-        </svg>
-
-        <span>طباعة</span>
+        🖨️ طباعة فاتورة تجريبية
     </button>
 
 
-    <script>
-        document.addEventListener('livewire:init', () => {
+    {{-- الفاتورة التجريبية --}}
+    <div id="test-invoice" class="receipt">
 
-            Livewire.on('print-halwo', () => {
+        <div class="center">
+            <strong>المتجر الإلكتروني</strong>
+        </div>
 
-                const text = "halwo\n\n\n";
+        <div class="center">
+            تسوق آمن ومباشر
+        </div>
 
-                let printed = false;
+        <hr>
 
+        <div>
+            رقم الفاتورة: 000001
+        </div>
 
-                // ============================================================
-                // 1. AndroidPrinter
-                // ============================================================
+        <div>
+            التاريخ: 06/10/2026
+        </div>
 
-                try {
-                    if (
-                        window.AndroidPrinter &&
-                        typeof window.AndroidPrinter.printText === 'function'
-                    ) {
-                        window.AndroidPrinter.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+        <div>
+            الوقت: 23:47
+        </div>
 
-                if (printed) {
-                    return;
-                }
+        <hr>
 
+        <div class="item">
+            <span>بطاريات قلم</span>
+            <span>10.00</span>
+        </div>
 
-                // ============================================================
-                // 2. NativePrinter
-                // ============================================================
+        <div class="item">
+            <span>شاحن هاتف</span>
+            <span>25.00</span>
+        </div>
 
-                try {
-                    if (
-                        window.NativePrinter &&
-                        typeof window.NativePrinter.printText === 'function'
-                    ) {
-                        window.NativePrinter.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+        <div class="item">
+            <span>كابل USB</span>
+            <span>15.00</span>
+        </div>
 
-                if (printed) {
-                    return;
-                }
+        <hr>
 
+        <div class="item">
+            <strong>الإجمالي</strong>
+            <strong>50.00</strong>
+        </div>
 
-                // ============================================================
-                // 3. Android
-                // ============================================================
+        <div class="item">
+            <span>المدفوع</span>
+            <span>50.00</span>
+        </div>
 
-                try {
-                    if (
-                        window.Android &&
-                        typeof window.Android.printText === 'function'
-                    ) {
-                        window.Android.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+        <div class="item">
+            <span>الباقي</span>
+            <span>0.00</span>
+        </div>
 
-                if (printed) {
-                    return;
-                }
+        <hr>
 
+        <div class="center">
+            شكراً لزيارتكم
+        </div>
 
-                // ============================================================
-                // 4. Printer
-                // ============================================================
+        <div class="center">
+            نتمنى لكم يوماً سعيداً
+        </div>
 
-                try {
-                    if (
-                        window.Printer &&
-                        typeof window.Printer.printText === 'function'
-                    ) {
-                        window.Printer.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+        <br>
+        <br>
+        <br>
 
-                if (printed) {
-                    return;
-                }
-
-
-                // ============================================================
-                // 5. PrinterBridge
-                // ============================================================
-
-                try {
-                    if (
-                        window.PrinterBridge &&
-                        typeof window.PrinterBridge.printText === 'function'
-                    ) {
-                        window.PrinterBridge.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-
-                if (printed) {
-                    return;
-                }
-
-
-                // ============================================================
-                // 6. AndroidBridge
-                // ============================================================
-
-                try {
-                    if (
-                        window.AndroidBridge &&
-                        typeof window.AndroidBridge.printText === 'function'
-                    ) {
-                        window.AndroidBridge.printText(text);
-                        printed = true;
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-
-                if (printed) {
-                    return;
-                }
-
-
-                // ============================================================
-                // 7. لا يوجد Bridge
-                //    استخدم طباعة المتصفح
-                // ============================================================
-
-                window.print();
-
-            });
-
-        });
-    </script>
+    </div>
 
 </div>
+
+
+<style>
+
+.receipt {
+    width: 58mm;
+    margin-top: 20px;
+    padding: 5mm;
+    background: white;
+    color: black;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+    direction: rtl;
+}
+
+.center {
+    text-align: center;
+}
+
+.item {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.receipt hr {
+    border: 0;
+    border-top: 1px dashed #000;
+    margin: 8px 0;
+}
+
+
+/* عند الطباعة أخفِ كل شيء ما عدا الفاتورة */
+@media print {
+
+    @page {
+        size: 58mm auto;
+        margin: 0;
+    }
+
+    html,
+    body {
+        width: 58mm;
+        margin: 0;
+        padding: 0;
+    }
+
+    body * {
+        visibility: hidden;
+    }
+
+    #test-invoice,
+    #test-invoice * {
+        visibility: visible;
+    }
+
+    #test-invoice {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 58mm;
+        margin: 0;
+        padding: 3mm;
+        box-sizing: border-box;
+    }
+
+    .no-print {
+        display: none !important;
+    }
+}
+
+</style>
+
+
+<script>
+
+function printTestInvoice() {
+    window.print();
+}
+
+</script>
