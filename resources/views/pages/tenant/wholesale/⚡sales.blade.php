@@ -2964,25 +2964,22 @@ new class extends Component {
                 const money = (value) => Number(value || 0).toFixed(2);
 
                 let text = '';
-                text += '================================\n';
+
                 text += '          سند قبض\n';
-                text += '================================\n';
+                text += '=============================\n';
                 text += `رقم السند: ${data.voucher_number || '-'}\n`;
                 text += `التاريخ: ${data.payment_date || '-'}\n`;
                 text += `العميل: ${data.party_name || '-'}\n`;
-                text += '--------------------------------\n';
+                text += '-----------------------------\n';
                 text += `المبلغ: ${money(data.amount)} ₪\n`;
                 text += `الرصيد المتبقي: ${money(data.remaining_balance)} ₪\n`;
                 text += `طريقة الدفع: ${data.payment_method || 'cash'}\n`;
 
                 if (data.notes) {
-                    text += '--------------------------------\n';
+                    text += '-----------------------------\n';
                     text += `ملاحظات: ${data.notes}\n`;
                 }
 
-                text += '================================\n';
-                text += '       شكراً لتعاملكم معنا\n';
-                text += '================================\n\n\n';
 
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
