@@ -2802,10 +2802,10 @@ new class extends Component {
 @script
     <script>
         /*
-            |--------------------------------------------------------------------------
-            | Focus Search
-            |--------------------------------------------------------------------------
-            */
+                |--------------------------------------------------------------------------
+                | Focus Search
+                |--------------------------------------------------------------------------
+                */
 
         Livewire.hook('commit', ({
             respond
@@ -3102,7 +3102,7 @@ new class extends Component {
 
                     // ترتيب الفاتورة من اليمين إلى اليسار:
                     // اسم الصنف → العدد → ص= → السعر → الإجمالي
-                    text += `${name}  ${qty} x ${price} = ${total}\n`;
+                    text += `${name}  ${qty} × ${price} = ${total}\n`;
                 });
 
                 const remaining = Math.max(
@@ -3174,41 +3174,41 @@ new class extends Component {
         */
 
         $wire.on(
-    'open-whatsapp-url',
-    (event) => {
+            'open-whatsapp-url',
+            (event) => {
 
-        if (!event?.url) {
-            return;
-        }
+                if (!event?.url) {
+                    return;
+                }
 
-        const url = event.url;
+                const url = event.url;
 
-        // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
-        if (url.startsWith('whatsapp://')) {
+                // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
+                if (url.startsWith('whatsapp://')) {
 
-            const textPart = url.split('?text=')[1] || '';
-            const webUrl = 'https://wa.me/?text=' + textPart;
+                    const textPart = url.split('?text=')[1] || '';
+                    const webUrl = 'https://wa.me/?text=' + textPart;
 
-            window.location.href = url;
+                    window.location.href = url;
 
-            // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
-            setTimeout(() => {
+                    // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
+                    setTimeout(() => {
+                        window.open(
+                            webUrl,
+                            '_blank',
+                            'noopener,noreferrer'
+                        );
+                    }, 1200);
+
+                    return;
+                }
+
                 window.open(
-                    webUrl,
+                    url,
                     '_blank',
                     'noopener,noreferrer'
                 );
-            }, 1200);
-
-            return;
-        }
-
-        window.open(
-            url,
-            '_blank',
-            'noopener,noreferrer'
+            }
         );
-    }
-);
     </script>
 @endscript
