@@ -1235,7 +1235,10 @@ new class extends Component {
 
                     'previous_balance' => $previousBalance,
 
+                    // الرصيد النهائي للعميل بعد تسجيل الدفعة.
                     'current_balance' => $currentBalance,
+
+                    'has_customer' => (bool) $customer,
 
                     'payment_method' => $this->paymentMethodLabel(),
 
@@ -1373,7 +1376,7 @@ new class extends Component {
             return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
         }
 
-        return 'https://wa.me/?text=' . urlencode($text);
+        return 'whatsapp://send?text=' . urlencode($text);
     }
 
     /*
@@ -1565,9 +1568,10 @@ new class extends Component {
         ]);
 
         $createdReceipt = null;
+        $remainingBalance = null;
 
         try {
-            DB::transaction(function () use ($tenantId, $user, $validated, &$createdReceipt) {
+            DB::transaction(function () use ($tenantId, $user, $validated, &$createdReceipt, &$remainingBalance) {
                 $party = Party::query()
                     ->where('tenant_id', $tenantId)
                     ->where('is_active', true)
@@ -1600,6 +1604,9 @@ new class extends Component {
                 $party->current_balance = round((float) $party->current_balance - $amount, 2);
 
                 $party->save();
+
+                // الرصيد المتبقي بعد تسجيل الدفعة.
+                $remainingBalance = round((float) $party->current_balance, 2);
             });
         } catch (\Throwable $e) {
             report($e);
@@ -1616,8 +1623,9 @@ new class extends Component {
                     'voucher_number' => $createdReceipt->voucher_number,
                     'party_name' => $this->receiptPartySearch,
                     'amount' => (float) $createdReceipt->amount,
+                    'remaining_balance' => (float) ($remainingBalance ?? 0),
                     'payment_method' => $createdReceipt->payment_method,
-                    'payment_date' => (string) $createdReceipt->payment_date,
+                    'payment_date' => $createdReceipt->payment_date ? \Carbon\Carbon::parse($createdReceipt->payment_date)->format('Y-m-d') : null,
                     'notes' => $createdReceipt->notes,
                 ],
             );
@@ -2607,9 +2615,9 @@ new class extends Component {
          ولكن داخل صفحة بيع الجملة مباشرة.
     ========================================================== --}}
     @if ($showReceiptForm)
-        <div class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4"
+        <div class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 sm:items-center"
             wire:key="wholesale-receipt-form">
-            <div class="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            <div class="my-auto flex w-full max-w-lg max-h-[calc(100dvh-2rem)] flex-col overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white shadow-2xl touch-pan-y dark:border-zinc-800 dark:bg-zinc-900"
                 dir="rtl" @click.stop>
                 <div class="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
                     <div>
@@ -2794,10 +2802,10 @@ new class extends Component {
 @script
     <script>
         /*
-        |--------------------------------------------------------------------------
-        | Focus Search
-        |--------------------------------------------------------------------------
-        */
+            |--------------------------------------------------------------------------
+            | Focus Search
+            |--------------------------------------------------------------------------
+            */
 
         Livewire.hook('commit', ({
             respond
@@ -2956,38 +2964,30 @@ new class extends Component {
                 const money = (value) => Number(value || 0).toFixed(2);
 
                 let text = '';
-                text += '================================\n';
+
                 text += '          سند قبض\n';
-                text += '================================\n';
+                text += '=============================\n';
                 text += `رقم السند: ${data.voucher_number || '-'}\n`;
                 text += `التاريخ: ${data.payment_date || '-'}\n`;
                 text += `العميل: ${data.party_name || '-'}\n`;
-                text += '--------------------------------\n';
+                text += '-----------------------------\n';
                 text += `المبلغ: ${money(data.amount)} ₪\n`;
+                text += `الرصيد المتبقي: ${money(data.remaining_balance)} ₪\n`;
                 text += `طريقة الدفع: ${data.payment_method || 'cash'}\n`;
 
                 if (data.notes) {
-                    text += '--------------------------------\n';
+                    text += '-----------------------------\n';
                     text += `ملاحظات: ${data.notes}\n`;
                 }
 
-                text += '================================\n';
-                text += '       شكراً لتعاملكم معنا\n';
-                text += '================================\n\n\n';
 
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
+                    // RawBT direct URI - بدون intent:// حتى لا يعيد الجهاز فتح Google Play
+                    const rawbtUrl = 'rawbt:' + encodeURIComponent(text);
 
-                    window.location.href = intentUrl;
+                    window.location.href = rawbtUrl;
                     return;
                 }
 
@@ -3020,6 +3020,7 @@ new class extends Component {
                     <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
                     <div class="line"></div>
                     <div class="amount">${money(data.amount)} ₪</div>
+                    <div class="row"><b>الرصيد المتبقي</b><span>${money(data.remaining_balance)} ₪</span></div>
                     <div class="row"><b>طريقة الدفع</b><span>${data.payment_method || '-'}</span></div>
                     ${data.notes ? `<div class="line"></div><div><b>ملاحظات:</b> ${data.notes}</div>` : ''}
                     <div class="line"></div>
@@ -3053,9 +3054,8 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    return words.length > 2
-                        ? words.slice(0, 2).join(' ') + '...'
-                        : (words.join(' ') || '...');
+                    // عرض أول كلمتين فقط من اسم المنتج
+                    return words.slice(0, 2).join(' ') || '................';
                 };
 
                 const padRight = (value, width) => {
@@ -3089,8 +3089,8 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    // اسم الصنف ثم الكمية ثم السعر ثم المجموع
-                    text += `${name} ${qty} × ${price} = ${total}\n`;
+                    // الاسم → العدد → ص= → السعر → الإجمالي
+                    text += `${name}  ${qty}  ص= ${price}  = ${total}\n`;
                 });
 
                 const remaining = Math.max(
@@ -3107,13 +3107,11 @@ new class extends Component {
                 text += `المتبقي: ${money(remaining)} ₪\n`;
                 text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
 
-                if (
-                    Number(inv.previous_balance || 0) !== 0 ||
-                    Number(inv.current_balance || 0) !== 0
-                ) {
+                /* رصيد العميل بعد تسجيل الدفعة */
+                if (inv.has_customer) {
                     text += `${line}\n`;
                     text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
-                    text += `الرصيد الحالي: ${money(inv.current_balance)} ₪\n`;
+                    text += `الرصيد بعد الدفعة: ${money(inv.current_balance)} ₪\n`;
                 }
 
                 if (inv.notes) {
@@ -3140,16 +3138,10 @@ new class extends Component {
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
+                    // RawBT direct URI - بدون intent:// حتى لا يعيد الجهاز فتح Google Play
+                    const rawbtUrl = 'rawbt:' + encodeURIComponent(text);
 
-                    window.location.href = intentUrl;
+                    window.location.href = rawbtUrl;
                     return;
                 }
 
@@ -3165,20 +3157,41 @@ new class extends Component {
         */
 
         $wire.on(
-            'open-whatsapp-url',
-            (event) => {
+    'open-whatsapp-url',
+    (event) => {
 
-                if (!event?.url) {
-                    return;
-                }
+        if (!event?.url) {
+            return;
+        }
 
+        const url = event.url;
+
+        // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
+        if (url.startsWith('whatsapp://')) {
+
+            const textPart = url.split('?text=')[1] || '';
+            const webUrl = 'https://wa.me/?text=' + textPart;
+
+            window.location.href = url;
+
+            // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
+            setTimeout(() => {
                 window.open(
-                    event.url,
+                    webUrl,
                     '_blank',
                     'noopener,noreferrer'
                 );
+            }, 1200);
 
-            }
+            return;
+        }
+
+        window.open(
+            url,
+            '_blank',
+            'noopener,noreferrer'
         );
+    }
+);
     </script>
 @endscript
