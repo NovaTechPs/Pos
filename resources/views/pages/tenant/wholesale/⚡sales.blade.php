@@ -2953,7 +2953,48 @@ new class extends Component {
 
         /*
         |--------------------------------------------------------------------------
-        | Receipt Voucher Printing - RawBT / Browser
+        | Internal Printer Bridge
+        |--------------------------------------------------------------------------
+        | بدون تطبيق خارجي
+        | لا window.print()
+        | لا Chrome Print
+        |
+        | هذه الصفحة ترسل النص إلى Android Native Bridge الموجود داخل
+        | تطبيق الجهاز، والذي بدوره يتصل بالطابعة الحرارية الداخلية.
+        |--------------------------------------------------------------------------
+        */
+
+        const printInternalPrinter = (text) => {
+
+            if (window.AndroidPrinter && typeof window.AndroidPrinter.printText === 'function') {
+                window.AndroidPrinter.printText(String(text || ''));
+                return true;
+            }
+
+            if (window.NativePrinter && typeof window.NativePrinter.printText === 'function') {
+                window.NativePrinter.printText(String(text || ''));
+                return true;
+            }
+
+            if (window.Android && typeof window.Android.printText === 'function') {
+                window.Android.printText(String(text || ''));
+                return true;
+            }
+
+            console.error('Internal printer bridge is not available.');
+
+            alert(
+                'الطابعة الداخلية غير متصلة بتطبيق الجهاز.\n\n' +
+                'يجب تشغيل نسخة Android التي تحتوي على Printer Bridge.'
+            );
+
+            return false;
+        };
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Receipt Voucher Printing - Internal Printer
         |--------------------------------------------------------------------------
         */
 
@@ -2980,68 +3021,15 @@ new class extends Component {
                     text += `ملاحظات: ${data.notes}\n`;
                 }
 
+                text += '\n\n';
 
-                const isAndroid = /Android/i.test(navigator.userAgent || '');
-
-                if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
-
-                    window.location.href = intentUrl;
-                    return;
-                }
-
-                const printWindow = window.open('', '_blank', 'width=400,height=600');
-
-                if (!printWindow) {
-                    window.print();
-                    return;
-                }
-
-                printWindow.document.write(`
-                <html dir="rtl">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>سند قبض ${data.voucher_number || ''}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 24px; direction: rtl; }
-                        .center { text-align: center; }
-                        .line { border-top: 1px dashed #000; margin: 12px 0; }
-                        .row { display: flex; justify-content: space-between; margin: 8px 0; }
-                        .amount { font-size: 24px; font-weight: 900; text-align: center; margin: 20px 0; }
-                        @media print { @page { margin: 8mm; } body { padding: 0; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="center"><h2>سند قبض</h2></div>
-                    <div class="line"></div>
-                    <div class="row"><b>رقم السند</b><span>${data.voucher_number || '-'}</span></div>
-                    <div class="row"><b>التاريخ</b><span>${data.payment_date || '-'}</span></div>
-                    <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
-                    <div class="line"></div>
-                    <div class="amount">${money(data.amount)} ₪</div>
-                    <div class="row"><b>الرصيد المتبقي</b><span>${money(data.remaining_balance)} ₪</span></div>
-                    <div class="row"><b>طريقة الدفع</b><span>${data.payment_method || '-'}</span></div>
-                    ${data.notes ? `<div class="line"></div><div><b>ملاحظات:</b> ${data.notes}</div>` : ''}
-                    <div class="line"></div>
-                    <div class="center">شكراً لتعاملكم معنا</div>
-                    <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };<\/script>
-                </body>
-                </html>
-            `);
-                printWindow.document.close();
+                printInternalPrinter(text);
             }
         );
 
         /*
         |--------------------------------------------------------------------------
-        | Direct Printing - RawBT
+        | Direct Printing - Internal Printer
         |--------------------------------------------------------------------------
         */
 
@@ -3128,38 +3116,15 @@ new class extends Component {
 
                 /*
                 |--------------------------------------------------------------------------
-                | إرسال الفاتورة مباشرة إلى RawBT بدون فتح معاينة المتصفح
+                | الطباعة من الطابعة الداخلية للجهاز
+                |--------------------------------------------------------------------------
+                | بدون تطبيق خارجي
+                | لا Chrome Print
+                | لا نافذة طباعة
                 |--------------------------------------------------------------------------
                 */
-                /*
-                |--------------------------------------------------------------------------
-                | Q6 Pro / RawBT direct print
-                |--------------------------------------------------------------------------
-                | The Q6 Pro opens this page in Android Chrome. RawBT registers the
-                | `rawbt` scheme and receives the receipt without opening Chrome's
-                | print dialog. RawBT can then use the Q6/iPOS internal printer.
-                |
-                | Keep the normal browser fallback for PCs only.
-                |--------------------------------------------------------------------------
-                */
-                const isAndroid = /Android/i.test(navigator.userAgent || '');
 
-                if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
-
-                    window.location.href = intentUrl;
-                    return;
-                }
-
-                /* Desktop / non-Android fallback only. */
-                window.print();
+                printInternalPrinter(text);
             }
         );
 
