@@ -1235,10 +1235,7 @@ new class extends Component {
 
                     'previous_balance' => $previousBalance,
 
-                    // الرصيد النهائي للعميل بعد تسجيل الدفعة.
                     'current_balance' => $currentBalance,
-
-                    'has_customer' => (bool) $customer,
 
                     'payment_method' => $this->paymentMethodLabel(),
 
@@ -1376,7 +1373,7 @@ new class extends Component {
             return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
         }
 
-        return 'whatsapp://send?text=' . urlencode($text);
+        return 'https://wa.me/?text=' . urlencode($text);
     }
 
     /*
@@ -1568,10 +1565,9 @@ new class extends Component {
         ]);
 
         $createdReceipt = null;
-        $remainingBalance = null;
 
         try {
-            DB::transaction(function () use ($tenantId, $user, $validated, &$createdReceipt, &$remainingBalance) {
+            DB::transaction(function () use ($tenantId, $user, $validated, &$createdReceipt) {
                 $party = Party::query()
                     ->where('tenant_id', $tenantId)
                     ->where('is_active', true)
@@ -1604,9 +1600,6 @@ new class extends Component {
                 $party->current_balance = round((float) $party->current_balance - $amount, 2);
 
                 $party->save();
-
-                // الرصيد المتبقي بعد تسجيل الدفعة.
-                $remainingBalance = round((float) $party->current_balance, 2);
             });
         } catch (\Throwable $e) {
             report($e);
@@ -1623,9 +1616,8 @@ new class extends Component {
                     'voucher_number' => $createdReceipt->voucher_number,
                     'party_name' => $this->receiptPartySearch,
                     'amount' => (float) $createdReceipt->amount,
-                    'remaining_balance' => (float) ($remainingBalance ?? 0),
                     'payment_method' => $createdReceipt->payment_method,
-                    'payment_date' => $createdReceipt->payment_date ? \Carbon\Carbon::parse($createdReceipt->payment_date)->format('Y-m-d') : null,
+                    'payment_date' => (string) $createdReceipt->payment_date,
                     'notes' => $createdReceipt->notes,
                 ],
             );
@@ -2615,9 +2607,9 @@ new class extends Component {
          ولكن داخل صفحة بيع الجملة مباشرة.
     ========================================================== --}}
     @if ($showReceiptForm)
-        <div class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 sm:items-center"
+        <div class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4"
             wire:key="wholesale-receipt-form">
-            <div class="my-auto flex w-full max-w-lg max-h-[calc(100dvh-2rem)] flex-col overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white shadow-2xl touch-pan-y dark:border-zinc-800 dark:bg-zinc-900"
+            <div class="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
                 dir="rtl" @click.stop>
                 <div class="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
                     <div>
@@ -2802,10 +2794,10 @@ new class extends Component {
 @script
     <script>
         /*
-            |--------------------------------------------------------------------------
-            | Focus Search
-            |--------------------------------------------------------------------------
-            */
+        |--------------------------------------------------------------------------
+        | Focus Search
+        |--------------------------------------------------------------------------
+        */
 
         Livewire.hook('commit', ({
             respond
@@ -2953,7 +2945,7 @@ new class extends Component {
 
         /*
         |--------------------------------------------------------------------------
-        | Receipt Voucher Printing - Browser / System
+        | Receipt Voucher Printing - RawBT / Browser
         |--------------------------------------------------------------------------
         */
 
@@ -2964,27 +2956,41 @@ new class extends Component {
                 const money = (value) => Number(value || 0).toFixed(2);
 
                 let text = '';
-
+                text += '================================\n';
                 text += '          سند قبض\n';
-                text += '=============================\n';
+                text += '================================\n';
                 text += `رقم السند: ${data.voucher_number || '-'}\n`;
                 text += `التاريخ: ${data.payment_date || '-'}\n`;
                 text += `العميل: ${data.party_name || '-'}\n`;
-                text += '-----------------------------\n';
+                text += '--------------------------------\n';
                 text += `المبلغ: ${money(data.amount)} ₪\n`;
-                text += `الرصيد المتبقي: ${money(data.remaining_balance)} ₪\n`;
                 text += `طريقة الدفع: ${data.payment_method || 'cash'}\n`;
 
                 if (data.notes) {
-                    text += '-----------------------------\n';
+                    text += '--------------------------------\n';
                     text += `ملاحظات: ${data.notes}\n`;
                 }
 
+                text += '================================\n';
+                text += '       شكراً لتعاملكم معنا\n';
+                text += '================================\n\n\n';
 
-                /*
-                | لا نستخدم intent أو RawBT على Android.
-                | الطباعة هنا تتم بالطريقة العادية من المتصفح/نظام Android.
-                */
+                const isAndroid = /Android/i.test(navigator.userAgent || '');
+
+                if (isAndroid) {
+                    const intentUrl =
+                        'intent:' +
+                        encodeURIComponent(text) +
+                        '#Intent;' +
+                        'scheme=rawbt;' +
+                        'package=ru.a402d.rawbtprinter;' +
+                        'S.type=text/plain;' +
+                        'end;';
+
+                    window.location.href = intentUrl;
+                    return;
+                }
+
                 const printWindow = window.open('', '_blank', 'width=400,height=600');
 
                 if (!printWindow) {
@@ -3014,7 +3020,6 @@ new class extends Component {
                     <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
                     <div class="line"></div>
                     <div class="amount">${money(data.amount)} ₪</div>
-                    <div class="row"><b>الرصيد المتبقي</b><span>${money(data.remaining_balance)} ₪</span></div>
                     <div class="row"><b>طريقة الدفع</b><span>${data.payment_method || '-'}</span></div>
                     ${data.notes ? `<div class="line"></div><div><b>ملاحظات:</b> ${data.notes}</div>` : ''}
                     <div class="line"></div>
@@ -3029,7 +3034,7 @@ new class extends Component {
 
         /*
         |--------------------------------------------------------------------------
-        | Direct Printing - Browser / System
+        | Direct Printing - RawBT
         |--------------------------------------------------------------------------
         */
 
@@ -3048,9 +3053,9 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    return words.length > 1 ?
-                        words[0] + '................' :
-                        (words[0] || '................');
+                    return words.length > 2
+                        ? words.slice(0, 2).join(' ') + '...'
+                        : (words.join(' ') || '...');
                 };
 
                 const padRight = (value, width) => {
@@ -3084,8 +3089,8 @@ new class extends Component {
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    text += `${name}`;
-                    text += `${total}  = ${price} × ${qty} \n`;
+                    // اسم الصنف ثم الكمية ثم السعر ثم المجموع
+                    text += `${name} ${qty} × ${price} = ${total}\n`;
                 });
 
                 const remaining = Math.max(
@@ -3102,11 +3107,13 @@ new class extends Component {
                 text += `المتبقي: ${money(remaining)} ₪\n`;
                 text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
 
-                /* رصيد العميل بعد تسجيل الدفعة */
-                if (inv.has_customer) {
+                if (
+                    Number(inv.previous_balance || 0) !== 0 ||
+                    Number(inv.current_balance || 0) !== 0
+                ) {
                     text += `${line}\n`;
                     text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
-                    text += `الرصيد بعد الدفعة: ${money(inv.current_balance)} ₪\n`;
+                    text += `الرصيد الحالي: ${money(inv.current_balance)} ₪\n`;
                 }
 
                 if (inv.notes) {
@@ -3116,289 +3123,38 @@ new class extends Component {
 
                 /*
                 |--------------------------------------------------------------------------
-                | Windows / Browser Printing
-                |--------------------------------------------------------------------------
-                | على الكمبيوتر لا نستخدم الطباعة الصامتة أو RawBT.
-                | نفتح نسخة الفاتورة في نافذة مستقلة ثم نستدعي window.print()
-                | من تلك النافذة، ليظهر مربع طباعة Windows المعتاد ويمكن اختيار
-                | الطابعة المطلوبة.
+                | إرسال الفاتورة مباشرة إلى RawBT بدون فتح معاينة المتصفح
                 |--------------------------------------------------------------------------
                 */
                 /*
                 |--------------------------------------------------------------------------
-                | Android + Windows: Normal browser/system printing
+                | Q6 Pro / RawBT direct print
                 |--------------------------------------------------------------------------
-                | لا نستخدم intent ولا RawBT نهائياً.
-                | هذا يمنع Android من تحويل المستخدم إلى Google أو متجر التطبيقات.
-                | نفتح نسخة مستقلة من الفاتورة ثم نستدعي window.print()،
-                | وبالتالي يظهر مربع الطباعة العادي الذي يوفره النظام.
+                | The Q6 Pro opens this page in Android Chrome. RawBT registers the
+                | `rawbt` scheme and receives the receipt without opening Chrome's
+                | print dialog. RawBT can then use the Q6/iPOS internal printer.
+                |
+                | Keep the normal browser fallback for PCs only.
                 |--------------------------------------------------------------------------
                 */
-                const printWindow = window.open(
-                    '',
-                    '_blank',
-                    'width=500,height=700,scrollbars=yes,resizable=yes'
-                );
+                const isAndroid = /Android/i.test(navigator.userAgent || '');
 
-                if (!printWindow) {
-                    // إذا منع المتصفح فتح النافذة، استخدم طباعة الصفحة الحالية كحل احتياطي.
-                    window.print();
+                if (isAndroid) {
+                    const intentUrl =
+                        'intent:' +
+                        encodeURIComponent(text) +
+                        '#Intent;' +
+                        'scheme=rawbt;' +
+                        'package=ru.a402d.rawbtprinter;' +
+                        'S.type=text/plain;' +
+                        'end;';
+
+                    window.location.href = intentUrl;
                     return;
                 }
 
-                const escapeHtml = (value) => String(value ?? '')
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
-
-                const itemsHtml = (Array.isArray(inv.items) ? inv.items : [])
-                    .map(item => {
-                        const name = escapeHtml(item.name || '-');
-                        const qty = Number(item.quantity || 0);
-                        const price = money(item.unit_price ?? item.price ?? 0);
-                        const total = money(item.total_price || 0);
-
-                        return `
-                            <tr>
-                                <td class="name">${name}</td>
-                                <td>${qty}</td>
-                                <td>${price}</td>
-                                <td>${total}</td>
-                            </tr>
-                        `;
-                    })
-                    .join('');
-
-                const customerBalanceHtml = inv.has_customer ? `
-                    <div class="separator"></div>
-                    <div class="row">
-                        <span>الرصيد السابق</span>
-                        <strong>${money(inv.previous_balance)} ₪</strong>
-                    </div>
-                    <div class="row">
-                        <span>الرصيد بعد الدفعة</span>
-                        <strong>${money(inv.current_balance)} ₪</strong>
-                    </div>
-                ` : '';
-
-                const notesHtml = inv.notes ? `
-                    <div class="separator"></div>
-                    <div class="notes">
-                        <strong>ملاحظات:</strong><br>
-                        ${escapeHtml(inv.notes).replace(/\n/g, '<br>')}
-                    </div>
-                ` : '';
-
-                printWindow.document.open();
-                printWindow.document.write(`
-                    <!DOCTYPE html>
-                    <html lang="ar" dir="rtl">
-                    <head>
-                        <meta charset="UTF-8">
-                        <title>فاتورة ${escapeHtml(inv.invoice_no || '')}</title>
-                        <style>
-                            * {
-                                box-sizing: border-box;
-                            }
-
-                            html, body {
-                                margin: 0;
-                                padding: 0;
-                                background: #fff;
-                            }
-
-                            body {
-                                font-family: Arial, "Tahoma", sans-serif;
-                                direction: rtl;
-                                color: #000;
-                                padding: 8mm;
-                                font-size: 13px;
-                            }
-
-                            .receipt {
-                                width: 100%;
-                                max-width: 80mm;
-                                margin: 0 auto;
-                            }
-
-                            .title {
-                                text-align: center;
-                                font-size: 20px;
-                                font-weight: 900;
-                                margin-bottom: 8px;
-                            }
-
-                            .center {
-                                text-align: center;
-                            }
-
-                            .separator {
-                                border-top: 1px dashed #000;
-                                margin: 8px 0;
-                            }
-
-                            .row {
-                                display: flex;
-                                justify-content: space-between;
-                                gap: 10px;
-                                margin: 5px 0;
-                                line-height: 1.5;
-                            }
-
-                            .row span {
-                                flex: 1;
-                            }
-
-                            .row strong {
-                                white-space: nowrap;
-                            }
-
-                            table {
-                                width: 100%;
-                                border-collapse: collapse;
-                                margin-top: 8px;
-                            }
-
-                            th, td {
-                                padding: 5px 2px;
-                                text-align: center;
-                                vertical-align: middle;
-                                border-bottom: 1px dotted #999;
-                            }
-
-                            th {
-                                font-weight: 900;
-                                border-bottom: 1px solid #000;
-                            }
-
-                            td.name, th.name {
-                                text-align: right;
-                            }
-
-                            td.name {
-                                max-width: 34mm;
-                                word-break: break-word;
-                            }
-
-                            .total {
-                                font-size: 17px;
-                                font-weight: 900;
-                            }
-
-                            .notes {
-                                line-height: 1.6;
-                                word-break: break-word;
-                            }
-
-                            @page {
-                                margin: 6mm;
-                            }
-
-                            @media print {
-                                body {
-                                    padding: 0;
-                                }
-
-                                .receipt {
-                                    max-width: none;
-                                }
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="receipt">
-                            <div class="title">فاتورة مبيعات جملة</div>
-
-                            <div class="row">
-                                <span>رقم الفاتورة</span>
-                                <strong>${escapeHtml(inv.invoice_no || '-')}</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>التاريخ</span>
-                                <strong>${escapeHtml(inv.date || '-')}</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>العميل</span>
-                                <strong>${escapeHtml(inv.customer_name || 'نقدي')}</strong>
-                            </div>
-
-                            <div class="separator"></div>
-
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th class="name">الصنف</th>
-                                        <th>العدد</th>
-                                        <th>السعر</th>
-                                        <th>الإجمالي</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${itemsHtml}
-                                </tbody>
-                            </table>
-
-                            <div class="separator"></div>
-
-                            <div class="row">
-                                <span>الإجمالي قبل الخصم</span>
-                                <strong>${money(inv.subtotal)} ₪</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>الخصم</span>
-                                <strong>${money(inv.discount)} ₪</strong>
-                            </div>
-
-                            <div class="row total">
-                                <span>الصافي</span>
-                                <strong>${money(inv.total)} ₪</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>المدفوع</span>
-                                <strong>${money(inv.paid_amount)} ₪</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>المتبقي</span>
-                                <strong>${money(remaining)} ₪</strong>
-                            </div>
-
-                            <div class="row">
-                                <span>طريقة الدفع</span>
-                                <strong>${escapeHtml(inv.payment_method || 'نقداً')}</strong>
-                            </div>
-
-                            ${customerBalanceHtml}
-                            ${notesHtml}
-
-                            <div class="separator"></div>
-                            <div class="center">شكراً لتعاملكم معنا</div>
-                        </div>
-
-                        <script>
-                            window.addEventListener('load', function () {
-                                setTimeout(function () {
-                                    window.focus();
-                                    window.print();
-                                }, 250);
-                            });
-
-                            window.addEventListener('afterprint', function () {
-                                setTimeout(function () {
-                                    window.close();
-                                }, 300);
-                            });
-                        <\/script>
-                    </body>
-                    </html>
-                `);
-                printWindow.document.close();
+                /* Desktop / non-Android fallback only. */
+                window.print();
             }
         );
 
@@ -3409,41 +3165,20 @@ new class extends Component {
         */
 
         $wire.on(
-    'open-whatsapp-url',
-    (event) => {
+            'open-whatsapp-url',
+            (event) => {
 
-        if (!event?.url) {
-            return;
-        }
+                if (!event?.url) {
+                    return;
+                }
 
-        const url = event.url;
-
-        // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
-        if (url.startsWith('whatsapp://')) {
-
-            const textPart = url.split('?text=')[1] || '';
-            const webUrl = 'https://wa.me/?text=' + textPart;
-
-            window.location.href = url;
-
-            // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
-            setTimeout(() => {
                 window.open(
-                    webUrl,
+                    event.url,
                     '_blank',
                     'noopener,noreferrer'
                 );
-            }, 1200);
 
-            return;
-        }
-
-        window.open(
-            url,
-            '_blank',
-            'noopener,noreferrer'
+            }
         );
-    }
-);
     </script>
 @endscript
