@@ -1625,7 +1625,7 @@ new class extends Component {
                     'amount' => (float) $createdReceipt->amount,
                     'remaining_balance' => (float) ($remainingBalance ?? 0),
                     'payment_method' => $createdReceipt->payment_method,
-                    'payment_date' => (string) $createdReceipt->payment_date,
+                    'payment_date' => $createdReceipt->payment_date ? \Carbon\Carbon::parse($createdReceipt->payment_date)->format('Y-m-d') : null,
                     'notes' => $createdReceipt->notes,
                 ],
             );
@@ -2802,10 +2802,10 @@ new class extends Component {
 @script
     <script>
         /*
-        |--------------------------------------------------------------------------
-        | Focus Search
-        |--------------------------------------------------------------------------
-        */
+            |--------------------------------------------------------------------------
+            | Focus Search
+            |--------------------------------------------------------------------------
+            */
 
         Livewire.hook('commit', ({
             respond
