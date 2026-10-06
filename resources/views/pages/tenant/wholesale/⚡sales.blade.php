@@ -2953,7 +2953,7 @@ new class extends Component {
 
         /*
         |--------------------------------------------------------------------------
-        | Receipt Voucher Printing - RawBT / Browser
+        | Receipt Voucher Printing - Browser / System
         |--------------------------------------------------------------------------
         */
 
@@ -2981,22 +2981,10 @@ new class extends Component {
                 }
 
 
-                const isAndroid = /Android/i.test(navigator.userAgent || '');
-
-                if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
-
-                    window.location.href = intentUrl;
-                    return;
-                }
-
+                /*
+                | لا نستخدم intent أو RawBT على Android.
+                | الطباعة هنا تتم بالطريقة العادية من المتصفح/نظام Android.
+                */
                 const printWindow = window.open('', '_blank', 'width=400,height=600');
 
                 if (!printWindow) {
@@ -3041,7 +3029,7 @@ new class extends Component {
 
         /*
         |--------------------------------------------------------------------------
-        | Direct Printing - RawBT
+        | Direct Printing - Browser / System
         |--------------------------------------------------------------------------
         */
 
@@ -3136,22 +3124,16 @@ new class extends Component {
                 | الطابعة المطلوبة.
                 |--------------------------------------------------------------------------
                 */
-                const isAndroid = /Android/i.test(navigator.userAgent || '');
-
-                if (isAndroid) {
-                    const intentUrl =
-                        'intent:' +
-                        encodeURIComponent(text) +
-                        '#Intent;' +
-                        'scheme=rawbt;' +
-                        'package=ru.a402d.rawbtprinter;' +
-                        'S.type=text/plain;' +
-                        'end;';
-
-                    window.location.href = intentUrl;
-                    return;
-                }
-
+                /*
+                |--------------------------------------------------------------------------
+                | Android + Windows: Normal browser/system printing
+                |--------------------------------------------------------------------------
+                | لا نستخدم intent ولا RawBT نهائياً.
+                | هذا يمنع Android من تحويل المستخدم إلى Google أو متجر التطبيقات.
+                | نفتح نسخة مستقلة من الفاتورة ثم نستدعي window.print()،
+                | وبالتالي يظهر مربع الطباعة العادي الذي يوفره النظام.
+                |--------------------------------------------------------------------------
+                */
                 const printWindow = window.open(
                     '',
                     '_blank',
