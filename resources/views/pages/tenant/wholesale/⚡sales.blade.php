@@ -8,93 +8,86 @@ new class extends Component
 };
 ?>
 
-<div dir="rtl" style="padding:20px;">
+<div dir="rtl" style="padding:20px">
 
-    {{-- زر الطباعة --}}
     <button
         type="button"
-        onclick="printTestInvoice()"
-        class="no-print"
+        id="printTestButton"
         style="
+            width:100%;
+            padding:18px;
             background:#198754;
-            color:#fff;
-            border:0;
-            border-radius:8px;
-            padding:12px 25px;
-            font-size:18px;
-            cursor:pointer;
+            color:white;
+            border:none;
+            border-radius:10px;
+            font-size:20px;
+            font-weight:bold;
         "
     >
         🖨️ طباعة فاتورة تجريبية
     </button>
 
+    <div id="testReceipt" style="
+        width:58mm;
+        padding:4mm;
+        box-sizing:border-box;
+        background:#fff;
+        color:#000;
+        font-family:Arial,sans-serif;
+        direction:rtl;
+        font-size:13px;
+    ">
 
-    {{-- الفاتورة التجريبية --}}
-    <div id="test-invoice" class="receipt">
-
-        <div class="center">
-            <strong>المتجر الإلكتروني</strong>
+        <div style="text-align:center;font-size:18px;font-weight:bold">
+            المتجر الإلكتروني
         </div>
 
-        <div class="center">
+        <div style="text-align:center">
             تسوق آمن ومباشر
         </div>
 
         <hr>
 
-        <div>
-            رقم الفاتورة: 000001
-        </div>
-
-        <div>
-            التاريخ: 06/10/2026
-        </div>
-
-        <div>
-            الوقت: 23:47
-        </div>
+        <div>فاتورة رقم: 000001</div>
+        <div>التاريخ: 06/10/2026</div>
+        <div>الوقت: 23:47</div>
 
         <hr>
 
-        <div class="item">
+        <div style="display:flex;justify-content:space-between">
             <span>بطاريات قلم</span>
             <span>10.00</span>
         </div>
 
-        <div class="item">
+        <div style="display:flex;justify-content:space-between">
             <span>شاحن هاتف</span>
             <span>25.00</span>
         </div>
 
-        <div class="item">
+        <div style="display:flex;justify-content:space-between">
             <span>كابل USB</span>
             <span>15.00</span>
         </div>
 
         <hr>
 
-        <div class="item">
-            <strong>الإجمالي</strong>
-            <strong>50.00</strong>
-        </div>
-
-        <div class="item">
-            <span>المدفوع</span>
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            font-weight:bold;
+            font-size:16px;
+        ">
+            <span>الإجمالي</span>
             <span>50.00</span>
-        </div>
-
-        <div class="item">
-            <span>الباقي</span>
-            <span>0.00</span>
         </div>
 
         <hr>
 
-        <div class="center">
+        <div style="text-align:center;font-weight:bold">
             شكراً لزيارتكم
         </div>
 
-        <div class="center">
+        <div style="text-align:center">
             نتمنى لكم يوماً سعيداً
         </div>
 
@@ -109,36 +102,6 @@ new class extends Component
 
 <style>
 
-.receipt {
-    width: 58mm;
-    margin-top: 20px;
-    padding: 5mm;
-    background: white;
-    color: black;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    line-height: 1.6;
-    direction: rtl;
-}
-
-.center {
-    text-align: center;
-}
-
-.item {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.receipt hr {
-    border: 0;
-    border-top: 1px dashed #000;
-    margin: 8px 0;
-}
-
-
-/* عند الطباعة أخفِ كل شيء ما عدا الفاتورة */
 @media print {
 
     @page {
@@ -148,42 +111,37 @@ new class extends Component
 
     html,
     body {
-        width: 58mm;
-        margin: 0;
-        padding: 0;
+        margin:0 !important;
+        padding:0 !important;
+        width:58mm !important;
     }
 
-    body * {
-        visibility: hidden;
+    body > * {
+        display:none !important;
     }
 
-    #test-invoice,
-    #test-invoice * {
-        visibility: visible;
+    #testReceipt {
+        display:block !important;
+        width:58mm !important;
+        margin:0 !important;
+        padding:3mm !important;
     }
 
-    #test-invoice {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 58mm;
-        margin: 0;
-        padding: 3mm;
-        box-sizing: border-box;
-    }
-
-    .no-print {
-        display: none !important;
-    }
 }
 
 </style>
 
 
+@script
 <script>
 
-function printTestInvoice() {
-    window.print();
-}
+    document.getElementById('printTestButton')?.addEventListener('click', function () {
+
+        console.log('PRINT BUTTON CLICKED');
+
+        window.print();
+
+    });
 
 </script>
+@endscript
