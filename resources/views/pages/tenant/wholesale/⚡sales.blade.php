@@ -1376,7 +1376,7 @@ new class extends Component {
             return 'https://wa.me/' . $phone . '?text=' . urlencode($text);
         }
 
-        return 'https://wa.me/?text=' . urlencode($text);
+        return 'whatsapp://send?text=' . urlencode($text);
     }
 
     /*
@@ -3021,7 +3021,7 @@ new class extends Component {
                 <body>
                     <div class="center"><h2>سند قبض</h2></div>
                     <div class="line"></div>
-                    <div class="row"><b>رقم ببسسالسند</b><span>${data.voucher_number || '-'}</span></div>
+                    <div class="row"><b>رقم السند</b><span>${data.voucher_number || '-'}</span></div>
                     <div class="row"><b>التاريخ</b><span>${data.payment_date || '-'}</span></div>
                     <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
                     <div class="line"></div>
@@ -3170,20 +3170,41 @@ new class extends Component {
         */
 
         $wire.on(
-            'open-whatsapp-url',
-            (event) => {
+    'open-whatsapp-url',
+    (event) => {
 
-                if (!event?.url) {
-                    return;
-                }
+        if (!event?.url) {
+            return;
+        }
 
+        const url = event.url;
+
+        // عند عدم وجود رقم، افتح تطبيق WhatsApp ليختار المستخدم جهة الاتصال.
+        if (url.startsWith('whatsapp://')) {
+
+            const textPart = url.split('?text=')[1] || '';
+            const webUrl = 'https://wa.me/?text=' + textPart;
+
+            window.location.href = url;
+
+            // إذا لم يكن التطبيق مثبتاً، افتح WhatsApp Web.
+            setTimeout(() => {
                 window.open(
-                    event.url,
+                    webUrl,
                     '_blank',
                     'noopener,noreferrer'
                 );
+            }, 1200);
 
-            }
+            return;
+        }
+
+        window.open(
+            url,
+            '_blank',
+            'noopener,noreferrer'
         );
+    }
+);
     </script>
 @endscript
