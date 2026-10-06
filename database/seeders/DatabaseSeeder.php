@@ -155,6 +155,15 @@ class DatabaseSeeder extends Seeder
                 'description' => 'كاشير مبيعات',
             ]
         );
+        $wholesaleRole = Role::updateOrCreate(
+            [
+                'tenant_id' => $targetTenantId,
+                'name'      => 'wholesale_employee',
+            ],
+            [
+                'description' => 'موظف مبيعات الجملة',
+            ]
+        );
 
 
         /*
@@ -272,7 +281,7 @@ class DatabaseSeeder extends Seeder
                 'email'     => 'hade@fanous.com',
                 'name'      => 'هادي',
                 'is_owner'  => false,
-                'role_id'   => $cashierRole->id,
+                'role_id'   => $wholesaleRole->id,
                 'type'      => 'tenant_user',
                 'is_active' => true,
                 'tenant_id' => 1,
@@ -313,7 +322,6 @@ class DatabaseSeeder extends Seeder
                     $user->assignRole(
                         $adminRole
                     );
-
                 } elseif (
                     $userData['role_id'] == $cashierRole->id
                 ) {
