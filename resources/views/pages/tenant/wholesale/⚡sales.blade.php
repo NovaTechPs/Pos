@@ -1350,8 +1350,13 @@ new class extends Component {
 
         $text .= "تم إصدار فاتورة مبيعات جملة رقم {$order->invoice_number}.\n\n";
 
-        foreach ($items as $item) {
-            $text .= "• {$item['name']} × {$item['quantity']} = " . number_format($item['total_price'], 2) . " شيكل\n";
+        foreach ($items as $index => $item) {
+            $number = $index + 1;
+            $unitPrice = number_format((float) $item['unit_price'], 2);
+            $quantity = $item['quantity'];
+            $lineTotal = number_format((float) $item['total_price'], 2);
+
+            $text .= "{$number}. {$item['name']} — السعر: {$unitPrice} × {$quantity} = {$lineTotal} شيكل\n";
         }
 
         $text .= "\nالإجمالي: " . number_format($order->total, 2) . " شيكل\n";
@@ -2807,35 +2812,8 @@ new class extends Component {
             |--------------------------------------------------------------------------
             */
 
-        Livewire.hook('commit', ({
-            respond
-        }) => {
-
-            respond(() => {
-
-                const active =
-                    document.activeElement;
-
-                const isTyping =
-                    active && [
-                        'INPUT',
-                        'TEXTAREA',
-                        'SELECT'
-                    ].includes(
-                        active.tagName
-                    );
-
-                if (!isTyping) {
-                    document
-                        .getElementById(
-                            'wholesale-product-search'
-                        )
-                        ?.focus();
-                }
-
-            });
-
-        });
+        // لا نعيد التركيز تلقائياً إلى حقل البحث بعد أي كبسة أو تحديث Livewire.
+        // يبقى التركيز على العنصر الذي ضغط عليه المستخدم.
 
 
         /*
