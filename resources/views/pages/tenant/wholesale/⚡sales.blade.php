@@ -1372,9 +1372,13 @@ new class extends Component {
 
         $text .= "\nالإجمالي: " . $formatAmount($order->total) . "\n";
 
-        $text .= 'المدفوع: ' . $formatAmount($order->paid_amount) . "\n";
+        // الزبون العابر يدفع نقداً، لذلك لا نعرض المدفوع أو الرصيد في الفاتورة/واتساب.
+        $isWalkInCustomer = trim((string) $order->customer_name) === 'زبون عابر' || !$order->customer_id;
 
-        $text .= 'الرصيد الجديد: ' . $formatAmount($currentBalance) . "\n";
+        if (!$isWalkInCustomer) {
+            $text .= 'المدفوع: ' . $formatAmount($order->paid_amount) . "\n";
+            $text .= 'الرصيد الجديد: ' . $formatAmount($currentBalance) . "\n";
+        }
 
         if ($order->notes) {
             $text .= "ملاحظات: {$order->notes}\n";
@@ -3040,8 +3044,18 @@ new class extends Component {
 
                 const inv = event?.data || {};
 
-                const money = (value) =>
-                    Number(value || 0).toFixed(2);
+                const money = (value) => {
+                    const number = Number(value || 0);
+
+                    if (Number.isInteger(number)) {
+                        return String(number);
+                    }
+
+                    return number
+                        .toFixed(2)
+                        .replace(/0+$/, '')
+                        .replace(/\.$/, '');
+                };
 
                 const shortName = (name) => {
                     const words = String(name || '')
@@ -3049,9 +3063,7 @@ new class extends Component {
                         .split(/\s+/)
                         .filter(Boolean);
 
-                    return words.length > 1 ?
-                        words[0] + '................' :
-                        (words[0] || '................');
+                    return words.slice(0, 3).join(' ') || 'منتج';
                 };
 
                 const padRight = (value, width) => {
@@ -3079,14 +3091,15 @@ new class extends Component {
                 text += `${line}\n`;
 
                 /* الأصناف */
-                (Array.isArray(inv.items) ? inv.items : []).forEach(item => {
+                (Array.isArray(inv.items) ? inv.items : []).forEach((item, index) => {
+                    const number = index + 1;
                     const name = shortName(item.name || '-');
-                    const qty = Number(item.quantity || 0);
+                    const qty = money(item.quantity || 0);
                     const price = money(item.unit_price ?? item.price ?? 0);
                     const total = money(item.total_price || 0);
 
-                    text += `${name}`;
-                    text += `${total}  = ${price} × ${qty} \n`;
+                    // نفس ترتيب واتساب: الرقم + الاسم + السعر×العدد=الإجمالي، بدون نقطة.
+                    text += `${number} ${name} ${price}×${qty}=${total}\n`;
                 });
 
                 const remaining = Math.max(
@@ -3099,12 +3112,18 @@ new class extends Component {
                 text += `الإجمالي قبل الخصم: ${money(inv.subtotal)} ₪\n`;
                 text += `الخصم: ${money(inv.discount)} ₪\n`;
                 text += `الصافي: ${money(inv.total)} ₪\n`;
-                text += `المدفوع: ${money(inv.paid_amount)} ₪\n`;
-                text += `المتبقي: ${money(remaining)} ₪\n`;
-                text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
+
+                // الزبون العابر يدفع نقداً، لذلك لا نعرض المدفوع أو المتبقي أو طريقة الدفع.
+                const isWalkInCustomer = (inv.customer_name || '').trim() === 'زبون عابر' || !inv.has_customer;
+
+                if (!isWalkInCustomer) {
+                    text += `المدفوع: ${money(inv.paid_amount)} ₪\n`;
+                    text += `المتبقي: ${money(remaining)} ₪\n`;
+                    text += `طريقة الدفع: ${inv.payment_method || 'نقداً'}\n`;
+                }
 
                 /* رصيد العميل بعد تسجيل الدفعة */
-                if (inv.has_customer) {
+                if (inv.has_customer && !isWalkInCustomer) {
                     text += `${line}\n`;
                     text += `الرصيد السابق: ${money(inv.previous_balance)} ₪\n`;
                     text += `الرصيد بعد الدفعة: ${money(inv.current_balance)} ₪\n`;
