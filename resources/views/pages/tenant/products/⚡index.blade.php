@@ -122,45 +122,119 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         $rules = [
-            'category_id' => ['nullable', Rule::exists('categories', 'id')->where(fn($query) => $query->where('tenant_id', $tenantId))],
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')
+                    ->where(fn ($query) => $query->where('tenant_id', $tenantId)),
+            ],
 
-            'name' => ['required', 'string', 'max:255'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
 
-            'barcodes' => ['required', 'array', 'min:1'],
+            'barcodes' => [
+                'required',
+                'array',
+                'min:1',
+            ],
 
-            'barcodes.*' => ['required', 'string', 'distinct', 'max:100'],
+            'barcodes.*' => [
+                'required',
+                'string',
+                'distinct',
+                'max:100',
+            ],
 
-            'cost_price' => ['required', 'numeric', 'min:0'],
+            'cost_price' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
 
-            'is_price_unified' => ['boolean'],
+            'is_price_unified' => [
+                'boolean',
+            ],
 
-            'show_in_website' => ['boolean'],
+            'show_in_website' => [
+                'boolean',
+            ],
 
-            'image' => ['nullable', 'image', 'max:2048'],
+            'image' => [
+                'nullable',
+                'image',
+                'max:2048',
+            ],
 
-            'images.*' => ['nullable', 'image', 'max:2048'],
+            'images.*' => [
+                'nullable',
+                'image',
+                'max:2048',
+            ],
         ];
 
         if ($this->is_price_unified) {
-            $rules['retail_price'] = ['required', 'numeric', 'min:0'];
+            $rules['retail_price'] = [
+                'required',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['wholesale_price'] = ['required', 'numeric', 'min:0'];
+            $rules['wholesale_price'] = [
+                'required',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['min_wholesale_quantity'] = ['required', 'integer', 'min:1'];
+            $rules['min_wholesale_quantity'] = [
+                'required',
+                'integer',
+                'min:1',
+            ];
 
-            $rules['offer_price'] = ['nullable', 'numeric', 'min:0'];
+            $rules['offer_price'] = [
+                'nullable',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['offer_quantity'] = ['nullable', 'integer', 'min:1', 'required_with:offer_price'];
+            $rules['offer_quantity'] = [
+                'nullable',
+                'integer',
+                'min:1',
+                'required_with:offer_price',
+            ];
         } else {
-            $rules['branchPricesInput.*.retail_price'] = ['required', 'numeric', 'min:0'];
+            $rules['branchPricesInput.*.retail_price'] = [
+                'required',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['branchPricesInput.*.wholesale_price'] = ['required', 'numeric', 'min:0'];
+            $rules['branchPricesInput.*.wholesale_price'] = [
+                'required',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['branchPricesInput.*.min_wholesale_quantity'] = ['required', 'integer', 'min:1'];
+            $rules['branchPricesInput.*.min_wholesale_quantity'] = [
+                'required',
+                'integer',
+                'min:1',
+            ];
 
-            $rules['branchPricesInput.*.offer_price'] = ['nullable', 'numeric', 'min:0'];
+            $rules['branchPricesInput.*.offer_price'] = [
+                'nullable',
+                'numeric',
+                'min:0',
+            ];
 
-            $rules['branchPricesInput.*.offer_quantity'] = ['nullable', 'integer', 'min:1'];
+            $rules['branchPricesInput.*.offer_quantity'] = [
+                'nullable',
+                'integer',
+                'min:1',
+            ];
         }
 
         return $rules;
@@ -213,7 +287,9 @@ new class extends Component {
             return false;
         }
 
-        return DB::table('branches')->where('tenant_id', $tenantId)->exists();
+        return DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->exists();
     }
 
     /*
@@ -284,7 +360,10 @@ new class extends Component {
             return;
         }
 
-        $this->barcodes[$index] = (string) random_int(100000000000, 999999999999);
+        $this->barcodes[$index] = (string) random_int(
+            100000000000,
+            999999999999
+        );
     }
 
     /*
@@ -298,13 +377,19 @@ new class extends Component {
         $this->resetInputFields();
 
         if (!$this->tenantId()) {
-            session()->flash('error', 'يرجى اختيار المتجر أولاً قبل إضافة منتج.');
+            session()->flash(
+                'error',
+                'يرجى اختيار المتجر أولاً قبل إضافة منتج.'
+            );
 
             return;
         }
 
         if (!$this->tenantHasBranches()) {
-            session()->flash('error', 'لا يمكن إضافة المنتج قبل إنشاء فرع واحد على الأقل.');
+            session()->flash(
+                'error',
+                'لا يمكن إضافة المنتج قبل إنشاء فرع واحد على الأقل.'
+            );
 
             return;
         }
@@ -331,7 +416,10 @@ new class extends Component {
             return;
         }
 
-        $branches = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('name')->get();
+        $branches = DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->orderBy('name')
+            ->get();
 
         $this->branchPricesInput = [];
 
@@ -357,12 +445,18 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
-            session()->flash('error', 'يرجى اختيار المتجر أولاً.');
+            session()->flash(
+                'error',
+                'يرجى اختيار المتجر أولاً.'
+            );
 
             return;
         }
 
-        $product = Product::query()->where('tenant_id', $tenantId)->with('barcodes')->findOrFail($id);
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->with('barcodes')
+            ->findOrFail($id);
 
         $this->resetInputFields();
 
@@ -371,9 +465,13 @@ new class extends Component {
         $this->name = $product->name;
         $this->cost_price = $product->cost_price;
 
-        $this->is_price_unified = (bool) ($product->is_price_unified ?? true);
+        $this->is_price_unified = (bool) (
+            $product->is_price_unified ?? true
+        );
 
-        $this->show_in_website = (bool) ($product->show_in_website ?? true);
+        $this->show_in_website = (bool) (
+            $product->show_in_website ?? true
+        );
 
         /*
         |--------------------------------------------------------------------------
@@ -381,9 +479,16 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $existingPrices = DB::table('branch_products')->where('tenant_id', $tenantId)->where('product_id', $product->id)->get()->keyBy('branch_id');
+        $existingPrices = DB::table('branch_products')
+            ->where('tenant_id', $tenantId)
+            ->where('product_id', $product->id)
+            ->get()
+            ->keyBy('branch_id');
 
-        $branches = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('name')->get();
+        $branches = DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->orderBy('name')
+            ->get();
 
         $this->branchPricesInput = [];
 
@@ -393,7 +498,8 @@ new class extends Component {
             $this->branchPricesInput[$branch->id] = [
                 'retail_price' => $price?->retail_price ?? '',
                 'wholesale_price' => $price?->wholesale_price ?? '',
-                'min_wholesale_quantity' => $price?->min_wholesale_quantity ?? 1,
+                'min_wholesale_quantity' =>
+                    $price?->min_wholesale_quantity ?? 1,
                 'offer_price' => $price?->offer_price,
                 'offer_quantity' => $price?->offer_quantity,
             ];
@@ -407,18 +513,26 @@ new class extends Component {
 
         $currentBranchId = $this->activeBranchId();
 
-        if ($currentBranchId && isset($this->branchPricesInput[$currentBranchId])) {
+        if (
+            $currentBranchId &&
+            isset($this->branchPricesInput[$currentBranchId])
+        ) {
             $current = $this->branchPricesInput[$currentBranchId];
 
-            $this->retail_price = $current['retail_price'];
+            $this->retail_price =
+                $current['retail_price'];
 
-            $this->wholesale_price = $current['wholesale_price'];
+            $this->wholesale_price =
+                $current['wholesale_price'];
 
-            $this->min_wholesale_quantity = $current['min_wholesale_quantity'];
+            $this->min_wholesale_quantity =
+                $current['min_wholesale_quantity'];
 
-            $this->offer_price = $current['offer_price'];
+            $this->offer_price =
+                $current['offer_price'];
 
-            $this->offer_quantity = $current['offer_quantity'];
+            $this->offer_quantity =
+                $current['offer_quantity'];
         }
 
         /*
@@ -427,7 +541,11 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $this->barcodes = $product->barcodes->pluck('barcode')->values()->toArray();
+        $this->barcodes =
+            $product->barcodes
+                ->pluck('barcode')
+                ->values()
+                ->toArray();
 
         if (empty($this->barcodes)) {
             $this->barcodes = [''];
@@ -441,7 +559,15 @@ new class extends Component {
 
         $this->existing_image = $product->image;
 
-        $this->existing_images = is_array($product->images) ? $product->images : (json_decode($product->images ?? '[]', true) ?: []);
+        $this->existing_images =
+            is_array($product->images)
+                ? $product->images
+                : (
+                    json_decode(
+                        $product->images ?? '[]',
+                        true
+                    ) ?: []
+                );
 
         $this->isEditing = true;
         $this->showModal = true;
@@ -461,7 +587,9 @@ new class extends Component {
             return;
         }
 
-        $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($id);
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($id);
 
         $product->update([
             'show_in_website' => !$product->show_in_website,
@@ -486,9 +614,13 @@ new class extends Component {
             return;
         }
 
-        $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($this->product_id);
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($this->product_id);
 
-        Storage::disk('public')->delete($this->existing_image);
+        Storage::disk('public')->delete(
+            $this->existing_image
+        );
 
         $product->update([
             'image' => null,
@@ -499,7 +631,10 @@ new class extends Component {
 
     public function removeExistingImage(int $index): void
     {
-        if (!isset($this->existing_images[$index]) || !$this->product_id) {
+        if (
+            !isset($this->existing_images[$index]) ||
+            !$this->product_id
+        ) {
             return;
         }
 
@@ -509,7 +644,9 @@ new class extends Component {
             return;
         }
 
-        $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($this->product_id);
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($this->product_id);
 
         $path = $this->existing_images[$index];
 
@@ -517,7 +654,9 @@ new class extends Component {
 
         unset($this->existing_images[$index]);
 
-        $this->existing_images = array_values($this->existing_images);
+        $this->existing_images = array_values(
+            $this->existing_images
+        );
 
         $product->update([
             'images' => $this->existing_images,
@@ -541,26 +680,49 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    private function validateBarcodeConflicts(int $tenantId, array $barcodes): void
-    {
-        $barcodes = array_values(array_unique(array_filter(array_map('trim', $barcodes))));
+    private function validateBarcodeConflicts(
+        int $tenantId,
+        array $barcodes
+    ): void {
+        $barcodes = array_values(
+            array_unique(
+                array_filter(
+                    array_map('trim', $barcodes)
+                )
+            )
+        );
 
         if (empty($barcodes)) {
             return;
         }
 
-        $query = ProductBarcode::query()->where('tenant_id', $tenantId)->whereIn('barcode', $barcodes);
+        $query = ProductBarcode::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('barcode', $barcodes);
 
         if ($this->isEditing && $this->product_id) {
-            $query->where('product_id', '!=', $this->product_id);
+            $query->where(
+                'product_id',
+                '!=',
+                $this->product_id
+            );
         }
 
-        $conflicting = $query->pluck('barcode')->unique()->values();
+        $conflicting = $query
+            ->pluck('barcode')
+            ->unique()
+            ->values();
 
         if ($conflicting->isNotEmpty()) {
-            $this->addError('barcodes', 'الباركود مستخدم مسبقاً: ' . $conflicting->implode('، '));
+            $this->addError(
+                'barcodes',
+                'الباركود مستخدم مسبقاً: ' .
+                $conflicting->implode('، ')
+            );
 
-            throw new \Illuminate\Validation\ValidationException($this->getValidator());
+            throw new \Illuminate\Validation\ValidationException(
+                $this->getValidator()
+            );
         }
     }
 
@@ -575,15 +737,46 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
-            session()->flash('error', 'يرجى اختيار المتجر أولاً.');
+            session()->flash(
+                'error',
+                'يرجى اختيار المتجر أولاً.'
+            );
 
             return;
         }
 
         if (!$this->tenantHasBranches()) {
-            session()->flash('error', 'يجب إنشاء فرع واحد على الأقل قبل حفظ المنتج.');
+            session()->flash(
+                'error',
+                'يجب إنشاء فرع واحد على الأقل قبل حفظ المنتج.'
+            );
 
             return;
+        }
+
+        // Normalize integer quantity fields before validation.
+        // Database decimal values such as 1.00 must become integer 1.
+        $this->min_wholesale_quantity = (int) ($this->min_wholesale_quantity ?: 1);
+
+        foreach ($this->branchPricesInput as $branchId => $branchData) {
+            $this->branchPricesInput[$branchId]['min_wholesale_quantity'] =
+                (int) ($branchData['min_wholesale_quantity'] ?? 1);
+
+            if (
+                array_key_exists('offer_quantity', $branchData) &&
+                $branchData['offer_quantity'] !== null &&
+                $branchData['offer_quantity'] !== ''
+            ) {
+                $this->branchPricesInput[$branchId]['offer_quantity'] =
+                    (int) $branchData['offer_quantity'];
+            }
+        }
+
+        if (
+            $this->offer_quantity !== null &&
+            $this->offer_quantity !== ''
+        ) {
+            $this->offer_quantity = (int) $this->offer_quantity;
         }
 
         $this->validate();
@@ -594,10 +787,22 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $cleanBarcodes = array_values(array_unique(array_filter(array_map('trim', $this->barcodes))));
+        $cleanBarcodes = array_values(
+            array_unique(
+                array_filter(
+                    array_map(
+                        'trim',
+                        $this->barcodes
+                    )
+                )
+            )
+        );
 
         if (empty($cleanBarcodes)) {
-            $this->addError('barcodes', 'يجب إضافة باركود واحد على الأقل.');
+            $this->addError(
+                'barcodes',
+                'يجب إضافة باركود واحد على الأقل.'
+            );
 
             return;
         }
@@ -611,13 +816,25 @@ new class extends Component {
         $conflictingBarcodes = ProductBarcode::query()
             ->where('tenant_id', $tenantId)
             ->whereIn('barcode', $cleanBarcodes)
-            ->when($this->isEditing && $this->product_id, fn($query) => $query->where('product_id', '!=', $this->product_id))
+            ->when(
+                $this->isEditing && $this->product_id,
+                fn ($query) =>
+                    $query->where(
+                        'product_id',
+                        '!=',
+                        $this->product_id
+                    )
+            )
             ->pluck('barcode')
             ->unique()
             ->values();
 
         if ($conflictingBarcodes->isNotEmpty()) {
-            $this->addError('barcodes', 'الباركود مستخدم مسبقاً: ' . $conflictingBarcodes->implode('، '));
+            $this->addError(
+                'barcodes',
+                'الباركود مستخدم مسبقاً: ' .
+                $conflictingBarcodes->implode('، ')
+            );
 
             return;
         }
@@ -628,12 +845,21 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $branches = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('id')->get();
+        $branches = DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->orderBy('id')
+            ->get();
 
-        $branchIds = $branches->pluck('id')->map(fn($id) => (int) $id)->values();
+        $branchIds = $branches
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
 
         if ($branchIds->isEmpty()) {
-            session()->flash('error', 'لا يوجد فرع تابع لهذا المتجر.');
+            session()->flash(
+                'error',
+                'لا يوجد فرع تابع لهذا المتجر.'
+            );
 
             return;
         }
@@ -647,7 +873,10 @@ new class extends Component {
         $mainImagePath = $this->existing_image;
 
         if ($this->image) {
-            $mainImagePath = $this->image->store('products', 'public');
+            $mainImagePath = $this->image->store(
+                'products',
+                'public'
+            );
         }
 
         /*
@@ -656,15 +885,24 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $additionalImagePaths = $this->existing_images;
+        $additionalImagePaths =
+            $this->existing_images;
 
         if (!empty($this->images)) {
             foreach ($this->images as $uploadedImage) {
-                $additionalImagePaths[] = $uploadedImage->store('products/gallery', 'public');
+                $additionalImagePaths[] =
+                    $uploadedImage->store(
+                        'products/gallery',
+                        'public'
+                    );
             }
         }
 
-        $additionalImagePaths = array_values(array_unique(array_filter($additionalImagePaths)));
+        $additionalImagePaths = array_values(
+            array_unique(
+                array_filter($additionalImagePaths)
+            )
+        );
 
         /*
         |--------------------------------------------------------------------------
@@ -684,15 +922,25 @@ new class extends Component {
         ];
 
         try {
-            DB::transaction(function () use ($tenantId, $productData, $cleanBarcodes, $branchIds) {
+            DB::transaction(function () use (
+                $tenantId,
+                $productData,
+                $cleanBarcodes,
+                $branchIds
+            ) {
                 /*
                 |--------------------------------------------------------------------------
                 | Product
                 |--------------------------------------------------------------------------
                 */
 
-                if ($this->isEditing && $this->product_id) {
-                    $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($this->product_id);
+                if (
+                    $this->isEditing &&
+                    $this->product_id
+                ) {
+                    $product = Product::query()
+                        ->where('tenant_id', $tenantId)
+                        ->findOrFail($this->product_id);
 
                     $oldMainImage = $product->image;
 
@@ -704,11 +952,18 @@ new class extends Component {
                     |--------------------------------------------------------------------------
                     */
 
-                    if ($this->image && $oldMainImage && $oldMainImage !== $mainImagePath) {
-                        Storage::disk('public')->delete($oldMainImage);
+                    if (
+                        $this->image &&
+                        $oldMainImage &&
+                        $oldMainImage !== $mainImagePath
+                    ) {
+                        Storage::disk('public')
+                            ->delete($oldMainImage);
                     }
                 } else {
-                    $product = Product::create($productData);
+                    $product = Product::create(
+                        $productData
+                    );
                 }
 
                 /*
@@ -720,31 +975,58 @@ new class extends Component {
                 foreach ($branchIds as $branchId) {
                     if ($this->is_price_unified) {
                         $payload = [
-                            'retail_price' => $this->retail_price,
+                            'retail_price' =>
+                                $this->retail_price,
 
-                            'wholesale_price' => $this->wholesale_price,
+                            'wholesale_price' =>
+                                $this->wholesale_price,
 
-                            'min_wholesale_quantity' => $this->min_wholesale_quantity,
+                            'min_wholesale_quantity' =>
+                                $this->min_wholesale_quantity,
 
-                            'offer_price' => $this->offer_price !== '' && $this->offer_price !== null ? $this->offer_price : null,
+                            'offer_price' =>
+                                $this->offer_price !== '' &&
+                                $this->offer_price !== null
+                                    ? $this->offer_price
+                                    : null,
 
-                            'offer_quantity' => $this->offer_quantity !== '' && $this->offer_quantity !== null ? $this->offer_quantity : null,
+                            'offer_quantity' =>
+                                $this->offer_quantity !== '' &&
+                                $this->offer_quantity !== null
+                                    ? $this->offer_quantity
+                                    : null,
 
                             'updated_at' => now(),
                         ];
                     } else {
-                        $branchData = $this->branchPricesInput[$branchId] ?? [];
+                        $branchData =
+                            $this->branchPricesInput[$branchId]
+                            ?? [];
 
                         $payload = [
-                            'retail_price' => $branchData['retail_price'] ?? 0,
+                            'retail_price' =>
+                                $branchData['retail_price']
+                                ?? 0,
 
-                            'wholesale_price' => $branchData['wholesale_price'] ?? 0,
+                            'wholesale_price' =>
+                                $branchData['wholesale_price']
+                                ?? 0,
 
-                            'min_wholesale_quantity' => $branchData['min_wholesale_quantity'] ?? 1,
+                            'min_wholesale_quantity' =>
+                                $branchData['min_wholesale_quantity']
+                                ?? 1,
 
-                            'offer_price' => ($branchData['offer_price'] ?? null) !== '' ? $branchData['offer_price'] ?? null : null,
+                            'offer_price' =>
+                                ($branchData['offer_price'] ?? null)
+                                !== ''
+                                    ? ($branchData['offer_price'] ?? null)
+                                    : null,
 
-                            'offer_quantity' => ($branchData['offer_quantity'] ?? null) !== '' ? $branchData['offer_quantity'] ?? null : null,
+                            'offer_quantity' =>
+                                ($branchData['offer_quantity'] ?? null)
+                                !== ''
+                                    ? ($branchData['offer_quantity'] ?? null)
+                                    : null,
 
                             'updated_at' => now(),
                         ];
@@ -756,25 +1038,39 @@ new class extends Component {
                     |--------------------------------------------------------------------------
                     */
 
-                    $existingBranchProduct = DB::table('branch_products')->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('product_id', $product->id)->exists();
+                    $existingBranchProduct =
+                        DB::table('branch_products')
+                            ->where('tenant_id', $tenantId)
+                            ->where('branch_id', $branchId)
+                            ->where('product_id', $product->id)
+                            ->exists();
 
                     if ($existingBranchProduct) {
-                        DB::table('branch_products')->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('product_id', $product->id)->update($payload);
+                        DB::table('branch_products')
+                            ->where('tenant_id', $tenantId)
+                            ->where('branch_id', $branchId)
+                            ->where('product_id', $product->id)
+                            ->update($payload);
                     } else {
-                        DB::table('branch_products')->insert(
-                            array_merge(
-                                [
-                                    'tenant_id' => $tenantId,
+                        DB::table('branch_products')
+                            ->insert(
+                                array_merge(
+                                    [
+                                        'tenant_id' =>
+                                            $tenantId,
 
-                                    'branch_id' => $branchId,
+                                        'branch_id' =>
+                                            $branchId,
 
-                                    'product_id' => $product->id,
+                                        'product_id' =>
+                                            $product->id,
 
-                                    'created_at' => now(),
-                                ],
-                                $payload,
-                            ),
-                        );
+                                        'created_at' =>
+                                            now(),
+                                    ],
+                                    $payload
+                                )
+                            );
                     }
                 }
 
@@ -784,7 +1080,10 @@ new class extends Component {
                 |--------------------------------------------------------------------------
                 */
 
-                ProductBarcode::query()->where('tenant_id', $tenantId)->where('product_id', $product->id)->delete();
+                ProductBarcode::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('product_id', $product->id)
+                    ->delete();
 
                 foreach ($cleanBarcodes as $barcode) {
                     ProductBarcode::create([
@@ -795,9 +1094,14 @@ new class extends Component {
                 }
             });
 
-            $message = $this->isEditing ? 'تم تحديث بيانات المنتج بنجاح.' : 'تم إضافة المنتج بنجاح.';
+            $message = $this->isEditing
+                ? 'تم تحديث بيانات المنتج بنجاح.'
+                : 'تم إضافة المنتج بنجاح.';
 
-            session()->flash('message', $message);
+            session()->flash(
+                'message',
+                $message
+            );
 
             $this->closeModal();
 
@@ -811,17 +1115,32 @@ new class extends Component {
             |--------------------------------------------------------------------------
             */
 
-            if ($this->image && $mainImagePath && $mainImagePath !== $this->existing_image) {
-                Storage::disk('public')->delete($mainImagePath);
+            if (
+                $this->image &&
+                $mainImagePath &&
+                $mainImagePath !== $this->existing_image
+            ) {
+                Storage::disk('public')
+                    ->delete($mainImagePath);
             }
 
             foreach ($additionalImagePaths as $path) {
-                if (!in_array($path, $this->existing_images, true)) {
-                    Storage::disk('public')->delete($path);
+                if (
+                    !in_array(
+                        $path,
+                        $this->existing_images,
+                        true
+                    )
+                ) {
+                    Storage::disk('public')
+                        ->delete($path);
                 }
             }
 
-            session()->flash('error', 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.');
+            session()->flash(
+                'error',
+                'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.'
+            );
         }
     }
 
@@ -836,7 +1155,10 @@ new class extends Component {
         $this->newCategoryName = '';
         $this->newCategoryCode = '';
 
-        $this->resetValidation(['newCategoryName', 'newCategoryCode']);
+        $this->resetValidation([
+            'newCategoryName',
+            'newCategoryCode',
+        ]);
 
         $this->showCategoryModal = true;
     }
@@ -848,7 +1170,10 @@ new class extends Component {
         $this->newCategoryName = '';
         $this->newCategoryCode = '';
 
-        $this->resetValidation(['newCategoryName', 'newCategoryCode']);
+        $this->resetValidation([
+            'newCategoryName',
+            'newCategoryCode',
+        ]);
     }
 
     public function saveCategory(): void
@@ -856,21 +1181,46 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
-            session()->flash('error', 'يرجى اختيار المتجر أولاً.');
+            session()->flash(
+                'error',
+                'يرجى اختيار المتجر أولاً.'
+            );
 
             return;
         }
 
         $this->validate([
-            'newCategoryName' => ['required', 'string', 'max:255'],
+            'newCategoryName' => [
+                'required',
+                'string',
+                'max:255',
+            ],
 
-            'newCategoryCode' => ['nullable', 'string', 'max:50', Rule::unique('categories', 'code')->where(fn($query) => $query->where('tenant_id', $tenantId))],
+            'newCategoryCode' => [
+                'nullable',
+                'string',
+                'max:50',
+
+                Rule::unique(
+                    'categories',
+                    'code'
+                )->where(
+                    fn ($query) =>
+                        $query->where(
+                            'tenant_id',
+                            $tenantId
+                        )
+                ),
+            ],
         ]);
 
         $category = Category::create([
             'tenant_id' => $tenantId,
             'name' => trim($this->newCategoryName),
-            'code' => $this->newCategoryCode !== '' ? trim($this->newCategoryCode) : null,
+            'code' =>
+                $this->newCategoryCode !== ''
+                    ? trim($this->newCategoryCode)
+                    : null,
             'is_active' => true,
         ]);
 
@@ -878,7 +1228,10 @@ new class extends Component {
 
         $this->closeCategoryModal();
 
-        session()->flash('message', 'تم إنشاء التصنيف وتحديده للمنتج.');
+        session()->flash(
+            'message',
+            'تم إنشاء التصنيف وتحديده للمنتج.'
+        );
     }
 
     /*
@@ -892,14 +1245,22 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
-            session()->flash('error', 'يرجى اختيار المتجر أولاً.');
+            session()->flash(
+                'error',
+                'يرجى اختيار المتجر أولاً.'
+            );
 
             return;
         }
 
         try {
-            DB::transaction(function () use ($tenantId, $id) {
-                $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($id);
+            DB::transaction(function () use (
+                $tenantId,
+                $id
+            ) {
+                $product = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->findOrFail($id);
 
                 /*
                 |--------------------------------------------------------------------------
@@ -908,13 +1269,22 @@ new class extends Component {
                 */
 
                 if ($product->image) {
-                    Storage::disk('public')->delete($product->image);
+                    Storage::disk('public')
+                        ->delete($product->image);
                 }
 
-                $images = is_array($product->images) ? $product->images : (json_decode($product->images ?? '[]', true) ?: []);
+                $images = is_array($product->images)
+                    ? $product->images
+                    : (
+                        json_decode(
+                            $product->images ?? '[]',
+                            true
+                        ) ?: []
+                    );
 
                 foreach ($images as $path) {
-                    Storage::disk('public')->delete($path);
+                    Storage::disk('public')
+                        ->delete($path);
                 }
 
                 /*
@@ -923,7 +1293,10 @@ new class extends Component {
                 |--------------------------------------------------------------------------
                 */
 
-                DB::table('branch_products')->where('tenant_id', $tenantId)->where('product_id', $product->id)->delete();
+                DB::table('branch_products')
+                    ->where('tenant_id', $tenantId)
+                    ->where('product_id', $product->id)
+                    ->delete();
 
                 /*
                 |--------------------------------------------------------------------------
@@ -931,7 +1304,10 @@ new class extends Component {
                 |--------------------------------------------------------------------------
                 */
 
-                ProductBarcode::query()->where('tenant_id', $tenantId)->where('product_id', $product->id)->delete();
+                ProductBarcode::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('product_id', $product->id)
+                    ->delete();
 
                 /*
                 |--------------------------------------------------------------------------
@@ -942,13 +1318,19 @@ new class extends Component {
                 $product->delete();
             });
 
-            session()->flash('message', 'تم نقل المنتج إلى سلة المهملات.');
+            session()->flash(
+                'message',
+                'تم نقل المنتج إلى سلة المهملات.'
+            );
 
             $this->resetPage();
         } catch (\Throwable $e) {
             report($e);
 
-            session()->flash('error', 'تعذر حذف المنتج حالياً.');
+            session()->flash(
+                'error',
+                'تعذر حذف المنتج حالياً.'
+            );
         }
     }
 
@@ -1021,7 +1403,11 @@ new class extends Component {
         $categories = collect();
 
         if ($tenantId) {
-            $categories = Category::query()->where('tenant_id', $tenantId)->where('is_active', true)->orderBy('name')->get();
+            $categories = Category::query()
+                ->where('tenant_id', $tenantId)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get();
         }
 
         /*
@@ -1033,7 +1419,10 @@ new class extends Component {
         $allBranches = collect();
 
         if ($tenantId) {
-            $allBranches = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('name')->get();
+            $allBranches = DB::table('branches')
+                ->where('tenant_id', $tenantId)
+                ->orderBy('name')
+                ->get();
         }
 
         /*
@@ -1044,22 +1433,54 @@ new class extends Component {
 
         $productsQuery = Product::query()
             ->where('tenant_id', $tenantId)
-            ->with(['category', 'barcodes'])
-            ->when($this->search !== '', function ($query) {
-                $search = trim($this->search);
+            ->with([
+                'category',
+                'barcodes',
+            ])
+            ->when(
+                $this->search !== '',
+                function ($query) {
+                    $search = trim($this->search);
 
-                $query->where(function ($query) use ($search) {
-                    $query->where('name', 'like', '%' . $search . '%')->orWhereHas('barcodes', function ($barcodeQuery) use ($search) {
-                        $barcodeQuery->where('barcode', 'like', '%' . $search . '%');
+                    $query->where(function ($query) use ($search) {
+                        $query
+                            ->where(
+                                'name',
+                                'like',
+                                '%' . $search . '%'
+                            )
+                            ->orWhereHas(
+                                'barcodes',
+                                function ($barcodeQuery) use ($search) {
+                                    $barcodeQuery->where(
+                                        'barcode',
+                                        'like',
+                                        '%' . $search . '%'
+                                    );
+                                }
+                            );
                     });
-                });
-            })
-            ->when($this->selectedCategoryFilter !== '', function ($query) {
-                $query->where('category_id', $this->selectedCategoryFilter);
-            })
-            ->when($this->selectedWebsiteFilter !== '' && $this->selectedWebsiteFilter !== null, function ($query) {
-                $query->where('show_in_website', $this->selectedWebsiteFilter === '1');
-            })
+                }
+            )
+            ->when(
+                $this->selectedCategoryFilter !== '',
+                function ($query) {
+                    $query->where(
+                        'category_id',
+                        $this->selectedCategoryFilter
+                    );
+                }
+            )
+            ->when(
+                $this->selectedWebsiteFilter !== '' &&
+                $this->selectedWebsiteFilter !== null,
+                function ($query) {
+                    $query->where(
+                        'show_in_website',
+                        $this->selectedWebsiteFilter === '1'
+                    );
+                }
+            )
             ->latest();
 
         /*
@@ -1068,13 +1489,48 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $totalProducts = $tenantId ? Product::where('tenant_id', $tenantId)->count() : 0;
+        $totalProducts = $tenantId
+            ? Product::where(
+                'tenant_id',
+                $tenantId
+            )->count()
+            : 0;
 
-        $websiteProducts = $tenantId ? Product::where('tenant_id', $tenantId)->where('show_in_website', true)->count() : 0;
+        $websiteProducts = $tenantId
+            ? Product::where(
+                'tenant_id',
+                $tenantId
+            )
+                ->where(
+                    'show_in_website',
+                    true
+                )
+                ->count()
+            : 0;
 
-        $hiddenProducts = $tenantId ? Product::where('tenant_id', $tenantId)->where('show_in_website', false)->count() : 0;
+        $hiddenProducts = $tenantId
+            ? Product::where(
+                'tenant_id',
+                $tenantId
+            )
+                ->where(
+                    'show_in_website',
+                    false
+                )
+                ->count()
+            : 0;
 
-        $totalCategories = $tenantId ? Category::where('tenant_id', $tenantId)->where('is_active', true)->count() : 0;
+        $totalCategories = $tenantId
+            ? Category::where(
+                'tenant_id',
+                $tenantId
+            )
+                ->where(
+                    'is_active',
+                    true
+                )
+                ->count()
+            : 0;
 
         /*
         |--------------------------------------------------------------------------
@@ -1082,7 +1538,8 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $products = $productsQuery->paginate(12);
+        $products = $productsQuery
+            ->paginate(12);
 
         /*
         |--------------------------------------------------------------------------
@@ -1092,8 +1549,20 @@ new class extends Component {
 
         $branchPrices = collect();
 
-        if ($tenantId && $branchId && $products->isNotEmpty()) {
-            $branchPrices = DB::table('branch_products')->where('tenant_id', $tenantId)->where('branch_id', $branchId)->whereIn('product_id', $products->pluck('id'))->get()->keyBy('product_id');
+        if (
+            $tenantId &&
+            $branchId &&
+            $products->isNotEmpty()
+        ) {
+            $branchPrices = DB::table('branch_products')
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $branchId)
+                ->whereIn(
+                    'product_id',
+                    $products->pluck('id')
+                )
+                ->get()
+                ->keyBy('product_id');
         }
 
         return $this->view([
@@ -1121,9 +1590,9 @@ new class extends Component {
 
     @if (session()->has('message'))
         <div
-            class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300">
-            <div
-                class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
+            class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300"
+        >
+            <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
                 <flux:icon name="check-circle" class="size-5" />
             </div>
 
@@ -1138,7 +1607,8 @@ new class extends Component {
 
     @if (session()->has('error'))
         <div
-            class="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+            class="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
+        >
             <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/40">
                 <flux:icon name="exclamation-triangle" class="size-5" />
             </div>
@@ -1162,8 +1632,7 @@ new class extends Component {
 
         <div class="flex items-start gap-4">
 
-            <div
-                class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+            <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
                 <flux:icon name="cube" class="size-6" />
             </div>
 
@@ -1181,7 +1650,11 @@ new class extends Component {
 
         <div class="flex flex-wrap items-center gap-2">
 
-            <flux:button variant="primary" icon="plus" wire:click="openCreateModal">
+            <flux:button
+                variant="primary"
+                icon="plus"
+                wire:click="openCreateModal"
+            >
                 إضافة منتج
             </flux:button>
 
@@ -1212,8 +1685,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div
-                    class="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                <div class="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
                     <flux:icon name="cube" class="size-5" />
                 </div>
 
@@ -1238,8 +1710,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div
-                    class="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                <div class="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                     <flux:icon name="globe-alt" class="size-5" />
                 </div>
 
@@ -1264,8 +1735,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div
-                    class="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                <div class="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
                     <flux:icon name="eye-slash" class="size-5" />
                 </div>
 
@@ -1290,8 +1760,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div
-                    class="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
+                <div class="flex size-11 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
                     <flux:icon name="squares-2x2" class="size-5" />
                 </div>
 
@@ -1326,8 +1795,11 @@ new class extends Component {
 
             <div class="lg:col-span-6">
 
-                <flux:input wire:model.live.debounce.300ms="search" placeholder="ابحث باسم المنتج أو الباركود..."
-                    icon="magnifying-glass" />
+                <flux:input
+                    wire:model.live.debounce.300ms="search"
+                    placeholder="ابحث باسم المنتج أو الباركود..."
+                    icon="magnifying-glass"
+                />
 
             </div>
 
@@ -1336,8 +1808,10 @@ new class extends Component {
 
             <div class="lg:col-span-3">
 
-                <select wire:model.live="selectedCategoryFilter"
-                    class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                <select
+                    wire:model.live="selectedCategoryFilter"
+                    class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                >
                     <option value="">
                         جميع التصنيفات
                     </option>
@@ -1356,8 +1830,10 @@ new class extends Component {
 
             <div class="lg:col-span-3">
 
-                <select wire:model.live="selectedWebsiteFilter"
-                    class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                <select
+                    wire:model.live="selectedWebsiteFilter"
+                    class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                >
                     <option value="">
                         جميع حالات الموقع
                     </option>
@@ -1382,8 +1858,7 @@ new class extends Component {
         DESKTOP TABLE
     ================================================================= --}}
 
-    <div
-        class="hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:block">
+    <div class="hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:block">
 
         <div class="overflow-x-auto">
 
@@ -1454,13 +1929,19 @@ new class extends Component {
                                 <div class="flex items-center gap-3">
 
                                     @if ($product->image)
-                                        <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}"
-                                            class="size-12 rounded-xl border border-zinc-200 object-cover dark:border-zinc-700">
+
+                                        <img
+                                            src="{{ Storage::url($product->image) }}"
+                                            alt="{{ $product->name }}"
+                                            class="size-12 rounded-xl border border-zinc-200 object-cover dark:border-zinc-700"
+                                        >
+
                                     @else
-                                        <div
-                                            class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+
+                                        <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
                                             <flux:icon name="photo" class="size-6" />
                                         </div>
+
                                     @endif
 
                                     <div class="min-w-0">
@@ -1485,14 +1966,17 @@ new class extends Component {
                             <td class="px-5 py-4">
 
                                 @if ($product->category)
-                                    <span
-                                        class="inline-flex items-center rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+
+                                    <span class="inline-flex items-center rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                                         {{ $product->category->name }}
                                     </span>
+
                                 @else
+
                                     <span class="text-xs text-zinc-400">
                                         بدون تصنيف
                                     </span>
+
                                 @endif
 
                             </td>
@@ -1503,27 +1987,33 @@ new class extends Component {
                             <td class="max-w-[180px] px-5 py-4">
 
                                 @if ($product->barcodes->isNotEmpty())
+
                                     <div class="flex max-w-[180px] flex-wrap gap-1">
 
                                         @foreach ($product->barcodes->take(2) as $barcode)
-                                            <span
-                                                class="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+
+                                            <span class="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                                                 {{ $barcode->barcode }}
                                             </span>
+
                                         @endforeach
 
                                         @if ($product->barcodes->count() > 2)
-                                            <span
-                                                class="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+
+                                            <span class="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
                                                 +{{ $product->barcodes->count() - 2 }}
                                             </span>
+
                                         @endif
 
                                     </div>
+
                                 @else
+
                                     <span class="text-xs text-zinc-400">
                                         لا يوجد
                                     </span>
+
                                 @endif
 
                             </td>
@@ -1571,6 +2061,7 @@ new class extends Component {
                             <td class="px-5 py-4">
 
                                 @if ($priceData && $priceData->offer_price !== null)
+
                                     <div class="font-semibold text-amber-600 dark:text-amber-400">
                                         {{ number_format($priceData->offer_price, 2) }}
                                     </div>
@@ -1578,10 +2069,13 @@ new class extends Component {
                                     <div class="mt-1 text-[11px] text-zinc-400">
                                         من {{ $priceData->offer_quantity ?? 1 }}
                                     </div>
+
                                 @else
+
                                     <span class="text-xs text-zinc-400">
                                         لا يوجد
                                     </span>
+
                                 @endif
 
                             </td>
@@ -1592,17 +2086,19 @@ new class extends Component {
                             <td class="px-5 py-4">
 
                                 @if ($product->is_price_unified)
-                                    <span
-                                        class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400">
+
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400">
                                         <flux:icon name="link" class="size-3.5" />
                                         موحد
                                     </span>
+
                                 @else
-                                    <span
-                                        class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+
+                                    <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                                         <flux:icon name="building-storefront" class="size-3.5" />
                                         حسب الفرع
                                     </span>
+
                                 @endif
 
                             </td>
@@ -1612,29 +2108,34 @@ new class extends Component {
 
                             <td class="px-5 py-4">
 
-                                <button type="button" wire:click="toggleWebsiteStatus({{ $product->id }})"
+                                <button
+                                    type="button"
+                                    wire:click="toggleWebsiteStatus({{ $product->id }})"
                                     wire:loading.attr="disabled"
                                     wire:target="toggleWebsiteStatus({{ $product->id }})"
-                                    class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition">
+                                    class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition"
+                                >
 
                                     @if ($product->show_in_website)
-                                        <span
-                                            class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+
+                                        <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
 
                                             <span class="size-1.5 rounded-full bg-emerald-500"></span>
 
                                             معروض
 
                                         </span>
+
                                     @else
-                                        <span
-                                            class="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+
+                                        <span class="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
 
                                             <span class="size-1.5 rounded-full bg-zinc-400"></span>
 
                                             مخفي
 
                                         </span>
+
                                     @endif
 
                                 </button>
@@ -1648,14 +2149,21 @@ new class extends Component {
 
                                 <div class="flex items-center justify-center gap-1">
 
-                                    <flux:button variant="ghost" icon="pencil-square"
-                                        wire:click="edit({{ $product->id }})" title="تعديل المنتج" />
+                                    <flux:button
+                                        variant="ghost"
+                                        icon="pencil-square"
+                                        wire:click="edit({{ $product->id }})"
+                                        title="تعديل المنتج"
+                                    />
 
-                                    <flux:button variant="ghost" icon="trash"
+                                    <flux:button
+                                        variant="ghost"
+                                        icon="trash"
                                         class="text-red-600 hover:text-red-700"
                                         wire:click="delete({{ $product->id }})"
                                         wire:confirm="هل أنت متأكد من نقل هذا المنتج إلى سلة المهملات؟"
-                                        title="حذف المنتج" />
+                                        title="حذف المنتج"
+                                    />
 
                                 </div>
 
@@ -1671,8 +2179,7 @@ new class extends Component {
 
                                 <div class="mx-auto flex max-w-sm flex-col items-center">
 
-                                    <div
-                                        class="flex size-16 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+                                    <div class="flex size-16 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
                                         <flux:icon name="cube-transparent" class="size-8" />
                                     </div>
 
@@ -1684,8 +2191,12 @@ new class extends Component {
                                         لم نجد منتجات مطابقة للبحث أو الفلاتر الحالية.
                                     </p>
 
-                                    <flux:button class="mt-4" variant="subtle" wire:click="openCreateModal"
-                                        icon="plus">
+                                    <flux:button
+                                        class="mt-4"
+                                        variant="subtle"
+                                        wire:click="openCreateModal"
+                                        icon="plus"
+                                    >
                                         إضافة أول منتج
                                     </flux:button>
 
@@ -1707,9 +2218,11 @@ new class extends Component {
         {{-- Pagination --}}
 
         @if ($products->hasPages())
+
             <div class="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
                 {{ $products->links() }}
             </div>
+
         @endif
 
     </div>
@@ -1727,19 +2240,24 @@ new class extends Component {
                 $priceData = $branchPrices[$product->id] ?? null;
             @endphp
 
-            <div
-                class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
 
                 <div class="flex gap-3">
 
                     @if ($product->image)
-                        <img src="{{ Storage::url($product->image) }}" alt="{{ $product->name }}"
-                            class="size-16 shrink-0 rounded-xl border border-zinc-200 object-cover dark:border-zinc-700">
+
+                        <img
+                            src="{{ Storage::url($product->image) }}"
+                            alt="{{ $product->name }}"
+                            class="size-16 shrink-0 rounded-xl border border-zinc-200 object-cover dark:border-zinc-700"
+                        >
+
                     @else
-                        <div
-                            class="flex size-16 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+
+                        <div class="flex size-16 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
                             <flux:icon name="photo" class="size-7" />
                         </div>
+
                     @endif
 
 
@@ -1760,15 +2278,17 @@ new class extends Component {
                             </div>
 
                             @if ($product->show_in_website)
-                                <span
-                                    class="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+
+                                <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
                                     معروض
                                 </span>
+
                             @else
-                                <span
-                                    class="shrink-0 rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+
+                                <span class="shrink-0 rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                                     مخفي
                                 </span>
+
                             @endif
 
                         </div>
@@ -1837,23 +2357,27 @@ new class extends Component {
 
 
                         @if ($product->barcodes->isNotEmpty())
+
                             <div class="mt-3 flex flex-wrap gap-1">
 
                                 @foreach ($product->barcodes->take(3) as $barcode)
-                                    <span
-                                        class="rounded-md bg-zinc-100 px-2 py-1 font-mono text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+
+                                    <span class="rounded-md bg-zinc-100 px-2 py-1 font-mono text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                                         {{ $barcode->barcode }}
                                     </span>
+
                                 @endforeach
 
                                 @if ($product->barcodes->count() > 3)
-                                    <span
-                                        class="rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+
+                                    <span class="rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
                                         +{{ $product->barcodes->count() - 3 }}
                                     </span>
+
                                 @endif
 
                             </div>
+
                         @endif
 
                     </div>
@@ -1875,14 +2399,23 @@ new class extends Component {
 
                     <div class="flex items-center gap-1">
 
-                        <flux:button size="sm" variant="subtle" icon="pencil-square"
-                            wire:click="edit({{ $product->id }})">
+                        <flux:button
+                            size="sm"
+                            variant="subtle"
+                            icon="pencil-square"
+                            wire:click="edit({{ $product->id }})"
+                        >
                             تعديل
                         </flux:button>
 
-                        <flux:button size="sm" variant="ghost" icon="trash" class="text-red-600"
+                        <flux:button
+                            size="sm"
+                            variant="ghost"
+                            icon="trash"
+                            class="text-red-600"
                             wire:click="delete({{ $product->id }})"
-                            wire:confirm="هل أنت متأكد من نقل هذا المنتج إلى سلة المهملات؟" />
+                            wire:confirm="هل أنت متأكد من نقل هذا المنتج إلى سلة المهملات؟"
+                        />
 
                     </div>
 
@@ -1892,11 +2425,9 @@ new class extends Component {
 
         @empty
 
-            <div
-                class="rounded-2xl border border-zinc-200 bg-white px-5 py-14 text-center dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="rounded-2xl border border-zinc-200 bg-white px-5 py-14 text-center dark:border-zinc-800 dark:bg-zinc-900">
 
-                <div
-                    class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+                <div class="mx-auto flex size-16 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
                     <flux:icon name="cube-transparent" class="size-8" />
                 </div>
 
@@ -1908,7 +2439,12 @@ new class extends Component {
                     لا توجد نتائج مطابقة للبحث الحالي.
                 </p>
 
-                <flux:button class="mt-4" variant="primary" icon="plus" wire:click="openCreateModal">
+                <flux:button
+                    class="mt-4"
+                    variant="primary"
+                    icon="plus"
+                    wire:click="openCreateModal"
+                >
                     إضافة منتج
                 </flux:button>
 
@@ -1918,9 +2454,11 @@ new class extends Component {
 
 
         @if ($products->hasPages())
+
             <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 {{ $products->links() }}
             </div>
+
         @endif
 
     </div>
@@ -1930,21 +2468,25 @@ new class extends Component {
         PRODUCT MODAL
     ================================================================= --}}
 
-    <flux:modal wire:model="showModal" class="w-full max-w-5xl">
+    <flux:modal
+        wire:model="showModal"
+        class="w-full max-w-5xl"
+    >
 
         <div class="max-h-[85vh] overflow-y-auto px-1">
 
             {{-- Modal Header --}}
 
-            <div
-                class="sticky top-0 z-20 -mx-1 mb-6 border-b border-zinc-200 bg-white/95 px-1 pb-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
+            <div class="sticky top-0 z-20 -mx-1 mb-6 border-b border-zinc-200 bg-white/95 px-1 pb-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
 
                 <div class="flex items-start gap-3">
 
-                    <div
-                        class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                    <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
 
-                        <flux:icon name="{{ $isEditing ? 'pencil-square' : 'cube' }}" class="size-5" />
+                        <flux:icon
+                            name="{{ $isEditing ? 'pencil-square' : 'cube' }}"
+                            class="size-5"
+                        />
 
                     </div>
 
@@ -1960,7 +2502,8 @@ new class extends Component {
 
                             {{ $isEditing
                                 ? 'قم بتحديث بيانات المنتج والأسعار والباركودات والصور.'
-                                : 'أدخل البيانات الأساسية للمنتج ثم حدد الأسعار والفروع والباركودات.' }}
+                                : 'أدخل البيانات الأساسية للمنتج ثم حدد الأسعار والفروع والباركودات.'
+                            }}
 
                         </flux:subheading>
 
@@ -1971,20 +2514,21 @@ new class extends Component {
             </div>
 
 
-            <form wire:submit.prevent="save"
-                x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }" class="space-y-6">
+            <form
+                wire:submit.prevent="save"
+                x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }"
+                class="space-y-6"
+            >
 
                 {{-- ====================================================
                     BASIC INFORMATION
                 ===================================================== --}}
 
-                <section
-                    class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
+                <section class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
 
                     <div class="mb-4 flex items-center gap-3">
 
-                        <div
-                            class="flex size-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
+                        <div class="flex size-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
                             <flux:icon name="information-circle" class="size-5" />
                         </div>
 
@@ -2011,7 +2555,10 @@ new class extends Component {
                                 اسم المنتج
                             </flux:label>
 
-                            <flux:input wire:model="name" placeholder="مثال: آيفون 15 برو ماكس" />
+                            <flux:input
+                                wire:model="name"
+                                placeholder="مثال: آيفون 15 برو ماكس"
+                            />
 
                             <flux:error name="name" />
 
@@ -2026,23 +2573,32 @@ new class extends Component {
 
                             <div class="flex gap-2">
 
-                                <select wire:model="category_id"
-                                    class="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                                <select
+                                    wire:model="category_id"
+                                    class="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                                >
 
                                     <option value="">
                                         بدون تصنيف
                                     </option>
 
                                     @foreach ($categories as $category)
+
                                         <option value="{{ $category->id }}">
                                             {{ $category->name }}
                                         </option>
+
                                     @endforeach
 
                                 </select>
 
-                                <flux:button type="button" variant="subtle" icon="plus"
-                                    wire:click="openCategoryModal" title="إضافة تصنيف" />
+                                <flux:button
+                                    type="button"
+                                    variant="subtle"
+                                    icon="plus"
+                                    wire:click="openCategoryModal"
+                                    title="إضافة تصنيف"
+                                />
 
                             </div>
 
@@ -2063,8 +2619,7 @@ new class extends Component {
 
                     <div class="mb-4 flex items-center gap-3">
 
-                        <div
-                            class="flex size-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+                        <div class="flex size-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
                             <flux:icon name="photo" class="size-5" />
                         </div>
 
@@ -2094,49 +2649,67 @@ new class extends Component {
                         <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
 
                             @if ($image)
-                                <div
-                                    class="relative size-24 shrink-0 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-900">
 
-                                    <img src="{{ $image->temporaryUrl() }}" class="size-full object-cover">
+                                <div class="relative size-24 shrink-0 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-900">
 
-                                    <div
-                                        class="absolute bottom-0 inset-x-0 bg-indigo-600/80 py-1 text-center text-[10px] text-white">
+                                    <img
+                                        src="{{ $image->temporaryUrl() }}"
+                                        class="size-full object-cover"
+                                    >
+
+                                    <div class="absolute bottom-0 inset-x-0 bg-indigo-600/80 py-1 text-center text-[10px] text-white">
                                         جديدة
                                     </div>
 
                                 </div>
+
                             @elseif ($existing_image)
-                                <div
-                                    class="group relative size-24 shrink-0 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-700">
 
-                                    <img src="{{ Storage::url($existing_image) }}" class="size-full object-cover">
+                                <div class="group relative size-24 shrink-0 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-700">
 
-                                    <button type="button" wire:click="removeSingleExistingImage"
+                                    <img
+                                        src="{{ Storage::url($existing_image) }}"
+                                        class="size-full object-cover"
+                                    >
+
+                                    <button
+                                        type="button"
+                                        wire:click="removeSingleExistingImage"
                                         class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
-                                        title="حذف الصورة">
+                                        title="حذف الصورة"
+                                    >
                                         <flux:icon name="trash" class="size-5" />
                                     </button>
 
                                 </div>
+
                             @else
-                                <div
-                                    class="flex size-24 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+
+                                <div class="flex size-24 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
                                     <flux:icon name="photo" class="size-8" />
                                 </div>
+
                             @endif
 
 
                             <div class="flex-1">
 
-                                <input type="file" wire:model="image" accept="image/*"
-                                    class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-zinc-800 dark:file:text-zinc-200">
+                                <input
+                                    type="file"
+                                    wire:model="image"
+                                    accept="image/*"
+                                    class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-zinc-800 dark:file:text-zinc-200"
+                                >
 
                                 <div class="mt-2 text-xs text-zinc-400">
                                     JPG / PNG / WEBP — الحد الأقصى 2MB.
                                 </div>
 
-                                <div wire:loading wire:target="image"
-                                    class="mt-2 text-xs font-medium text-indigo-600">
+                                <div
+                                    wire:loading
+                                    wire:target="image"
+                                    class="mt-2 text-xs font-medium text-indigo-600"
+                                >
                                     جاري تجهيز الصورة...
                                 </div>
 
@@ -2157,10 +2730,19 @@ new class extends Component {
                             معرض الصور الإضافية
                         </div>
 
-                        <input type="file" wire:model="images" multiple accept="image/*"
-                            class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-200">
+                        <input
+                            type="file"
+                            wire:model="images"
+                            multiple
+                            accept="image/*"
+                            class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-200"
+                        >
 
-                        <div wire:loading wire:target="images" class="mt-2 text-xs font-medium text-indigo-600">
+                        <div
+                            wire:loading
+                            wire:target="images"
+                            class="mt-2 text-xs font-medium text-indigo-600"
+                        >
                             جاري تجهيز الصور...
                         </div>
 
@@ -2178,18 +2760,24 @@ new class extends Component {
                                 <div class="flex flex-wrap gap-2">
 
                                     @foreach ($existing_images as $index => $imgPath)
-                                        <div
-                                            class="group relative size-20 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
 
-                                            <img src="{{ Storage::url($imgPath) }}" class="size-full object-cover">
+                                        <div class="group relative size-20 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
 
-                                            <button type="button"
+                                            <img
+                                                src="{{ Storage::url($imgPath) }}"
+                                                class="size-full object-cover"
+                                            >
+
+                                            <button
+                                                type="button"
                                                 wire:click="removeExistingImage({{ $index }})"
-                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100">
+                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
+                                            >
                                                 <flux:icon name="trash" class="size-4" />
                                             </button>
 
                                         </div>
+
                                     @endforeach
 
                                 </div>
@@ -2212,18 +2800,24 @@ new class extends Component {
                                 <div class="flex flex-wrap gap-2">
 
                                     @foreach ($images as $index => $newImage)
-                                        <div
-                                            class="group relative size-20 overflow-hidden rounded-xl border border-indigo-200 dark:border-indigo-900">
 
-                                            <img src="{{ $newImage->temporaryUrl() }}"
-                                                class="size-full object-cover">
+                                        <div class="group relative size-20 overflow-hidden rounded-xl border border-indigo-200 dark:border-indigo-900">
 
-                                            <button type="button" wire:click="removeNewImage({{ $index }})"
-                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100">
+                                            <img
+                                                src="{{ $newImage->temporaryUrl() }}"
+                                                class="size-full object-cover"
+                                            >
+
+                                            <button
+                                                type="button"
+                                                wire:click="removeNewImage({{ $index }})"
+                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
+                                            >
                                                 <flux:icon name="x-mark" class="size-4" />
                                             </button>
 
                                         </div>
+
                                     @endforeach
 
                                 </div>
@@ -2249,8 +2843,7 @@ new class extends Component {
 
                         <div class="flex items-center gap-3">
 
-                            <div
-                                class="flex size-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
+                            <div class="flex size-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
                                 <flux:icon name="qr-code" class="size-5" />
                             </div>
 
@@ -2268,8 +2861,13 @@ new class extends Component {
 
                         </div>
 
-                        <flux:button type="button" size="sm" variant="subtle" icon="plus"
-                            wire:click="addBarcodeField">
+                        <flux:button
+                            type="button"
+                            size="sm"
+                            variant="subtle"
+                            icon="plus"
+                            wire:click="addBarcodeField"
+                        >
                             إضافة باركود
                         </flux:button>
 
@@ -2279,13 +2877,19 @@ new class extends Component {
                     <div class="space-y-2">
 
                         @foreach ($barcodes as $index => $barcode)
-                            <div wire:key="barcode-row-{{ $index }}" class="flex items-start gap-2">
+
+                            <div
+                                wire:key="barcode-row-{{ $index }}"
+                                class="flex items-start gap-2"
+                            >
 
                                 <div class="flex-1">
 
-                                    <flux:input wire:model="barcodes.{{ $index }}"
+                                    <flux:input
+                                        wire:model="barcodes.{{ $index }}"
                                         placeholder="امسح الباركود أو أدخله يدوياً..."
-                                        x-on:keydown.enter.prevent.stop />
+                                        x-on:keydown.enter.prevent.stop
+                                    />
 
                                     @error('barcodes.' . $index)
                                         <div class="mt-1 text-xs text-red-600">
@@ -2295,15 +2899,29 @@ new class extends Component {
 
                                 </div>
 
-                                <flux:button type="button" variant="subtle" icon="sparkles"
-                                    wire:click="generateBarcode({{ $index }})" title="توليد باركود" />
+                                <flux:button
+                                    type="button"
+                                    variant="subtle"
+                                    icon="sparkles"
+                                    wire:click="generateBarcode({{ $index }})"
+                                    title="توليد باركود"
+                                />
 
                                 @if (count($barcodes) > 1)
-                                    <flux:button type="button" variant="ghost" icon="trash" class="text-red-600"
-                                        wire:click="removeBarcodeField({{ $index }})" title="حذف الباركود" />
+
+                                    <flux:button
+                                        type="button"
+                                        variant="ghost"
+                                        icon="trash"
+                                        class="text-red-600"
+                                        wire:click="removeBarcodeField({{ $index }})"
+                                        title="حذف الباركود"
+                                    />
+
                                 @endif
 
                             </div>
+
                         @endforeach
 
                     </div>
@@ -2317,15 +2935,13 @@ new class extends Component {
                     PRICING POLICY
                 ===================================================== --}}
 
-                <section
-                    class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                <section class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/20">
 
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
                         <div class="flex items-start gap-3">
 
-                            <div
-                                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
+                            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
                                 <flux:icon name="banknotes" class="size-5" />
                             </div>
 
@@ -2347,7 +2963,9 @@ new class extends Component {
                         </div>
 
 
-                        <flux:switch wire:model.live="is_price_unified" />
+                        <flux:switch
+                            wire:model.live="is_price_unified"
+                        />
 
                     </div>
 
@@ -2364,8 +2982,7 @@ new class extends Component {
 
                         <div class="mb-4 flex items-center gap-3">
 
-                            <div
-                                class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                            <div class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                                 <flux:icon name="currency-dollar" class="size-5" />
                             </div>
 
@@ -2392,8 +3009,13 @@ new class extends Component {
                                     سعر التكلفة
                                 </flux:label>
 
-                                <flux:input type="number" step="0.01" min="0" wire:model="cost_price"
-                                    placeholder="0.00" />
+                                <flux:input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    wire:model="cost_price"
+                                    placeholder="0.00"
+                                />
 
                                 <flux:error name="cost_price" />
 
@@ -2406,8 +3028,13 @@ new class extends Component {
                                     سعر التجزئة
                                 </flux:label>
 
-                                <flux:input type="number" step="0.01" min="0" wire:model="retail_price"
-                                    placeholder="0.00" />
+                                <flux:input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    wire:model="retail_price"
+                                    placeholder="0.00"
+                                />
 
                                 <flux:error name="retail_price" />
 
@@ -2420,8 +3047,13 @@ new class extends Component {
                                     سعر الجملة
                                 </flux:label>
 
-                                <flux:input type="number" step="0.01" min="0"
-                                    wire:model="wholesale_price" placeholder="0.00" />
+                                <flux:input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    wire:model="wholesale_price"
+                                    placeholder="0.00"
+                                />
 
                                 <flux:error name="wholesale_price" />
 
@@ -2434,8 +3066,12 @@ new class extends Component {
                                     أقل كمية للجملة
                                 </flux:label>
 
-                                <flux:input type="number" step="1" min="1"
-                                    wire:model.number="min_wholesale_quantity" placeholder="1" />
+                                <flux:input
+                                    type="number"
+                                    min="1"
+                                    wire:model.number="min_wholesale_quantity"
+                                    placeholder="1"
+                                />
 
                                 <flux:error name="min_wholesale_quantity" />
 
@@ -2446,12 +3082,14 @@ new class extends Component {
 
                         {{-- Offer --}}
 
-                        <div
-                            class="mt-5 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/60 dark:bg-amber-950/10">
+                        <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/60 dark:bg-amber-950/10">
 
                             <div class="mb-4 flex items-center gap-2">
 
-                                <flux:icon name="tag" class="size-5 text-amber-600" />
+                                <flux:icon
+                                    name="tag"
+                                    class="size-5 text-amber-600"
+                                />
 
                                 <div>
 
@@ -2476,8 +3114,13 @@ new class extends Component {
                                         سعر العرض
                                     </flux:label>
 
-                                    <flux:input type="number" step="0.01" min="0"
-                                        wire:model="offer_price" placeholder="اتركه فارغاً إذا لا يوجد عرض" />
+                                    <flux:input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        wire:model="offer_price"
+                                        placeholder="اتركه فارغاً إذا لا يوجد عرض"
+                                    />
 
                                     <flux:error name="offer_price" />
 
@@ -2490,8 +3133,12 @@ new class extends Component {
                                         كمية تطبيق العرض
                                     </flux:label>
 
-                                    <flux:input type="number" min="1" wire:model="offer_quantity"
-                                        placeholder="مثال: 1 أو 3" />
+                                    <flux:input
+                                        type="number"
+                                        min="1"
+                                        wire:model="offer_quantity"
+                                        placeholder="مثال: 1 أو 3"
+                                    />
 
                                     <flux:error name="offer_quantity" />
 
@@ -2502,7 +3149,9 @@ new class extends Component {
                         </div>
 
                     </section>
+
                 @else
+
                     {{-- =================================================
                         BRANCH SPECIFIC PRICES
                     ================================================== --}}
@@ -2513,8 +3162,7 @@ new class extends Component {
 
                             <div class="flex items-center gap-3">
 
-                                <div
-                                    class="flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                                <div class="flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
                                     <flux:icon name="building-storefront" class="size-5" />
                                 </div>
 
@@ -2532,8 +3180,7 @@ new class extends Component {
 
                             </div>
 
-                            <span
-                                class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                            <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
                                 {{ $allBranches->count() }} فرع
                             </span>
 
@@ -2550,8 +3197,13 @@ new class extends Component {
                                     سعر التكلفة الأساسي
                                 </flux:label>
 
-                                <flux:input type="number" step="0.01" min="0" wire:model="cost_price"
-                                    placeholder="0.00" />
+                                <flux:input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    wire:model="cost_price"
+                                    placeholder="0.00"
+                                />
 
                                 <flux:error name="cost_price" />
 
@@ -2563,18 +3215,19 @@ new class extends Component {
                         <div class="space-y-4">
 
                             @forelse ($allBranches as $branch)
+
                                 @php
                                     $branchInput = $branchPricesInput[$branch->id] ?? [];
                                 @endphp
 
-                                <div wire:key="branch-price-{{ $branch->id }}"
-                                    class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
+                                <div
+                                    wire:key="branch-price-{{ $branch->id }}"
+                                    class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30"
+                                >
 
-                                    <div
-                                        class="mb-4 flex items-center gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
+                                    <div class="mb-4 flex items-center gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
 
-                                        <div
-                                            class="flex size-8 items-center justify-center rounded-lg bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
+                                        <div class="flex size-8 items-center justify-center rounded-lg bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
                                             <flux:icon name="building-storefront" class="size-4" />
                                         </div>
 
@@ -2593,9 +3246,13 @@ new class extends Component {
                                                 سعر التجزئة
                                             </flux:label>
 
-                                            <flux:input type="number" step="0.01" min="0"
+                                            <flux:input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
                                                 wire:model="branchPricesInput.{{ $branch->id }}.retail_price"
-                                                placeholder="0.00" />
+                                                placeholder="0.00"
+                                            />
 
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
 
@@ -2608,12 +3265,15 @@ new class extends Component {
                                                 سعر الجملة
                                             </flux:label>
 
-                                            <flux:input type="number" step="0.01" min="0"
+                                            <flux:input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
                                                 wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price"
-                                                placeholder="0.00" />
+                                                placeholder="0.00"
+                                            />
 
-                                            <flux:error
-                                                name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
+                                            <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
 
                                         </flux:field>
 
@@ -2624,20 +3284,21 @@ new class extends Component {
                                                 أقل كمية للجملة
                                             </flux:label>
 
-                                            <flux:input type="number" min="1"
-                                                wire:model="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity"
-                                                placeholder="1" />
+                                            <flux:input
+                                                type="number"
+                                                min="1"
+                                                wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity"
+                                                placeholder="1"
+                                            />
 
-                                            <flux:error
-                                                name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
+                                            <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
 
                                         </flux:field>
 
                                     </div>
 
 
-                                    <div
-                                        class="mt-4 grid grid-cols-1 gap-4 border-t border-dashed border-zinc-200 pt-4 dark:border-zinc-700 sm:grid-cols-2">
+                                    <div class="mt-4 grid grid-cols-1 gap-4 border-t border-dashed border-zinc-200 pt-4 dark:border-zinc-700 sm:grid-cols-2">
 
                                         <flux:field>
 
@@ -2645,9 +3306,13 @@ new class extends Component {
                                                 سعر العرض
                                             </flux:label>
 
-                                            <flux:input type="number" step="0.01" min="0"
+                                            <flux:input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
                                                 wire:model="branchPricesInput.{{ $branch->id }}.offer_price"
-                                                placeholder="اختياري" />
+                                                placeholder="اختياري"
+                                            />
 
                                         </flux:field>
 
@@ -2658,9 +3323,12 @@ new class extends Component {
                                                 كمية العرض
                                             </flux:label>
 
-                                            <flux:input type="number" min="1"
+                                            <flux:input
+                                                type="number"
+                                                min="1"
                                                 wire:model="branchPricesInput.{{ $branch->id }}.offer_quantity"
-                                                placeholder="اختياري" />
+                                                placeholder="اختياري"
+                                            />
 
                                         </flux:field>
 
@@ -2670,10 +3338,12 @@ new class extends Component {
 
                             @empty
 
-                                <div
-                                    class="rounded-2xl border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
+                                <div class="rounded-2xl border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
 
-                                    <flux:icon name="building-storefront" class="mx-auto size-8 text-zinc-400" />
+                                    <flux:icon
+                                        name="building-storefront"
+                                        class="mx-auto size-8 text-zinc-400"
+                                    />
 
                                     <div class="mt-3 font-semibold">
                                         لا توجد فروع
@@ -2684,6 +3354,7 @@ new class extends Component {
                                     </p>
 
                                 </div>
+
                             @endforelse
 
                         </div>
@@ -2703,8 +3374,7 @@ new class extends Component {
 
                         <div class="flex items-start gap-3">
 
-                            <div
-                                class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                            <div class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                                 <flux:icon name="globe-alt" class="size-5" />
                             </div>
 
@@ -2722,7 +3392,9 @@ new class extends Component {
 
                         </div>
 
-                        <flux:switch wire:model.live="show_in_website" />
+                        <flux:switch
+                            wire:model.live="show_in_website"
+                        />
 
                     </div>
 
@@ -2735,20 +3407,31 @@ new class extends Component {
                     FOOTER
                 ===================================================== --}}
 
-                <div
-                    class="sticky bottom-0 z-20 -mx-1 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white/95 pt-4 backdrop-blur sm:flex-row sm:justify-end dark:border-zinc-800 dark:bg-zinc-900/95">
+                <div class="sticky bottom-0 z-20 -mx-1 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white/95 pt-4 backdrop-blur sm:flex-row sm:justify-end dark:border-zinc-800 dark:bg-zinc-900/95">
 
-                    <flux:button type="button" variant="ghost" wire:click="closeModal">
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="closeModal"
+                    >
                         إلغاء
                     </flux:button>
 
-                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="save">
+                    <flux:button
+                        type="submit"
+                        variant="primary"
+                        wire:loading.attr="disabled"
+                        wire:target="save"
+                    >
 
                         <span wire:loading.remove wire:target="save">
                             {{ $isEditing ? 'حفظ التعديلات' : 'حفظ المنتج' }}
                         </span>
 
-                        <span wire:loading wire:target="save">
+                        <span
+                            wire:loading
+                            wire:target="save"
+                        >
                             جاري الحفظ...
                         </span>
 
@@ -2767,14 +3450,16 @@ new class extends Component {
         CATEGORY MODAL
     ================================================================= --}}
 
-    <flux:modal wire:model="showCategoryModal" class="w-full max-w-md">
+    <flux:modal
+        wire:model="showCategoryModal"
+        class="w-full max-w-md"
+    >
 
         <div>
 
             <div class="flex items-start gap-3">
 
-                <div
-                    class="flex size-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
+                <div class="flex size-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
                     <flux:icon name="squares-2x2" class="size-5" />
                 </div>
 
@@ -2793,7 +3478,10 @@ new class extends Component {
             </div>
 
 
-            <form wire:submit.prevent="saveCategory" class="mt-6 space-y-4">
+            <form
+                wire:submit.prevent="saveCategory"
+                class="mt-6 space-y-4"
+            >
 
                 <flux:field>
 
@@ -2801,7 +3489,10 @@ new class extends Component {
                         اسم التصنيف
                     </flux:label>
 
-                    <flux:input wire:model="newCategoryName" placeholder="مثال: إلكترونيات، مشروبات..." />
+                    <flux:input
+                        wire:model="newCategoryName"
+                        placeholder="مثال: إلكترونيات، مشروبات..."
+                    />
 
                     <flux:error name="newCategoryName" />
 
@@ -2814,7 +3505,10 @@ new class extends Component {
                         كود التصنيف
                     </flux:label>
 
-                    <flux:input wire:model="newCategoryCode" placeholder="مثال: CAT-001" />
+                    <flux:input
+                        wire:model="newCategoryCode"
+                        placeholder="مثال: CAT-001"
+                    />
 
                     <flux:error name="newCategoryCode" />
 
@@ -2825,15 +3519,22 @@ new class extends Component {
                 </flux:field>
 
 
-                <div
-                    class="flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end dark:border-zinc-800">
+                <div class="flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end dark:border-zinc-800">
 
-                    <flux:button type="button" variant="ghost" wire:click="closeCategoryModal">
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="closeCategoryModal"
+                    >
                         إلغاء
                     </flux:button>
 
-                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled"
-                        wire:target="saveCategory">
+                    <flux:button
+                        type="submit"
+                        variant="primary"
+                        wire:loading.attr="disabled"
+                        wire:target="saveCategory"
+                    >
 
                         <span wire:loading.remove wire:target="saveCategory">
                             حفظ التصنيف
