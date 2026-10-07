@@ -1254,7 +1254,7 @@ new class extends Component {
         */
 
         if ($this->sendWhatsapp && $order) {
-            $this->dispatch('open-whatsapp-url', url: $this->whatsappUrl($order, $items));
+            $this->dispatch('open-whatsapp-url', url: $this->whatsappUrl($order, $items, $currentBalance));
         }
 
         $invoiceNumber = $order?->invoice_number;
@@ -1342,7 +1342,7 @@ new class extends Component {
         return $phone;
     }
 
-    private function whatsappUrl(Order $order, array $items): string
+    private function whatsappUrl(Order $order, array $items, float $currentBalance = 0.0): string
     {
         $phone = $this->normalizePhone($order->customer_phone);
 
@@ -1356,14 +1356,20 @@ new class extends Component {
             $quantity = $item['quantity'];
             $lineTotal = number_format((float) $item['total_price'], 2);
 
-            $text .= "{$number}. {$item['name']} — السعر: {$unitPrice} × {$quantity} = {$lineTotal} شيكل\n";
+            // عرض أول 3 كلمات فقط من اسم الصنف في رسالة واتساب.
+            $nameWords = preg_split('/\s+/u', trim((string) $item['name']), -1, PREG_SPLIT_NO_EMPTY);
+            $shortName = implode(' ', array_slice($nameWords, 0, 3));
+
+            $text .= "{$number}. {$shortName} — السعر: {$unitPrice} × {$quantity} = {$lineTotal} شيكل\n";
         }
 
         $text .= "\nالإجمالي: " . number_format($order->total, 2) . " شيكل\n";
 
         $text .= 'المدفوع: ' . number_format($order->paid_amount, 2) . " شيكل\n";
 
-        $text .= 'المتبقي: ' . number_format(max(0, $order->total - $order->paid_amount), 2) . " شيكل\n";
+        $text .= 'المتبقي من الفاتورة: ' . number_format(max(0, $order->total - $order->paid_amount), 2) . " شيكل\n";
+
+        $text .= 'الرصيد المتبقي على الحساب: ' . number_format(max(0, $currentBalance), 2) . " شيكل\n";
 
         if ($order->notes) {
             $text .= "ملاحظات: {$order->notes}\n";
