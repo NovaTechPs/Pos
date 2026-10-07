@@ -1352,24 +1352,29 @@ new class extends Component {
 
         foreach ($items as $index => $item) {
             $number = $index + 1;
-            $unitPrice = number_format((float) $item['unit_price'], 2);
-            $quantity = $item['quantity'];
-            $lineTotal = number_format((float) $item['total_price'], 2);
+            $formatAmount = static function ($value): string {
+                return rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
+            };
+            $unitPrice = $formatAmount($item['unit_price']);
+            $quantity = $formatAmount($item['quantity']);
+            $lineTotal = $formatAmount($item['total_price']);
 
             // عرض أول 3 كلمات فقط من اسم الصنف في رسالة واتساب.
             $nameWords = preg_split('/\s+/u', trim((string) $item['name']), -1, PREG_SPLIT_NO_EMPTY);
             $shortName = implode(' ', array_slice($nameWords, 0, 3));
 
-            $text .= "{$number}. {$shortName} — السعر: {$unitPrice} × {$quantity} = {$lineTotal} شيكل\n";
+            $text .= "{$number}. {$shortName} {$unitPrice}×{$quantity}={$lineTotal}\n";
         }
 
-        $text .= "\nالإجمالي: " . number_format($order->total, 2) . " شيكل\n";
+        $formatAmount = static function ($value): string {
+            return rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
+        };
 
-        $text .= 'المدفوع: ' . number_format($order->paid_amount, 2) . " شيكل\n";
+        $text .= "\nالإجمالي: " . $formatAmount($order->total) . "\n";
 
-        $text .= 'المتبقي من الفاتورة: ' . number_format(max(0, $order->total - $order->paid_amount), 2) . " شيكل\n";
+        $text .= 'المدفوع: ' . $formatAmount($order->paid_amount) . "\n";
 
-        $text .= 'الرصيد المتبقي على الحساب: ' . number_format(max(0, $currentBalance), 2) . " شيكل\n";
+        $text .= 'الرصيد الجديد: ' . $formatAmount($currentBalance) . "\n";
 
         if ($order->notes) {
             $text .= "ملاحظات: {$order->notes}\n";
