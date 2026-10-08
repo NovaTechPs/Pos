@@ -16,7 +16,7 @@ new class extends Component
 ?>
 
 <div>
-    <!-- الواجهة الرئيسية العادية (لن تظهر في الطباعة) -->
+    <!-- الواجهة الرئيسية العادية (مخفية أثناء الطباعة) -->
     <div class="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4 print:hidden" dir="rtl">
         <h2 class="text-xl font-bold text-gray-800 border-b pb-2">طباعة ملصق باركود</h2>
 
@@ -36,7 +36,7 @@ new class extends Component
         </button>
     </div>
 
-    <!-- قسم الطباعة فقط (يظهر أثناء الطباعة وتختفي باقي عناصر الصفحة) -->
+    <!-- قسم الطباعة فقط -->
     <div class="hidden print:block print:w-full print:m-0 print:p-0" dir="rtl">
         <div class="label-box">
             <div class="product-title">{{ $productName }}</div>
@@ -49,27 +49,26 @@ new class extends Component
         </div>
     </div>
 
-    <!-- تنسيقات الطباعة الخاصة بالملصق -->
+    <!-- تنسيقات طباعة مصغرة لمنع الانقسام -->
     <style>
         @media print {
-            /* إخفاء الهيدر والفوتر والروابط الافتراضية للفيور */
             @page {
-                size: auto;
-                margin: 0mm;
-            }
-
-            body {
+                size: 50mm 25mm; /* يمكن تعديل الأبعاد حسب حجم رول ملصقك */
                 margin: 0;
-                padding: 0;
-                background: white;
             }
 
-            /* إخفاء أي عنصر غير مخصص للطباعة */
+            html, body {
+                width: 50mm;
+                height: 25mm;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden;
+            }
+
             body * {
                 visibility: hidden;
             }
 
-            /* إظهار قسم الملصق فقط */
             .print\:block, .print\:block * {
                 visibility: visible;
             }
@@ -79,58 +78,69 @@ new class extends Component
                 left: 0;
                 top: 0;
                 width: 100%;
+                height: 100%;
             }
 
-            /* تصميم بطاقة الملصق */
             .label-box {
-                width: 58mm; /* يمكن تعديل العرض حسب عرض الورق لديك */
-                padding: 4mm;
+                width: 100%;
+                height: 100%;
+                padding: 1.5mm;
                 text-align: center;
                 box-sizing: border-box;
-                margin: 0 auto;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                align-items: center;
             }
 
             .product-title {
-                font-size: 11px;
+                font-size: 8.5pt;
                 font-weight: bold;
+                line-height: 1.1;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                margin-bottom: 2mm;
+                max-width: 100%;
+            }
+
+            .barcode-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                width: 100%;
             }
 
             .barcode-container svg {
                 max-width: 100%;
-                height: 35px;
+                max-height: 14mm;
             }
 
             .price-tag {
-                font-size: 12px;
+                font-size: 9pt;
                 font-weight: bold;
-                margin-top: 2mm;
+                line-height: 1;
             }
         }
     </style>
 
-    <!-- مكتبة توليد الباركود JS -->
+    <!-- مكتبة توليد الباركود -->
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.min.js"></script>
     <script>
         document.addEventListener('livewire:initialized', () => {
             Livewire.on('trigger-print', () => {
-                // توليد الباركود داخل SVG
+                // توليد باركود بارتفاع وأبعاد مصغرة تناسب الملصق
                 JsBarcode("#barcode", @js($barcode), {
                     format: "CODE128",
-                    width: 1.8,
-                    height: 35,
+                    width: 1.2,
+                    height: 25,
                     displayValue: true,
-                    fontSize: 10,
+                    fontSize: 8,
                     margin: 0
                 });
 
-                // تشغيل امر الطباعة مباشرة
                 setTimeout(() => {
                     window.print();
-                }, 200);
+                }, 150);
             });
         });
     </script>
