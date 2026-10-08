@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Models\ProductOffer;
 use App\Models\Party;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -521,6 +522,7 @@ new class extends Component {
             $this->showOpenShiftModal = false;
             $this->errorMessage = null;
             $this->successMessage = 'تم فتح الشيفت بنجاح. رقم الشيفت: #' . $shift->id;
+            $this->dispatch('pos-sound', type: 'shift-open');
         } catch (\Throwable $e) {
             Log::error('POS shift opening failed', [
                 'tenant_id' => $tenantId,
@@ -594,6 +596,7 @@ new class extends Component {
             $this->showCloseShiftModal = false;
             $this->clearCartState(false);
             $this->successMessage = 'تم إغلاق الشيفت وتسوية الصندوق بنجاح.';
+            $this->dispatch('pos-sound', type: 'shift-close');
         } catch (\Throwable $e) {
             Log::error('POS shift closing failed', [
                 'shift_id' => $shift->id,
@@ -838,6 +841,14 @@ new class extends Component {
         $this->showProductsModal = false;
         $changeQty = $this->isReturnMode ? -1 : 1;
 
+        $activeOffer = $this->getActiveProductOffer($productId, (int) $tenantId, (int) $branchId);
+        $offerQuantity = $activeOffer?->offer_quantity !== null
+            ? (float) $activeOffer->offer_quantity
+            : (float) ($branchProduct->offer_quantity ?? 0);
+        $offerPrice = $activeOffer?->offer_price !== null
+            ? (float) $activeOffer->offer_price
+            : ($branchProduct->offer_price !== null ? (float) $branchProduct->offer_price : null);
+
         $existingLineKey = null;
 
         if ($this->mergeSimilarProducts) {
@@ -862,10 +873,15 @@ new class extends Component {
                 'id' => $productId,
                 'name' => $product->name,
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
+                // سعر القطعة العادي يبقى ظاهرًا في خانة السعر.
+                // إجمالي السطر يُحسب من العرض داخل recalculatePrices().
                 'price' => (float) $branchProduct->retail_price,
                 'cost_price' => (float) ($product->cost_price ?? 0),
                 'quantity' => $changeQty,
                 'subtotal' => $this->roundMoney((float) $branchProduct->retail_price * $changeQty),
+                'price_manual' => false,
+                'offer_quantity' => $offerQuantity,
+                'offer_price' => $offerPrice,
             ];
         }
 
@@ -936,6 +952,9 @@ new class extends Component {
         }
 
         $this->cart[$lineKey]['price'] = max(0, (float) $newPrice);
+        // عندما يعدل الكاشير سعر الوحدة يدويًا، لا نعيد تطبيق العرض تلقائيًا
+        // على هذا السطر حتى لا نمسح تعديل الكاشير عند تغيير الكمية.
+        $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney((float) $this->cart[$lineKey]['quantity'] * (float) $this->cart[$lineKey]['price']);
         $this->recalculatePrices();
     }
@@ -982,6 +1001,7 @@ new class extends Component {
         $unitPrice = abs($targetTotal / $quantity);
 
         $this->cart[$lineKey]['price'] = round($unitPrice, 6);
+        $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['subtotal'] = $targetTotal;
 
         // لا تستدعِ recalculatePrices() هنا، لأنه سيعيد كتابة subtotal
@@ -1023,6 +1043,8 @@ new class extends Component {
         $lineKey = $resolvedKey;
 
         unset($this->cart[$lineKey]);
+
+        $this->dispatch('pos-sound', type: 'delete');
 
         if (empty($this->cart)) {
             $this->clearCartState();
@@ -1234,6 +1256,11 @@ new class extends Component {
                 'cost_price' => (float) ($item->cost_price ?? ($item->product?->cost_price ?? 0)),
                 'quantity' => (float) $item->quantity,
                 'subtotal' => (float) $item->total_price,
+                'price_manual' => false,
+                'offer_quantity' => 0,
+                'offer_price' => null,
+                'normal_total' => $this->roundMoney((float) $item->quantity * (float) $item->unit_price),
+                'promotion_savings' => 0,
             ];
         }
 
@@ -1537,6 +1564,21 @@ new class extends Component {
     public function getSubtotalProperty(): float
     {
         return $this->roundMoney(array_sum(array_column($this->cart, 'subtotal')));
+    }
+
+    /**
+     * إجمالي ما وفره العميل من عروض الكمية داخل الفاتورة.
+     * لا يدخل ضمن الخصم اليدوي؛ هو مؤشر توضيحي فقط.
+     */
+    public function getTotalPromotionSavingsProperty(): float
+    {
+        $total = 0;
+
+        foreach ($this->cart as $item) {
+            $total += max(0, (float) ($item['promotion_savings'] ?? 0));
+        }
+
+        return $this->roundMoney($total);
     }
 
     public function getTotalCostProperty(): float
@@ -1921,7 +1963,16 @@ new class extends Component {
                     }
 
                     $costPrice = max(0, (float) ($rawItem['cost_price'] ?? ($product->cost_price ?? 0)));
-                    $lineTotal = $this->roundMoney($price * $quantity);
+
+                    /*
+                     * subtotal هو المبلغ الفعلي للسطر بعد العرض.
+                     * مهم جداً: لا نعيد حسابه من quantity × price هنا،
+                     * لأن price يبقى السعر الأصلي الظاهر للكاشير.
+                     * مثال: 155 × 4 = 620، لكن العرض قد يجعل الإجمالي 255.
+                     */
+                    $lineTotal = array_key_exists('subtotal', $rawItem)
+                        ? $this->roundMoney((float) $rawItem['subtotal'])
+                        : $this->roundMoney($price * $quantity);
 
                     if ($quantity < 0) {
                         $lineTotal = -abs($lineTotal);
@@ -2169,6 +2220,8 @@ new class extends Component {
 
             $this->successMessage = $wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
 
+            $this->dispatch('pos-sound', type: $wasEditing ? 'save-edit' : 'save');
+
             return $order;
         } catch (\Throwable $e) {
             Log::error('POS checkout failed', [
@@ -2259,16 +2312,156 @@ new class extends Component {
         return round($amount, 2);
     }
 
+    /**
+     * حساب إجمالي السطر مع نظام العروض:
+     *
+     * مثال: سعر القطعة 4، والعرض 3 قطع بـ 10:
+     * 1 = 4, 2 = 8, 3 = 10, 4 = 14, 5 = 18,
+     * 6 = 20, 7 = 24, 8 = 28, 9 = 30.
+     *
+     * أي أن كل مجموعة كاملة من offer_quantity تُحسب بسعر offer_price،
+     * والكمية المتبقية تُحسب بسعر القطعة العادي.
+     */
+    private function calculateOfferTotal(float $quantity, float $unitPrice, ?float $offerQuantity, ?float $offerPrice): float
+    {
+        $sign = $quantity < 0 ? -1 : 1;
+        $absoluteQuantity = abs($quantity);
+        $offerQuantity = (float) ($offerQuantity ?? 0);
+        $offerPrice = $offerPrice !== null ? (float) $offerPrice : null;
+
+        // لا يوجد عرض صالح.
+        if ($absoluteQuantity <= 0 || $offerQuantity <= 0 || $offerPrice === null || $offerPrice < 0) {
+            return $this->roundMoney($quantity * $unitPrice);
+        }
+
+        // لا نطبق عرضاً أغلى من السعر الطبيعي للمجموعة.
+        // هذا يمنع أن يتحول العرض بالخطأ إلى زيادة في السعر.
+        if ($offerPrice >= ($offerQuantity * $unitPrice)) {
+            return $this->roundMoney($quantity * $unitPrice);
+        }
+
+        // العروض الكمية تعمل على المجموعات الكاملة فقط.
+        $fullOffers = (int) floor($absoluteQuantity / $offerQuantity);
+        $remainder = round($absoluteQuantity - ($fullOffers * $offerQuantity), 6);
+
+        $total = ($fullOffers * $offerPrice) + ($remainder * $unitPrice);
+
+        return $this->roundMoney($total * $sign);
+    }
+
+    /**
+     * جلب العرض النشط الحالي للمنتج من product_offers.
+     * العرض الجديد له الأولوية، وإذا لم يوجد نستخدم بيانات العرض القديمة
+     * الموجودة في branch_products للتوافق مع الفواتير/البيانات القديمة.
+     */
+    private function getActiveProductOffer(int $productId, int $tenantId, int $branchId): ?ProductOffer
+    {
+        if ($productId <= 0 || $tenantId <= 0 || $branchId <= 0) {
+            return null;
+        }
+
+        $now = now();
+
+        return ProductOffer::query()
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)
+            ->where('product_id', $productId)
+            ->where('is_active', true)
+            ->where('start_at', '<=', $now)
+            ->where(function ($query) use ($now) {
+                $query->whereNull('end_at')
+                    ->orWhere('end_at', '>=', $now);
+            })
+            ->orderByDesc('start_at')
+            ->first();
+    }
+
     private function recalculatePrices(): void
     {
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+
         foreach ($this->cart as $id => $item) {
-            $this->cart[$id]['subtotal'] = $this->roundMoney((float) ($item['quantity'] ?? 0) * (float) ($item['price'] ?? 0));
+            $quantity = (float) ($item['quantity'] ?? 0);
+            $unitPrice = (float) ($item['price'] ?? 0);
+
+            // السعر الطبيعي بدون أي عرض.
+            $normalTotal = $this->roundMoney($quantity * $unitPrice);
+
+            // السعر المعدل يدوياً له الأولوية على العرض.
+            if (($item['price_manual'] ?? false) === true) {
+                $this->cart[$id]['subtotal'] = $normalTotal;
+                $this->cart[$id]['normal_total'] = $normalTotal;
+                $this->cart[$id]['promotion_savings'] = 0;
+                continue;
+            }
+
+            $offerQuantity = isset($item['offer_quantity'])
+                ? (float) $item['offer_quantity']
+                : 0;
+
+            $offerPrice = array_key_exists('offer_price', $item) && $item['offer_price'] !== null
+                ? (float) $item['offer_price']
+                : null;
+
+            // العروض الجديدة تُحفظ في product_offers، لذلك نبحث أولاً
+            // عن العرض النشط الحالي. وإذا لم يوجد نستخدم العرض القديم
+            // الموجود في branch_products للتوافق مع البيانات السابقة.
+            if ($tenantId && $branchId && (int) ($item['id'] ?? 0) > 0) {
+                $productId = (int) $item['id'];
+                $activeOffer = $this->getActiveProductOffer($productId, (int) $tenantId, (int) $branchId);
+
+                if ($activeOffer) {
+                    $offerQuantity = (float) ($activeOffer->offer_quantity ?? 0);
+                    $offerPrice = $activeOffer->offer_price !== null
+                        ? (float) $activeOffer->offer_price
+                        : null;
+                } else {
+                    $branchProduct = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('product_id', $productId)
+                        ->first();
+
+                    if ($branchProduct) {
+                        $offerQuantity = $branchProduct->offer_quantity !== null
+                            ? (float) $branchProduct->offer_quantity
+                            : 0;
+
+                        $offerPrice = $branchProduct->offer_price !== null
+                            ? (float) $branchProduct->offer_price
+                            : null;
+                    }
+                }
+
+                $this->cart[$id]['offer_quantity'] = $offerQuantity;
+                $this->cart[$id]['offer_price'] = $offerPrice;
+            }
+
+            $finalTotal = $this->calculateOfferTotal(
+                $quantity,
+                $unitPrice,
+                $offerQuantity,
+                $offerPrice
+            );
+
+            $this->cart[$id]['subtotal'] = $finalTotal;
+            $this->cart[$id]['normal_total'] = $normalTotal;
+
+            // يظهر التوفير فقط عندما يكون العرض فعلاً أوفر من السعر الطبيعي.
+            $savings = 0;
+            if ($quantity > 0 && abs($finalTotal) < abs($normalTotal)) {
+                $savings = abs($normalTotal) - abs($finalTotal);
+            }
+
+            $this->cart[$id]['promotion_savings'] = $this->roundMoney($savings);
         }
 
         // إبقاء حقل الصافي متزامناً مع الإجمالي والخصم.
-        // إذا كان الخصم صفراً يصبح الصافي = الإجمالي مباشرة.
         if (!empty($this->cart)) {
-            $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount));
+            $this->custom_final_total = $this->roundMoney(
+                max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee)
+            );
         } else {
             $this->custom_final_total = null;
         }
@@ -2279,21 +2472,44 @@ new class extends Component {
         $order->loadMissing('items.product', 'user', 'branch');
 
         /*
-        |----------------------------------------------------------------------
-        | تجميع الأصناف المتشابهة للطباعة فقط
-        |----------------------------------------------------------------------
-        | لا نغيّر السلة ولا OrderItem ولا طريقة الحفظ.
-        | عند الطباعة فقط: كل OrderItems التي لها نفس product_id تظهر
-        | كسطر واحد، مع جمع الكمية والإجمالي.
-        | إذا كانت الأسعار مختلفة نحسب سعر الوحدة الفعلي من:
-        | مجموع الإجمالي ÷ مجموع الكمية.
+        |--------------------------------------------------------------------------
+        | تجهيز بيانات الطباعة مع نفس منطق العروض الموجود في شاشة الـPOS
+        |--------------------------------------------------------------------------
+        | السعر في OrderItem هو سعر القطعة الظاهر للكاشير، بينما total_price
+        | هو المبلغ الفعلي بعد العرض. لذلك نستطيع إظهار:
+        |
+        | السعر الطبيعي = سعر الوحدة × الكمية
+        | المبلغ الفعلي = total_price
+        | التوفير       = السعر الطبيعي - المبلغ الفعلي
+        |
+        | لكن لا نعتبر كل فرق خصماً/عرضاً تلقائياً؛ نتحقق أولاً أن إجمالي السطر
+        | يطابق عرض branch_products الحالي. هذا يمنع اعتبار تخفيض يدوي كعرض.
         */
+        $productIds = $order->items
+            ->pluck('product_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $branchProducts = collect();
+
+        if ($productIds->isNotEmpty()) {
+            $branchProducts = BranchProduct::query()
+                ->where('tenant_id', $this->tenantId())
+                ->where('branch_id', $order->branch_id)
+                ->whereIn('product_id', $productIds)
+                ->get()
+                ->keyBy('product_id');
+        }
+
         $groupedItems = [];
 
         foreach ($order->items as $item) {
             $productId = (int) $item->product_id;
             $quantity = (float) $item->quantity;
             $lineTotal = (float) $item->total_price;
+            $unitPrice = abs((float) $item->unit_price);
 
             if ($productId <= 0) {
                 $groupKey = 'item_' . $item->id;
@@ -2306,22 +2522,25 @@ new class extends Component {
                     'name' => $item->product?->name ?? 'منتج غير محدد',
                     'qty' => $quantity,
                     'total' => $lineTotal,
+                    'normal_total' => abs($quantity) * $unitPrice,
+                    'unit_price' => $unitPrice,
                 ];
-
-                continue;
+            } else {
+                $groupedItems[$groupKey]['qty'] += $quantity;
+                $groupedItems[$groupKey]['total'] += $lineTotal;
+                $groupedItems[$groupKey]['normal_total'] += abs($quantity) * $unitPrice;
             }
-
-            $groupedItems[$groupKey]['qty'] += $quantity;
-            $groupedItems[$groupKey]['total'] += $lineTotal;
         }
 
         $items = [];
         $totalQty = 0;
+        $totalPromotionSavings = 0;
         $index = 1;
 
-        foreach ($groupedItems as $groupedItem) {
+        foreach ($groupedItems as $groupKey => $groupedItem) {
             $quantity = (float) $groupedItem['qty'];
             $total = (float) $groupedItem['total'];
+            $normalTotal = $this->roundMoney((float) $groupedItem['normal_total']);
 
             if (abs($quantity) < 0.000001) {
                 continue;
@@ -2329,18 +2548,72 @@ new class extends Component {
 
             $totalQty += abs($quantity);
 
-            // سعر الوحدة المتوسط يحافظ على نفس إجمالي السطر حتى لو
-            // كانت نفس السلعة قد بيعت بأسعار مختلفة داخل الفاتورة.
-            $unitPrice = abs($total / $quantity);
+            $productId = str_starts_with($groupKey, 'product_')
+                ? (int) str_replace('product_', '', $groupKey)
+                : 0;
+
+            $promotionSavings = 0;
+            $offerQuantity = 0;
+            $offerPrice = null;
+
+            if ($productId > 0 && $quantity > 0) {
+                $branchProduct = $branchProducts->get($productId);
+
+                if ($branchProduct) {
+                    $offerQuantity = (float) ($branchProduct->offer_quantity ?? 0);
+                    $offerPrice = $branchProduct->offer_price !== null
+                        ? (float) $branchProduct->offer_price
+                        : null;
+
+                    if (
+                        $offerQuantity > 0 &&
+                        $offerPrice !== null &&
+                        $offerPrice >= 0
+                    ) {
+                        $expectedOfferTotal = $this->calculateOfferTotal(
+                            $quantity,
+                            (float) $groupedItem['unit_price'],
+                            $offerQuantity,
+                            $offerPrice
+                        );
+
+                        // العرض يجب أن يطابق المبلغ المحفوظ فعلياً في الفاتورة.
+                        if (
+                            abs(abs($total) - abs($expectedOfferTotal)) < 0.01 &&
+                            $normalTotal > abs($total) + 0.001
+                        ) {
+                            $promotionSavings = $this->roundMoney(
+                                $normalTotal - abs($total)
+                            );
+                        }
+                    }
+                }
+            }
+
+            $totalPromotionSavings += $promotionSavings;
+
+            // سعر الوحدة الفعلي الذي ظهر في الفاتورة.
+            $unitPriceDisplay = abs($quantity) > 0
+                ? abs($total / $quantity)
+                : 0;
 
             $items[] = [
                 'id' => $index++,
                 'name' => $groupedItem['name'],
                 'qty' => $quantity,
-                'price' => number_format($unitPrice, 2),
+                'price' => number_format($unitPriceDisplay, 2),
                 'total' => number_format($total, 2),
+                'normal_total' => number_format($normalTotal, 2),
+                'promotion_savings' => number_format($promotionSavings, 2),
+                'has_promotion' => $promotionSavings > 0,
+                'offer_label' => $promotionSavings > 0
+                    ? 'عرض ' . rtrim(rtrim(number_format($offerQuantity, 2), '0'), '.') .
+                      ' بـ ' . number_format(abs((float) $offerPrice), 2)
+                    : '',
             ];
         }
+
+        $totalPromotionSavings = $this->roundMoney($totalPromotionSavings);
 
         $createdAt = $order->created_at ?: now();
         $this->receipt = [
@@ -2353,6 +2626,7 @@ new class extends Component {
             'notes' => trim((string) ($order->notes ?? '')),
             'items' => $items,
             'total_qty' => $totalQty,
+            'total_promotion_savings' => number_format($totalPromotionSavings, 2),
             'subtotal' => number_format((float) $order->subtotal, 2),
             'discount' => number_format((float) $order->discount, 2),
             'delivery_fee' => number_format((float) ($order->delivery_fee ?? 0), 2),
@@ -4478,6 +4752,97 @@ new class extends Component {
         }
     }
 </style>
+
+<script>
+    /* POS Sounds - بدون ملفات صوتية خارجية */
+    (() => {
+        let audioContext = null;
+
+        const getAudioContext = () => {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return null;
+            if (!audioContext) audioContext = new AudioCtx();
+            if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+            return audioContext;
+        };
+
+        const beep = (frequency, duration, volume, wave = 'sine', delay = 0) => {
+            const ctx = getAudioContext();
+            if (!ctx) return;
+            const start = ctx.currentTime + delay;
+            const oscillator = ctx.createOscillator();
+            const gain = ctx.createGain();
+            oscillator.type = wave;
+            oscillator.frequency.setValueAtTime(frequency, start);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+            oscillator.connect(gain);
+            gain.connect(ctx.destination);
+            oscillator.start(start);
+            oscillator.stop(start + duration + 0.02);
+        };
+
+        const playPosSound = (type) => {
+            switch (type) {
+                case 'success':
+                    beep(880, 0.08, 0.07);
+                    beep(1175, 0.10, 0.06, 'sine', 0.09);
+                    break;
+                case 'error':
+                    beep(220, 0.16, 0.09, 'square');
+                    beep(165, 0.20, 0.07, 'square', 0.13);
+                    break;
+                case 'save':
+                    beep(660, 0.08, 0.06);
+                    beep(990, 0.12, 0.06, 'sine', 0.10);
+                    break;
+                case 'save-edit':
+                    beep(660, 0.07, 0.05);
+                    beep(880, 0.07, 0.05, 'sine', 0.08);
+                    beep(1175, 0.12, 0.06, 'sine', 0.16);
+                    break;
+                case 'delete':
+                    beep(330, 0.08, 0.05, 'triangle');
+                    beep(220, 0.10, 0.04, 'triangle', 0.08);
+                    break;
+                case 'shift-open':
+                    beep(523, 0.09, 0.06);
+                    beep(659, 0.09, 0.06, 'sine', 0.10);
+                    beep(784, 0.14, 0.07, 'sine', 0.20);
+                    break;
+                case 'shift-close':
+                    beep(784, 0.09, 0.06);
+                    beep(659, 0.09, 0.06, 'sine', 0.10);
+                    beep(523, 0.14, 0.07, 'sine', 0.20);
+                    break;
+                case 'warning':
+                    beep(440, 0.10, 0.07, 'triangle');
+                    beep(440, 0.10, 0.07, 'triangle', 0.14);
+                    break;
+            }
+        };
+
+        const bindPosSounds = () => {
+            if (!window.Livewire || window.__posSoundsRegistered) return;
+            window.__posSoundsRegistered = true;
+            window.Livewire.on('pos-sound', (event) => {
+                const type = event?.type ?? event?.detail?.type ?? 'success';
+                playPosSound(type);
+            });
+        };
+
+        if (window.Livewire) bindPosSounds();
+        document.addEventListener('livewire:init', bindPosSounds, { once: true });
+
+        const unlockAudio = () => {
+            const ctx = getAudioContext();
+            if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
+        };
+        document.addEventListener('pointerdown', unlockAudio, { once: true });
+        document.addEventListener('keydown', unlockAudio, { once: true });
+    })();
+</script>
 
 <script>
     (function () {

@@ -3,6 +3,7 @@
 use App\Models\Party;
 
 use App\Models\Payment;
+use App\Models\Order;
 
 use Illuminate\Support\Facades\Auth;
 
@@ -88,8 +89,12 @@ new class extends Component {
 
         }
 
-        return Payment::query()
+        $paginator = Payment::query()
 
+            /*
+             * سندات القبض القادمة من مبيعات الجملة لها order_id،
+             * لذلك لا نستبعدها هنا. نعرض السند المستقل وسند الفاتورة معًا.
+             */
             ->with(['party'])
 
             ->where('tenant_id', $tenantId)
@@ -120,7 +125,7 @@ new class extends Component {
 
                             ->orWhere('tax_number', 'like', "%{$search}%");
 
-                    });
+                    })->orWhere('notes', 'like', "%{$search}%");
 
                 });
 
@@ -131,6 +136,33 @@ new class extends Component {
             ->latest('id')
 
             ->paginate(15);
+
+        /*
+         * نضيف رقم الفاتورة المرتبطة بالسند بدون الاعتماد على
+         * علاقة order داخل موديل Payment.
+         */
+        $orderIds = $paginator->getCollection()
+            ->pluck('order_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $invoiceNumbers = $orderIds->isEmpty()
+            ? collect()
+            : Order::query()
+                ->where('tenant_id', $tenantId)
+                ->whereIn('id', $orderIds)
+                ->pluck('invoice_number', 'id');
+
+        $paginator->getCollection()->transform(function ($item) use ($invoiceNumbers) {
+            $item->linked_invoice_number = $item->order_id
+                ? ($invoiceNumbers->get($item->order_id) ?? ('#' . $item->order_id))
+                : null;
+
+            return $item;
+        });
+
+        return $paginator;
 
     }
 

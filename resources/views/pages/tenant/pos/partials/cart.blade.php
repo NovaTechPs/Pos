@@ -272,29 +272,57 @@
 
 
                         {{-- =================================================
-                            Subtotal
+                            Subtotal + Professional Promotion Display
                         ================================================== --}}
                         <td class="px-2 py-2 text-center">
 
-                            <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
-                                data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
-                                data-row-index="{{ $loop->index }}"
-                                wire:change="updateCartField(
-                                    '{{ $lineKey }}',
-                                    'subtotal',
-                                    $event.target.value
-                                )"
-                                @disabled($invoiceLocked)
-                                class="
-                                    pos-cart-field w-24 rounded-lg border
-                                    px-1 py-1 text-center font-mono text-[11px] font-black
-                                    focus:border-indigo-500 focus:outline-none
+                            @php
+                                $lineSavings = (float) ($item['promotion_savings'] ?? 0);
+                                $normalTotal = (float) ($item['normal_total'] ?? ((float) ($item['quantity'] ?? 0) * (float) ($item['price'] ?? 0)));
+                                $hasPromotion = $lineSavings > 0.000001;
+                                $offerQty = (float) ($item['offer_quantity'] ?? 0);
+                                $offerPrice = $item['offer_price'] ?? null;
+                            @endphp
 
-                                    {{ $item['subtotal'] < 0
-                                        ? 'border-rose-300 bg-rose-50 text-rose-700'
-                                        : 'border-slate-200 bg-slate-50 text-indigo-700' }}
-                                "
-                                inputmode="decimal" autocomplete="off">
+                            <div class="flex min-w-[118px] flex-col items-center leading-tight">
+
+                                <div class="relative">
+                                    <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
+                                        data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
+                                        data-row-index="{{ $loop->index }}"
+                                        wire:change="updateCartField(
+                                            '{{ $lineKey }}',
+                                            'subtotal',
+                                            $event.target.value
+                                        )"
+                                        @disabled($invoiceLocked)
+                                        class="pos-cart-field w-24 rounded-lg border px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none
+                                            {{ $item['subtotal'] < 0
+                                                ? 'border-rose-300 bg-rose-50 text-rose-700'
+                                                : ($hasPromotion ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-indigo-700') }}"
+                                        inputmode="decimal" autocomplete="off">
+                                </div>
+
+                                @if ($hasPromotion)
+                                    <div class="mt-1 flex flex-col items-center">
+                                        <span class="text-[9px] font-bold text-slate-400 line-through">
+                                            {{ number_format(abs($normalTotal), 2) }}
+                                        </span>
+
+                                        <span class="mt-0.5 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black text-emerald-700">
+                                            <span>✓</span>
+                                            وفّرت {{ number_format($lineSavings, 2) }}
+                                        </span>
+
+                                        @if ($offerQty > 0 && $offerPrice !== null)
+                                            <span class="mt-0.5 text-[8px] font-bold text-emerald-600">
+                                                عرض {{ rtrim(rtrim(number_format($offerQty, 2), '0'), '.') }} بـ {{ number_format(abs((float) $offerPrice), 2) }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                @endif
+
+                            </div>
 
                         </td>
 
@@ -304,7 +332,10 @@
                         ================================================== --}}
                         <td class="px-2 py-2 text-center">
 
-                            <button type="button" wire:click="removeFromCart('{{ $lineKey }}')" @disabled($invoiceLocked)
+                            <button type="button"
+                                wire:click="removeFromCart('{{ $lineKey }}')"
+                                wire:confirm="هل أنت متأكد من حذف هذا الصنف من الفاتورة؟"
+                                @disabled($invoiceLocked)
                                 class="rounded-lg px-2 py-1 text-lg font-black text-rose-500 hover:bg-rose-50">
                                 ×
                             </button>
@@ -342,6 +373,28 @@
         </table>
 
     </div>
+
+
+    {{-- =========================================================
+        إجمالي التوفير من العروض
+    ========================================================== --}}
+    @if (($this->totalPromotionSavings ?? 0) > 0.000001)
+        <div class="shrink-0 border-t border-emerald-100 bg-gradient-to-l from-emerald-50 via-white to-emerald-50 px-3 py-2" dir="rtl">
+            <div class="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 shadow-sm">
+                <div class="flex min-w-0 items-center gap-2">
+                    <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-black text-emerald-700">✓</span>
+                    <div>
+                        <div class="text-[11px] font-black text-emerald-800">تم تطبيق عرض على الفاتورة</div>
+                        <div class="text-[9px] font-bold text-emerald-600">هذا المبلغ تم توفيره للعميل من عروض الكمية</div>
+                    </div>
+                </div>
+                <div class="shrink-0 text-left">
+                    <div class="text-[8px] font-black text-slate-400">إجمالي التوفير</div>
+                    <div class="font-mono text-base font-black text-emerald-700">{{ number_format($this->totalPromotionSavings, 2) }}</div>
+                </div>
+            </div>
+        </div>
+    @endif
 
 
     {{-- =========================================================
@@ -437,9 +490,11 @@
                 restoreBarcodeAfterLivewire();
             });
 
-            // لا نعيد التركيز إلى الباركود عند تغيير أي حقل في السلة.
-            // التنقل بالأسهم يجب أن يبقى داخل السلة.
-            // الانتقال إلى الباركود يتم فقط عند الضغط على Enter أو بطلب صريح.
+            document.addEventListener('change', function(event) {
+                const field = event.target?.closest?.(FIELD_SELECTOR);
+                if (!field) return;
+                focusBarcodeAfterCartChange = true;
+            }, true);
 
             function registerLivewireBarcodeFocus() {
                 if (!window.Livewire || typeof window.Livewire.hook !== 'function') {
@@ -840,23 +895,50 @@
 
                     /*
                     | Enter
-                    |
-                    | Enter فقط ينقل التركيز مباشرة إلى الباركود.
-                    | لا ينتقل إلى الحقل أو الصنف التالي.
                     */
                     if (key === 'Enter') {
 
-                        const barcode =
-                            document.querySelector(BARCODE_SELECTOR);
+                        const fields = [
+                            'quantity',
+                            'price',
+                            'subtotal'
+                        ];
 
-                        if (barcode) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            focusInput(barcode);
-                            return;
+                        const currentFieldIndex =
+                            fields.indexOf(type);
+
+
+                        /*
+                        | داخل نفس الصنف:
+                        |
+                        | الكمية → السعر → الإجمالي
+                        */
+                        if (
+                            currentFieldIndex >= 0 &&
+                            currentFieldIndex < fields.length - 1
+                        ) {
+
+                            target =
+                                allRows[pos][
+                                    fields[currentFieldIndex + 1]
+                                ];
+
+                        } else {
+
+                            /*
+                            | بعد الإجمالي:
+                            | الانتقال إلى كمية الصنف التالي
+                            */
+                            targetPos =
+                                pos >= allRows.length - 1 ?
+                                0 :
+                                pos + 1;
+
+                            target =
+                                allRows[targetPos].quantity;
+
                         }
 
-                        return;
                     }
 
 
@@ -1462,12 +1544,56 @@
 
             /*
             |--------------------------------------------------------------------------
-            | لا نعيد التركيز إلى الباركود بعد تعديل حقول السلة تلقائياً.
+            | بعد تعديل الكمية / السعر / الإجمالي
             |
-            | ↑ ↓ ← → = تنقل حر داخل السلة.
-            | Enter فقط = انتقال مباشر إلى الباركود.
+            | عند تغيير أي حقل في السلة، ننتظر انتهاء تحديث Livewire
+            | ثم نعيد التركيز تلقائياً إلى الباركود.
             |--------------------------------------------------------------------------
             */
+            let returnToBarcodeAfterEdit = false;
+            let editComponentId = null;
+
+            document.addEventListener('change', function(event) {
+
+                const field = event.target?.closest?.(FIELD_SELECTOR);
+
+                if (!field) {
+                    return;
+                }
+
+                const root = field.closest('[wire\:id]');
+
+                returnToBarcodeAfterEdit = true;
+                editComponentId = root?.getAttribute('wire:id') || null;
+
+            }, true);
+
+            if (window.Livewire && typeof window.Livewire.hook === 'function') {
+
+                window.Livewire.hook('commit', ({ component, succeed }) => {
+
+                    if (!returnToBarcodeAfterEdit) {
+                        return;
+                    }
+
+                    if (editComponentId && component?.id !== editComponentId) {
+                        return;
+                    }
+
+                    succeed(() => {
+
+                        returnToBarcodeAfterEdit = false;
+                        editComponentId = null;
+
+                        setTimeout(function() {
+                            focusBarcode(false);
+                        }, 30);
+
+                    });
+
+                });
+
+            }
 
 
             /*

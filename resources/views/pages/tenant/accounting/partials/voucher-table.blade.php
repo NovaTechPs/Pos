@@ -160,6 +160,12 @@
                                 رقم السند
                             </th>
 
+                            @if (!$isPayment)
+                                <th class="px-5 py-4 text-xs font-black text-slate-500">
+                                    الفاتورة
+                                </th>
+                            @endif
+
                             <th class="px-5 py-4 text-xs font-black text-slate-500">
                                 {{ $partyLabel }}
                             </th>
@@ -203,6 +209,22 @@
                                     </span>
                                 </td>
 
+                                @if (!$isPayment)
+                                    {{-- Linked wholesale invoice --}}
+                                    <td class="px-5 py-4">
+                                        @if ($item->order_id)
+                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                                                <flux:icon name="document-text" class="size-3.5" />
+                                                {{ $item->linked_invoice_number ?? ('#' . $item->order_id) }}
+                                            </span>
+                                        @else
+                                            <span class="text-xs font-semibold text-slate-400">
+                                                سند مستقل
+                                            </span>
+                                        @endif
+                                    </td>
+                                @endif
+
                                 {{-- Party --}}
                                 <td class="px-5 py-4">
                                     <div class="flex items-center gap-3">
@@ -216,15 +238,15 @@
 
                                         <div class="min-w-0">
                                             <div class="truncate text-sm font-bold text-slate-800">
-                                                {{ $item->payable?->name ?? 'غير محدد' }}
+                                                {{ $item->party?->name ?? 'غير محدد' }}
                                             </div>
 
-                                            @if ($item->payable?->phone)
+                                            @if ($item->party?->phone)
                                                 <div
                                                     class="mt-0.5 text-xs text-slate-400"
                                                     dir="ltr"
                                                 >
-                                                    {{ $item->payable->phone }}
+                                                    {{ $item->party->phone }}
                                                 </div>
                                             @endif
                                         </div>
@@ -272,7 +294,7 @@
                                 <td class="px-5 py-4">
                                     <span class="text-sm font-bold text-slate-700">
                                         {{ number_format(
-                                            (float) ($item->payable?->current_balance ?? 0),
+                                            (float) ($item->party?->current_balance ?? 0),
                                             2
                                         ) }}
                                     </span>
@@ -282,17 +304,19 @@
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-end gap-1 opacity-70 transition group-hover:opacity-100">
 
-                                        <button
-                                            type="button"
-                                            wire:click="edit({{ $item->id }})"
-                                            title="تعديل"
-                                            class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                                        >
-                                            <flux:icon
-                                                name="pencil-square"
-                                                class="size-4"
-                                            />
-                                        </button>
+                                        @if (!$item->order_id)
+                                            <button
+                                                type="button"
+                                                wire:click="edit({{ $item->id }})"
+                                                title="تعديل"
+                                                class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                                            >
+                                                <flux:icon
+                                                    name="pencil-square"
+                                                    class="size-4"
+                                                />
+                                            </button>
+                                        @endif
 
                                         <button
                                             type="button"
@@ -318,17 +342,19 @@
                                             />
                                         </button>
 
-                                        <button
-                                            type="button"
-                                            wire:click="confirmDelete({{ $item->id }})"
-                                            title="حذف"
-                                            class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-                                        >
-                                            <flux:icon
-                                                name="trash"
-                                                class="size-4"
-                                            />
-                                        </button>
+                                        @if (!$item->order_id)
+                                            <button
+                                                type="button"
+                                                wire:click="confirmDelete({{ $item->id }})"
+                                                title="حذف"
+                                                class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                                            >
+                                                <flux:icon
+                                                    name="trash"
+                                                    class="size-4"
+                                                />
+                                            </button>
+                                        @endif
 
                                     </div>
                                 </td>

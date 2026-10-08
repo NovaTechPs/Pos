@@ -7,6 +7,8 @@ use Livewire\Attributes\On;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\ProductBarcode;
+use App\Models\ProductOffer;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -59,9 +61,6 @@ new class extends Component {
      */
     public array $branchPricesInput = [];
 
-    public $offer_price = null;
-    public ?int $offer_quantity = null;
-
     /*
     |--------------------------------------------------------------------------
     | Website
@@ -91,6 +90,22 @@ new class extends Component {
     public string $newCategoryName = '';
     public string $newCategoryCode = '';
     public bool $showCategoryModal = false;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Product Offers
+    |--------------------------------------------------------------------------
+    */
+
+    public bool $showOfferModal = false;
+    public ?int $offerProductId = null;
+    public ?int $offerBranchId = null;
+    public $offerQuantity = null;
+    public $offerPrice = null;
+    public $offerStartAt = null;
+    public $offerEndAt = null;
+    public bool $offerHasEndDate = true;
+    public string $offerProductName = '';
 
     /*
     |--------------------------------------------------------------------------
@@ -193,18 +208,6 @@ new class extends Component {
                 'min:1',
             ];
 
-            $rules['offer_price'] = [
-                'nullable',
-                'numeric',
-                'min:0',
-            ];
-
-            $rules['offer_quantity'] = [
-                'nullable',
-                'integer',
-                'min:1',
-                'required_with:offer_price',
-            ];
         } else {
             $rules['branchPricesInput.*.retail_price'] = [
                 'required',
@@ -224,17 +227,6 @@ new class extends Component {
                 'min:1',
             ];
 
-            $rules['branchPricesInput.*.offer_price'] = [
-                'nullable',
-                'numeric',
-                'min:0',
-            ];
-
-            $rules['branchPricesInput.*.offer_quantity'] = [
-                'nullable',
-                'integer',
-                'min:1',
-            ];
         }
 
         return $rules;
@@ -255,8 +247,6 @@ new class extends Component {
         'branchPricesInput.*.retail_price' => 'سعر التجزئة للفرع',
         'branchPricesInput.*.wholesale_price' => 'سعر الجملة للفرع',
         'branchPricesInput.*.min_wholesale_quantity' => 'أقل كمية جملة للفرع',
-        'branchPricesInput.*.offer_price' => 'سعر العرض للفرع',
-        'branchPricesInput.*.offer_quantity' => 'كمية العرض للفرع',
     ];
 
     /*
@@ -326,6 +316,7 @@ new class extends Component {
 
         $this->closeModal();
         $this->closeCategoryModal();
+        $this->closeOfferModal();
 
         $this->search = '';
         $this->selectedCategoryFilter = '';
@@ -428,8 +419,6 @@ new class extends Component {
                 'retail_price' => '',
                 'wholesale_price' => '',
                 'min_wholesale_quantity' => 1,
-                'offer_price' => null,
-                'offer_quantity' => null,
             ];
         }
     }
@@ -500,8 +489,6 @@ new class extends Component {
                 'wholesale_price' => $price?->wholesale_price ?? '',
                 'min_wholesale_quantity' =>
                     $price?->min_wholesale_quantity ?? 1,
-                'offer_price' => $price?->offer_price,
-                'offer_quantity' => $price?->offer_quantity,
             ];
         }
 
@@ -527,12 +514,6 @@ new class extends Component {
 
             $this->min_wholesale_quantity =
                 $current['min_wholesale_quantity'];
-
-            $this->offer_price =
-                $current['offer_price'];
-
-            $this->offer_quantity =
-                $current['offer_quantity'];
         }
 
         /*
@@ -761,22 +742,6 @@ new class extends Component {
         foreach ($this->branchPricesInput as $branchId => $branchData) {
             $this->branchPricesInput[$branchId]['min_wholesale_quantity'] =
                 (int) ($branchData['min_wholesale_quantity'] ?? 1);
-
-            if (
-                array_key_exists('offer_quantity', $branchData) &&
-                $branchData['offer_quantity'] !== null &&
-                $branchData['offer_quantity'] !== ''
-            ) {
-                $this->branchPricesInput[$branchId]['offer_quantity'] =
-                    (int) $branchData['offer_quantity'];
-            }
-        }
-
-        if (
-            $this->offer_quantity !== null &&
-            $this->offer_quantity !== ''
-        ) {
-            $this->offer_quantity = (int) $this->offer_quantity;
         }
 
         $this->validate();
@@ -984,18 +949,6 @@ new class extends Component {
                             'min_wholesale_quantity' =>
                                 $this->min_wholesale_quantity,
 
-                            'offer_price' =>
-                                $this->offer_price !== '' &&
-                                $this->offer_price !== null
-                                    ? $this->offer_price
-                                    : null,
-
-                            'offer_quantity' =>
-                                $this->offer_quantity !== '' &&
-                                $this->offer_quantity !== null
-                                    ? $this->offer_quantity
-                                    : null,
-
                             'updated_at' => now(),
                         ];
                     } else {
@@ -1015,18 +968,6 @@ new class extends Component {
                             'min_wholesale_quantity' =>
                                 $branchData['min_wholesale_quantity']
                                 ?? 1,
-
-                            'offer_price' =>
-                                ($branchData['offer_price'] ?? null)
-                                !== ''
-                                    ? ($branchData['offer_price'] ?? null)
-                                    : null,
-
-                            'offer_quantity' =>
-                                ($branchData['offer_quantity'] ?? null)
-                                !== ''
-                                    ? ($branchData['offer_quantity'] ?? null)
-                                    : null,
 
                             'updated_at' => now(),
                         ];
@@ -1142,6 +1083,188 @@ new class extends Component {
                 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.'
             );
         }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Product Offers
+    |--------------------------------------------------------------------------
+    */
+
+    public function openOfferModal(int $productId): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId) {
+            session()->flash('error', 'يرجى اختيار المتجر أولاً.');
+            return;
+        }
+
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($productId);
+
+        $branches = DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->orderBy('name')
+            ->get();
+
+        if ($branches->isEmpty()) {
+            session()->flash('error', 'يجب إنشاء فرع واحد على الأقل قبل إضافة عرض.');
+            return;
+        }
+
+        $this->offerProductId = $product->id;
+        $this->offerProductName = $product->name;
+        $this->offerBranchId = $this->activeBranchId();
+
+        if (!$this->offerBranchId || !$branches->contains('id', $this->offerBranchId)) {
+            $this->offerBranchId = (int) $branches->first()->id;
+        }
+
+        $this->offerQuantity = null;
+        $this->offerPrice = null;
+        $this->offerStartAt = now()->format('Y-m-d\TH:i');
+        $this->offerHasEndDate = true;
+        $this->offerEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
+
+        $this->resetValidation([
+            'offerProductId',
+            'offerBranchId',
+            'offerQuantity',
+            'offerPrice',
+            'offerStartAt',
+            'offerEndAt',
+        ]);
+
+        $this->showOfferModal = true;
+    }
+
+    public function closeOfferModal(): void
+    {
+        $this->showOfferModal = false;
+        $this->offerProductId = null;
+        $this->offerBranchId = null;
+        $this->offerQuantity = null;
+        $this->offerPrice = null;
+        $this->offerStartAt = null;
+        $this->offerEndAt = null;
+        $this->offerHasEndDate = true;
+        $this->offerProductName = '';
+        $this->resetValidation([
+            'offerBranchId',
+            'offerQuantity',
+            'offerPrice',
+            'offerStartAt',
+            'offerEndAt',
+        ]);
+    }
+
+    public function updatedOfferHasEndDate(bool $value): void
+    {
+        if (!$value) {
+            $this->offerEndAt = null;
+            $this->resetValidation('offerEndAt');
+            return;
+        }
+
+        if (!$this->offerEndAt) {
+            $this->offerEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
+        }
+    }
+
+    public function saveOffer(): void
+    {
+        $tenantId = $this->tenantId();
+
+        if (!$tenantId || !$this->offerProductId) {
+            session()->flash('error', 'تعذر تحديد المنتج أو المتجر.');
+            return;
+        }
+
+        $this->validate([
+            'offerBranchId' => [
+                'required',
+                'integer',
+                Rule::exists('branches', 'id')->where(fn ($q) =>
+                    $q->where('tenant_id', $tenantId)
+                ),
+            ],
+            'offerQuantity' => ['required', 'numeric', 'gt:0'],
+            'offerPrice' => ['required', 'numeric', 'min:0'],
+            'offerStartAt' => ['required', 'date'],
+            'offerEndAt' => [
+                'nullable',
+                'date',
+                'after_or_equal:offerStartAt',
+            ],
+        ], [
+            'offerBranchId.required' => 'اختر الفرع.',
+            'offerBranchId.exists' => 'الفرع غير تابع لهذا المتجر.',
+            'offerQuantity.required' => 'أدخل كمية العرض.',
+            'offerQuantity.gt' => 'كمية العرض يجب أن تكون أكبر من صفر.',
+            'offerPrice.required' => 'أدخل سعر العرض.',
+            'offerPrice.min' => 'سعر العرض لا يمكن أن يكون سالباً.',
+            'offerStartAt.required' => 'حدد بداية العرض.',
+            'offerEndAt.after_or_equal' => 'نهاية العرض يجب أن تكون بعد البداية أو مساوية لها.',
+        ]);
+
+        $productExists = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($this->offerProductId)
+            ->exists();
+
+        if (!$productExists) {
+            session()->flash('error', 'المنتج غير موجود أو لا يتبع لهذا المتجر.');
+            return;
+        }
+
+        $startAt = Carbon::parse($this->offerStartAt);
+        $endAt = $this->offerHasEndDate && $this->offerEndAt
+            ? Carbon::parse($this->offerEndAt)
+            : null;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Check overlapping offers
+        |--------------------------------------------------------------------------
+        | NULL end_at means the offer is open-ended/infinite.
+        */
+
+        $overlap = ProductOffer::query()
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $this->offerBranchId)
+            ->where('product_id', $this->offerProductId)
+            ->where('is_active', true)
+            ->where('start_at', '<=', $endAt ?? now()->addYears(100))
+            ->where(function ($query) use ($startAt) {
+                $query->whereNull('end_at')
+                    ->orWhere('end_at', '>=', $startAt);
+            })
+            ->exists();
+
+        if ($overlap) {
+            $this->addError(
+                'offerStartAt',
+                'يوجد عرض آخر متداخل لنفس المنتج والفرع في هذه الفترة.'
+            );
+            return;
+        }
+
+        ProductOffer::create([
+            'tenant_id' => $tenantId,
+            'branch_id' => (int) $this->offerBranchId,
+            'product_id' => (int) $this->offerProductId,
+            'offer_quantity' => $this->offerQuantity,
+            'offer_price' => $this->offerPrice,
+            'start_at' => $startAt,
+            'end_at' => $endAt,
+            'is_active' => true,
+            'created_by' => auth()->id(),
+        ]);
+
+        $this->closeOfferModal();
+        session()->flash('message', 'تمت إضافة العرض بنجاح.');
     }
 
     /*
@@ -1366,9 +1489,6 @@ new class extends Component {
 
         $this->branchPricesInput = [];
 
-        $this->offer_price = null;
-        $this->offer_quantity = null;
-
         $this->show_in_website = true;
 
         $this->image = null;
@@ -1548,19 +1668,29 @@ new class extends Component {
         */
 
         $branchPrices = collect();
+        $currentOffers = collect();
 
-        if (
-            $tenantId &&
-            $branchId &&
-            $products->isNotEmpty()
-        ) {
+        if ($tenantId && $branchId && $products->isNotEmpty()) {
             $branchPrices = DB::table('branch_products')
                 ->where('tenant_id', $tenantId)
                 ->where('branch_id', $branchId)
-                ->whereIn(
-                    'product_id',
-                    $products->pluck('id')
-                )
+                ->whereIn('product_id', $products->pluck('id'))
+                ->get()
+                ->keyBy('product_id');
+
+            $now = now();
+
+            $currentOffers = ProductOffer::query()
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $branchId)
+                ->whereIn('product_id', $products->pluck('id'))
+                ->where('is_active', true)
+                ->where('start_at', '<=', $now)
+                ->where(function ($query) use ($now) {
+                    $query->whereNull('end_at')
+                        ->orWhere('end_at', '>=', $now);
+                })
+                ->orderBy('start_at')
                 ->get()
                 ->keyBy('product_id');
         }
@@ -1569,6 +1699,7 @@ new class extends Component {
             'products' => $products,
             'categories' => $categories,
             'branchPrices' => $branchPrices,
+            'currentOffers' => $currentOffers,
             'allBranches' => $allBranches,
 
             'totalProducts' => $totalProducts,
@@ -1642,7 +1773,7 @@ new class extends Component {
                 </flux:heading>
 
                 <flux:subheading class="mt-1">
-                    إدارة المنتجات والأسعار والباركودات والعروض والفروع من مكان واحد.
+                    إدارة المنتجات والأسعار والباركودات والفروع من مكان واحد.
                 </flux:subheading>
             </div>
 
@@ -1914,7 +2045,9 @@ new class extends Component {
 
                 <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
 
-                    @forelse ($products as $product)
+                    @if ($products->isNotEmpty())
+
+                    @foreach ($products as $product)
 
                         @php
                             $priceData = $branchPrices[$product->id] ?? null;
@@ -2060,22 +2193,19 @@ new class extends Component {
 
                             <td class="px-5 py-4">
 
-                                @if ($priceData && $priceData->offer_price !== null)
+                                @php
+                                    $currentOffer = $currentOffers[$product->id] ?? null;
+                                @endphp
 
+                                @if ($currentOffer)
                                     <div class="font-semibold text-amber-600 dark:text-amber-400">
-                                        {{ number_format($priceData->offer_price, 2) }}
+                                        {{ number_format($currentOffer->offer_price, 2) }}
                                     </div>
-
                                     <div class="mt-1 text-[11px] text-zinc-400">
-                                        من {{ $priceData->offer_quantity ?? 1 }}
+                                        {{ number_format($currentOffer->offer_quantity, 2) }} قطعة
                                     </div>
-
                                 @else
-
-                                    <span class="text-xs text-zinc-400">
-                                        لا يوجد
-                                    </span>
-
+                                    <span class="text-xs text-zinc-400">لا يوجد</span>
                                 @endif
 
                             </td>
@@ -2151,6 +2281,14 @@ new class extends Component {
 
                                     <flux:button
                                         variant="ghost"
+                                        icon="tag"
+                                        class="text-amber-600 hover:text-amber-700"
+                                        wire:click="openOfferModal({{ $product->id }})"
+                                        title="إضافة عرض"
+                                    />
+
+                                    <flux:button
+                                        variant="ghost"
                                         icon="pencil-square"
                                         wire:click="edit({{ $product->id }})"
                                         title="تعديل المنتج"
@@ -2171,7 +2309,11 @@ new class extends Component {
 
                         </tr>
 
-                    @empty
+                    @endforeach
+
+                    @endif
+
+                    @if ($products->isEmpty())
 
                         <tr>
 
@@ -2206,7 +2348,7 @@ new class extends Component {
 
                         </tr>
 
-                    @endforelse
+                    @endif
 
                 </tbody>
 
@@ -2234,7 +2376,9 @@ new class extends Component {
 
     <div class="space-y-3 xl:hidden">
 
-        @forelse ($products as $product)
+        @if ($products->isNotEmpty())
+
+        @foreach ($products as $product)
 
             @php
                 $priceData = $branchPrices[$product->id] ?? null;
@@ -2335,20 +2479,22 @@ new class extends Component {
                             </div>
 
 
+                            @php
+                                $currentOffer = $currentOffers[$product->id] ?? null;
+                            @endphp
+
                             <div class="rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60">
 
                                 <div class="text-[10px] text-zinc-400">
-                                    العرض
+                                    العرض الحالي
                                 </div>
 
                                 <div class="mt-1 text-sm font-semibold text-amber-600 dark:text-amber-400">
-
-                                    @if ($priceData && $priceData->offer_price !== null)
-                                        {{ number_format($priceData->offer_price, 2) }}
+                                    @if ($currentOffer)
+                                        {{ number_format($currentOffer->offer_price, 2) }} / {{ number_format($currentOffer->offer_quantity, 2) }}
                                     @else
                                         —
                                     @endif
-
                                 </div>
 
                             </div>
@@ -2402,6 +2548,16 @@ new class extends Component {
                         <flux:button
                             size="sm"
                             variant="subtle"
+                            icon="tag"
+                            class="text-amber-600"
+                            wire:click="openOfferModal({{ $product->id }})"
+                        >
+                            عرض
+                        </flux:button>
+
+                        <flux:button
+                            size="sm"
+                            variant="subtle"
                             icon="pencil-square"
                             wire:click="edit({{ $product->id }})"
                         >
@@ -2423,7 +2579,11 @@ new class extends Component {
 
             </div>
 
-        @empty
+        @endforeach
+
+        @endif
+
+        @if ($products->isEmpty())
 
             <div class="rounded-2xl border border-zinc-200 bg-white px-5 py-14 text-center dark:border-zinc-800 dark:bg-zinc-900">
 
@@ -2450,7 +2610,7 @@ new class extends Component {
 
             </div>
 
-        @endforelse
+        @endif
 
 
         @if ($products->hasPages())
@@ -2953,7 +3113,7 @@ new class extends Component {
 
                                 <p class="mt-1 max-w-2xl text-xs leading-5 text-indigo-800/70 dark:text-indigo-300/70">
 
-                                    عند التفعيل يتم استخدام نفس أسعار التجزئة والجملة والعروض لجميع الفروع.
+                                    عند التفعيل يتم استخدام نفس أسعار التجزئة والجملة لجميع الفروع.
                                     عند الإيقاف يمكنك تحديد الأسعار لكل فرع بشكل مستقل.
 
                                 </p>
@@ -3080,73 +3240,6 @@ new class extends Component {
                         </div>
 
 
-                        {{-- Offer --}}
-
-                        <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/60 dark:bg-amber-950/10">
-
-                            <div class="mb-4 flex items-center gap-2">
-
-                                <flux:icon
-                                    name="tag"
-                                    class="size-5 text-amber-600"
-                                />
-
-                                <div>
-
-                                    <div class="font-semibold text-amber-900 dark:text-amber-300">
-                                        العرض الموحد
-                                    </div>
-
-                                    <div class="text-xs text-amber-700/70 dark:text-amber-400/70">
-                                        اختياري
-                                    </div>
-
-                                </div>
-
-                            </div>
-
-
-                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-                                <flux:field>
-
-                                    <flux:label>
-                                        سعر العرض
-                                    </flux:label>
-
-                                    <flux:input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        wire:model="offer_price"
-                                        placeholder="اتركه فارغاً إذا لا يوجد عرض"
-                                    />
-
-                                    <flux:error name="offer_price" />
-
-                                </flux:field>
-
-
-                                <flux:field>
-
-                                    <flux:label>
-                                        كمية تطبيق العرض
-                                    </flux:label>
-
-                                    <flux:input
-                                        type="number"
-                                        min="1"
-                                        wire:model="offer_quantity"
-                                        placeholder="مثال: 1 أو 3"
-                                    />
-
-                                    <flux:error name="offer_quantity" />
-
-                                </flux:field>
-
-                            </div>
-
-                        </div>
 
                     </section>
 
@@ -3214,7 +3307,9 @@ new class extends Component {
 
                         <div class="space-y-4">
 
-                            @forelse ($allBranches as $branch)
+                            @if ($allBranches->isNotEmpty())
+
+                            @foreach ($allBranches as $branch)
 
                                 @php
                                     $branchInput = $branchPricesInput[$branch->id] ?? [];
@@ -3298,56 +3393,6 @@ new class extends Component {
                                     </div>
 
 
-                                    <div class="mt-4 grid grid-cols-1 gap-4 border-t border-dashed border-zinc-200 pt-4 dark:border-zinc-700 sm:grid-cols-2">
-
-                                        <flux:field>
-
-                                            <flux:label>
-                                                سعر العرض
-                                            </flux:label>
-
-                                            <flux:input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                wire:model="branchPricesInput.{{ $branch->id }}.offer_price"
-                                                placeholder="اختياري"
-                                            />
-
-                                        </flux:field>
-
-
-                                        <flux:field>
-
-                                            <flux:label>
-                                                كمية العرض
-                                            </flux:label>
-
-                                            <flux:input
-                                                type="number"
-                                                min="1"
-                                                wire:model="branchPricesInput.{{ $branch->id }}.offer_quantity"
-                                                placeholder="اختياري"
-                                            />
-
-                                        </flux:field>
-
-                                    </div>
-
-                                </div>
-
-                            @empty
-
-                                <div class="rounded-2xl border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-
-                                    <flux:icon
-                                        name="building-storefront"
-                                        class="mx-auto size-8 text-zinc-400"
-                                    />
-
-                                    <div class="mt-3 font-semibold">
-                                        لا توجد فروع
-                                    </div>
 
                                     <p class="mt-1 text-sm text-zinc-500">
                                         يجب إنشاء فرع قبل تحديد أسعار المنتج.
@@ -3355,7 +3400,9 @@ new class extends Component {
 
                                 </div>
 
-                            @endforelse
+                            @endforeach
+
+                            @endif
 
                         </div>
 
@@ -3443,6 +3490,105 @@ new class extends Component {
 
         </div>
 
+    </flux:modal>
+
+
+    {{-- ================================================================
+        OFFER MODAL
+    ================================================================= --}}
+
+    <flux:modal
+        wire:model="showOfferModal"
+        class="w-full max-w-xl"
+    >
+
+        <div>
+            <div class="flex items-start gap-3">
+                <div class="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                    <flux:icon name="tag" class="size-5" />
+                </div>
+
+                <div>
+                    <flux:heading size="lg">إضافة عرض</flux:heading>
+                    <flux:subheading class="mt-1">
+                        {{ $offerProductName }}
+                    </flux:subheading>
+                </div>
+            </div>
+
+            <form wire:submit.prevent="saveOffer" class="mt-6 space-y-4">
+                <flux:field>
+                    <flux:label>الفرع</flux:label>
+                    <select
+                        wire:model="offerBranchId"
+                        class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                    >
+                        @foreach ($allBranches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                    <flux:error name="offerBranchId" />
+                </flux:field>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>كمية العرض</flux:label>
+                        <flux:input type="number" step="0.01" min="0.01" wire:model="offerQuantity" placeholder="مثال: 3" />
+                        <flux:error name="offerQuantity" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>سعر العرض</flux:label>
+                        <flux:input type="number" step="0.01" min="0" wire:model="offerPrice" placeholder="مثال: 10.00" />
+                        <flux:error name="offerPrice" />
+                    </flux:field>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>بداية العرض</flux:label>
+                        <flux:input type="datetime-local" wire:model="offerStartAt" />
+                        <flux:error name="offerStartAt" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>نهاية العرض</flux:label>
+
+                        <div class="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                wire:model.live="offerHasEndDate"
+                                class="size-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500 dark:border-zinc-600"
+                            />
+                            <span class="text-sm text-zinc-700 dark:text-zinc-300">
+                                للعرض تاريخ انتهاء
+                            </span>
+                        </div>
+
+                        @if ($offerHasEndDate)
+                            <flux:input type="datetime-local" wire:model="offerEndAt" />
+                            <flux:error name="offerEndAt" />
+                        @else
+                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300">
+                                العرض مفتوح بدون تاريخ انتهاء.
+                            </div>
+                        @endif
+                    </flux:field>
+                </div>
+
+                <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                    سيتم حفظ العرض في جدول العروض بشكل مستقل عن بيانات المنتج، ويمكن تغيير العروض لاحقاً دون تعديل المنتج نفسه.
+                </div>
+
+                <div class="flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end dark:border-zinc-800">
+                    <flux:button type="button" variant="ghost" wire:click="closeOfferModal">إلغاء</flux:button>
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="saveOffer">
+                        <span wire:loading.remove wire:target="saveOffer">حفظ العرض</span>
+                        <span wire:loading wire:target="saveOffer">جاري الحفظ...</span>
+                    </flux:button>
+                </div>
+            </form>
+        </div>
     </flux:modal>
 
 
