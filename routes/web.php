@@ -99,5 +99,8 @@ Route::middleware(['auth', 'verified'])
 
         Route::livewire('/backup', 'pages::tenant.system.backup')
             ->name('backup');
+
+        Route::livewire('/logs', 'pages::tenant.system.logs')
+            ->name('logs');
     });
 require __DIR__ . '/settings.php';

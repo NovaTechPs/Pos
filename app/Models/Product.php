@@ -5,10 +5,10 @@ namespace App\Models;
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-
+use App\Traits\Auditable;
 class Product extends Model
 {
-    use BelongsToTenant, SoftDeletes;
+    use BelongsToTenant, SoftDeletes , Auditable;
 
     protected $guarded = [];
 

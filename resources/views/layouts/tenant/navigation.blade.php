@@ -194,5 +194,11 @@
             {{ __('Barcode Printer') }}
         </flux:sidebar.item>
     @endcan
+       @can('logs.view')
+        <flux:sidebar.item icon="building-office" :href="route('tenant.logs')"
+            :current="request()->routeIs('tenant.logs')" target="_blank">
+            {{ __('logs') }}
+        </flux:sidebar.item>
+    @endcan
 
 </flux:sidebar.group>
