@@ -23,11 +23,14 @@ new class extends Component
     public string $labelWidth = '50';
     public string $labelHeight = '25';
 
-    // البحث عن المنتج
+    // البحث
     public string $productSearch = '';
 
+
     /**
+     * ============================================================
      * المنتجات
+     * ============================================================
      */
     public function getProductsProperty()
     {
@@ -36,16 +39,31 @@ new class extends Component
             ->when(
                 trim($this->productSearch) !== '',
                 function ($query) {
+
                     $search = trim($this->productSearch);
 
                     $words = preg_split('/\s+/', $search);
 
                     foreach ($words as $word) {
+
                         $query->where(function ($q) use ($word) {
-                            $q->where('name', 'ilike', '%' . $word . '%')
-                                ->orWhere('product_number', 'ilike', '%' . $word . '%');
+
+                            $q->where(
+                                'name',
+                                'ilike',
+                                '%' . $word . '%'
+                            );
+
+                            $q->orWhere(
+                                'product_number',
+                                'ilike',
+                                '%' . $word . '%'
+                            );
+
                         });
+
                     }
+
                 }
             )
             ->latest()
@@ -53,53 +71,81 @@ new class extends Component
             ->get();
     }
 
+
     /**
+     * ============================================================
      * عند اختيار منتج
+     * ============================================================
      */
     public function updatedSelectedProductId($value): void
     {
         if (!$value) {
+
             $this->product = null;
             $this->selectedBarcode = '';
 
             return;
         }
 
+
         $this->product = Product::with('barcodes')
             ->find((int) $value);
 
+
         if (!$this->product) {
+
             $this->selectedProductId = null;
             $this->selectedBarcode = '';
 
             return;
         }
 
-        $barcodes = $this->getBarcodesList();
 
         /*
-         * إذا كان المنتج لا يحتوي على باركود:
-         * يتم إنشاء باركود وحفظه مباشرة.
+         * جلب الباركودات الموجودة
+         */
+        $barcodes = $this->getBarcodesList();
+
+
+        /*
+         * إذا لم يوجد باركود:
+         * إنشاء باركود جديد وحفظه في product_barcodes
          */
         if (empty($barcodes)) {
-            $newBarcode = $this->generateUniqueBarcode();
+
+            $newBarcode =
+                $this->generateUniqueBarcode();
+
 
             ProductBarcode::create([
                 'product_id' => $this->product->id,
                 'barcode'    => $newBarcode,
             ]);
 
-            // إعادة تحميل العلاقة
+
+            /*
+             * إعادة تحميل العلاقة
+             */
             $this->product->load('barcodes');
 
-            $barcodes = $this->getBarcodesList();
+
+            $barcodes =
+                $this->getBarcodesList();
         }
 
-        $this->selectedBarcode = $barcodes[0] ?? '';
+
+        /*
+         * تحديد أول باركود تلقائياً
+         */
+        $this->selectedBarcode =
+            $barcodes[0] ?? '';
     }
 
+
     /**
+     * ============================================================
      * الحصول على باركودات المنتج
+     * ============================================================
      */
     public function getBarcodesList(): array
     {
@@ -107,24 +153,32 @@ new class extends Component
             return [];
         }
 
+
         $list = [];
+
 
         if (
             $this->product->relationLoaded('barcodes') &&
             $this->product->barcodes &&
             $this->product->barcodes->count() > 0
         ) {
-            foreach ($this->product->barcodes as $barcode) {
+
+            foreach (
+                $this->product->barcodes
+                as $barcode
+            ) {
+
                 if (!empty($barcode->barcode)) {
-                    $list[] = (string) $barcode->barcode;
+
+                    $list[] =
+                        (string) $barcode->barcode;
                 }
+
             }
+
         }
 
-        /*
-         * لا نعتبر product_number باركوداً محفوظاً.
-         * فقط إذا كان هناك باركود فعلي في product_barcodes.
-         */
+
         return array_values(
             array_unique(
                 array_filter($list)
@@ -132,46 +186,85 @@ new class extends Component
         );
     }
 
+
     /**
+     * ============================================================
      * إنشاء باركود فريد
+     * ============================================================
      */
     private function generateUniqueBarcode(): string
     {
         do {
-            // يبدأ بـ 20 + 9 أرقام = 11 رقم
-            $barcode = '20' . str_pad(
-                (string) random_int(0, 999999999),
-                9,
-                '0',
-                STR_PAD_LEFT
-            );
+
+            /*
+             * 20 + 9 أرقام
+             */
+            $barcode =
+                '20' .
+                str_pad(
+                    (string) random_int(
+                        0,
+                        999999999
+                    ),
+                    9,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
         } while (
-            ProductBarcode::where('barcode', $barcode)->exists()
+            ProductBarcode::where(
+                'barcode',
+                $barcode
+            )->exists()
         );
+
 
         return $barcode;
     }
 
+
     /**
+     * ============================================================
      * اختيار باركود
+     * ============================================================
      */
-    public function selectBarcode(string $code): void
-    {
+    public function selectBarcode(
+        string $code
+    ): void {
+
         if (!$this->product) {
             return;
         }
 
-        $barcodes = $this->getBarcodesList();
 
-        if (!in_array($code, $barcodes, true)) {
+        $barcodes =
+            $this->getBarcodesList();
+
+
+        /*
+         * التأكد أن الباركود فعلاً تابع للمنتج
+         */
+        if (
+            !in_array(
+                $code,
+                $barcodes,
+                true
+            )
+        ) {
+
             return;
         }
 
-        $this->selectedBarcode = $code;
+
+        $this->selectedBarcode =
+            $code;
     }
 
+
     /**
+     * ============================================================
      * طباعة الملصق
+     * ============================================================
      */
     public function printLabel(): void
     {
@@ -179,14 +272,32 @@ new class extends Component
             return;
         }
 
-        if (empty($this->selectedBarcode)) {
+
+        if (
+            empty(
+                $this->selectedBarcode
+            )
+        ) {
+
             return;
         }
 
-        $width = (float) $this->labelWidth;
-        $height = (float) $this->labelHeight;
 
-        if ($width < 10 || $width > 300) {
+        $width =
+            (float) $this->labelWidth;
+
+        $height =
+            (float) $this->labelHeight;
+
+
+        /*
+         * التحقق من الأبعاد
+         */
+        if (
+            $width < 10 ||
+            $width > 300
+        ) {
+
             $this->addError(
                 'labelWidth',
                 'عرض الملصق يجب أن يكون بين 10 و300 مم.'
@@ -195,7 +306,12 @@ new class extends Component
             return;
         }
 
-        if ($height < 10 || $height > 300) {
+
+        if (
+            $height < 10 ||
+            $height > 300
+        ) {
+
             $this->addError(
                 'labelHeight',
                 'ارتفاع الملصق يجب أن يكون بين 10 و300 مم.'
@@ -204,28 +320,45 @@ new class extends Component
             return;
         }
 
+
         $this->resetErrorBag();
 
-        $this->dispatch('start-label-print', [
-            'name' => $this->showName
-                ? (string) $this->product->name
-                : '',
 
-            'barcode' => $this->showBarcode
-                ? (string) $this->selectedBarcode
-                : '',
+        /*
+         * إرسال بيانات الطباعة إلى JavaScript
+         */
+        $this->dispatch(
+            'start-label-print',
+            [
+                'name' =>
+                    $this->showName
+                        ? (string) $this->product->name
+                        : '',
 
-            'price' => $this->showPrice
-                ? (string) ($this->product->cost_price ?? 0)
-                : '',
+                'barcode' =>
+                    $this->showBarcode
+                        ? (string) $this->selectedBarcode
+                        : '',
 
-            'sku' => $this->showSku
-                ? (string) ($this->product->product_number ?? $this->product->id)
-                : '',
+                'price' =>
+                    $this->showPrice
+                        ? (string) (
+                            $this->product->cost_price ?? 0
+                        )
+                        : '',
 
-            'w' => $width,
-            'h' => $height,
-        ]);
+                'sku' =>
+                    $this->showSku
+                        ? (string) (
+                            $this->product->product_number
+                            ?? $this->product->id
+                        )
+                        : '',
+
+                'w' => $width,
+                'h' => $height,
+            ]
+        );
     }
 };
 ?>
@@ -235,24 +368,37 @@ new class extends Component
     class="p-4 sm:p-6 max-w-5xl mx-auto space-y-6"
 >
 
+    {{-- ========================================================= --}}
     {{-- لوحة التحكم --}}
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5">
+    {{-- ========================================================= --}}
 
-        <h1 class="text-xl font-bold text-gray-800 border-b pb-3">
+    <div
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5"
+    >
+
+        <h1
+            class="text-xl font-bold text-gray-800 border-b pb-3"
+        >
             طباعة ملصقات الباركود متعددة الأكواد
         </h1>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {{-- ===================================================== --}}
-            {{-- البحث عن المنتج --}}
-            {{-- ===================================================== --}}
+        <div
+            class="grid grid-cols-1 md:grid-cols-2 gap-4"
+        >
+
+            {{-- ================================================= --}}
+            {{-- البحث --}}
+            {{-- ================================================= --}}
 
             <div class="md:col-span-2">
 
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                    class="block text-sm font-medium text-gray-700 mb-1"
+                >
                     البحث عن الصنف / المنتج
                 </label>
+
 
                 <input
                     type="text"
@@ -264,15 +410,18 @@ new class extends Component
             </div>
 
 
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
             {{-- اختيار المنتج --}}
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
 
             <div class="md:col-span-2">
 
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                    class="block text-sm font-medium text-gray-700 mb-1"
+                >
                     اختر الصنف / المنتج
                 </label>
+
 
                 <select
                     wire:model.live="selectedProductId"
@@ -283,30 +432,49 @@ new class extends Component
                         -- اختر صنفاً من القائمة --
                     </option>
 
+
                     @foreach($this->products as $p)
 
                         @php
-                            $firstBarcode = $p->barcodes->first()?->barcode ?? 'لا يوجد';
+                            $firstBarcode =
+                                $p->barcodes->first()?->barcode
+                                ?? 'لا يوجد';
                         @endphp
 
-                        <option value="{{ $p->id }}">
+
+                        <option
+                            value="{{ $p->id }}"
+                        >
+
                             {{ $p->name }}
+
                             -
+
                             الباركود:
                             {{ $firstBarcode }}
+
                             -
+
                             السعر:
                             {{ $p->cost_price ?? 0 }}
+
                             NIS
+
                         </option>
 
                     @endforeach
 
                 </select>
 
-                @if($productSearch !== '' && $this->products->count() === 0)
 
-                    <div class="mt-2 text-sm text-red-500">
+                @if(
+                    $productSearch !== '' &&
+                    $this->products->count() === 0
+                )
+
+                    <div
+                        class="mt-2 text-sm text-red-500"
+                    >
                         لا يوجد منتج مطابق للبحث.
                     </div>
 
@@ -315,30 +483,39 @@ new class extends Component
             </div>
 
 
-            {{-- ===================================================== --}}
-            {{-- أخطاء الأبعاد --}}
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
+            {{-- خطأ العرض --}}
+            {{-- ================================================= --}}
 
             @error('labelWidth')
 
-                <div class="md:col-span-2 text-sm text-red-600">
+                <div
+                    class="md:col-span-2 text-sm text-red-600"
+                >
                     {{ $message }}
                 </div>
 
             @enderror
+
+
+            {{-- ================================================= --}}
+            {{-- خطأ الارتفاع --}}
+            {{-- ================================================= --}}
 
             @error('labelHeight')
 
-                <div class="md:col-span-2 text-sm text-red-600">
+                <div
+                    class="md:col-span-2 text-sm text-red-600"
+                >
                     {{ $message }}
                 </div>
 
             @enderror
 
 
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
             {{-- جدول الباركودات --}}
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
 
             @if($product)
 
@@ -354,17 +531,29 @@ new class extends Component
                             الباركودات المسجلة لهذا الصنف
                         </span>
 
-                        <span class="text-blue-600">
+
+                        <span
+                            class="text-blue-600"
+                        >
+
                             عدد الباركودات:
-                            {{ count($this->getBarcodesList()) }}
+
+                            {{ count(
+                                $this->getBarcodesList()
+                            ) }}
+
                         </span>
 
                     </div>
 
 
-                    <div class="overflow-x-auto max-h-48 overflow-y-auto">
+                    <div
+                        class="overflow-x-auto max-h-48 overflow-y-auto"
+                    >
 
-                        <table class="w-full text-right text-xs bg-white">
+                        <table
+                            class="w-full text-right text-xs bg-white"
+                        >
 
                             <thead
                                 class="bg-gray-200 text-gray-700 sticky top-0"
@@ -372,27 +561,39 @@ new class extends Component
 
                                 <tr>
 
-                                    <th class="p-2 border-b">
+                                    <th
+                                        class="p-2 border-b"
+                                    >
                                         رقم الصنف
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th
+                                        class="p-2 border-b"
+                                    >
                                         الاسم
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th
+                                        class="p-2 border-b"
+                                    >
                                         السعر
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th
+                                        class="p-2 border-b"
+                                    >
                                         العملة
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th
+                                        class="p-2 border-b"
+                                    >
                                         رقم الباركود
                                     </th>
 
-                                    <th class="p-2 border-b text-center">
+                                    <th
+                                        class="p-2 border-b text-center"
+                                    >
                                         تحديد
                                     </th>
 
@@ -401,9 +602,14 @@ new class extends Component
                             </thead>
 
 
-                            <tbody class="divide-y divide-gray-200">
+                            <tbody
+                                class="divide-y divide-gray-200"
+                            >
 
-                                @foreach($this->getBarcodesList() as $code)
+                                @foreach(
+                                    $this->getBarcodesList()
+                                    as $code
+                                )
 
                                     <tr
                                         wire:key="barcode-row-{{ $product->id }}-{{ $code }}"
@@ -412,34 +618,58 @@ new class extends Component
                                             hover:bg-blue-50
                                             cursor-pointer
                                             transition
-                                            {{ $selectedBarcode === $code
-                                                ? 'bg-blue-100 font-bold text-blue-900'
-                                                : ''
+                                            {{
+                                                $selectedBarcode === $code
+                                                    ? 'bg-blue-100 font-bold text-blue-900'
+                                                    : ''
                                             }}
                                         "
                                     >
 
-                                        <td class="p-2">
-                                            {{ $product->product_number ?? $product->id }}
+                                        <td
+                                            class="p-2"
+                                        >
+                                            {{
+                                                $product->product_number
+                                                ?? $product->id
+                                            }}
                                         </td>
 
-                                        <td class="p-2 truncate max-w-[200px]">
+
+                                        <td
+                                            class="p-2 truncate max-w-[200px]"
+                                        >
                                             {{ $product->name }}
                                         </td>
 
-                                        <td class="p-2">
-                                            {{ $product->cost_price ?? 0 }}
+
+                                        <td
+                                            class="p-2"
+                                        >
+                                            {{
+                                                $product->cost_price
+                                                ?? 0
+                                            }}
                                         </td>
 
-                                        <td class="p-2">
+
+                                        <td
+                                            class="p-2"
+                                        >
                                             NIS
                                         </td>
 
-                                        <td class="p-2 font-mono text-sm text-blue-700">
+
+                                        <td
+                                            class="p-2 font-mono text-sm text-blue-700"
+                                        >
                                             {{ $code }}
                                         </td>
 
-                                        <td class="p-2 text-center">
+
+                                        <td
+                                            class="p-2 text-center"
+                                        >
 
                                             <input
                                                 type="radio"
@@ -466,22 +696,29 @@ new class extends Component
             @endif
 
 
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
             {{-- خيارات الملصق --}}
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
 
-            <div class="md:col-span-2 border-t pt-4">
+            <div
+                class="md:col-span-2 border-t pt-4"
+            >
 
-                <label class="block text-sm font-semibold text-gray-800 mb-2">
-
+                <label
+                    class="block text-sm font-semibold text-gray-800 mb-2"
+                >
                     العناصر المراد طباعتها على الملصق:
-
                 </label>
 
 
-                <div class="flex flex-wrap gap-4 text-sm">
+                <div
+                    class="flex flex-wrap gap-4 text-sm"
+                >
 
-                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                    {{-- الاسم --}}
+                    <label
+                        class="inline-flex items-center gap-2 cursor-pointer"
+                    >
 
                         <input
                             type="checkbox"
@@ -496,7 +733,10 @@ new class extends Component
                     </label>
 
 
-                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                    {{-- الباركود --}}
+                    <label
+                        class="inline-flex items-center gap-2 cursor-pointer"
+                    >
 
                         <input
                             type="checkbox"
@@ -511,7 +751,10 @@ new class extends Component
                     </label>
 
 
-                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                    {{-- السعر --}}
+                    <label
+                        class="inline-flex items-center gap-2 cursor-pointer"
+                    >
 
                         <input
                             type="checkbox"
@@ -526,7 +769,10 @@ new class extends Component
                     </label>
 
 
-                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                    {{-- رقم الصنف --}}
+                    <label
+                        class="inline-flex items-center gap-2 cursor-pointer"
+                    >
 
                         <input
                             type="checkbox"
@@ -545,15 +791,18 @@ new class extends Component
             </div>
 
 
-            {{-- ===================================================== --}}
-            {{-- أبعاد الملصق --}}
-            {{-- ===================================================== --}}
+            {{-- ================================================= --}}
+            {{-- عرض الملصق --}}
+            {{-- ================================================= --}}
 
             <div>
 
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                    class="block text-sm font-medium text-gray-700 mb-1"
+                >
                     عرض الملصق (مم)
                 </label>
+
 
                 <input
                     type="number"
@@ -566,11 +815,18 @@ new class extends Component
             </div>
 
 
+            {{-- ================================================= --}}
+            {{-- ارتفاع الملصق --}}
+            {{-- ================================================= --}}
+
             <div>
 
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                    class="block text-sm font-medium text-gray-700 mb-1"
+                >
                     ارتفاع الملصق (مم)
                 </label>
+
 
                 <input
                     type="number"
@@ -586,18 +842,24 @@ new class extends Component
 
 
         {{-- ========================================================= --}}
-        {{-- المعاينة والطباعة --}}
+        {{-- المعاينة --}}
         {{-- ========================================================= --}}
 
         @if($product)
 
-            <div class="border-t pt-4 space-y-4">
+            <div
+                class="border-t pt-4 space-y-4"
+            >
 
-                <label class="block text-xs font-semibold text-gray-500">
+                <label
+                    class="block text-xs font-semibold text-gray-500"
+                >
 
                     معاينة الباركود المختار:
 
-                    <span class="font-mono text-blue-600">
+                    <span
+                        class="font-mono text-blue-600"
+                    >
                         {{ $selectedBarcode }}
                     </span>
 
@@ -609,7 +871,6 @@ new class extends Component
                 >
 
                     <div
-                        wire:key="label-preview-{{ $product->id }}-{{ $selectedBarcode }}-{{ $labelWidth }}-{{ $labelHeight }}"
                         class="bg-white border border-gray-800 p-2 text-center flex flex-col justify-between items-center shadow-sm overflow-hidden"
                         style="
                             width: {{ $labelWidth }}mm;
@@ -630,16 +891,24 @@ new class extends Component
                         @endif
 
 
+                        {{-- ================================================= --}}
                         {{-- الباركود --}}
-                        @if($showBarcode && $selectedBarcode)
+                        {{-- ================================================= --}}
+
+                        @if(
+                            $showBarcode &&
+                            $selectedBarcode
+                        )
 
                             <div
-                                class="w-full flex justify-center my-0.5"
-                                wire:ignore
+                                id="preview-barcode-wrapper"
+                                data-barcode="{{ $selectedBarcode }}"
+                                class="w-full flex justify-center items-center my-0.5"
                             >
 
                                 <svg
                                     id="preview-barcode-element"
+                                    xmlns="http://www.w3.org/2000/svg"
                                 ></svg>
 
                             </div>
@@ -647,7 +916,7 @@ new class extends Component
                         @endif
 
 
-                        {{-- السعر ورقم الصنف --}}
+                        {{-- السعر + SKU --}}
                         <div
                             class="flex justify-between items-center w-full text-[9px] font-bold px-1"
                         >
@@ -677,7 +946,10 @@ new class extends Component
                 </div>
 
 
+                {{-- ================================================= --}}
                 {{-- زر الطباعة --}}
+                {{-- ================================================= --}}
+
                 <button
                     type="button"
                     wire:click="printLabel"
@@ -685,19 +957,34 @@ new class extends Component
                     class="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-lg shadow transition flex items-center justify-center gap-2 cursor-pointer"
                 >
 
-                    <span wire:loading.remove wire:target="printLabel">
+                    <span
+                        wire:loading.remove
+                        wire:target="printLabel"
+                    >
                         🖨️
                     </span>
 
-                    <span wire:loading wire:target="printLabel">
+
+                    <span
+                        wire:loading
+                        wire:target="printLabel"
+                    >
                         ⏳
                     </span>
 
-                    <span wire:loading.remove wire:target="printLabel">
+
+                    <span
+                        wire:loading.remove
+                        wire:target="printLabel"
+                    >
                         طباعة الملصق الآن
                     </span>
 
-                    <span wire:loading wire:target="printLabel">
+
+                    <span
+                        wire:loading
+                        wire:target="printLabel"
+                    >
                         تجهيز الطباعة...
                     </span>
 
@@ -721,6 +1008,7 @@ new class extends Component
     {{-- ============================================================= --}}
     {{-- JavaScript --}}
     {{-- ============================================================= --}}
+
     @script
 
     <script>
@@ -731,267 +1019,468 @@ new class extends Component
          * ============================================================
          */
 
-        window.labelPrinter = window.labelPrinter || {
+        window.labelPrinter =
+            window.labelPrinter || {
 
-            barcodeLibraryPromise: null,
-
-
-            /*
-             * تحميل JsBarcode مرة واحدة
-             */
-            loadBarcodeLibrary() {
-
-                if (typeof window.JsBarcode !== 'undefined') {
-                    return Promise.resolve();
-                }
-
-                if (this.barcodeLibraryPromise) {
-                    return this.barcodeLibraryPromise;
-                }
-
-                this.barcodeLibraryPromise = new Promise((resolve, reject) => {
-
-                    const existing =
-                        document.getElementById('label-jsbarcode-library');
-
-                    if (existing) {
-
-                        const timer = setInterval(() => {
-
-                            if (
-                                typeof window.JsBarcode !==
-                                'undefined'
-                            ) {
-
-                                clearInterval(timer);
-                                resolve();
-
-                            }
-
-                        }, 50);
+                barcodeLibraryPromise: null,
 
 
-                        setTimeout(() => {
+                /*
+                 * ----------------------------------------------------
+                 * تحميل JsBarcode
+                 * ----------------------------------------------------
+                 */
 
-                            clearInterval(timer);
+                loadBarcodeLibrary() {
 
-                            if (
-                                typeof window.JsBarcode ===
-                                'undefined'
-                            ) {
+                    if (
+                        typeof window.JsBarcode !==
+                        'undefined'
+                    ) {
 
-                                reject(
-                                    new Error(
-                                        'JsBarcode failed to load'
-                                    )
-                                );
+                        return Promise.resolve();
 
-                            }
-
-                        }, 10000);
-
-                        return;
                     }
 
 
-                    const script =
-                        document.createElement('script');
+                    if (
+                        this.barcodeLibraryPromise
+                    ) {
 
-                    script.id =
-                        'label-jsbarcode-library';
+                        return this.barcodeLibraryPromise;
 
-                    script.src =
-                        'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+                    }
 
-                    script.onload = () => {
 
-                        resolve();
+                    this.barcodeLibraryPromise =
+                        new Promise(
+                            (resolve, reject) => {
 
-                    };
+                                const existing =
+                                    document.getElementById(
+                                        'label-jsbarcode-library'
+                                    );
 
-                    script.onerror = () => {
 
-                        reject(
-                            new Error(
-                                'Unable to load JsBarcode'
-                            )
+                                /*
+                                 * المكتبة موجودة مسبقاً
+                                 */
+                                if (existing) {
+
+                                    const timer =
+                                        setInterval(
+                                            () => {
+
+                                                if (
+                                                    typeof window.JsBarcode !==
+                                                    'undefined'
+                                                ) {
+
+                                                    clearInterval(
+                                                        timer
+                                                    );
+
+                                                    resolve();
+
+                                                }
+
+                                            },
+                                            50
+                                        );
+
+
+                                    setTimeout(
+                                        () => {
+
+                                            clearInterval(
+                                                timer
+                                            );
+
+
+                                            if (
+                                                typeof window.JsBarcode ===
+                                                'undefined'
+                                            ) {
+
+                                                reject(
+                                                    new Error(
+                                                        'JsBarcode failed to load'
+                                                    )
+                                                );
+
+                                            }
+
+                                        },
+                                        10000
+                                    );
+
+
+                                    return;
+                                }
+
+
+                                /*
+                                 * إنشاء script للمكتبة
+                                 */
+                                const script =
+                                    document.createElement(
+                                        'script'
+                                    );
+
+
+                                script.id =
+                                    'label-jsbarcode-library';
+
+
+                                script.src =
+                                    'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+
+
+                                script.onload =
+                                    () => {
+
+                                        resolve();
+
+                                    };
+
+
+                                script.onerror =
+                                    () => {
+
+                                        reject(
+                                            new Error(
+                                                'Unable to load JsBarcode'
+                                            )
+                                        );
+
+                                    };
+
+
+                                document.head.appendChild(
+                                    script
+                                );
+
+                            }
                         );
 
-                    };
 
-                    document.head.appendChild(script);
-
-                });
-
-                return this.barcodeLibraryPromise;
-            },
-
-
-            /*
-             * رسم المعاينة
-             */
-            drawPreview() {
-
-                const element =
-                    document.getElementById(
-                        'preview-barcode-element'
-                    );
-
-                if (!element) {
-                    return;
-                }
-
-
-                const code =
-                    @js($selectedBarcode);
-
-
-                if (!code) {
-
-                    element.innerHTML = '';
-
-                    return;
-                }
-
-
-                if (
-                    typeof window.JsBarcode ===
-                    'undefined'
-                ) {
-
-                    return;
-                }
-
-
-                try {
-
-                    element.innerHTML = '';
-
-                    window.JsBarcode(
-                        element,
-                        String(code),
-                        {
-                            format: 'CODE128',
-
-                            width: 1.2,
-
-                            height: 22,
-
-                            displayValue: true,
-
-                            fontSize: 8,
-
-                            margin: 0
-                        }
-                    );
-
-                } catch (error) {
-
-                    console.error(
-                        'Barcode preview error:',
-                        error
-                    );
-
-                }
-
-            },
-
-
-            /*
-             * إنشاء نافذة الطباعة
-             */
-            print(data) {
-
-                if (!data) {
-
-                    console.error(
-                        'No label print data'
-                    );
-
-                    return;
-                }
-
-
-                const name =
-                    String(data.name ?? '');
-
-                const barcode =
-                    String(data.barcode ?? '');
-
-                const price =
-                    String(data.price ?? '');
-
-                const sku =
-                    String(data.sku ?? '');
-
-                const width =
-                    Number(data.w ?? 50);
-
-                const height =
-                    Number(data.h ?? 25);
+                    return this.barcodeLibraryPromise;
+                },
 
 
                 /*
-                 * فتح نافذة الطباعة
+                 * ----------------------------------------------------
+                 * رسم الباركود في المعاينة
+                 * ----------------------------------------------------
                  */
-                const printWindow =
-                    window.open(
-                        '',
-                        '_blank',
-                        'width=500,height=500'
+
+                drawPreview() {
+
+                    const wrapper =
+                        document.getElementById(
+                            'preview-barcode-wrapper'
+                        );
+
+
+                    const element =
+                        document.getElementById(
+                            'preview-barcode-element'
+                        );
+
+
+                    /*
+                     * لا يوجد منتج أو SVG
+                     */
+                    if (
+                        !wrapper ||
+                        !element
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    /*
+                     * نأخذ القيمة من DOM
+                     * وليس من قيمة JavaScript قديمة
+                     */
+                    const code =
+                        wrapper.dataset.barcode ||
+                        '';
+
+
+                    console.log(
+                        'Barcode preview:',
+                        code
                     );
 
 
-                if (!printWindow) {
+                    if (!code) {
 
-                    alert(
-                        'يرجى السماح بالنوافذ المنبثقة للطباعة.'
-                    );
+                        element.innerHTML = '';
 
-                    return;
-                }
+                        return;
+
+                    }
+
+
+                    /*
+                     * المكتبة لم تحمل بعد
+                     */
+                    if (
+                        typeof window.JsBarcode ===
+                        'undefined'
+                    ) {
+
+                        console.warn(
+                            'JsBarcode is not loaded'
+                        );
+
+                        return;
+
+                    }
+
+
+                    try {
+
+                        /*
+                         * حذف الرسم السابق
+                         */
+                        element.innerHTML = '';
+
+
+                        /*
+                         * رسم الباركود
+                         */
+                        window.JsBarcode(
+                            element,
+                            String(code),
+                            {
+
+                                format: 'CODE128',
+
+                                width: 1.5,
+
+                                height: 35,
+
+                                displayValue: true,
+
+                                fontSize: 10,
+
+                                margin: 2,
+
+                                textMargin: 2,
+
+                                background: '#ffffff',
+
+                                lineColor: '#000000'
+
+                            }
+                        );
+
+
+                    } catch (error) {
+
+                        console.error(
+                            'Barcode preview error:',
+                            error
+                        );
+
+                    }
+
+                },
 
 
                 /*
-                 * حماية HTML
+                 * ----------------------------------------------------
+                 * تحديث المعاينة
+                 * ----------------------------------------------------
                  */
-                const escapeHtml = (value) => {
 
-                    return String(value)
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#039;');
+                refreshPreview() {
 
-                };
+                    this
+                        .loadBarcodeLibrary()
+                        .then(() => {
 
+                            setTimeout(
+                                () => {
 
-                const safeName =
-                    escapeHtml(name);
+                                    this.drawPreview();
 
-                const safePrice =
-                    escapeHtml(price);
+                                },
+                                100
+                            );
 
-                const safeSku =
-                    escapeHtml(sku);
+                        })
+                        .catch(
+                            error => {
+
+                                console.error(
+                                    'JsBarcode loading error:',
+                                    error
+                                );
+
+                            }
+                        );
+
+                },
 
 
                 /*
-                 * نستخدم JSON.stringify
-                 * حتى لا يكسر الباركود JavaScript
+                 * ----------------------------------------------------
+                 * طباعة الليبل
+                 * ----------------------------------------------------
                  */
-                const barcodeJS =
-                    JSON.stringify(barcode);
+
+                print(data) {
+
+                    if (!data) {
+
+                        console.error(
+                            'No print data received'
+                        );
+
+                        return;
+
+                    }
 
 
-                /*
-                 * محتوى نافذة الطباعة
-                 *
-                 * مهم:
-                 * لا يوجد <script> داخل document.write
-                 */
-                const html = `
+                    /*
+                     * البيانات
+                     */
+                    const name =
+                        String(
+                            data.name ?? ''
+                        );
+
+
+                    const barcode =
+                        String(
+                            data.barcode ?? ''
+                        );
+
+
+                    const price =
+                        String(
+                            data.price ?? ''
+                        );
+
+
+                    const sku =
+                        String(
+                            data.sku ?? ''
+                        );
+
+
+                    const width =
+                        Number(
+                            data.w ?? 50
+                        );
+
+
+                    const height =
+                        Number(
+                            data.h ?? 25
+                        );
+
+
+                    /*
+                     * ------------------------------------------------
+                     * فتح نافذة الطباعة
+                     * ------------------------------------------------
+                     */
+
+                    const printWindow =
+                        window.open(
+                            '',
+                            '_blank',
+                            'width=500,height=500'
+                        );
+
+
+                    if (!printWindow) {
+
+                        alert(
+                            'يرجى السماح بالنوافذ المنبثقة للطباعة.'
+                        );
+
+                        return;
+
+                    }
+
+
+                    /*
+                     * ------------------------------------------------
+                     * حماية HTML
+                     * ------------------------------------------------
+                     */
+
+                    const escapeHtml =
+                        (value) => {
+
+                            return String(value)
+
+                                .replace(
+                                    /&/g,
+                                    '&amp;'
+                                )
+
+                                .replace(
+                                    /</g,
+                                    '&lt;'
+                                )
+
+                                .replace(
+                                    />/g,
+                                    '&gt;'
+                                )
+
+                                .replace(
+                                    /"/g,
+                                    '&quot;'
+                                )
+
+                                .replace(
+                                    /'/g,
+                                    '&#039;'
+                                );
+
+                        };
+
+
+                    const safeName =
+                        escapeHtml(name);
+
+
+                    const safePrice =
+                        escapeHtml(price);
+
+
+                    const safeSku =
+                        escapeHtml(sku);
+
+
+                    /*
+                     * مهم جداً:
+                     * تحويل الباركود إلى JSON
+                     */
+                    const barcodeJS =
+                        JSON.stringify(
+                            barcode
+                        );
+
+
+                    /*
+                     * ------------------------------------------------
+                     * HTML للطباعة
+                     * ------------------------------------------------
+                     *
+                     * لا يوجد script داخل document.write
+                     */
+                    const html = `
+
 <!DOCTYPE html>
 
 <html dir="rtl">
@@ -1002,31 +1491,49 @@ new class extends Component
 
     <title>طباعة ملصق</title>
 
+
     <style>
 
         @page {
-            size: ${width}mm ${height}mm;
+
+            size:
+                ${width}mm
+                ${height}mm;
+
             margin: 0;
+
         }
 
+
         * {
-            box-sizing: border-box;
+
+            box-sizing:
+                border-box;
+
         }
+
 
         html,
         body {
 
-            width: ${width}mm;
-            height: ${height}mm;
+            width:
+                ${width}mm;
+
+            height:
+                ${height}mm;
 
             margin: 0;
+
             padding: 0;
 
-            background: #ffffff;
+            background:
+                #ffffff;
 
-            overflow: hidden;
+            overflow:
+                hidden;
 
         }
+
 
         body {
 
@@ -1037,80 +1544,115 @@ new class extends Component
 
         }
 
+
         .label {
 
-            width: ${width}mm;
-            height: ${height}mm;
+            width:
+                ${width}mm;
 
-            padding: 1.5mm;
+            height:
+                ${height}mm;
 
-            display: flex;
+            padding:
+                1.5mm;
 
-            flex-direction: column;
+            display:
+                flex;
 
-            justify-content: space-between;
+            flex-direction:
+                column;
 
-            align-items: center;
+            justify-content:
+                space-between;
 
-            text-align: center;
+            align-items:
+                center;
 
-            overflow: hidden;
+            text-align:
+                center;
+
+            overflow:
+                hidden;
 
         }
+
 
         .name {
 
-            width: 100%;
+            width:
+                100%;
 
-            font-size: 8.5pt;
+            font-size:
+                8.5pt;
 
-            font-weight: bold;
+            font-weight:
+                bold;
 
-            white-space: nowrap;
+            white-space:
+                nowrap;
 
-            overflow: hidden;
+            overflow:
+                hidden;
 
-            text-overflow: ellipsis;
+            text-overflow:
+                ellipsis;
 
         }
+
 
         .barcode-container {
 
-            width: 100%;
+            width:
+                100%;
 
-            display: flex;
+            display:
+                flex;
 
-            justify-content: center;
+            justify-content:
+                center;
 
-            align-items: center;
+            align-items:
+                center;
 
         }
+
 
         .barcode-container svg {
 
-            max-width: 100%;
+            max-width:
+                100%;
 
-            max-height: 14mm;
+            max-height:
+                14mm;
 
         }
 
+
         .footer {
 
-            width: 100%;
+            width:
+                100%;
 
-            display: flex;
+            display:
+                flex;
 
-            justify-content: space-around;
+            justify-content:
+                space-around;
 
-            align-items: center;
+            align-items:
+                center;
 
-            gap: 2mm;
+            gap:
+                2mm;
 
-            font-size: 8.5pt;
+            font-size:
+                8.5pt;
 
-            font-weight: bold;
+            font-weight:
+                bold;
 
-            white-space: nowrap;
+            white-space:
+                nowrap;
 
         }
 
@@ -1123,13 +1665,14 @@ new class extends Component
 
     <div class="label">
 
+
         ${
             safeName
                 ? `
                     <div class="name">
                         ${safeName}
                     </div>
-                  `
+                `
                 : ''
         }
 
@@ -1138,14 +1681,19 @@ new class extends Component
             barcode
                 ? `
                     <div class="barcode-container">
-                        <svg id="print-barcode"></svg>
+
+                        <svg
+                            id="print-barcode"
+                        ></svg>
+
                     </div>
-                  `
+                `
                 : ''
         }
 
 
         <div class="footer">
+
 
             ${
                 safeSku
@@ -1153,7 +1701,7 @@ new class extends Component
                         <span>
                             #${safeSku}
                         </span>
-                      `
+                    `
                     : ''
             }
 
@@ -1162,152 +1710,188 @@ new class extends Component
                 safePrice
                     ? `
                         <span>
-                            السعر: ${safePrice} NIS
+                            السعر:
+                            ${safePrice}
+                            NIS
                         </span>
-                      `
+                    `
                     : ''
             }
 
+
         </div>
+
 
     </div>
 
 </body>
 
 </html>
-                `;
 
-
-                printWindow.document.open();
-
-                printWindow.document.write(html);
-
-                printWindow.document.close();
-
-
-                /*
-                 * تحميل JsBarcode داخل نافذة الطباعة
-                 *
-                 * لا نستخدم <script> داخل document.write
-                 */
-                const barcodeScript =
-                    printWindow.document.createElement(
-                        'script'
-                    );
-
-
-                barcodeScript.src =
-                    'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-
-
-                barcodeScript.onload = () => {
-
-                    try {
-
-                        if (barcode) {
-
-                            printWindow.JsBarcode(
-                                printWindow.document.getElementById(
-                                    'print-barcode'
-                                ),
-                                barcode,
-                                {
-                                    format: 'CODE128',
-
-                                    width: 1.2,
-
-                                    height: 25,
-
-                                    displayValue: true,
-
-                                    fontSize: 8,
-
-                                    margin: 0
-                                }
-                            );
-
-                        }
-
-                    } catch (error) {
-
-                        console.error(
-                            'Print barcode error:',
-                            error
-                        );
-
-                    }
+                    `;
 
 
                     /*
-                     * إعطاء المتصفح وقتاً لرسم الباركود
+                     * كتابة الصفحة
                      */
-                    setTimeout(() => {
+                    printWindow.document.open();
 
-                        printWindow.focus();
-
-                        printWindow.print();
-
-                    }, 500);
-
-                };
-
-
-                barcodeScript.onerror = () => {
-
-                    console.error(
-                        'Failed to load JsBarcode in print window'
+                    printWindow.document.write(
+                        html
                     );
 
-                    setTimeout(() => {
-
-                        printWindow.focus();
-
-                        printWindow.print();
-
-                    }, 300);
-
-                };
+                    printWindow.document.close();
 
 
-                printWindow.document.head.appendChild(
-                    barcodeScript
-                );
+                    /*
+                     * ------------------------------------------------
+                     * تحميل JsBarcode داخل نافذة الطباعة
+                     * ------------------------------------------------
+                     */
 
-            }
+                    const barcodeScript =
+                        printWindow.document
+                            .createElement(
+                                'script'
+                            );
 
-        };
+
+                    barcodeScript.src =
+                        'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+
+
+                    barcodeScript.onload =
+                        () => {
+
+                            try {
+
+                                if (
+                                    barcode
+                                ) {
+
+                                    const svg =
+                                        printWindow
+                                            .document
+                                            .getElementById(
+                                                'print-barcode'
+                                            );
+
+
+                                    if (svg) {
+
+                                        printWindow
+                                            .JsBarcode(
+                                                svg,
+                                                barcode,
+                                                {
+
+                                                    format:
+                                                        'CODE128',
+
+                                                    width:
+                                                        1.2,
+
+                                                    height:
+                                                        25,
+
+                                                    displayValue:
+                                                        true,
+
+                                                    fontSize:
+                                                        8,
+
+                                                    margin:
+                                                        0,
+
+                                                    textMargin:
+                                                        2
+
+                                                }
+                                            );
+
+                                    }
+
+                                }
+
+
+                            } catch (
+                                error
+                            ) {
+
+                                console.error(
+                                    'Print barcode error:',
+                                    error
+                                );
+
+                            }
+
+
+                            /*
+                             * انتظار حتى يكتمل الرسم
+                             */
+                            setTimeout(
+                                () => {
+
+                                    printWindow
+                                        .focus();
+
+                                    printWindow
+                                        .print();
+
+                                },
+                                500
+                            );
+
+                        };
+
+
+                    barcodeScript.onerror =
+                        () => {
+
+                            console.error(
+                                'Failed to load JsBarcode in print window'
+                            );
+
+
+                            setTimeout(
+                                () => {
+
+                                    printWindow
+                                        .focus();
+
+                                    printWindow
+                                        .print();
+
+                                },
+                                300
+                            );
+
+                        };
+
+
+                    printWindow.document.head
+                        .appendChild(
+                            barcodeScript
+                        );
+
+                }
+
+            };
 
 
         /*
          * ============================================================
-         * تحميل المكتبة ومعاينة أولية
+         * تحميل المكتبة عند بداية الصفحة
          * ============================================================
          */
 
         window.labelPrinter
-            .loadBarcodeLibrary()
-            .then(() => {
-
-                setTimeout(() => {
-
-                    window.labelPrinter.drawPreview();
-
-                }, 100);
-
-            })
-            .catch(error => {
-
-                console.error(
-                    'JsBarcode loading error:',
-                    error
-                );
-
-            });
+            .refreshPreview();
 
 
         /*
          * ============================================================
-         * بعد تحديث Livewire
+         * تحديث المعاينة بعد Livewire
          * ============================================================
          */
 
@@ -1315,18 +1899,21 @@ new class extends Component
             'morph.updated',
             () => {
 
-                setTimeout(() => {
+                setTimeout(
+                    () => {
 
-                    if (
-                        window.labelPrinter
-                    ) {
+                        if (
+                            window.labelPrinter
+                        ) {
 
-                        window.labelPrinter
-                            .drawPreview();
+                            window.labelPrinter
+                                .refreshPreview();
 
-                    }
+                        }
 
-                }, 100);
+                    },
+                    150
+                );
 
             }
         );
@@ -1334,7 +1921,7 @@ new class extends Component
 
         /*
          * ============================================================
-         * استقبال أمر الطباعة من PHP
+         * استقبال أمر الطباعة
          * ============================================================
          */
 
@@ -1350,25 +1937,29 @@ new class extends Component
 
                 window.labelPrinter
                     .loadBarcodeLibrary()
-                    .then(() => {
+                    .then(
+                        () => {
 
-                        window.labelPrinter.print(
-                            data
-                        );
+                            window.labelPrinter
+                                .print(data);
 
-                    })
-                    .catch(error => {
+                        }
+                    )
+                    .catch(
+                        error => {
 
-                        console.error(
-                            'Label printing error:',
-                            error
-                        );
+                            console.error(
+                                'Label printing error:',
+                                error
+                            );
 
-                        alert(
-                            'تعذر تحميل مكتبة الباركود.'
-                        );
 
-                    });
+                            alert(
+                                'تعذر تحميل مكتبة الباركود.'
+                            );
+
+                        }
+                    );
 
             }
         );
@@ -1376,19 +1967,25 @@ new class extends Component
 
         /*
          * ============================================================
-         * رسم المعاينة بعد تحميل الصفحة
+         * محاولة رسم أخيرة بعد تحميل الصفحة
          * ============================================================
          */
 
-        setTimeout(() => {
+        setTimeout(
+            () => {
 
-            if (window.labelPrinter) {
+                if (
+                    window.labelPrinter
+                ) {
 
-                window.labelPrinter.drawPreview();
+                    window.labelPrinter
+                        .refreshPreview();
 
-            }
+                }
 
-        }, 200);
+            },
+            500
+        );
 
     </script>
 
