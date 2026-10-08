@@ -791,6 +791,7 @@ new class extends Component {
 
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً قبل البيع أو الإرجاع.';
+            $this->dispatch('pos-sound', type: 'error');
             $this->showOpenShiftModal = true;
             $this->barcode = '';
             return;
@@ -800,6 +801,7 @@ new class extends Component {
 
         if (!$record?->product) {
             $this->errorMessage = "لم يتم العثور على منتج بالباركود: {$barcode}";
+            $this->dispatch('pos-sound', type: 'error');
             $this->barcode = '';
             return;
         }
@@ -824,6 +826,7 @@ new class extends Component {
 
         if (!$tenantId || !$branchId) {
             $this->errorMessage = 'تعذر تحديد المتجر أو الفرع.';
+            $this->dispatch('pos-sound', type: 'error');
             return;
         }
 
@@ -835,6 +838,7 @@ new class extends Component {
 
         if (!$product || !$branchProduct) {
             $this->errorMessage = 'المنتج غير مرتبط بالفرع الحالي أو لم يعد متاحاً.';
+            $this->dispatch('pos-sound', type: 'error');
             return;
         }
 
@@ -892,6 +896,9 @@ new class extends Component {
 
         $this->recalculatePrices();
         $this->loadQuickProducts();
+
+        // صوت نجاح عند إضافة الصنف (بالباركود أو من قائمة المنتجات).
+        $this->dispatch('pos-sound', type: 'add');
 
         // النزول تلقائياً إلى آخر صنف تمت إضافته
         $this->dispatch('pos-scroll-cart-bottom');
@@ -4786,12 +4793,17 @@ new class extends Component {
         const playPosSound = (type) => {
             switch (type) {
                 case 'success':
-                    beep(880, 0.08, 0.07);
-                    beep(1175, 0.10, 0.06, 'sine', 0.09);
+                    beep(880, 0.08, 0.11);
+                    beep(1175, 0.10, 0.09, 'sine', 0.09);
+                    break;
+                case 'add':
+                    // صوت قصير وواضح عند دخول الصنف إلى الفاتورة.
+                    beep(1046, 0.060, 0.16, 'sine');
+                    beep(1318, 0.085, 0.14, 'sine', 0.065);
                     break;
                 case 'error':
-                    beep(220, 0.16, 0.09, 'square');
-                    beep(165, 0.20, 0.07, 'square', 0.13);
+                    beep(220, 0.18, 0.18, 'square');
+                    beep(165, 0.22, 0.15, 'square', 0.13);
                     break;
                 case 'save':
                     beep(660, 0.08, 0.06);
@@ -4841,6 +4853,16 @@ new class extends Component {
         };
         document.addEventListener('pointerdown', unlockAudio, { once: true });
         document.addEventListener('keydown', unlockAudio, { once: true });
+
+        // في حال حدث خطأ غير متوقع من Livewire/AJAX يصدر صوت الخطأ أيضاً.
+        if (window.Livewire && !window.__posRequestErrorSoundRegistered) {
+            window.__posRequestErrorSoundRegistered = true;
+            Livewire.hook('request', ({ fail }) => {
+                fail(() => {
+                    playPosSound('error');
+                });
+            });
+        }
     })();
 </script>
 
