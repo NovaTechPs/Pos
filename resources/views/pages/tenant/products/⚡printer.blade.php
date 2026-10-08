@@ -70,7 +70,7 @@ new class extends Component
 
     /*
     |--------------------------------------------------------------------------
-    | عند اختيار منتج
+    | اختيار المنتج
     |--------------------------------------------------------------------------
     */
 
@@ -85,9 +85,6 @@ new class extends Component
         }
 
 
-        /*
-         * تحميل المنتج
-         */
         $this->product = Product::with('barcodes')
             ->find((int) $value);
 
@@ -102,34 +99,27 @@ new class extends Component
 
 
         /*
-         * الحصول على الباركودات
+         * جلب الباركودات الموجودة
          */
         $barcodes = $this->getBarcodesList();
 
 
         /*
          * إذا لم يوجد باركود
-         * يتم إنشاء باركود جديد وحفظه
+         * ننشئ باركود جديد ونحفظه
          */
         if (empty($barcodes)) {
 
-            $newBarcode =
-                $this->createBarcodeForProduct();
+            $this->createBarcodeForProduct();
 
-
-            /*
-             * إعادة تحميل العلاقة
-             */
             $this->product->load('barcodes');
 
-
-            $barcodes =
-                $this->getBarcodesList();
+            $barcodes = $this->getBarcodesList();
         }
 
 
         /*
-         * اختيار أول باركود
+         * تحديد أول باركود تلقائياً
          */
         $this->selectedBarcode =
             $barcodes[0] ?? '';
@@ -138,14 +128,14 @@ new class extends Component
 
     /*
     |--------------------------------------------------------------------------
-    | الحصول على Tenant الحالي
+    | Tenant الحالي
     |--------------------------------------------------------------------------
     */
 
     private function getCurrentTenantId()
     {
         /*
-         * أولاً من المنتج
+         * الأفضل أخذ tenant من المنتج نفسه
          */
         if (
             $this->product &&
@@ -157,7 +147,7 @@ new class extends Component
 
 
         /*
-         * ثم من الـ Session
+         * ثم من الـ session
          */
         $tenantId =
             session('active_tenant_id');
@@ -169,16 +159,13 @@ new class extends Component
         }
 
 
-        /*
-         * في حال لم يوجد
-         */
         return null;
     }
 
 
     /*
     |--------------------------------------------------------------------------
-    | إنشاء باركود للمنتج
+    | إنشاء باركود جديد
     |--------------------------------------------------------------------------
     */
 
@@ -192,9 +179,6 @@ new class extends Component
         }
 
 
-        /*
-         * الحصول على tenant
-         */
         $tenantId =
             $this->getCurrentTenantId();
 
@@ -213,9 +197,6 @@ new class extends Component
         do {
 
             /*
-             * يبدأ بـ 20
-             * ثم 9 أرقام
-             *
              * مثال:
              * 20173347894
              */
@@ -235,17 +216,14 @@ new class extends Component
         } while (
 
             ProductBarcode::query()
-
                 ->where(
                     'tenant_id',
                     $tenantId
                 )
-
                 ->where(
                     'barcode',
                     $barcode
                 )
-
                 ->exists()
 
         );
@@ -253,8 +231,6 @@ new class extends Component
 
         /*
          * حفظ الباركود
-         *
-         * tenant_id مهم جداً
          */
         ProductBarcode::create([
             'tenant_id'  => $tenantId,
@@ -296,9 +272,7 @@ new class extends Component
             ) {
 
                 if (
-                    !empty(
-                        $barcode->barcode
-                    )
+                    !empty($barcode->barcode)
                 ) {
 
                     $list[] =
@@ -336,9 +310,6 @@ new class extends Component
             $this->getBarcodesList();
 
 
-        /*
-         * التأكد أن الباركود تابع للمنتج
-         */
         if (
             !in_array(
                 $code,
@@ -371,18 +342,13 @@ new class extends Component
 
 
         if (
-            empty(
-                $this->selectedBarcode
-            )
+            empty($this->selectedBarcode)
         ) {
 
             return;
         }
 
 
-        /*
-         * تحويل الأبعاد إلى أرقام
-         */
         $width =
             (float) $this->labelWidth;
 
@@ -476,7 +442,9 @@ new class extends Component
         class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5"
     >
 
+        {{-- ====================================================== --}}
         {{-- العنوان --}}
+        {{-- ====================================================== --}}
 
         <h1
             class="text-xl font-bold text-gray-800 border-b pb-3"
@@ -492,6 +460,8 @@ new class extends Component
         <div
             class="grid grid-cols-1 md:grid-cols-2 gap-4"
         >
+
+            {{-- البحث --}}
 
             <div class="md:col-span-2">
 
@@ -582,7 +552,7 @@ new class extends Component
             </div>
 
 
-            {{-- أخطاء الأبعاد --}}
+            {{-- أخطاء المقاسات --}}
 
             @error('labelWidth')
 
@@ -631,9 +601,7 @@ new class extends Component
 
                             عدد الباركودات:
 
-                            {{ count(
-                                $this->getBarcodesList()
-                            ) }}
+                            {{ count($this->getBarcodesList()) }}
 
                         </span>
 
@@ -729,8 +697,7 @@ new class extends Component
                                         <td class="p-2">
 
                                             {{
-                                                $product->cost_price
-                                                ?? 0
+                                                $product->cost_price ?? 0
                                             }}
 
                                         </td>
@@ -780,7 +747,7 @@ new class extends Component
 
 
             {{-- ====================================================== --}}
-            {{-- الخيارات --}}
+            {{-- خيارات الطباعة --}}
             {{-- ====================================================== --}}
 
             <div
@@ -954,7 +921,7 @@ new class extends Component
                         "
                     >
 
-                        {{-- الاسم --}}
+                        {{-- اسم الصنف --}}
 
                         @if($showName)
 
@@ -992,18 +959,17 @@ new class extends Component
                         @endif
 
 
-                        {{-- السعر ورقم الصنف --}}
+                        {{-- السعر + رقم الصنف --}}
 
                         <div
                             class="flex justify-between items-center w-full text-[9px] font-bold px-1"
+                            style="transform: translateY(-1.5mm);"
                         >
 
                             @if($showSku)
 
                                 <span>
-
                                     #{{ $product->product_number ?? $product->id }}
-
                                 </span>
 
                             @endif
@@ -1012,10 +978,8 @@ new class extends Component
                             @if($showPrice)
 
                                 <span>
-
                                     {{ $product->cost_price ?? 0 }}
                                     NIS
-
                                 </span>
 
                             @endif
@@ -1093,12 +1057,6 @@ new class extends Component
     @script
 
     <script>
-
-        /*
-        |--------------------------------------------------------------------------
-        | Label Printer
-        |--------------------------------------------------------------------------
-        */
 
         window.labelPrinter =
             window.labelPrinter || {
@@ -1245,7 +1203,7 @@ new class extends Component
 
                 /*
                 |--------------------------------------------------------------------------
-                | رسم المعاينة
+                | رسم الباركود في المعاينة
                 |--------------------------------------------------------------------------
                 */
 
@@ -1276,12 +1234,6 @@ new class extends Component
                     const code =
                         wrapper.dataset.barcode ||
                         '';
-
-
-                    console.log(
-                        'Barcode preview:',
-                        code
-                    );
 
 
                     if (!code) {
@@ -1392,7 +1344,7 @@ new class extends Component
 
                 /*
                 |--------------------------------------------------------------------------
-                | طباعة
+                | الطباعة
                 |--------------------------------------------------------------------------
                 */
 
@@ -1443,7 +1395,7 @@ new class extends Component
 
                     /*
                     |--------------------------------------------------------------------------
-                    | فتح نافذة الطباعة
+                    | نافذة الطباعة
                     |--------------------------------------------------------------------------
                     */
 
@@ -1468,7 +1420,7 @@ new class extends Component
 
                     /*
                     |--------------------------------------------------------------------------
-                    | حماية النص
+                    | حماية HTML
                     |--------------------------------------------------------------------------
                     */
 
@@ -1517,6 +1469,12 @@ new class extends Component
                         escapeHtml(sku);
 
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | صفحة الطباعة
+                    |--------------------------------------------------------------------------
+                    */
+
                     const html = `
 
 <!DOCTYPE html>
@@ -1564,9 +1522,11 @@ new class extends Component
 
             padding: 0;
 
-            background: #fff;
+            background:
+                #ffffff;
 
-            overflow: hidden;
+            overflow:
+                hidden;
 
         }
 
@@ -1589,7 +1549,16 @@ new class extends Component
             height:
                 ${height}mm;
 
-            padding:
+            padding-top:
+                1.5mm;
+
+            padding-right:
+                1.5mm;
+
+            padding-bottom:
+                0.8mm;
+
+            padding-left:
                 1.5mm;
 
             display:
@@ -1664,6 +1633,15 @@ new class extends Component
         }
 
 
+        /*
+        |--------------------------------------------------------------------------
+        | السعر ورقم الصنف
+        |--------------------------------------------------------------------------
+        |
+        | تم رفعهما 1.5mm عن الأسفل
+        |
+        */
+
         .footer {
 
             width:
@@ -1690,6 +1668,12 @@ new class extends Component
             white-space:
                 nowrap;
 
+            transform:
+                translateY(-1.5mm);
+
+            padding-bottom:
+                0.5mm;
+
         }
 
     </style>
@@ -1700,6 +1684,7 @@ new class extends Component
 <body>
 
     <div class="label">
+
 
         ${
             safeName
@@ -1729,6 +1714,7 @@ new class extends Component
 
         <div class="footer">
 
+
             ${
                 safeSku
                     ? `
@@ -1752,7 +1738,9 @@ new class extends Component
                     : ''
             }
 
+
         </div>
+
 
     </div>
 
@@ -1774,7 +1762,7 @@ new class extends Component
 
                     /*
                     |--------------------------------------------------------------------------
-                    | تحميل JsBarcode داخل نافذة الطباعة
+                    | تحميل JsBarcode للطباعة
                     |--------------------------------------------------------------------------
                     */
 
@@ -1850,6 +1838,12 @@ new class extends Component
                             }
 
 
+                            /*
+                            |--------------------------------------------------------------------------
+                            | الانتظار قبل الطباعة
+                            |--------------------------------------------------------------------------
+                            */
+
                             setTimeout(
                                 () => {
 
@@ -1902,7 +1896,7 @@ new class extends Component
 
         /*
         |--------------------------------------------------------------------------
-        | تشغيل المعاينة عند فتح الصفحة
+        | تشغيل المعاينة
         |--------------------------------------------------------------------------
         */
 
@@ -1912,7 +1906,7 @@ new class extends Component
 
         /*
         |--------------------------------------------------------------------------
-        | إعادة رسم المعاينة بعد Livewire
+        | بعد تحديث Livewire
         |--------------------------------------------------------------------------
         */
 
@@ -1984,7 +1978,7 @@ new class extends Component
 
         /*
         |--------------------------------------------------------------------------
-        | إعادة المحاولة بعد تحميل الصفحة
+        | إعادة رسم المعاينة
         |--------------------------------------------------------------------------
         */
 
