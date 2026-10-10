@@ -329,7 +329,7 @@ new class extends Component
 
     /*
     |--------------------------------------------------------------------------
-    | طباعة الليبل
+    | طباعة الملصق
     |--------------------------------------------------------------------------
     */
 
@@ -361,8 +361,7 @@ new class extends Component
          * التحقق من العرض
          */
         if (
-            $width < 10 ||
-            $width > 300
+            $width < 10 || $width > 300
         ) {
 
             $this->addError(
@@ -378,8 +377,7 @@ new class extends Component
          * التحقق من الارتفاع
          */
         if (
-            $height < 10 ||
-            $height > 300
+            $height < 10 || $height > 300
         ) {
 
             $this->addError(
@@ -505,8 +503,7 @@ new class extends Component
                     @foreach($this->products as $p)
 
                         @php
-                            $firstBarcode =
-                                $p->barcodes->first()?->barcode
+                            $firstBarcode =$p->barcodes->first()?->barcode
                                 ?? 'لا يوجد';
                         @endphp
 
@@ -537,8 +534,7 @@ new class extends Component
 
 
                 @if(
-                    $productSearch !== '' &&
-                    $this->products->count() === 0
+                    $productSearch !== '' &&$this->products->count() === 0
                 )
 
                     <div
@@ -661,14 +657,14 @@ new class extends Component
                                 )
 
                                     <tr
-                                        wire:key="barcode-row-{{ $product->id }}-{{ $code }}"
+                                        wire:key="barcode-row-{{ $product->id }}-{{$code }}"
                                         wire:click="selectBarcode(@js($code))"
                                         class="
                                             hover:bg-blue-50
                                             cursor-pointer
                                             transition
                                             {{
-                                                $selectedBarcode === $code
+                                                $selectedBarcode ===$code
                                                     ? 'bg-blue-100 font-bold text-blue-900'
                                                     : ''
                                             }}
@@ -913,75 +909,47 @@ new class extends Component
                 >
 
                     <div
-                        class="bg-white border border-gray-800 p-2 text-center flex flex-col justify-between items-center shadow-sm overflow-hidden"
-                        style="
-                            width: {{ $labelWidth }}mm;
-                            height: {{ $labelHeight }}mm;
-                            box-sizing: border-box;
-                        "
+                        class="bg-white border border-gray-400 rounded-md shadow-sm overflow-hidden"
+                        style="position:relative; width:{{ $labelWidth }}mm; height:{{$labelHeight }}mm; box-sizing:border-box; padding:1.5mm 2.5mm; background:#fff; color:#000; font-family:Arial, Tahoma, sans-serif;"
                     >
 
-                        {{-- اسم الصنف --}}
-
+                        {{-- اسم الصنف في الأعلى --}}
                         @if($showName)
-
                             <div
-                                class="text-[10px] font-bold truncate w-full"
+                                class="text-center font-bold text-gray-900 truncate mb-1"
+                                style="font-size: 8.5pt; line-height: 1.1;"
                             >
-
                                 {{ $product->name }}
-
                             </div>
-
                         @endif
 
+                        {{-- الجانب الأيسر (رقم الصنف + السعر) والجانب الأيمن (الباركود) --}}
+                        <div style="display: flex; align-items: flex-end; justify-content: space-between; height: calc(100% - 4mm); gap: 1.5mm;">
 
-                        {{-- الباركود --}}
+                            {{-- العمود الأيسر: رقم الصنف بالأعلى ثم السعر والعملة بالأسفل --}}
+                            <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-width: 10mm; font-weight: bold; line-height: 1.1; margin-bottom: 0.5mm;">
+                                @if($showSku)
+                                    <span style="font-size: 7.5pt; color: #333; margin-bottom: 1mm;">#{{ $product->product_number ?? $product->id }}</span>
+                                @endif
 
-                        @if(
-                            $showBarcode &&
-                            $selectedBarcode
-                        )
-
-                            <div
-                                id="preview-barcode-wrapper"
-                                data-barcode="{{ $selectedBarcode }}"
-                                class="w-full flex justify-center items-center my-0.5"
-                            >
-
-                                <svg
-                                    id="preview-barcode-element"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                ></svg>
-
+                                @if($showPrice)
+                                    <span style="font-size: 11pt;">{{ $product->cost_price ?? 0 }}</span>
+                                    <span style="font-size: 8.5pt;">NIS</span>
+                                @endif
                             </div>
 
-                        @endif
-
-
-                        {{-- السعر + رقم الصنف --}}
-
-                        <div
-                            class="flex justify-between items-center w-full text-[9px] font-bold px-1"
-                            style="transform: translateY(-1.5mm);"
-                        >
-
-                            @if($showSku)
-
-                                <span>
-                                    #{{ $product->product_number ?? $product->id }}
-                                </span>
-
-                            @endif
-
-
-                            @if($showPrice)
-
-                                <span>
-                                    {{ $product->cost_price ?? 0 }}
-                                    NIS
-                                </span>
-
+                            {{-- الباركود ورقمه على اليمين --}}
+                            @if($showBarcode &&$selectedBarcode)
+                                <div
+                                    id="preview-barcode-wrapper"
+                                    data-barcode="{{ $selectedBarcode }}"
+                                    style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; overflow: hidden;"
+                                >
+                                    <svg
+                                        id="preview-barcode-element"
+                                        style="display:block; width:100%; height:auto; max-height:18mm;"
+                                    ></svg>
+                                </div>
                             @endif
 
                         </div>
@@ -1269,19 +1237,19 @@ new class extends Component
                                     'CODE128',
 
                                 width:
-                                    1.5,
+                                    1.3,
 
                                 height:
-                                    35,
+                                    28,
 
                                 displayValue:
                                     true,
 
                                 fontSize:
-                                    10,
+                                    13,
 
                                 margin:
-                                    2,
+                                    0,
 
                                 textMargin:
                                     2,
@@ -1528,11 +1496,6 @@ new class extends Component
             overflow:
                 hidden;
 
-        }
-
-
-        body {
-
             font-family:
                 Arial,
                 Tahoma,
@@ -1549,17 +1512,8 @@ new class extends Component
             height:
                 ${height}mm;
 
-            padding-top:
-                1.5mm;
-
-            padding-right:
-                1.5mm;
-
-            padding-bottom:
-                0.8mm;
-
-            padding-left:
-                1.5mm;
+            padding:
+                1.5mm 2.5mm;
 
             display:
                 flex;
@@ -1570,22 +1524,16 @@ new class extends Component
             justify-content:
                 space-between;
 
-            align-items:
-                center;
-
-            text-align:
-                center;
-
-            overflow:
-                hidden;
+            box-sizing:
+                border-box;
 
         }
 
 
-        .name {
+        .title {
 
-            width:
-                100%;
+            text-align:
+                center;
 
             font-size:
                 8.5pt;
@@ -1602,77 +1550,121 @@ new class extends Component
             text-overflow:
                 ellipsis;
 
+            line-height:
+                1.1;
+
         }
 
 
-        .barcode-container {
-
-            width:
-                100%;
+        .content {
 
             display:
                 flex;
 
-            justify-content:
-                center;
-
             align-items:
-                center;
-
-        }
-
-
-        .barcode-container svg {
-
-            max-width:
-                100%;
-
-            max-height:
-                14mm;
-
-        }
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | السعر ورقم الصنف
-        |--------------------------------------------------------------------------
-        |
-        | تم رفعهما 1.5mm عن الأسفل
-        |
-        */
-
-        .footer {
-
-            width:
-                100%;
-
-            display:
-                flex;
+                flex-end;
 
             justify-content:
-                space-around;
-
-            align-items:
-                center;
+                space-between;
 
             gap:
-                2mm;
+                1.5mm;
 
-            font-size:
-                8.5pt;
+            flex-grow:
+                1;
+
+        }
+
+
+        .left-box {
+
+            display:
+                flex;
+
+            flex-direction:
+                column;
+
+            align-items:
+                center;
+
+            justify-content:
+                flex-end;
 
             font-weight:
                 bold;
 
-            white-space:
-                nowrap;
-
-            transform:
-                translateY(-1.5mm);
+            line-height:
+                1.1;
 
             padding-bottom:
                 0.5mm;
+
+            min-width:
+                10mm;
+
+        }
+
+
+        .sku-text {
+
+            font-size:
+                7.5pt;
+
+            color:
+                #333;
+
+            margin-bottom:
+                1mm;
+
+        }
+
+
+        .price-amount {
+
+            font-size:
+                11pt;
+
+        }
+
+
+        .price-currency {
+
+            font-size:
+                8.5pt;
+
+        }
+
+
+        .barcode-box {
+
+            flex-grow:
+                1;
+
+            display:
+                flex;
+
+            flex-direction:
+                column;
+
+            align-items:
+                center;
+
+            justify-content:
+                flex-end;
+
+        }
+
+
+        .barcode-box svg {
+
+            max-width:
+                100%;
+
+            height:
+                auto;
+
+            max-height:
+                18mm;
 
         }
 
@@ -1689,7 +1681,7 @@ new class extends Component
         ${
             safeName
                 ? `
-                    <div class="name">
+                    <div class="title">
                         ${safeName}
                     </div>
                 `
@@ -1697,43 +1689,49 @@ new class extends Component
         }
 
 
-        ${
-            barcode
-                ? `
-                    <div class="barcode-container">
-
-                        <svg
-                            id="print-barcode"
-                        ></svg>
-
-                    </div>
-                `
-                : ''
-        }
+        <div class="content">
 
 
-        <div class="footer">
+            <div class="left-box">
+
+                ${
+                    safeSku
+                        ? `
+                            <span class="sku-text">
+                                #${safeSku}
+                            </span>
+                        `
+                        : ''
+                }
+
+
+                ${
+                    safePrice
+                        ? `
+                            <span class="price-amount">
+                                ${safePrice}
+                            </span>
+
+                            <span class="price-currency">
+                                NIS
+                            </span>
+                        `
+                        : ''
+                }
+
+            </div>
 
 
             ${
-                safeSku
+                barcode
                     ? `
-                        <span>
-                            #${safeSku}
-                        </span>
-                    `
-                    : ''
-            }
+                        <div class="barcode-box">
 
+                            <svg
+                                id="print-barcode"
+                            ></svg>
 
-            ${
-                safePrice
-                    ? `
-                        <span>
-                            السعر:
-                            ${safePrice}
-                            NIS
-                        </span>
+                        </div>
                     `
                     : ''
             }
@@ -1804,16 +1802,16 @@ new class extends Component
                                                         'CODE128',
 
                                                     width:
-                                                        1.2,
+                                                        1.3,
 
                                                     height:
-                                                        25,
+                                                        28,
 
                                                     displayValue:
                                                         true,
 
                                                     fontSize:
-                                                        8,
+                                                        13,
 
                                                     margin:
                                                         0,
