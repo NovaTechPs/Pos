@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use App\Models\Role;
 use App\Models\Permission;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -25,7 +25,6 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
         ]);
 
-
         /*
         |--------------------------------------------------------------------------
         | 2. Plan
@@ -35,18 +34,17 @@ class DatabaseSeeder extends Seeder
         DB::table('plans')->updateOrInsert(
             ['id' => 1],
             [
-                'name'             => 'plan 1',
-                'slug'             => 'plan',
-                'description'      => null,
-                'price'            => 30.00,
-                'invoice_period'   => 1,
+                'name' => 'plan 1',
+                'slug' => 'plan',
+                'description' => null,
+                'price' => 30.00,
+                'invoice_period' => 1,
                 'invoice_interval' => 'month',
-                'is_active'        => true,
-                'created_at'       => '2026-09-15 08:05:51',
-                'updated_at'       => '2026-09-15 08:05:51',
+                'is_active' => true,
+                'created_at' => '2026-09-15 08:05:51',
+                'updated_at' => '2026-09-15 08:05:51',
             ]
         );
-
 
         /*
         |--------------------------------------------------------------------------
@@ -62,20 +60,18 @@ class DatabaseSeeder extends Seeder
         DB::table('tenants')->updateOrInsert(
             ['id' => 1],
             [
-                'name'       => 'fanous',
-                'phone'      => null,
-                'plan_id'    => 1,
-                'domain'     => 'fanoos.com',
-                'is_active'  => true,
+                'name' => 'fanous',
+                'phone' => null,
+                'plan_id' => 1,
+                'is_active' => true,
 
                 // سيتم تحديثه بعد إنشاء المستخدمين
-                'owner_id'   => null,
+                'owner_id' => null,
 
                 'created_at' => '2026-09-15 13:27:17',
                 'updated_at' => '2026-09-15 13:27:17',
             ]
         );
-
 
         /*
         |--------------------------------------------------------------------------
@@ -85,33 +81,32 @@ class DatabaseSeeder extends Seeder
 
         $branches = [
             [
-                'id'        => 2,
+                'id' => 2,
                 'tenant_id' => 1,
-                'name'      => 'فانوس',
-                'phone'     => null,
-                'address'   => null,
-                'type'      => 'branch',
+                'name' => 'فانوس',
+                'phone' => null,
+                'address' => null,
+                'type' => 'branch',
             ],
 
             [
-                'id'        => 3,
+                'id' => 3,
                 'tenant_id' => 1,
-                'name'      => 'crase',
-                'phone'     => null,
-                'address'   => null,
-                'type'      => 'branch',
+                'name' => 'crase',
+                'phone' => null,
+                'address' => null,
+                'type' => 'branch',
             ],
 
             [
-                'id'        => 4,
+                'id' => 4,
                 'tenant_id' => 1,
-                'name'      => 'مخزن جملة',
-                'phone'     => null,
-                'address'   => null,
-                'type'      => 'branch',
+                'name' => 'مخزن جملة',
+                'phone' => null,
+                'address' => null,
+                'type' => 'branch',
             ],
         ];
-
 
         foreach ($branches as $branch) {
 
@@ -127,7 +122,6 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | 5. Roles
@@ -136,35 +130,32 @@ class DatabaseSeeder extends Seeder
 
         $targetTenantId = 1;
 
-
         $adminRole = Role::updateOrCreate(
             ['id' => 1],
             [
-                'tenant_id'   => $targetTenantId,
-                'name'        => 'admin',
+                'tenant_id' => $targetTenantId,
+                'name' => 'admin',
                 'description' => 'مدير النظام الخاص بالمنشأة',
             ]
         );
 
-
         $cashierRole = Role::updateOrCreate(
             ['id' => 2],
             [
-                'tenant_id'   => $targetTenantId,
-                'name'        => 'cashier',
+                'tenant_id' => $targetTenantId,
+                'name' => 'cashier',
                 'description' => 'كاشير مبيعات',
             ]
         );
         $wholesaleRole = Role::updateOrCreate(
             [
                 'tenant_id' => $targetTenantId,
-                'name'      => 'wholesale_employee',
+                'name' => 'wholesale_employee',
             ],
             [
                 'description' => 'موظف مبيعات الجملة',
             ]
         );
-
 
         /*
         |--------------------------------------------------------------------------
@@ -185,7 +176,6 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | 7. Users
@@ -196,7 +186,6 @@ class DatabaseSeeder extends Seeder
             'password123'
         );
 
-
         $users = [
 
             /*
@@ -206,16 +195,15 @@ class DatabaseSeeder extends Seeder
             */
 
             [
-                'email'     => 'admin@example.com',
-                'name'      => 'SaaS Admin',
-                'is_owner'  => false,
-                'role_id'   => null,
-                'type'      => 'saas_admin',
+                'email' => 'admin@example.com',
+                'name' => 'SaaS Admin',
+                'is_owner' => false,
+                'role_id' => null,
+                'type' => 'saas_admin',
                 'is_active' => true,
                 'tenant_id' => null,
                 'branch_id' => null,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -224,16 +212,15 @@ class DatabaseSeeder extends Seeder
             */
 
             [
-                'email'     => 'user@example.com',
-                'name'      => 'Test Tenant User',
-                'is_owner'  => true,
-                'role_id'   => null,
-                'type'      => 'tenant_user',
+                'email' => 'user@example.com',
+                'name' => 'Test Tenant User',
+                'is_owner' => true,
+                'role_id' => null,
+                'type' => 'tenant_user',
                 'is_active' => true,
                 'tenant_id' => 1,
                 'branch_id' => 2,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -242,16 +229,15 @@ class DatabaseSeeder extends Seeder
             */
 
             [
-                'email'     => 'yasmin@fanos.com',
-                'name'      => 'ياسمين',
-                'is_owner'  => false,
-                'role_id'   => $adminRole->id,
-                'type'      => 'tenant_user',
+                'email' => 'yasmin@fanos.com',
+                'name' => 'ياسمين',
+                'is_owner' => false,
+                'role_id' => $adminRole->id,
+                'type' => 'tenant_user',
                 'is_active' => true,
                 'tenant_id' => 1,
                 'branch_id' => 2,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -260,16 +246,15 @@ class DatabaseSeeder extends Seeder
             */
 
             [
-                'email'     => 'kalide@fanous.com',
-                'name'      => 'خالد',
-                'is_owner'  => false,
-                'role_id'   => $adminRole->id,
-                'type'      => 'tenant_user',
+                'email' => 'kalide@fanous.com',
+                'name' => 'خالد',
+                'is_owner' => false,
+                'role_id' => $adminRole->id,
+                'type' => 'tenant_user',
                 'is_active' => true,
                 'tenant_id' => 1,
                 'branch_id' => 3,
             ],
-
 
             /*
             |--------------------------------------------------------------------------
@@ -278,17 +263,16 @@ class DatabaseSeeder extends Seeder
             */
 
             [
-                'email'     => 'hade@fanous.com',
-                'name'      => 'هادي',
-                'is_owner'  => false,
-                'role_id'   => $wholesaleRole->id,
-                'type'      => 'tenant_user',
+                'email' => 'hade@fanous.com',
+                'name' => 'هادي',
+                'is_owner' => false,
+                'role_id' => $wholesaleRole->id,
+                'type' => 'tenant_user',
                 'is_active' => true,
                 'tenant_id' => 1,
                 'branch_id' => 4,
             ],
         ];
-
 
         foreach ($users as $userData) {
 
@@ -303,7 +287,6 @@ class DatabaseSeeder extends Seeder
                     ]
                 )
             );
-
 
             /*
             |--------------------------------------------------------------------------
@@ -333,7 +316,6 @@ class DatabaseSeeder extends Seeder
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | 8. Set Tenant Owner
@@ -348,13 +330,12 @@ class DatabaseSeeder extends Seeder
             'user@example.com'
         )->first();
 
-
         if ($tenantOwner) {
 
             DB::table('tenants')
                 ->where('id', 1)
                 ->update([
-                    'owner_id'   => $tenantOwner->id,
+                    'owner_id' => $tenantOwner->id,
                     'updated_at' => now(),
                 ]);
         }

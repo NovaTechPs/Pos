@@ -49,9 +49,8 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/product', 'pages::tenant.products.index')
             ->name('product');
 
-    Route::livewire('/barcode/printer', 'pages::tenant.products.printer')
+        Route::livewire('/barcode/printer', 'pages::tenant.products.printer')
             ->name('barcode.printer');
-
 
         // POS
         Route::livewire('/pos', 'pages::tenant.pos.sales')
@@ -68,9 +67,9 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/wholesale-invoices', 'pages::tenant.wholesale.invoices')
             ->name('wholesale-invoices');
 
-     Route::livewire('/stock-transfers', 'pages::tenant.stock-transfers.index')
-    ->name('tenant.stock-transfers');
-       // Purchases
+        Route::livewire('/stock-transfers', 'pages::tenant.stock-transfers.index')
+            ->name('tenant.stock-transfers');
+        // Purchases
         Route::livewire('/purchase-invoices', 'pages::tenant.purchases.invoices')
             ->name('purchase-invoices');
 
@@ -102,5 +101,7 @@ Route::middleware(['auth', 'verified'])
 
         Route::livewire('/logs', 'pages::tenant.system.logs')
             ->name('logs');
+        Route::livewire('/payroll-manager', 'pages::tenant.hr.payroll-manager')
+            ->name('payroll-manager');
     });
-require __DIR__ . '/settings.php';
+require __DIR__.'/settings.php';
