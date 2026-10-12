@@ -44,7 +44,6 @@ new class extends Component {
     public ?string $errorMessage = null;
     public ?string $successMessage = null;
     public ?int $currentInvoiceId = null;
-    // معرف الفاتورة التي تم تحميلها للتعديل، مستقل عن عرض الفاتورة الحالي.
     public ?int $editingInvoiceId = null;
     public bool $invoiceEditMode = false;
     public array $heldInvoices = [];
@@ -52,7 +51,6 @@ new class extends Component {
     public bool $showCostModal = false;
     public bool $showBelowCostModal = false;
 
-    // نافذة الدفع التي تظهر عند حفظ فاتورة مرتبطة بزبون
     public bool $showCustomerPaymentModal = false;
     public float $customerPaymentAmount = 0;
     public string $pendingCustomerPaymentMode = 'checkout';
@@ -102,10 +100,7 @@ new class extends Component {
         $this->checkActiveShift();
         $this->loadQuickProducts();
     }
-    /**
-     * تحويل القيمة القادمة من واجهة السلة إلى مفتاح السطر الحقيقي داخل $cart.
-     * بعض نسخ cart partial ترسل product id بدلاً من array key.
-     */
+
     private function resolveCartLineKey(string $lineKeyOrProductId): ?string
     {
         if (array_key_exists($lineKeyOrProductId, $this->cart)) {
@@ -136,9 +131,6 @@ new class extends Component {
         }
 
         $lineKey = $resolvedKey;
-
-        // توحيد الفاصلة العشرية حتى يعمل التعديل المتكرر بنفس الطريقة
-        // سواء أدخل المستخدم 12.50 أو 12,50.
         $value = str_replace(',', '.', trim((string) $value));
 
         switch ($field) {
@@ -161,11 +153,6 @@ new class extends Component {
             default:
                 return;
         }
-
-        // مهم: لا نعيد التركيز إلى الباركود بعد تعديل الحقل.
-        // عند استخدام الأسهم يجب أن يبقى التركيز في مكانه للتنقل بين
-        // الكمية / السعر / الإجمالي وباقي الأصناف.
-        // الانتقال إلى الباركود يتم فقط عند الضغط على Enter.
     }
 
     public function toggleMergeSimilarProducts(): void
@@ -180,11 +167,8 @@ new class extends Component {
         }
 
         if ($this->mergeSimilarProducts) {
-            // تشغيل التجميع: اجمع أيضاً كل الأسطر الموجودة حالياً.
             $this->mergeSimilarCartLines();
         } else {
-            // إيقاف التجميع: فك كل الكميات الموجودة حالياً
-            // بحيث تصبح كل وحدة في سطر مستقل.
             $this->splitSimilarCartLines();
         }
 
@@ -206,8 +190,6 @@ new class extends Component {
             $sign = $quantity < 0 ? -1 : 1;
             $unitPrice = (float) ($item['price'] ?? 0);
 
-            // عند إيقاف التجميع نقسم الوحدات الصحيحة إلى أسطر مستقلة،
-            // ونُبقي الكسر (مثل 0.5 أو 1.5) دون تحويله إلى عدد صحيح.
             $wholeUnits = (int) floor($absoluteQuantity);
             $fraction = round($absoluteQuantity - $wholeUnits, 3);
 
@@ -250,8 +232,6 @@ new class extends Component {
                 continue;
             }
 
-            // داخل الفاتورة الواحدة وضع البيع/المرتجع موحد، لذلك مفتاح الصنف هو product_id.
-            // هذا يتوافق مع cart partial الذي يرسل product id إلى دوال التعديل.
             $groupKey = (string) $productId;
 
             if (!isset($merged[$groupKey])) {
@@ -382,50 +362,12 @@ new class extends Component {
             return null;
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | المبيعات
-    |--------------------------------------------------------------------------
-    | نحسبها مباشرة من الفواتير الخاصة بهذا الشيفت.
-    */
         $sales = (float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'pos')->sum('total');
-
-        /*
-    |--------------------------------------------------------------------------
-    | المرتجعات
-    |--------------------------------------------------------------------------
-    | فواتير المرتجع غالباً تكون قيمتها سالبة،
-    | لذلك نعرضها كمبلغ موجب.
-    */
         $returns = abs((float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'return')->sum('total'));
-
-        /*
-    |--------------------------------------------------------------------------
-    | المقبوض النقدي
-    |--------------------------------------------------------------------------
-    */
         $cashSales = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'receipt')->where('payment_method', 'cash')->sum('amount');
-
-        /*
-    |--------------------------------------------------------------------------
-    | المدفوع النقدي للمرتجعات
-    |--------------------------------------------------------------------------
-    */
         $cashReturns = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
-
-        /*
-    |--------------------------------------------------------------------------
-    | الكاش المتوقع
-    |--------------------------------------------------------------------------
-    */
         $expectedCash = (float) $shift->opening_cash + $cashSales - $cashReturns;
 
-        /*
-    |--------------------------------------------------------------------------
-    | نضع القيم على نسخة الشيفت الموجودة في الذاكرة
-    | بدون UPDATE على قاعدة البيانات.
-    |--------------------------------------------------------------------------
-    */
         $shift->setAttribute('live_total_sales', $sales);
         $shift->setAttribute('live_total_returns', $returns);
         $shift->setAttribute('live_cash_sales', $cashSales);
@@ -628,11 +570,7 @@ new class extends Component {
             return;
         }
 
-        // بحث بالكلمات المفتاحية:
-        // يجب أن تكون كل الكلمات موجودة داخل اسم الصنف نفسه.
-        // مثال: "سطل تركي 10 لتر" لا يظهر إلا إذا احتوى اسم الصنف
-        // على الكلمات الأربع كلها، بغض النظر عن ترتيبها.
-        $keywords = preg_split('/\\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
+        $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
         $this->inlineSearchResults = Product::query()
             ->where('tenant_id', $tenantId)
@@ -643,6 +581,7 @@ new class extends Component {
                             $nameQuery->where('name', 'like', "%{$keyword}%");
                         }
                     })
+                    ->orWhere('id', '=', $search)
                     ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
                         $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%");
                     });
@@ -670,8 +609,6 @@ new class extends Component {
     {
         $this->addToCart($productId);
 
-        // بعد اختيار الصنف من البحث:
-        // تفريغ البحث والعودة مباشرة إلى خانة الباركود.
         $this->inlineSearchQuery = '';
         $this->productSearchQuery = '';
         $this->inlineSearchResults = [];
@@ -708,9 +645,6 @@ new class extends Component {
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
-        // نوع الفاتورة يحدد الفاتورة كاملة، ولا يمكن تغييره بعد إضافة أول صنف.
-        // جميع وظائف البيع/المرتجع الأخرى تبقى كما هي: إضافة صنف، الباركود،
-        // تعديل الكمية والسعر والإجمالي، الحذف، الخصم، الدفع والطباعة.
         if (!empty($this->cart)) {
             $this->errorMessage = 'لا يمكن تغيير نوع الفاتورة بعد إضافة أصناف. أنشئ فاتورة جديدة أولاً.';
             return;
@@ -744,17 +678,16 @@ new class extends Component {
 
         $search = trim($this->productSearchQuery);
         if ($search !== '') {
-            // بحث بالكلمات المفتاحية:
-            // كل الكلمات يجب أن تكون داخل اسم الصنف نفسه.
-            // والباركود يبقى مسار بحث مستقل عند إدخال باركود كامل/جزئي.
-            $keywords = preg_split('/\\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
+            $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
             $query->where(function ($q) use ($keywords, $search, $tenantId): void {
                 $q->where(function ($nameQuery) use ($keywords): void {
                     foreach ($keywords as $keyword) {
                         $nameQuery->where('name', 'like', "%{$keyword}%");
                     }
-                })->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
+                })
+                ->orWhere('id', '=', $search)
+                ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
                     $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%");
                 });
             });
@@ -877,8 +810,6 @@ new class extends Component {
                 'id' => $productId,
                 'name' => $product->name,
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
-                // سعر القطعة العادي يبقى ظاهرًا في خانة السعر.
-                // إجمالي السطر يُحسب من العرض داخل recalculatePrices().
                 'price' => (float) $branchProduct->retail_price,
                 'cost_price' => (float) ($product->cost_price ?? 0),
                 'quantity' => $changeQty,
@@ -897,10 +828,7 @@ new class extends Component {
         $this->recalculatePrices();
         $this->loadQuickProducts();
 
-        // صوت نجاح عند إضافة الصنف (بالباركود أو من قائمة المنتجات).
         $this->dispatch('pos-sound', type: 'add');
-
-        // النزول تلقائياً إلى آخر صنف تمت إضافته
         $this->dispatch('pos-scroll-cart-bottom');
     }
 
@@ -959,20 +887,11 @@ new class extends Component {
         }
 
         $this->cart[$lineKey]['price'] = max(0, (float) $newPrice);
-        // عندما يعدل الكاشير سعر الوحدة يدويًا، لا نعيد تطبيق العرض تلقائيًا
-        // على هذا السطر حتى لا نمسح تعديل الكاشير عند تغيير الكمية.
         $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney((float) $this->cart[$lineKey]['quantity'] * (float) $this->cart[$lineKey]['price']);
         $this->recalculatePrices();
     }
 
-    /**
-     * تعديل إجمالي الصنف مباشرة.
-     *
-     * مهم: لا نستدعي recalculatePrices() هنا، لأن تلك الدالة تعيد
-     * حساب subtotal من (quantity × price) وقد تلغي الإجمالي الذي أدخله
-     * المستخدم، خصوصاً مع الكميات العشرية.
-     */
     public function updateLineTotal(string $lineKey, $newTotal): void
     {
         if (!$this->ensureInvoiceEditable()) {
@@ -994,7 +913,6 @@ new class extends Component {
 
         $targetTotal = (float) str_replace(',', '.', (string) $newTotal);
 
-        // في وضع المرتجع يبقى إجمالي السطر سالباً.
         if ($quantity < 0) {
             $targetTotal = -abs($targetTotal);
         } else {
@@ -1003,16 +921,11 @@ new class extends Component {
 
         $targetTotal = $this->roundMoney($targetTotal);
 
-        // نحتفظ بدقة كافية في سعر الوحدة حتى لا يضيع الإجمالي
-        // المدخل عند وجود كمية عشرية.
         $unitPrice = abs($targetTotal / $quantity);
 
         $this->cart[$lineKey]['price'] = round($unitPrice, 6);
         $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['subtotal'] = $targetTotal;
-
-        // لا تستدعِ recalculatePrices() هنا، لأنه سيعيد كتابة subtotal
-        // من quantity × price وقد يحول 20.02 مثلاً إلى 20.01 مع بعض الكسور.
     }
 
     public function updateCostPrice(string $lineKey, $newCost): void
@@ -1098,7 +1011,6 @@ new class extends Component {
         $this->pendingCustomerPaymentMode = 'checkout';
         $this->customerPaymentConfirmed = false;
 
-        // مهم: تنظيف القيم المحسوبة المخزنة مؤقتاً في Livewire
         unset($this->subtotal, $this->total_cost, $this->expected_profit, $this->calculated_discount, $this->total, $this->amountDue, $this->change, $this->remaining, $this->hasBelowCostItem);
     }
 
@@ -1272,13 +1184,10 @@ new class extends Component {
         }
 
         $this->paid_amount = (float) $invoice->paid_amount;
-
         $this->payment_method = Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $invoice->id)->latest('id')->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
-
-        // إظهار الصافي الحالي داخل حقل الصافي عند تحميل فاتورة محفوظة.
         $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
         $this->notes = $invoice->notes ?? '';
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
@@ -1355,7 +1264,6 @@ new class extends Component {
 
     public function updatedCustomerSearch(): void
     {
-        // النتائج تُقرأ من computed property customerResults.
     }
 
     public function getCustomerResultsProperty()
@@ -1468,8 +1376,6 @@ new class extends Component {
         $this->showCustomerPhoneModal = false;
         $this->errorMessage = null;
 
-        // بعد حفظ الرقم، اطلب من المتصفح فتح واتساب مباشرة.
-        // رقم الهاتف فقط يرسل من PHP، أما نص الفاتورة فيؤخذ من payment.blade.php.
         $whatsappPhone = preg_replace('/\D+/', '', (string) $customer->phone);
 
         if (str_starts_with($whatsappPhone, '00')) {
@@ -1500,8 +1406,6 @@ new class extends Component {
             return;
         }
 
-        // الصافي النهائي دائماً يساوي الإجمالي بعد الخصم.
-        // لذلك عند تعديل الخصم يتحدث الصافي مباشرة.
         $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
     }
 
@@ -1512,7 +1416,6 @@ new class extends Component {
             return;
         }
 
-        // عند تغيير نوع الخصم، حافظ على الصافي الحالي المحسوب.
         $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
     }
 
@@ -1528,18 +1431,15 @@ new class extends Component {
             return;
         }
 
-        // الصافي النهائي يشمل التوصيل، لذلك الحد الأعلى هو المنتجات بعد إضافة التوصيل.
         $maxTotal = $this->roundMoney($this->subtotal + max(0, $this->delivery_fee));
         $minTotal = $this->roundMoney(max(0, $this->delivery_fee));
         $target = max($minTotal, min($maxTotal, (float) $value));
 
         $target = $this->roundMoney($target);
 
-        // تعديل الصافي يغيّر الخصم على المنتجات فقط، ولا يخصم من رسوم التوصيل.
         $this->discount_type = 'fixed';
         $this->discount_amount = $this->roundMoney(max(0, min($this->subtotal, $this->subtotal + $this->delivery_fee - $target)));
 
-        // حافظ على القيمة التي أدخلها المستخدم.
         $this->custom_final_total = $target;
     }
 
@@ -1573,10 +1473,6 @@ new class extends Component {
         return $this->roundMoney(array_sum(array_column($this->cart, 'subtotal')));
     }
 
-    /**
-     * إجمالي ما وفره العميل من عروض الكمية داخل الفاتورة.
-     * لا يدخل ضمن الخصم اليدوي؛ هو مؤشر توضيحي فقط.
-     */
     public function getTotalPromotionSavingsProperty(): float
     {
         $total = 0;
@@ -1635,7 +1531,6 @@ new class extends Component {
             );
         }
 
-        // الصافي = المنتجات - الخصم + التوصيل.
         return $this->roundMoney(
             max(0, $this->subtotal - $this->calculated_discount + max(0, $this->delivery_fee))
         );
@@ -1674,10 +1569,6 @@ new class extends Component {
         return false;
     }
 
-    /**
-     * فتح نافذة الدفع قبل حفظ الفاتورة عندما يكون هناك زبون محدد.
-     * المبلغ الذي يحدده المستخدم هو نفسه الذي يسجل في الفاتورة وسند القبض.
-     */
     private function openCustomerPaymentModal(string $mode): void
     {
         $this->pendingCustomerPaymentMode = $mode;
@@ -1802,7 +1693,6 @@ new class extends Component {
         $this->errorMessage = null;
         $this->successMessage = null;
 
-        // نستخدم المعرف المحمّل للتعديل، ولا نعتمد على رقم الفاتورة المعروض فقط.
         $editingInvoiceId = $this->editingInvoiceId ?: ($this->currentInvoiceId ? (int) $this->currentInvoiceId : null);
 
         $shift = $this->activeShift();
@@ -1863,11 +1753,6 @@ new class extends Component {
 
                 $order = null;
 
-                /*
-                 |--------------------------------------------------------------------------
-                 | تحميل الفاتورة الأصلية عند التعديل
-                 |--------------------------------------------------------------------------
-                 */
                 if ($editingInvoiceId) {
                     $order = Order::query()
                         ->where('tenant_id', $tenantId)
@@ -1881,14 +1766,6 @@ new class extends Component {
                         throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
                     }
 
-                    /*
-                     |--------------------------------------------------------------------------
-                     | إعادة المخزون إلى وضع ما قبل الفاتورة القديمة
-                     |--------------------------------------------------------------------------
-                     */
-                    // إعادة مخزون الفاتورة القديمة إلى الفرع الحالي.
-                    // لا نحتاج لتتبع الفرع الذي أُخذت منه الكمية؛ المخزون الموحد
-                    // يُعامل كمخزون واحد، والفرع الحالي هو سجل الخصم/الإرجاع.
                     $oldItems = OrderItem::query()
                         ->where('tenant_id', $tenantId)
                         ->where('order_id', $order->id)
@@ -1930,17 +1807,12 @@ new class extends Component {
                         ->where('tenant_id', $tenantId)
                         ->where('order_id', $order->id)
                         ->delete();
-                    }
+                }
 
                 $validatedItems = [];
                 $subtotal = 0;
                 $totalCost = 0;
 
-                /*
-                 |--------------------------------------------------------------------------
-                 | التحقق من السلة الجديدة
-                 |--------------------------------------------------------------------------
-                 */
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
                     $quantity = (float) ($rawItem['quantity'] ?? 0);
@@ -1950,11 +1822,6 @@ new class extends Component {
                         throw new \RuntimeException('يوجد صنف أو كمية غير صالحة في الفاتورة.');
                     }
 
-                    // الفاتورة لها وضع واحد فقط: بيع أو مرتجع.
-                    // في المرتجع يجب أن تكون كل السطور مرتجعة (كمية سالبة)،
-                    // وفي البيع يجب أن تكون كل السطور مبيعات (كمية موجبة).
-                    // هذا تحقق نهائي على الخادم لمنع خلط النوعين حتى لو تم استدعاء
-                    // دالة Livewire مباشرة أو تغيرت قيمة الحقل من الواجهة.
                     if ($invoiceType === 'return' && $quantity > 0) {
                         throw new \RuntimeException('لا يمكن إضافة صنف بيع إلى فاتورة مرتجع. افتح فاتورة جديدة إذا أردت البيع.');
                     }
@@ -1971,12 +1838,6 @@ new class extends Component {
 
                     $costPrice = max(0, (float) ($rawItem['cost_price'] ?? ($product->cost_price ?? 0)));
 
-                    /*
-                     * subtotal هو المبلغ الفعلي للسطر بعد العرض.
-                     * مهم جداً: لا نعيد حسابه من quantity × price هنا،
-                     * لأن price يبقى السعر الأصلي الظاهر للكاشير.
-                     * مثال: 155 × 4 = 620، لكن العرض قد يجعل الإجمالي 255.
-                     */
                     $lineTotal = array_key_exists('subtotal', $rawItem)
                         ? $this->roundMoney((float) $rawItem['subtotal'])
                         : $this->roundMoney($price * $quantity);
@@ -2037,7 +1898,6 @@ new class extends Component {
                     $customTotal = max($minTotal, min($maxTotal, (float) $this->custom_final_total));
 
                     $total = $this->roundMoney($customTotal);
-                    // رسوم التوصيل ليست خصماً، لذلك نستخرج الخصم من قيمة المنتجات فقط.
                     $discount = $this->roundMoney(
                         max(0, min($subtotal, $subtotal + $deliveryFee - $customTotal))
                     );
@@ -2048,12 +1908,6 @@ new class extends Component {
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
 
-                /*
-                 |--------------------------------------------------------------------------
-                 | إنشاء فاتورة جديدة أو تحديث نفس الفاتورة القديمة
-                 |--------------------------------------------------------------------------
-                 | نستخدم query builder في التحديث لتجاوز أي مشكلة fillable في Model Order.
-                 */
                 if (!$order) {
                     $order = Order::create([
                         'tenant_id' => $tenantId,
@@ -2106,8 +1960,6 @@ new class extends Component {
                     $affected = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->whereKey($order->id)->update($updateData);
 
                     if ($affected === 0) {
-                        // عدم وجود صف متأثر لا يعني فشلًا بالضرورة إذا لم تتغير القيم،
-                        // لذلك نتحقق فعليًا من قاعدة البيانات بعد التحديث.
                         $verify = Order::query()->whereKey($order->id)->first();
 
                         if (!$verify) {
@@ -2128,11 +1980,6 @@ new class extends Component {
                     }
                 }
 
-                /*
-                 |--------------------------------------------------------------------------
-                 | إضافة تفاصيل الفاتورة الجديدة وتطبيق المخزون
-                 |--------------------------------------------------------------------------
-                 */
                 foreach ($validatedItems as $item) {
                     $orderItem = OrderItem::create([
                         'tenant_id' => $tenantId,
@@ -2144,9 +1991,6 @@ new class extends Component {
                         'total_price' => $item['total_price'],
                     ]);
 
-                    // لا نحتاج معرفة من أي فرع أُخذت الكمية.
-                    // عند تفعيل المخزون الموحد نتحقق من مجموع مخزون جميع الفروع،
-                    // ثم نسجل أثر البيع على الفرع الحالي فقط.
                     $branchProduct = BranchProduct::query()
                         ->where('tenant_id', $tenantId)
                         ->where('branch_id', $branchId)
@@ -2169,11 +2013,6 @@ new class extends Component {
                     }
                 }
 
-                /*
-                 |--------------------------------------------------------------------------
-                 | تحديث الدفعة الموجودة بنفس voucher_number
-                 |--------------------------------------------------------------------------
-                 */
                 $voucherNumber = 'PAY-' . $order->invoice_number;
 
                 $existingPayment = Payment::query()
@@ -2221,7 +2060,6 @@ new class extends Component {
 
             $this->activeShiftId = $shift->id;
 
-            // لا نحتفظ بمعرف الفاتورة القديمة بعد نجاح F3؛ نجهز فاتورة جديدة مباشرة.
             $this->clearCartState();
             $this->activeShiftId = $shift->id;
 
@@ -2302,12 +2140,9 @@ new class extends Component {
 
     private function makeInvoiceNumber(string $type, int $tenantId): string
     {
-        // البيع يبدأ بحرف A، والمرتجع يبدأ بحرف R.
-        // مثال: A100001858
         $prefix = $type === 'return' ? 'R' : 'A';
 
         do {
-            // 9 أرقام بعد الحرف.
             $number = $prefix . random_int(100000000, 999999999);
         } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
 
@@ -2319,16 +2154,6 @@ new class extends Component {
         return round($amount, 2);
     }
 
-    /**
-     * حساب إجمالي السطر مع نظام العروض:
-     *
-     * مثال: سعر القطعة 4، والعرض 3 قطع بـ 10:
-     * 1 = 4, 2 = 8, 3 = 10, 4 = 14, 5 = 18,
-     * 6 = 20, 7 = 24, 8 = 28, 9 = 30.
-     *
-     * أي أن كل مجموعة كاملة من offer_quantity تُحسب بسعر offer_price،
-     * والكمية المتبقية تُحسب بسعر القطعة العادي.
-     */
     private function calculateOfferTotal(float $quantity, float $unitPrice, ?float $offerQuantity, ?float $offerPrice): float
     {
         $sign = $quantity < 0 ? -1 : 1;
@@ -2336,18 +2161,14 @@ new class extends Component {
         $offerQuantity = (float) ($offerQuantity ?? 0);
         $offerPrice = $offerPrice !== null ? (float) $offerPrice : null;
 
-        // لا يوجد عرض صالح.
         if ($absoluteQuantity <= 0 || $offerQuantity <= 0 || $offerPrice === null || $offerPrice < 0) {
             return $this->roundMoney($quantity * $unitPrice);
         }
 
-        // لا نطبق عرضاً أغلى من السعر الطبيعي للمجموعة.
-        // هذا يمنع أن يتحول العرض بالخطأ إلى زيادة في السعر.
         if ($offerPrice >= ($offerQuantity * $unitPrice)) {
             return $this->roundMoney($quantity * $unitPrice);
         }
 
-        // العروض الكمية تعمل على المجموعات الكاملة فقط.
         $fullOffers = (int) floor($absoluteQuantity / $offerQuantity);
         $remainder = round($absoluteQuantity - ($fullOffers * $offerQuantity), 6);
 
@@ -2356,11 +2177,6 @@ new class extends Component {
         return $this->roundMoney($total * $sign);
     }
 
-    /**
-     * جلب العرض النشط الحالي للمنتج من product_offers.
-     * العرض الجديد له الأولوية، وإذا لم يوجد نستخدم بيانات العرض القديمة
-     * الموجودة في branch_products للتوافق مع الفواتير/البيانات القديمة.
-     */
     private function getActiveProductOffer(int $productId, int $tenantId, int $branchId): ?ProductOffer
     {
         if ($productId <= 0 || $tenantId <= 0 || $branchId <= 0) {
@@ -2392,10 +2208,8 @@ new class extends Component {
             $quantity = (float) ($item['quantity'] ?? 0);
             $unitPrice = (float) ($item['price'] ?? 0);
 
-            // السعر الطبيعي بدون أي عرض.
             $normalTotal = $this->roundMoney($quantity * $unitPrice);
 
-            // السعر المعدل يدوياً له الأولوية على العرض.
             if (($item['price_manual'] ?? false) === true) {
                 $this->cart[$id]['subtotal'] = $normalTotal;
                 $this->cart[$id]['normal_total'] = $normalTotal;
@@ -2411,9 +2225,6 @@ new class extends Component {
                 ? (float) $item['offer_price']
                 : null;
 
-            // العروض الجديدة تُحفظ في product_offers، لذلك نبحث أولاً
-            // عن العرض النشط الحالي. وإذا لم يوجد نستخدم العرض القديم
-            // الموجود في branch_products للتوافق مع البيانات السابقة.
             if ($tenantId && $branchId && (int) ($item['id'] ?? 0) > 0) {
                 $productId = (int) $item['id'];
                 $activeOffer = $this->getActiveProductOffer($productId, (int) $tenantId, (int) $branchId);
@@ -2455,7 +2266,6 @@ new class extends Component {
             $this->cart[$id]['subtotal'] = $finalTotal;
             $this->cart[$id]['normal_total'] = $normalTotal;
 
-            // يظهر التوفير فقط عندما يكون العرض فعلاً أوفر من السعر الطبيعي.
             $savings = 0;
             if ($quantity > 0 && abs($finalTotal) < abs($normalTotal)) {
                 $savings = abs($normalTotal) - abs($finalTotal);
@@ -2464,7 +2274,6 @@ new class extends Component {
             $this->cart[$id]['promotion_savings'] = $this->roundMoney($savings);
         }
 
-        // إبقاء حقل الصافي متزامناً مع الإجمالي والخصم.
         if (!empty($this->cart)) {
             $this->custom_final_total = $this->roundMoney(
                 max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee)
@@ -2478,20 +2287,6 @@ new class extends Component {
     {
         $order->loadMissing('items.product', 'user', 'branch');
 
-        /*
-        |--------------------------------------------------------------------------
-        | تجهيز بيانات الطباعة مع نفس منطق العروض الموجود في شاشة الـPOS
-        |--------------------------------------------------------------------------
-        | السعر في OrderItem هو سعر القطعة الظاهر للكاشير، بينما total_price
-        | هو المبلغ الفعلي بعد العرض. لذلك نستطيع إظهار:
-        |
-        | السعر الطبيعي = سعر الوحدة × الكمية
-        | المبلغ الفعلي = total_price
-        | التوفير       = السعر الطبيعي - المبلغ الفعلي
-        |
-        | لكن لا نعتبر كل فرق خصماً/عرضاً تلقائياً؛ نتحقق أولاً أن إجمالي السطر
-        | يطابق عرض branch_products الحالي. هذا يمنع اعتبار تخفيض يدوي كعرض.
-        */
         $productIds = $order->items
             ->pluck('product_id')
             ->filter()
@@ -2584,7 +2379,6 @@ new class extends Component {
                             $offerPrice
                         );
 
-                        // العرض يجب أن يطابق المبلغ المحفوظ فعلياً في الفاتورة.
                         if (
                             abs(abs($total) - abs($expectedOfferTotal)) < 0.01 &&
                             $normalTotal > abs($total) + 0.001
@@ -2599,7 +2393,6 @@ new class extends Component {
 
             $totalPromotionSavings += $promotionSavings;
 
-            // سعر الوحدة الفعلي الذي ظهر في الفاتورة.
             $unitPriceDisplay = abs($quantity) > 0
                 ? abs($total / $quantity)
                 : 0;
@@ -2665,11 +2458,6 @@ new class extends Component {
         $this->dispatch('print-receipt');
     }
 
-    /**
-     * نسخ الفاتورة الحالية إلى فاتورة جديدة قابلة للتعديل.
-     * يتم نسخ الأصناف والكميات والأسعار والزبون فقط،
-     * بينما يبدأ الدفع والخصم من الصفر لأنها فاتورة جديدة.
-     */
     public function copyLoadedInvoice(): void
     {
         if (!$this->currentInvoiceId) {
@@ -2726,12 +2514,10 @@ new class extends Component {
             ];
         }
 
-        // فاتورة جديدة: لا نربطها بالفاتورة الأصلية.
         $this->currentInvoiceId = null;
         $this->editingInvoiceId = null;
         $this->invoiceEditMode = false;
 
-        // نسخ الزبون فقط، مع تصفير بيانات الدفع والخصم.
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
         $this->customerSearch = '';
         $this->paid_amount = 0;
@@ -2753,15 +2539,11 @@ new class extends Component {
         $this->dispatch('pos-focus-barcode');
     }
 
-    /**
-     * إنشاء نص واتساب مرتب وواضح مع سعر الوحدة وإجمالي كل صنف.
-     */
     private function buildWhatsappInvoiceMessage(Order $order): string
     {
         $order->loadMissing('items.product');
 
         $lines = [];
-        // بدون رموز Emoji حتى لا تظهر كرمز � في بعض أجهزة/متصفحات واتساب.
         $lines[] = $order->type === 'return' ? 'فاتورة مرتجع' : 'فاتورة بيع';
         $lines[] = 'رقم الفاتورة: ' . $order->invoice_number;
 
@@ -2783,7 +2565,6 @@ new class extends Component {
             $quantity = (float) $item->quantity;
             $quantityText = rtrim(rtrim(number_format(abs($quantity), 3, '.', ''), '0'), '.');
 
-            // نأخذ أول كلمتين فقط من اسم الصنف.
             $productName = trim((string) ($item->product?->name ?? 'منتج غير محدد'));
             $nameWords = preg_split('/\s+/u', $productName, -1, PREG_SPLIT_NO_EMPTY);
             $shortName = implode(' ', array_slice($nameWords ?: ['منتج'], 0, 2));
@@ -2792,7 +2573,6 @@ new class extends Component {
             $lineTotal = number_format(abs((float) $item->total_price), 2);
             $prefix = $quantity < 0 ? 'مرتجع: ' : '• ';
 
-            // الشكل المطلوب: أول كلمتين ... السعر × الكمية = الإجمالي
             $lines[] = $prefix . $shortName
                 . ' ... ' . $unitPrice
                 . ' × ' . $quantityText
@@ -2817,13 +2597,6 @@ new class extends Component {
         return implode("\n", $lines);
     }
 
-    /**
-     * حفظ الفاتورة عند الحاجة قبل تنفيذ إجراء خارجي مثل واتساب أو PDF.
-     *
-     * - فاتورة محفوظة وقديمة ومقفلة: نستخدمها مباشرة بدون إعادة حفظ.
-     * - فاتورة جديدة: نحفظها أولاً.
-     * - فاتورة قديمة تم الضغط على «تعديل» فيها: نحفظ التعديلات أولاً.
-     */
     private function saveInvoiceBeforeAction(): ?Order
     {
         if ($this->currentInvoiceId && !$this->invoiceEditMode) {
@@ -2841,16 +2614,9 @@ new class extends Component {
             return null;
         }
 
-        // نحفظ مباشرة باستخدام نفس منطق الحفظ الأساسي في POS.
-        // هذا يحافظ على المخزون، الدفع، الخصم، العميل، الشيفت، والتعديل.
         return $this->processCheckout();
     }
 
-    /**
-     * إرسال الفاتورة عبر واتساب.
-     * إذا كانت الفاتورة جديدة أو عليها تعديلات غير محفوظة، يتم حفظها أولاً.
-     * إذا كان للعميل رقم محفوظ يفتح محادثته مباشرة، وإلا يفتح واتساب لاختيار العميل.
-     */
     public function sendInvoiceWhatsApp(): void
     {
         $order = $this->saveInvoiceBeforeAction();
@@ -2909,9 +2675,9 @@ new class extends Component {
 
         return now()->locale('ar')->isoFormat('dddd، YYYY-MM-DD');
     }
+
     public function downloadInvoicePdf(): mixed
     {
-        // إذا كانت الفاتورة جديدة أو عليها تعديلات، احفظها أولاً ثم أنشئ PDF.
         $order = $this->saveInvoiceBeforeAction();
 
         if (!$order) {
@@ -2994,7 +2760,6 @@ new class extends Component {
                 </div>
             @endif
 
-            {{-- الفاتورة بعرض الشاشة بالكامل --}}
             @if ($this->invoiceIsLocked())
                 <div
                     class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
@@ -3002,11 +2767,6 @@ new class extends Component {
                 </div>
             @endif
 
-            {{--
-                أزرار الفاتورة القديمة:
-                نضع هنا زر "نسخ" فقط لأن الطباعة وPDF وواتساب والتعديل
-                موجودة أصلًا في شريط الإجراءات السفلي، ولا نكرر الأزرار.
-            --}}
             @if ($currentInvoiceId)
                 <div
                     class="shrink-0 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
@@ -3016,7 +2776,6 @@ new class extends Component {
                         فاتورة #{{ $this->receipt['invoice_no'] ?? $currentInvoiceId }}
                     </div>
 
-                    {{-- نسخ الفاتورة فقط --}}
                     <button
                         type="button"
                         wire:click="copyLoadedInvoice"
@@ -3033,10 +2792,6 @@ new class extends Component {
                         dir="ltr">
                         @include('pages.tenant.pos.partials.cart')
 
-
-                        {{-- =========================================================
-                         المنتجات والتصنيفات داخل شاشة الـPOS
-                    ========================================================== --}}
                         <aside
                             class="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm {{ $this->invoiceIsLocked() ? 'opacity-70' : '' }}"
                             dir="rtl">
@@ -3060,8 +2815,13 @@ new class extends Component {
 
                                     <input data-pos-product-panel-search
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
+                                        x-on:keydown.enter.prevent="
+                                            if ($wire.quickProducts.length === 1) {
+                                                $wire.selectInlineProduct($wire.quickProducts[0].id);
+                                            }
+                                        "
                                         wire:model.live.debounce.250ms="productSearchQuery" @disabled($this->invoiceIsLocked())
-                                        type="text" autocomplete="off" placeholder="ابحث عن الصنف أو الباركود..."
+                                        type="text" autocomplete="off" placeholder="ابحث عن الصنف، رقم ID، أو الباركود..."
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                 </div>
 
@@ -3154,19 +2914,6 @@ new class extends Component {
 
 
                     <script>
-                        /*
-                                                                |--------------------------------------------------------------------------
-                                                                | Keyboard navigation - Product list ONLY
-                                                                |--------------------------------------------------------------------------
-                                                                | ↑ / ↓  = move between products
-                                                                | Enter  = add selected product
-                                                                |
-                                                                | مهم:
-                                                                | - هذا النظام يعمل فقط عندما يكون التركيز داخل قائمة المنتجات.
-                                                                | - لا يتدخل في أسهم الكمية/السعر/الإجمالي داخل السلة.
-                                                                | - لا يغيّر wire:click الموجود على كروت المنتجات.
-                                                                |--------------------------------------------------------------------------
-                                                                */
                         (function() {
                             'use strict';
 
@@ -3174,11 +2921,6 @@ new class extends Component {
                             const PRODUCT_SELECTOR = '[data-pos-product]';
                             const SEARCH_SELECTOR = '[data-pos-product-panel-search]';
 
-                            /*
-                             * بعد اختيار صنف من قائمة البحث:
-                             * - تفريغ خانة البحث يتم من Livewire.
-                             * - يعود التركيز مباشرة إلى خانة الباركود.
-                             */
                             window.addEventListener('pos-focus-barcode', function() {
                                 setTimeout(function() {
                                     const barcode = document.querySelector(
@@ -3285,13 +3027,7 @@ new class extends Component {
                                         0;
                                 }
 
-                                /*
-                                 * بسبب وجود عمودين أو ثلاثة حسب عرض الشاشة:
-                                 * ArrowUp / ArrowDown يتحركان صفاً كاملاً،
-                                 * وليس منتجاً واحداً فقط.
-                                 */
                                 const columns = getColumnCount(panel);
-
                                 let targetIndex;
 
                                 if (direction === 'up') {
@@ -3361,26 +3097,12 @@ new class extends Component {
                             document.addEventListener('keydown', function(event) {
                                 const key = event.key;
 
-                                /*
-                                 * لا نتدخل إطلاقاً في حقول السلة.
-                                 * هذا يحافظ على ArrowUp/Down/Left/Right الموجودة
-                                 * للكمية والسعر والإجمالي.
-                                 */
                                 if (event.target?.closest?.('[data-pos-field]')) {
                                     return;
                                 }
 
-                                /*
-                                 * عندما يكون التركيز داخل لوحة المنتجات،
-                                 * لا نسمح لأي نظام لوحة مفاتيح آخر في الصفحة
-                                 * بالتقاط الأسهم بدلاً من المنتجات.
-                                 */
                                 const panelTarget = event.target?.closest?.(PANEL_SELECTOR);
 
-                                /*
-                                 * إذا كان التركيز على مساحة قائمة الأصناف نفسها،
-                                 * أول ضغطة سهم تدخل إلى أول صنف بدلاً من تمرير الصفحة.
-                                 */
                                 if (panelTarget && !event.target?.closest?.(PRODUCT_SELECTOR)) {
                                     const products = getProducts(panelTarget);
 
@@ -3406,11 +3128,6 @@ new class extends Component {
                                     PRODUCT_SELECTOR
                                 );
 
-                                /*
-                                 * عندما يكون التركيز على مربع بحث المنتجات:
-                                 * ArrowDown يبدأ قائمة المنتجات.
-                                 * باقي الأسهم تبقى طبيعية داخل حقل البحث.
-                                 */
                                 if (
                                     !product &&
                                     event.target?.matches?.(SEARCH_SELECTOR) &&
@@ -3455,14 +3172,6 @@ new class extends Component {
                                     return;
                                 }
 
-                                /*
-                                 * داخل شبكة المنتجات:
-                                 * ← / → يتحركان بين المنتجات في نفس الصف.
-                                 * ↑ / ↓ يتحركان بين الصفوف.
-                                 *
-                                 * نستخدم موقع العنصر الحقيقي في الشبكة حتى يعمل
-                                 * بشكل صحيح مع RTL ومع عمودين أو ثلاثة أعمدة.
-                                 */
                                 if (key === 'ArrowLeft' || key === 'ArrowRight') {
                                     const products = getProducts(panel);
 
@@ -3485,9 +3194,7 @@ new class extends Component {
                                             index,
                                             rect: item.getBoundingClientRect(),
                                         }))
-                                        .filter(({
-                                                rect
-                                            }) =>
+                                        .filter(({ rect }) =>
                                             Math.abs(
                                                 rect.top - currentRect.top
                                             ) <= 2
@@ -3495,23 +3202,15 @@ new class extends Component {
                                         .sort((a, b) => a.rect.left - b.rect.left);
 
                                     const rowPosition = sameRow.findIndex(
-                                        ({
-                                            index
-                                        }) => index === currentIndex
+                                        ({ index }) => index === currentIndex
                                     );
 
                                     if (rowPosition < 0) {
                                         return;
                                     }
 
-                                    /*
-                                     * في RTL:
-                                     * ArrowLeft  -> المنتج الموجود إلى اليسار.
-                                     * ArrowRight -> المنتج الموجود إلى اليمين.
-                                     */
                                     const step = key === 'ArrowLeft' ? -1 : 1;
-                                    const targetPosition =
-                                        rowPosition + step;
+                                    const targetPosition = rowPosition + step;
 
                                     if (
                                         targetPosition >= 0 &&
@@ -3536,10 +3235,6 @@ new class extends Component {
                                 }
                             }, true);
 
-                            /*
-                             * بعد إعادة رسم Livewire للمنتجات، نحافظ على آخر
-                             * فهرس محدد قدر الإمكان، بدون لمس تركيز السلة.
-                             */
                             document.addEventListener('livewire:navigated', function() {
                                 const panel = getPanel();
 
@@ -3573,1040 +3268,13 @@ new class extends Component {
                         })();
                     </script>
 
-                    <script>
-                        (function() {
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Prevent duplicate initialization
-                            |--------------------------------------------------------------------------
-                            */
-                            if (window.__posCartKeyboardNavigation) {
-                                return;
-                            }
-
-                            window.__posCartKeyboardNavigation = true;
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Selectors
-                            |--------------------------------------------------------------------------
-                            */
-                            const FIELD_SELECTOR = '[data-pos-field]';
-                            const BARCODE_SELECTOR = '[data-pos-barcode-input]';
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Cart rows
-                            |--------------------------------------------------------------------------
-                            */
-                            function rows() {
-
-                                const grouped = new Map();
-
-
-                                document.querySelectorAll(FIELD_SELECTOR).forEach(function(field) {
-
-                                    const row = Number(field.dataset.rowIndex);
-
-                                    if (!Number.isFinite(row)) {
-                                        return;
-                                    }
-
-
-                                    if (!grouped.has(row)) {
-                                        grouped.set(row, {});
-                                    }
-
-
-                                    grouped.get(row)[field.dataset.posField] = field;
-
-                                });
-
-
-                                return Array
-                                    .from(grouped.entries())
-                                    .sort(function(a, b) {
-                                        return a[0] - b[0];
-                                    })
-                                    .map(function(entry) {
-
-                                        return {
-                                            index: entry[0],
-                                            quantity: entry[1].quantity || null,
-                                            price: entry[1].price || null,
-                                            subtotal: entry[1].subtotal || null
-                                        };
-
-                                    });
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Focus input
-                            |--------------------------------------------------------------------------
-                            */
-                            function focusInput(input) {
-
-                                if (!input || !document.contains(input)) {
-                                    return;
-                                }
-
-
-                                input.focus({
-                                    preventScroll: true
-                                });
-
-
-                                if (typeof input.select === 'function') {
-                                    input.select();
-                                }
-
-
-                                input.scrollIntoView({
-                                    behavior: 'auto',
-                                    block: 'nearest',
-                                    inline: 'nearest'
-                                });
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Focus barcode
-                            |--------------------------------------------------------------------------
-                            */
-                            function focusBarcode(selectText = false) {
-
-                                const input =
-                                    document.querySelector(BARCODE_SELECTOR);
-
-
-                                if (!input) {
-                                    return;
-                                }
-
-
-                                input.focus({
-                                    preventScroll: true
-                                });
-
-
-                                if (
-                                    selectText &&
-                                    typeof input.select === 'function'
-                                ) {
-                                    input.select();
-                                }
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Get Livewire component
-                            |--------------------------------------------------------------------------
-                            */
-                            function getLivewireComponent() {
-
-                                const barcodeInput =
-                                    document.querySelector(BARCODE_SELECTOR);
-
-
-                                if (!barcodeInput) {
-                                    return null;
-                                }
-
-
-                                const root =
-                                    barcodeInput.closest('[wire\\:id]');
-
-
-                                if (!root) {
-                                    return null;
-                                }
-
-
-                                const componentId =
-                                    root.getAttribute('wire:id');
-
-
-                                if (!componentId) {
-                                    return null;
-                                }
-
-
-                                if (
-                                    window.Livewire &&
-                                    typeof window.Livewire.find === 'function'
-                                ) {
-
-                                    return window.Livewire.find(componentId);
-
-                                }
-
-
-                                return null;
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Keyboard navigation
-                            |
-                            | Quantity <-> Price
-                            |
-                            | ↑ ↓ = rows
-                            | ← → = quantity / price
-                            | Enter = next row
-                            | Home = first
-                            | End = last
-                            |--------------------------------------------------------------------------
-                            */
-                            document.addEventListener('keydown', function(event) {
-
-                                const current =
-                                    event.target?.closest?.(FIELD_SELECTOR);
-
-                                const key = event.key;
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | ArrowUp outside the cart
-                                |--------------------------------------------------------------------------
-                                */
-                                if (!current && key === 'ArrowUp') {
-
-                                    const allRows = rows();
-
-
-                                    if (!allRows.length) {
-                                        return;
-                                    }
-
-
-                                    event.preventDefault();
-
-
-                                    focusInput(
-                                        allRows[allRows.length - 1].quantity ||
-                                        allRows[allRows.length - 1].price
-                                    );
-
-
-                                    return;
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Ignore unrelated keys
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    !current ||
-                                    ![
-                                        'ArrowUp',
-                                        'ArrowDown',
-                                        'ArrowLeft',
-                                        'ArrowRight',
-                                        'Enter',
-                                        'Home',
-                                        'End'
-                                    ].includes(key)
-                                ) {
-                                    return;
-                                }
-
-
-                                const allRows = rows();
-
-
-                                if (!allRows.length) {
-                                    return;
-                                }
-
-
-                                const rowIndex =
-                                    Number(current.dataset.rowIndex);
-
-                                const type =
-                                    current.dataset.posField;
-
-
-                                const pos =
-                                    allRows.findIndex(function(row) {
-                                        return row.index === rowIndex;
-                                    });
-
-
-                                if (pos < 0) {
-                                    return;
-                                }
-
-
-                                let target = null;
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Left / Right
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    key === 'ArrowLeft' ||
-                                    key === 'ArrowRight'
-                                ) {
-
-                                    /*
-                                     * الترتيب ثابت وواضح:
-                                     *
-                                     * → الكمية  →  السعر  →  الإجمالي  →  كمية الصنف التالي
-                                     * ← الإجمالي →  السعر  →  الكمية  →  إجمالي الصنف السابق
-                                     *
-                                     * لا نستخدم هنا دوراناً عاماً بين الحقول حتى لا يقفز
-                                     * التركيز من الكمية إلى الإجمالي بالخطأ.
-                                     */
-
-                                    if (key === 'ArrowLeft') {
-
-                                        if (type === 'quantity') {
-                                            target = allRows[pos].price;
-                                        } else if (type === 'price') {
-                                            target = allRows[pos].subtotal;
-                                        } else if (type === 'subtotal') {
-                                            const nextPos =
-                                                pos >= allRows.length - 1 ?
-                                                0 :
-                                                pos + 1;
-
-                                            target = allRows[nextPos].quantity;
-                                        }
-
-                                    } else {
-
-                                        if (type === 'subtotal') {
-                                            target = allRows[pos].price;
-                                        } else if (type === 'price') {
-                                            target = allRows[pos].quantity;
-                                        } else if (type === 'quantity') {
-                                            const previousPos =
-                                                pos <= 0 ?
-                                                allRows.length - 1 :
-                                                pos - 1;
-
-                                            target = allRows[previousPos].subtotal;
-                                        }
-
-                                    }
-
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Up / Down / Enter / Home / End
-                                |--------------------------------------------------------------------------
-                                */
-                                else {
-
-                                    let targetPos = pos;
-
-
-                                    if (key === 'ArrowUp') {
-
-                                        targetPos =
-                                            pos <= 0 ?
-                                            allRows.length - 1 :
-                                            pos - 1;
-
-                                    }
-
-
-                                    if (key === 'Enter') {
-
-                                        // Enter من أي حقل داخل السلة يذهب مباشرة إلى الباركود.
-                                        // الأسهم تبقى للتنقل بحرية بين الأصناف والحقول.
-                                        target = document.querySelector(BARCODE_SELECTOR);
-
-                                        if (target) {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            focusInput(target);
-                                            return;
-                                        }
-
-                                        return;
-                                    }
-
-
-                                    if (key === 'ArrowDown') {
-
-                                        targetPos =
-                                            pos >= allRows.length - 1 ?
-                                            0 :
-                                            pos + 1;
-
-                                    }
-
-
-                                    if (key === 'Home') {
-                                        targetPos = 0;
-                                    }
-
-
-                                    if (key === 'End') {
-                                        targetPos = allRows.length - 1;
-                                    }
-
-
-                                    target =
-                                        allRows[targetPos][type];
-
-                                }
-
-
-                                if (target) {
-
-                                    event.preventDefault();
-                                    event.stopPropagation();
-
-                                    // لا نرسل الحفظ يدوياً هنا.
-                                    // كل حقل يستخدم wire:change، وإرسال طلب ثانٍ من keydown
-                                    // كان يسبب تعارض طلبات Livewire عند تعديل الحقل أكثر من مرة.
-                                    focusInput(target);
-
-                                }
-
-                            }, true);
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Barcode Scanner
-                            |
-                            | مهم جداً:
-                            |
-                            | إذا كان scanner يكتب داخل quantity أو price:
-                            |
-                            | 1. نحفظ القيمة الأصلية.
-                            | 2. نسمح مؤقتاً للـ scanner بإرسال الأحرف.
-                            | 3. عند التأكد أنه Scanner نمنع استمرارها.
-                            | 4. عند Enter نعيد الحقل للقيمة الأصلية.
-                            | 5. نرسل الباركود إلى scanBarcode().
-                            |
-                            |--------------------------------------------------------------------------
-                            */
-
-                            let scannerBuffer = '';
-                            let scannerTimer = null;
-                            let scannerStartedAt = 0;
-
-                            let scannerTarget = null;
-                            let scannerOriginalValue = '';
-
-                            let scannerOriginalSelectionStart = null;
-                            let scannerOriginalSelectionEnd = null;
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Scanner configuration
-                            |--------------------------------------------------------------------------
-                            */
-                            const SCANNER_MAX_GAP = 70;
-                            const SCANNER_MIN_LENGTH = 3;
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Is cart editable field?
-                            |--------------------------------------------------------------------------
-                            */
-                            function isCartEditableField(target) {
-
-                                if (!target) {
-                                    return false;
-                                }
-
-
-                                return !!target.closest?.(FIELD_SELECTOR);
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Reset scanner
-                            |--------------------------------------------------------------------------
-                            */
-                            function resetScannerBuffer() {
-
-                                scannerBuffer = '';
-                                scannerStartedAt = 0;
-
-                                scannerTarget = null;
-                                scannerOriginalValue = '';
-
-                                scannerOriginalSelectionStart = null;
-                                scannerOriginalSelectionEnd = null;
-
-
-                                if (scannerTimer) {
-
-                                    clearTimeout(scannerTimer);
-
-                                    scannerTimer = null;
-
-                                }
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Save target state
-                            |--------------------------------------------------------------------------
-                            */
-                            function saveScannerTarget(target) {
-
-                                scannerTarget =
-                                    target?.closest?.(
-                                        'input, textarea'
-                                    ) || null;
-
-
-                                if (!scannerTarget) {
-                                    return;
-                                }
-
-
-                                scannerOriginalValue =
-                                    scannerTarget.value ?? '';
-
-
-                                try {
-
-                                    scannerOriginalSelectionStart =
-                                        scannerTarget.selectionStart;
-
-                                    scannerOriginalSelectionEnd =
-                                        scannerTarget.selectionEnd;
-
-                                } catch (e) {
-
-                                    scannerOriginalSelectionStart = null;
-                                    scannerOriginalSelectionEnd = null;
-
-                                }
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Restore original value
-                            |--------------------------------------------------------------------------
-                            */
-                            function restoreScannerTarget() {
-
-                                if (
-                                    !scannerTarget ||
-                                    !document.contains(scannerTarget)
-                                ) {
-                                    return;
-                                }
-
-
-                                /*
-                                | Restore DOM value.
-                                */
-                                scannerTarget.value =
-                                    scannerOriginalValue;
-
-
-                                /*
-                                | Restore selection.
-                                */
-                                try {
-
-                                    if (
-                                        scannerOriginalSelectionStart !== null &&
-                                        scannerOriginalSelectionEnd !== null &&
-                                        typeof scannerTarget.setSelectionRange === 'function'
-                                    ) {
-
-                                        scannerTarget.setSelectionRange(
-                                            scannerOriginalSelectionStart,
-                                            scannerOriginalSelectionEnd
-                                        );
-
-                                    }
-
-                                } catch (e) {
-                                    // Ignore selection errors.
-                                }
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Submit scanned barcode
-                            |--------------------------------------------------------------------------
-                            */
-                            function submitScannedBarcode(value) {
-
-                                value =
-                                    String(value || '').trim();
-
-
-                                if (
-                                    value.length <
-                                    SCANNER_MIN_LENGTH
-                                ) {
-                                    return false;
-                                }
-
-
-                                const component =
-                                    getLivewireComponent();
-
-
-                                if (!component) {
-                                    return false;
-                                }
-
-
-                                try {
-
-                                    /*
-                                    | Livewire v3
-                                    */
-                                    if (
-                                        component.$wire &&
-                                        typeof component.$wire.scanBarcode === 'function'
-                                    ) {
-
-                                        component.$wire.scanBarcode(value);
-
-                                        return true;
-                                    }
-
-
-                                    /*
-                                    | Fallback
-                                    */
-                                    if (
-                                        typeof component.call === 'function'
-                                    ) {
-
-                                        component.call(
-                                            'scanBarcode',
-                                            value
-                                        );
-
-                                        return true;
-                                    }
-
-                                } catch (error) {
-
-                                    console.error(
-                                        'POS barcode scanner error:',
-                                        error
-                                    );
-
-                                }
-
-
-                                return false;
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Global scanner listener
-                            |--------------------------------------------------------------------------
-                            */
-                            document.addEventListener('keydown', function(event) {
-
-                                const key = event.key;
-                                const target = event.target;
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | ENTER
-                                |--------------------------------------------------------------------------
-                                |
-                                | إذا كان لدينا barcode buffer:
-                                | لا نسمح لـ wire:change أن يعمل.
-                                |--------------------------------------------------------------------------
-                                */
-                                if (key === 'Enter') {
-
-                                    if (
-                                        scannerBuffer.length >=
-                                        SCANNER_MIN_LENGTH
-                                    ) {
-
-                                        event.preventDefault();
-                                        event.stopPropagation();
-
-
-                                        const value =
-                                            scannerBuffer;
-
-
-                                        /*
-                                        | مهم جداً:
-                                        | إعادة الكمية/السعر قبل تنفيذ المسح.
-                                        */
-                                        restoreScannerTarget();
-
-
-                                        /*
-                                        | إرسال الباركود.
-                                        */
-                                        const submitted =
-                                            submitScannedBarcode(value);
-
-
-                                        /*
-                                        | تنظيف.
-                                        */
-                                        resetScannerBuffer();
-
-
-                                        if (submitted) {
-
-                                            setTimeout(function() {
-
-                                                focusBarcode(false);
-
-                                            }, 80);
-
-                                        }
-
-
-                                        return;
-                                    }
-
-
-                                    resetScannerBuffer();
-
-                                    return;
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Ignore navigation
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    key === 'ArrowUp' ||
-                                    key === 'ArrowDown' ||
-                                    key === 'ArrowLeft' ||
-                                    key === 'ArrowRight' ||
-                                    key === 'Home' ||
-                                    key === 'End' ||
-                                    key === 'Tab' ||
-                                    key === 'Escape'
-                                ) {
-
-                                    return;
-
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Ignore shortcuts
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    event.ctrlKey ||
-                                    event.altKey ||
-                                    event.metaKey
-                                ) {
-
-                                    return;
-
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Cart editable fields
-                                |--------------------------------------------------------------------------
-                                |
-                                | مهم جداً: لا نتعامل مع الكمية / السعر / الإجمالي كأنها باركود.
-                                | المستخدم يجب أن يستطيع كتابة أكثر من رقم وتعديل الحقل مراراً.
-                                |
-                                | سابقاً كان scannerBuffer يلتقط الرقم الثاني بسرعة، ثم يمنع
-                                | الإدخال ويعيد القيمة القديمة، لذلك كان يبدو أن الحقل توقف
-                                | عن العمل بعد تعديل الإجمالي.
-                                |--------------------------------------------------------------------------
-                                */
-                                if (isCartEditableField(target)) {
-                                    return;
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Only printable characters
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    typeof key !== 'string' ||
-                                    key.length !== 1
-                                ) {
-
-                                    return;
-
-                                }
-
-
-                                const now =
-                                    Date.now();
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | New sequence
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    scannerStartedAt === 0 ||
-                                    now - scannerStartedAt >
-                                    SCANNER_MAX_GAP
-                                ) {
-
-                                    scannerBuffer = '';
-
-                                    scannerStartedAt = now;
-
-                                    saveScannerTarget(target);
-
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Add character
-                                |--------------------------------------------------------------------------
-                                */
-                                scannerBuffer += key;
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | إذا كان الحقل كمية أو سعر:
-                                |
-                                | بعد وصول عدة أحرف بسرعة نعرف أنه Scanner.
-                                |
-                                | نمنع بقية الأحرف من الدخول للحقل.
-                                |--------------------------------------------------------------------------
-                                */
-                                if (
-                                    isCartEditableField(target) &&
-                                    scannerBuffer.length >= 2 &&
-                                    now - scannerStartedAt <= SCANNER_MAX_GAP
-                                ) {
-
-                                    event.preventDefault();
-                                    event.stopPropagation();
-
-
-                                    /*
-                                    | أعد الحقل إلى القيمة الأصلية.
-                                    */
-                                    restoreScannerTarget();
-
-                                }
-
-
-                                /*
-                                |--------------------------------------------------------------------------
-                                | Keep scanner alive
-                                |--------------------------------------------------------------------------
-                                */
-                                if (scannerTimer) {
-
-                                    clearTimeout(scannerTimer);
-
-                                }
-
-
-                                scannerTimer =
-                                    setTimeout(function() {
-
-                                        /*
-                                        | إذا انتهى الوقت بدون Enter،
-                                        | نعتبرها كتابة عادية.
-                                        */
-                                        resetScannerBuffer();
-
-                                    }, SCANNER_MAX_GAP + 30);
-
-                            }, true);
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Initial barcode focus
-                            |--------------------------------------------------------------------------
-                            */
-                            function initialBarcodeFocus() {
-
-                                setTimeout(function() {
-
-                                    const active =
-                                        document.activeElement;
-
-
-                                    /*
-                                    | لا نأخذ التركيز إذا المستخدم بالفعل
-                                    | داخل حقل آخر.
-                                    */
-                                    if (
-                                        active &&
-                                        (
-                                            active.matches?.(
-                                                FIELD_SELECTOR
-                                            ) ||
-                                            active.matches?.(
-                                                'input:not([data-pos-barcode-input])'
-                                            ) ||
-                                            active.matches?.('textarea')
-                                        )
-                                    ) {
-
-                                        return;
-
-                                    }
-
-
-                                    focusBarcode(false);
-
-                                }, 100);
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Initial load
-                            |--------------------------------------------------------------------------
-                            */
-                            if (
-                                document.readyState ===
-                                'loading'
-                            ) {
-
-                                document.addEventListener(
-                                    'DOMContentLoaded',
-                                    initialBarcodeFocus, {
-                                        once: true
-                                    }
-                                );
-
-                            } else {
-
-                                initialBarcodeFocus();
-
-                            }
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | F9 = Barcode focus
-                            |--------------------------------------------------------------------------
-                            */
-                            document.addEventListener('keydown', function(event) {
-
-                                if (event.key !== 'F9') {
-                                    return;
-                                }
-
-
-                                event.preventDefault();
-
-                                focusBarcode(true);
-
-                            });
-
-
-                            /*
-                            |--------------------------------------------------------------------------
-                            | Livewire navigated
-                            |
-                            | لا نخطف التركيز من quantity / price.
-                            |--------------------------------------------------------------------------
-                            */
-                            document.addEventListener(
-                                'livewire:navigated',
-                                function() {
-
-                                    setTimeout(function() {
-
-                                        const active =
-                                            document.activeElement;
-
-
-                                        if (
-                                            active &&
-                                            (
-                                                active.matches?.(
-                                                    FIELD_SELECTOR
-                                                ) ||
-                                                active.matches?.(
-                                                    'input:not([data-pos-barcode-input])'
-                                                ) ||
-                                                active.matches?.(
-                                                    'textarea'
-                                                )
-                                            )
-                                        ) {
-
-                                            return;
-
-                                        }
-
-
-                                        focusBarcode(false);
-
-                                    }, 100);
-
-                                }
-                            );
-
-
-                        })();
-                    </script>
-
                 </section>
             </div>
 
-            {{-- ملخص الدفع أسفل الفاتورة بعرض الشاشة --}}
             <div class="shrink-0">
                 @include('pages.tenant.pos.partials.payment')
             </div>
 
-            {{-- =========================================================
-                 نافذة الدفع داخل sales.blade.php
-                 تظهر عند حفظ فاتورة مرتبطة بزبون، مع الحفاظ على
-                 إمكانية تعديل الإجمالي/الصافي قبل الحفظ.
-            ========================================================== --}}
             @if ($showCustomerPaymentModal)
                 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4"
                     wire:key="sales-customer-payment-modal">
@@ -4761,7 +3429,6 @@ new class extends Component {
 </style>
 
 <script>
-    /* POS Sounds - بدون ملفات صوتية خارجية */
     (() => {
         let audioContext = null;
 
@@ -4797,7 +3464,6 @@ new class extends Component {
                     beep(1175, 0.10, 0.09, 'sine', 0.09);
                     break;
                 case 'add':
-                    // صوت قصير وواضح عند دخول الصنف إلى الفاتورة.
                     beep(1046, 0.060, 0.16, 'sine');
                     beep(1318, 0.085, 0.14, 'sine', 0.065);
                     break;
@@ -4854,7 +3520,6 @@ new class extends Component {
         document.addEventListener('pointerdown', unlockAudio, { once: true });
         document.addEventListener('keydown', unlockAudio, { once: true });
 
-        // في حال حدث خطأ غير متوقع من Livewire/AJAX يصدر صوت الخطأ أيضاً.
         if (window.Livewire && !window.__posRequestErrorSoundRegistered) {
             window.__posRequestErrorSoundRegistered = true;
             Livewire.hook('request', ({ fail }) => {
@@ -4898,7 +3563,6 @@ new class extends Component {
                     return;
                 }
 
-                // fallback إذا منع المتصفح فتح نافذة جديدة.
                 window.location.href = target;
             });
         }

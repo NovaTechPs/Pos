@@ -26,44 +26,6 @@
 
         </div>
 
-
-        {{-- =====================================================
-            Inline Search
-        ====================================================== --}}
-        {{-- <div class="relative mt-2">
-
-            <input wire:model.live.debounce.250ms="inlineSearchQuery" type="text" autocomplete="off"
-                placeholder="بحث مباشر باسم المنتج أو الباركود..."
-                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold focus:border-indigo-500 focus:outline-none">
-
-            @if ($inlineSearchResults)
-
-                <div
-                    class="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-
-                    @foreach ($inlineSearchResults as $result)
-                        <button type="button" wire:click="selectInlineProduct({{ $result['id'] }})"
-                            class="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-right hover:bg-indigo-50">
-
-                            <span class="font-bold text-slate-800">
-                                {{ $result['name'] }}
-                            </span>
-
-                            <span class="text-[10px] font-mono text-slate-500">
-                                {{ number_format($result['price'], 2) }}
-                                · مخزون
-                                {{ number_format($result['stock'], 0) }}
-                            </span>
-
-                        </button>
-                    @endforeach
-
-                </div>
-
-            @endif
-
-        </div> --}}
-
     </div>
 
 
@@ -105,7 +67,6 @@
 
                 <tr>
 
-
                     {{-- عداد الصنف --}}
                     <th class="w-12 px-2 py-2 text-center">
                         #
@@ -114,7 +75,6 @@
                     <th class="w-16 px-2 py-2 text-center">
                         ID
                     </th>
-
 
                     {{-- الصنف --}}
                     <th class="px-3 py-2">
@@ -148,109 +108,69 @@
 
                 @forelse ($cart as $lineKey => $item)
                     @php
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | Below Cost
-                        |--------------------------------------------------------------------------
-                        | التكلفة لا تظهر للمستخدم، ولكن نترك الفحص كما هو
-                        | حتى لا نكسر منطق منع/تنبيه البيع تحت التكلفة.
-                        */
                         $belowCost =
                             $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
 
-
                     <tr wire:key="pos-cart-{{ $lineKey }}"
                         class="{{ $loop->odd ? 'bg-white' : 'bg-slate-50' }} hover:bg-indigo-50">
-                        {{-- =================================================
-                            Row Number
-                        ================================================== --}}
+                        {{-- Row Number --}}
                         <td class="px-2 py-2 text-center">
-
                             <span
                                 class="inline-flex min-w-[28px] items-center justify-center
                                     rounded-lg border border-indigo-100 bg-indigo-50
                                     px-2 py-1.5 font-mono text-[11px] font-black text-indigo-700">
                                 {{ $loop->iteration }}
                             </span>
-
                         </td>
 
-                        {{-- =================================================
-                            Product ID
-                        ================================================== --}}
+                        {{-- Product ID --}}
                         <td class="px-2 py-2 text-center">
-
                             <span
                                 class="inline-flex min-w-[42px] items-center justify-center
                                     rounded-lg border border-slate-200 bg-slate-50
                                     px-2 py-1.5 font-mono text-[11px] font-black text-slate-600">
                                 {{ $item['id'] }}
                             </span>
-
                         </td>
 
-
-
-
-
-                        {{-- =================================================
-                            Product
-                        ================================================== --}}
+                        {{-- Product --}}
                         <td class="px-3 py-2">
-
                             <div class="font-black text-slate-900">
                                 {{ $item['name'] }}
                             </div>
 
-
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
-
                                 @if ($item['quantity'] < 0)
                                     <span class="text-rose-600">
                                         مرتجع
                                     </span>
                                 @endif
 
-
                                 @if ($belowCost)
                                     <span class="text-amber-700">
                                         أقل من التكلفة
                                     </span>
                                 @endif
-
                             </div>
-
                         </td>
 
-
-                        {{-- =================================================
-                            Quantity
-                        ================================================== --}}
+                        {{-- Quantity --}}
                         <td class="px-2 py-2 text-center">
-
                             <div
                                 class="inline-flex items-center overflow-hidden
                                     rounded-lg border border-slate-200 bg-white">
-
                                 <input type="number" step="0.01" min="{{ $isReturnMode ? '-999999.99' : '0.01' }}"
                                     value="{{ $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
                                     wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)" @disabled($invoiceLocked)
                                     class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black outline-none focus:ring-0"
                                     inputmode="decimal" autocomplete="off">
-
                             </div>
-
                         </td>
 
-
-                        {{-- =================================================
-                            Selling Price
-                        ================================================== --}}
+                        {{-- Selling Price --}}
                         <td class="px-2 py-2 text-center">
-
                             <input type="number" step="0.01" min="0" value="{{ $item['price'] }}"
                                 data-pos-field="price" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
                                 data-row-index="{{ $loop->index }}"
@@ -267,15 +187,10 @@
                                     focus:border-indigo-500 focus:outline-none
                                 "
                                 inputmode="decimal" autocomplete="off">
-
                         </td>
 
-
-                        {{-- =================================================
-                            Subtotal + Professional Promotion Display
-                        ================================================== --}}
+                        {{-- Subtotal --}}
                         <td class="px-2 py-2 text-center">
-
                             @php
                                 $lineSavings = (float) ($item['promotion_savings'] ?? 0);
                                 $normalTotal = (float) ($item['normal_total'] ?? ((float) ($item['quantity'] ?? 0) * (float) ($item['price'] ?? 0)));
@@ -285,7 +200,6 @@
                             @endphp
 
                             <div class="flex min-w-[118px] flex-col items-center leading-tight">
-
                                 <div class="relative">
                                     <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
                                         data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
@@ -321,17 +235,11 @@
                                         @endif
                                     </div>
                                 @endif
-
                             </div>
-
                         </td>
 
-
-                        {{-- =================================================
-                            Remove
-                        ================================================== --}}
+                        {{-- Remove --}}
                         <td class="px-2 py-2 text-center">
-
                             <button type="button"
                                 wire:click="removeFromCart('{{ $lineKey }}')"
                                 wire:confirm="هل أنت متأكد من حذف هذا الصنف من الفاتورة؟"
@@ -339,32 +247,18 @@
                                 class="rounded-lg px-2 py-1 text-lg font-black text-rose-500 hover:bg-rose-50">
                                 ×
                             </button>
-
                         </td>
-
                     </tr>
 
-
                 @empty
-
                     <tr>
-
                         <td colspan="7" class="py-24 text-center">
-
-                            <div class="text-4xl opacity-30">
-                                🧾
-                            </div>
-
-                            <div class="mt-2 text-sm font-black text-slate-400">
-                                الفاتورة فارغة
-                            </div>
-
+                            <div class="text-4xl opacity-30">🧾</div>
+                            <div class="mt-2 text-sm font-black text-slate-400">الفاتورة فارغة</div>
                             <div class="mt-1 text-[11px] font-bold text-slate-300">
                                 امسح الباركود أو افتح قائمة الأصناف F10
                             </div>
-
                         </td>
-
                     </tr>
                 @endforelse
 
@@ -375,9 +269,7 @@
     </div>
 
 
-    {{-- =========================================================
-        إجمالي التوفير من العروض
-    ========================================================== --}}
+    {{-- إجمالي التوفير من العروض --}}
     @if (($this->totalPromotionSavings ?? 0) > 0.000001)
         <div class="shrink-0 border-t border-emerald-100 bg-gradient-to-l from-emerald-50 via-white to-emerald-50 px-3 py-2" dir="rtl">
             <div class="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 shadow-sm">
@@ -397,9 +289,6 @@
     @endif
 
 
-    {{-- =========================================================
-        Number Input Style
-    ========================================================== --}}
     <style>
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button {
@@ -414,1234 +303,128 @@
     </style>
 
 
-    {{-- =========================================================
-        Keyboard + Barcode Scanner
-    ========================================================== --}}
-    <script>
-        (function() {
-
-            /*
-            |--------------------------------------------------------------------------
-            | Prevent duplicate initialization
-            |--------------------------------------------------------------------------
-            */
-            if (window.__posCartKeyboardNavigation) {
-                return;
-            }
-
-            window.__posCartKeyboardNavigation = true;
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Selectors
-            |--------------------------------------------------------------------------
-            */
-            const FIELD_SELECTOR = '[data-pos-field]';
-            const BARCODE_SELECTOR = '[data-pos-barcode-input]';
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Return to barcode after editing cart fields
-            |--------------------------------------------------------------------------
-            | عند تعديل الكمية أو السعر أو الإجمالي، wire:change يرسل طلب Livewire.
-            | ننتظر انتهاء تحديث Livewire ثم نعيد التركيز إلى الباركود، حتى لا
-            | يقوم Livewire بإرجاع التركيز إلى الحقل القديم.
-            |--------------------------------------------------------------------------
-            */
-            let focusBarcodeAfterCartChange = false;
-            let barcodeFocusTimer = null;
-
-            function focusBarcodeNow() {
-                const input = document.querySelector(BARCODE_SELECTOR);
-                if (!input) return;
-
-                input.focus({ preventScroll: true });
-                if (typeof input.select === 'function') {
-                    input.select();
-                }
-            }
-
-            function restoreBarcodeAfterLivewire() {
-                if (!focusBarcodeAfterCartChange) return;
-
-                focusBarcodeAfterCartChange = false;
-
-                if (barcodeFocusTimer) {
-                    clearTimeout(barcodeFocusTimer);
-                }
-
-                barcodeFocusTimer = setTimeout(function() {
-                    barcodeFocusTimer = null;
-                    focusBarcodeNow();
-
-                    setTimeout(function() {
-                        focusBarcodeNow();
-                    }, 120);
-                }, 40);
-            }
-
-            // طلب صريح من Livewire بعد نجاح تعديل الكمية/السعر/الإجمالي.
-            window.addEventListener('pos-focus-barcode', function() {
-                focusBarcodeAfterCartChange = true;
-
-                // إذا كان الحدث وصل بعد الـ morph بالفعل.
-                restoreBarcodeAfterLivewire();
-            });
-
-            document.addEventListener('change', function(event) {
-                const field = event.target?.closest?.(FIELD_SELECTOR);
-                if (!field) return;
-                focusBarcodeAfterCartChange = true;
-            }, true);
-
-            function registerLivewireBarcodeFocus() {
-                if (!window.Livewire || typeof window.Livewire.hook !== 'function') {
-                    return;
-                }
-
-                window.Livewire.hook('morph.updated', function() {
-                    restoreBarcodeAfterLivewire();
-                });
-
-                window.Livewire.hook('commit', ({ succeed }) => {
-                    succeed(() => {
-                        restoreBarcodeAfterLivewire();
-                    });
-                });
-            }
-
-            if (window.Livewire) {
-                registerLivewireBarcodeFocus();
-            } else {
-                document.addEventListener('livewire:init', registerLivewireBarcodeFocus, { once: true });
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Scroll to last cart row after adding a product
-            |--------------------------------------------------------------------------
-            */
-            window.addEventListener('pos-scroll-cart-bottom', function () {
-                setTimeout(function () {
-                    const container = document.querySelector('[data-pos-cart-scroll]');
-                    if (container) {
-                        container.scrollTop = container.scrollHeight;
-                    }
-                }, 50);
-            });
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Cart rows
-            |--------------------------------------------------------------------------
-            */
-            function rows() {
-
-                const grouped = new Map();
-
-
-                document.querySelectorAll(FIELD_SELECTOR).forEach(function(field) {
-
-                    const row = Number(field.dataset.rowIndex);
-
-                    if (!Number.isFinite(row)) {
-                        return;
-                    }
-
-
-                    if (!grouped.has(row)) {
-                        grouped.set(row, {});
-                    }
-
-
-                    grouped.get(row)[field.dataset.posField] = field;
-
-                });
-
-
-                return Array
-                    .from(grouped.entries())
-                    .sort(function(a, b) {
-                        return a[0] - b[0];
-                    })
-                    .map(function(entry) {
-
-                        return {
-                            index: entry[0],
-                            quantity: entry[1].quantity || null,
-                            price: entry[1].price || null,
-                            subtotal: entry[1].subtotal || null
-                        };
-
-                    });
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Focus input
-            |--------------------------------------------------------------------------
-            */
-            function focusInput(input) {
-
-                if (!input || !document.contains(input)) {
-                    return;
-                }
-
-
-                input.focus({
-                    preventScroll: true
-                });
-
-
-                if (typeof input.select === 'function') {
-                    input.select();
-                }
-
-
-                input.scrollIntoView({
-                    behavior: 'auto',
-                    block: 'nearest',
-                    inline: 'nearest'
-                });
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Focus barcode
-            |--------------------------------------------------------------------------
-            */
-            function focusBarcode(selectText = false) {
-
-                const input =
-                    document.querySelector(BARCODE_SELECTOR);
-
-
-                if (!input) {
-                    return;
-                }
-
-
-                input.focus({
-                    preventScroll: true
-                });
-
-
-                if (
-                    selectText &&
-                    typeof input.select === 'function'
-                ) {
-                    input.select();
-                }
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Get Livewire component
-            |--------------------------------------------------------------------------
-            */
-            function getLivewireComponent() {
-
-                const barcodeInput =
-                    document.querySelector(BARCODE_SELECTOR);
-
-
-                if (!barcodeInput) {
-                    return null;
-                }
-
-
-                const root =
-                    barcodeInput.closest('[wire\\:id]');
-
-
-                if (!root) {
-                    return null;
-                }
-
-
-                const componentId =
-                    root.getAttribute('wire:id');
-
-
-                if (!componentId) {
-                    return null;
-                }
-
-
-                if (
-                    window.Livewire &&
-                    typeof window.Livewire.find === 'function'
-                ) {
-
-                    return window.Livewire.find(componentId);
-
-                }
-
-
-                return null;
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Keyboard navigation
-            |
-            | Quantity <-> Price <-> Subtotal
-            |
-            | ↑ ↓ = rows
-            | ← → = fields
-            | Enter = next field / next row
-            | Home = first
-            | End = last
-            |--------------------------------------------------------------------------
-            */
-            document.addEventListener('keydown', function(event) {
-
-                const current =
-                    event.target?.closest?.(FIELD_SELECTOR);
-
-                const key = event.key;
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | ArrowUp outside cart
-                |--------------------------------------------------------------------------
-                */
-                if (!current && key === 'ArrowUp') {
-
-                    const allRows = rows();
-
-
-                    if (!allRows.length) {
-                        return;
-                    }
-
-
-                    event.preventDefault();
-
-
-                    focusInput(
-                        allRows[allRows.length - 1].quantity ||
-                        allRows[allRows.length - 1].price ||
-                        allRows[allRows.length - 1].subtotal
-                    );
-
-
-                    return;
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Ignore unrelated keys
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    !current ||
-                    ![
-                        'ArrowUp',
-                        'ArrowDown',
-                        'ArrowLeft',
-                        'ArrowRight',
-                        'Enter',
-                        'Home',
-                        'End'
-                    ].includes(key)
-                ) {
-                    return;
-                }
-
-
-                const allRows = rows();
-
-
-                if (!allRows.length) {
-                    return;
-                }
-
-
-                if (key === 'ArrowUp' || key === 'ArrowDown') {
-                    event.preventDefault();
-                }
-
-
-                const rowIndex =
-                    Number(current.dataset.rowIndex);
-
-                const type =
-                    current.dataset.posField;
-
-
-                const pos =
-                    allRows.findIndex(function(row) {
-                        return row.index === rowIndex;
-                    });
-
-
-                if (pos < 0) {
-                    return;
-                }
-
-
-                let target = null;
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Left / Right
-                |--------------------------------------------------------------------------
-                |
-                | → الكمية → السعر → الإجمالي → كمية الصنف التالي
-                |
-                | ← الإجمالي → السعر → الكمية → إجمالي الصنف السابق
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    key === 'ArrowLeft' ||
-                    key === 'ArrowRight'
-                ) {
-
-                    if (key === 'ArrowLeft') {
-
-                        if (type === 'quantity') {
-
-                            target =
-                                allRows[pos].price;
-
-                        } else if (type === 'price') {
-
-                            target =
-                                allRows[pos].subtotal;
-
-                        } else if (type === 'subtotal') {
-
-                            const nextPos =
-                                pos >= allRows.length - 1 ?
-                                0 :
-                                pos + 1;
-
-                            target =
-                                allRows[nextPos].quantity;
-
-                        }
-
-                    } else {
-
-                        if (type === 'subtotal') {
-
-                            target =
-                                allRows[pos].price;
-
-                        } else if (type === 'price') {
-
-                            target =
-                                allRows[pos].quantity;
-
-                        } else if (type === 'quantity') {
-
-                            const previousPos =
-                                pos <= 0 ?
-                                allRows.length - 1 :
-                                pos - 1;
-
-                            target =
-                                allRows[previousPos].subtotal;
-
-                        }
-
-                    }
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Up / Down / Enter / Home / End
-                |--------------------------------------------------------------------------
-                */
-                else {
-
-                    let targetPos = pos;
-
-
-                    /*
-                    | Arrow Up
-                    */
-                    if (key === 'ArrowUp') {
-
-                        targetPos =
-                            pos <= 0 ?
-                            allRows.length - 1 :
-                            pos - 1;
-
-                        target =
-                            allRows[targetPos][type];
-
-                    }
-
-
-                    /*
-                    | Enter
-                    */
-                    if (key === 'Enter') {
-
-                        const fields = [
-                            'quantity',
-                            'price',
-                            'subtotal'
-                        ];
-
-                        const currentFieldIndex =
-                            fields.indexOf(type);
-
-
-                        /*
-                        | داخل نفس الصنف:
-                        |
-                        | الكمية → السعر → الإجمالي
-                        */
-                        if (
-                            currentFieldIndex >= 0 &&
-                            currentFieldIndex < fields.length - 1
-                        ) {
-
-                            target =
-                                allRows[pos][
-                                    fields[currentFieldIndex + 1]
-                                ];
-
-                        } else {
-
-                            /*
-                            | بعد الإجمالي:
-                            | الانتقال إلى كمية الصنف التالي
-                            */
-                            targetPos =
-                                pos >= allRows.length - 1 ?
-                                0 :
-                                pos + 1;
-
-                            target =
-                                allRows[targetPos].quantity;
-
-                        }
-
-                    }
-
-
-                    /*
-                    | Arrow Down
-                    */
-                    if (key === 'ArrowDown') {
-
-                        targetPos =
-                            pos >= allRows.length - 1 ?
-                            0 :
-                            pos + 1;
-
-                        target =
-                            allRows[targetPos][type];
-
-                    }
-
-
-                    /*
-                    | Home
-                    */
-                    if (key === 'Home') {
-
-                        targetPos = 0;
-
-                        target =
-                            allRows[targetPos][type];
-
-                    }
-
-
-                    /*
-                    | End
-                    */
-                    if (key === 'End') {
-
-                        targetPos =
-                            allRows.length - 1;
-
-                        target =
-                            allRows[targetPos][type];
-
-                    }
-
-                }
-
-
-                if (target) {
-
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-
-                    focusInput(target);
-
-                }
-
-            }, true);
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Barcode Scanner
-            |--------------------------------------------------------------------------
-            |
-            | إذا كان scanner يكتب داخل quantity أو price أو subtotal:
-            |
-            | 1. نحفظ القيمة الأصلية.
-            | 2. نسمح مؤقتاً للحروف.
-            | 3. عند التأكد أنه Scanner نمنع استمرارها.
-            | 4. عند Enter نعيد القيمة الأصلية.
-            | 5. نرسل الباركود إلى scanBarcode().
-            |--------------------------------------------------------------------------
-            */
-
-            let scannerBuffer = '';
-            let scannerTimer = null;
-            let scannerStartedAt = 0;
-
-            let scannerTarget = null;
-            let scannerOriginalValue = '';
-
-            let scannerOriginalSelectionStart = null;
-            let scannerOriginalSelectionEnd = null;
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Scanner configuration
-            |--------------------------------------------------------------------------
-            */
-            const SCANNER_MAX_GAP = 70;
-            const SCANNER_MIN_LENGTH = 3;
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Is cart editable field?
-            |--------------------------------------------------------------------------
-            */
-            function isCartEditableField(target) {
-
-                if (!target) {
-                    return false;
-                }
-
-
-                return !!target.closest?.(FIELD_SELECTOR);
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Reset scanner
-            |--------------------------------------------------------------------------
-            */
-            function resetScannerBuffer() {
-
-                scannerBuffer = '';
-                scannerStartedAt = 0;
-
-                scannerTarget = null;
-                scannerOriginalValue = '';
-
-                scannerOriginalSelectionStart = null;
-                scannerOriginalSelectionEnd = null;
-
-
-                if (scannerTimer) {
-
-                    clearTimeout(scannerTimer);
-
-                    scannerTimer = null;
-
-                }
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Save target state
-            |--------------------------------------------------------------------------
-            */
-            function saveScannerTarget(target) {
-
-                scannerTarget =
-                    target?.closest?.(
-                        'input, textarea'
-                    ) || null;
-
-
-                if (!scannerTarget) {
-                    return;
-                }
-
-
-                scannerOriginalValue =
-                    scannerTarget.value ?? '';
-
-
-                try {
-
-                    scannerOriginalSelectionStart =
-                        scannerTarget.selectionStart;
-
-                    scannerOriginalSelectionEnd =
-                        scannerTarget.selectionEnd;
-
-                } catch (e) {
-
-                    scannerOriginalSelectionStart = null;
-                    scannerOriginalSelectionEnd = null;
-
-                }
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Restore original value
-            |--------------------------------------------------------------------------
-            */
-            function restoreScannerTarget() {
-
-                if (
-                    !scannerTarget ||
-                    !document.contains(scannerTarget)
-                ) {
-                    return;
-                }
-
-
-                /*
-                | Restore DOM value.
-                */
-                scannerTarget.value =
-                    scannerOriginalValue;
-
-
-                /*
-                | Restore selection.
-                */
-                try {
-
-                    if (
-                        scannerOriginalSelectionStart !== null &&
-                        scannerOriginalSelectionEnd !== null &&
-                        typeof scannerTarget.setSelectionRange === 'function'
-                    ) {
-
-                        scannerTarget.setSelectionRange(
-                            scannerOriginalSelectionStart,
-                            scannerOriginalSelectionEnd
-                        );
-
-                    }
-
-                } catch (e) {
-
-                    // Ignore selection errors.
-
-                }
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Submit scanned barcode
-            |--------------------------------------------------------------------------
-            */
-            function submitScannedBarcode(value) {
-
-                value =
-                    String(value || '').trim();
-
-
-                if (
-                    value.length <
-                    SCANNER_MIN_LENGTH
-                ) {
-                    return false;
-                }
-
-
-                const component =
-                    getLivewireComponent();
-
-
-                if (!component) {
-                    return false;
-                }
-
-
-                try {
-
-                    /*
-                    | Livewire v3
-                    */
-                    if (
-                        component.$wire &&
-                        typeof component.$wire.scanBarcode === 'function'
-                    ) {
-
-                        component.$wire.scanBarcode(value);
-
-                        return true;
-
-                    }
-
-
-                    /*
-                    | Fallback
-                    */
-                    if (
-                        typeof component.call === 'function'
-                    ) {
-
-                        component.call(
-                            'scanBarcode',
-                            value
-                        );
-
-                        return true;
-
-                    }
-
-                } catch (error) {
-
-                    console.error(
-                        'POS barcode scanner error:',
-                        error
-                    );
-
-                }
-
-
-                return false;
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Global scanner listener
-            |--------------------------------------------------------------------------
-            */
-            document.addEventListener('keydown', function(event) {
-
-                const key =
-                    event.key;
-
-                const target =
-                    event.target;
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | ENTER
-                |--------------------------------------------------------------------------
-                */
-                if (key === 'Enter') {
-
-                    if (
-                        scannerBuffer.length >=
-                        SCANNER_MIN_LENGTH
-                    ) {
-
-                        event.preventDefault();
-                        event.stopPropagation();
-
-
-                        const value =
-                            scannerBuffer;
-
-
-                        /*
-                        | إعادة الكمية/السعر/الإجمالي
-                        | قبل تنفيذ المسح.
-                        */
-                        restoreScannerTarget();
-
-
-                        /*
-                        | إرسال الباركود.
-                        */
-                        const submitted =
-                            submitScannedBarcode(value);
-
-
-                        /*
-                        | تنظيف.
-                        */
-                        resetScannerBuffer();
-
-
-                        if (submitted) {
-
-                            setTimeout(function() {
-
-                                focusBarcode(false);
-
-                            }, 80);
-
-                        }
-
-
-                        return;
-
-                    }
-
-
-                    resetScannerBuffer();
-
-                    return;
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Ignore navigation
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    key === 'ArrowUp' ||
-                    key === 'ArrowDown' ||
-                    key === 'ArrowLeft' ||
-                    key === 'ArrowRight' ||
-                    key === 'Home' ||
-                    key === 'End' ||
-                    key === 'Tab' ||
-                    key === 'Escape'
-                ) {
-
-                    return;
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Ignore shortcuts
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    event.ctrlKey ||
-                    event.altKey ||
-                    event.metaKey
-                ) {
-
-                    return;
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Only printable characters
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    typeof key !== 'string' ||
-                    key.length !== 1
-                ) {
-
-                    return;
-
-                }
-
-
-                const now =
-                    Date.now();
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | New sequence
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    scannerStartedAt === 0 ||
-                    now - scannerStartedAt >
-                    SCANNER_MAX_GAP
-                ) {
-
-                    scannerBuffer = '';
-
-                    scannerStartedAt = now;
-
-                    saveScannerTarget(target);
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Add character
-                |--------------------------------------------------------------------------
-                */
-                scannerBuffer += key;
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | إذا كان الحقل كمية أو سعر أو إجمالي:
-                |
-                | بعد وصول عدة أحرف بسرعة نعرف أنه Scanner.
-                |--------------------------------------------------------------------------
-                */
-                if (
-                    isCartEditableField(target) &&
-                    scannerBuffer.length >= 2 &&
-                    now - scannerStartedAt <= SCANNER_MAX_GAP
-                ) {
-
-                    event.preventDefault();
-                    event.stopPropagation();
-
-
-                    /*
-                    | أعد الحقل إلى القيمة الأصلية.
-                    */
-                    restoreScannerTarget();
-
-                }
-
-
-                /*
-                |--------------------------------------------------------------------------
-                | Keep scanner alive
-                |--------------------------------------------------------------------------
-                */
-                if (scannerTimer) {
-
-                    clearTimeout(scannerTimer);
-
-                }
-
-
-                scannerTimer =
-                    setTimeout(function() {
-
-                        /*
-                        | إذا انتهى الوقت بدون Enter،
-                        | نعتبرها كتابة عادية.
-                        */
-                        resetScannerBuffer();
-
-                    }, SCANNER_MAX_GAP + 30);
-
-            }, true);
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Initial barcode focus
-            |--------------------------------------------------------------------------
-            */
-            function initialBarcodeFocus() {
-
-                setTimeout(function() {
-
-                    const active =
-                        document.activeElement;
-
-
-                    /*
-                    | لا نأخذ التركيز إذا المستخدم بالفعل
-                    | داخل حقل آخر.
-                    */
-                    if (
-                        active &&
-                        (
-                            active.matches?.(
-                                FIELD_SELECTOR
-                            ) ||
-                            active.matches?.(
-                                'input:not([data-pos-barcode-input])'
-                            ) ||
-                            active.matches?.('textarea')
-                        )
-                    ) {
-
-                        return;
-
-                    }
-
-
-                    focusBarcode(false);
-
-                }, 100);
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Initial load
-            |--------------------------------------------------------------------------
-            */
-            if (
-                document.readyState ===
-                'loading'
-            ) {
-
-                document.addEventListener(
-                    'DOMContentLoaded',
-                    initialBarcodeFocus, {
-                        once: true
-                    }
-                );
-
-            } else {
-
-                initialBarcodeFocus();
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | F9 = Barcode focus
-            |--------------------------------------------------------------------------
-            */
-            document.addEventListener('keydown', function(event) {
-
-                if (event.key !== 'F9') {
-                    return;
-                }
-
-
-                event.preventDefault();
-
-                focusBarcode(true);
-
-            });
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | بعد تعديل الكمية / السعر / الإجمالي
-            |
-            | عند تغيير أي حقل في السلة، ننتظر انتهاء تحديث Livewire
-            | ثم نعيد التركيز تلقائياً إلى الباركود.
-            |--------------------------------------------------------------------------
-            */
-            let returnToBarcodeAfterEdit = false;
-            let editComponentId = null;
-
-            document.addEventListener('change', function(event) {
-
-                const field = event.target?.closest?.(FIELD_SELECTOR);
-
-                if (!field) {
-                    return;
-                }
-
-                const root = field.closest('[wire\:id]');
-
-                returnToBarcodeAfterEdit = true;
-                editComponentId = root?.getAttribute('wire:id') || null;
-
-            }, true);
-
-            if (window.Livewire && typeof window.Livewire.hook === 'function') {
-
-                window.Livewire.hook('commit', ({ component, succeed }) => {
-
-                    if (!returnToBarcodeAfterEdit) {
-                        return;
-                    }
-
-                    if (editComponentId && component?.id !== editComponentId) {
-                        return;
-                    }
-
-                    succeed(() => {
-
-                        returnToBarcodeAfterEdit = false;
-                        editComponentId = null;
-
-                        setTimeout(function() {
-                            focusBarcode(false);
-                        }, 30);
-
-                    });
-
-                });
-
-            }
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | Livewire navigated
-            |
-            | لا نخطف التركيز من quantity / price / subtotal.
-            |--------------------------------------------------------------------------
-            */
-            document.addEventListener(
-                'livewire:navigated',
-                function() {
-
-                    setTimeout(function() {
-
-                        const active =
-                            document.activeElement;
-
-
-                        if (
-                            active &&
-                            (
-                                active.matches?.(
-                                    FIELD_SELECTOR
-                                ) ||
-                                active.matches?.(
-                                    'input:not([data-pos-barcode-input])'
-                                ) ||
-                                active.matches?.(
-                                    'textarea'
-                                )
-                            )
-                        ) {
-
-                            return;
-
-                        }
-
-
-                        focusBarcode(false);
-
-                    }, 100);
-
-                }
+  <script>
+(function() {
+    if (window.__posCartKeyboardNavigation) {
+        return;
+    }
+    window.__posCartKeyboardNavigation = true;
+
+    const FIELD_SELECTOR = '[data-pos-field]';
+    const BARCODE_SELECTOR = '[data-pos-barcode-input]';
+
+    function rows() {
+        const grouped = new Map();
+        document.querySelectorAll(FIELD_SELECTOR).forEach(function(field) {
+            const row = Number(field.dataset.rowIndex);
+            if (!Number.isFinite(row)) return;
+            if (!grouped.has(row)) grouped.set(row, {});
+            grouped.get(row)[field.dataset.posField] = field;
+        });
+
+        return Array.from(grouped.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(entry => ({
+                index: entry[0],
+                quantity: entry[1].quantity || null,
+                price: entry[1].price || null,
+                subtotal: entry[1].subtotal || null
+            }));
+    }
+
+    function focusInput(input) {
+        if (!input || !document.contains(input)) return;
+        input.focus({ preventScroll: true });
+        if (typeof input.select === 'function') input.select();
+    }
+
+    function focusBarcode() {
+        const input = document.querySelector(BARCODE_SELECTOR);
+        if (!input) return;
+        input.focus({ preventScroll: true });
+        if (typeof input.select === 'function') input.select();
+    }
+
+    document.addEventListener('keydown', function(event) {
+        const current = event.target?.closest?.(FIELD_SELECTOR);
+        const key = event.key;
+
+        // الضغط على سهم الأعلى خارج السلة يأخذك مباشرة إلى كمية آخر منتج
+        if (!current && key === 'ArrowUp') {
+            const allRows = rows();
+            if (!allRows.length) return;
+
+            event.preventDefault();
+            focusInput(
+                allRows[allRows.length - 1].quantity ||
+                allRows[allRows.length - 1].price ||
+                allRows[allRows.length - 1].subtotal
             );
+            return;
+        }
 
+        if (!current) return;
 
-        })();
-    </script>
+        // الضغط على Enter داخل حقول السلة للعودة إلى الباركود
+        if (key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            focusBarcode();
+            return;
+        }
 
+        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) {
+            return;
+        }
+
+        const allRows = rows();
+        if (!allRows.length) return;
+
+        const rowIndex = Number(current.dataset.rowIndex);
+        const type = current.dataset.posField;
+        const pos = allRows.findIndex(r => r.index === rowIndex);
+
+        if (pos < 0) return;
+
+        let target = null;
+
+        // التنقل بالأسهم داخل السلة (اتجاه RTL)
+        if (key === 'ArrowLeft') {
+            if (type === 'quantity') {
+                target = allRows[pos].price;
+            } else if (type === 'price') {
+                target = allRows[pos].subtotal;
+            } else if (type === 'subtotal') {
+                const nextPos = pos >= allRows.length - 1 ? 0 : pos + 1;
+                target = allRows[nextPos].quantity;
+            }
+        } else if (key === 'ArrowRight') {
+            if (type === 'subtotal') {
+                target = allRows[pos].price;
+            } else if (type === 'price') {
+                target = allRows[pos].quantity;
+            } else if (type === 'quantity') {
+                const previousPos = pos <= 0 ? allRows.length - 1 : pos - 1;
+                target = allRows[previousPos].subtotal;
+            }
+        } else if (key === 'ArrowUp') {
+            const targetPos = pos <= 0 ? allRows.length - 1 : pos - 1;
+            target = allRows[targetPos][type];
+        } else if (key === 'ArrowDown') {
+            const targetPos = pos >= allRows.length - 1 ? 0 : pos + 1;
+            target = allRows[targetPos][type];
+        } else if (key === 'Home') {
+            target = allRows[0][type];
+        } else if (key === 'End') {
+            target = allRows[allRows.length - 1][type];
+        }
+
+        if (target) {
+            event.preventDefault();
+            event.stopPropagation();
+            focusInput(target);
+        }
+    }, true);
+})();
+</script>
 </div>
