@@ -73,7 +73,7 @@ new class extends Component {
     public float $shift_expected_cash = 0;
     public bool $allowNegativeStock = false;
     public bool $unifiedStock = false;
-    public bool $mergeSimilarProducts = true;
+    public bool $mergeSimilarProducts = false;
 
     public function mount(): void
     {
