@@ -14,6 +14,7 @@ use App\Models\Shift;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use App\Models\TenantSetting;
 
@@ -59,21 +60,32 @@ new class extends Component {
     public string $pendingCheckoutMode = 'checkout';
     public bool $showProductsModal = false;
     public bool $isReturnMode = false;
+    #[Locked]
     public ?int $activeShiftId = null;
+    #[Locked]
     public bool $showOpenShiftModal = false;
+    #[Locked]
     public bool $showCloseShiftModal = false;
     public float $opening_cash = 0;
     public float $actual_cash = 0;
     public string $shift_notes = '';
     public float $shift_opening_cash = 0;
+    #[Locked]
     public float $shift_total_sales = 0;
+    #[Locked]
     public float $shift_total_returns = 0;
+    #[Locked]
     public float $shift_cash_receipts = 0;
+    #[Locked]
     public float $shift_cash_payments = 0;
+    #[Locked]
     public float $shift_expected_cash = 0;
     public bool $allowNegativeStock = false;
     public bool $unifiedStock = false;
     public bool $mergeSimilarProducts = false;
+
+    private ?Shift $activeShiftCache = null;
+    private bool $activeShiftLoaded = false;
 
     public function mount(): void
     {
@@ -348,6 +360,11 @@ new class extends Component {
 
     public function activeShift(): ?Shift
     {
+        if ($this->activeShiftLoaded) {
+            return $this->activeShiftCache;
+        }
+
+        $this->activeShiftLoaded = true;
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
         $userId = Auth::id();
@@ -362,19 +379,71 @@ new class extends Component {
             return null;
         }
 
-        $sales = (float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'pos')->sum('total');
-        $returns = abs((float) Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('shift_id', $shift->id)->where('type', 'return')->sum('total'));
-        $cashSales = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'receipt')->where('payment_method', 'cash')->sum('amount');
-        $cashReturns = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
-        $expectedCash = (float) $shift->opening_cash + $cashSales - $cashReturns;
+        $this->applyShiftSummary($shift, $this->shiftFinancialSummary($shift));
+        $this->activeShiftCache = $shift;
 
-        $shift->setAttribute('live_total_sales', $sales);
-        $shift->setAttribute('live_total_returns', $returns);
-        $shift->setAttribute('live_cash_sales', $cashSales);
-        $shift->setAttribute('live_cash_returns', $cashReturns);
-        $shift->setAttribute('live_expected_cash', $expectedCash);
+        return $this->activeShiftCache;
+    }
 
-        return $shift;
+    /** @return array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} */
+    private function shiftFinancialSummary(Shift $shift): array
+    {
+        $orders = Order::query()
+            ->where('tenant_id', $shift->tenant_id)
+            ->where('branch_id', $shift->branch_id)
+            ->where('shift_id', $shift->id)
+            ->where('status', 'completed')
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'pos' THEN total ELSE 0 END), 0) as sales")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END), 0) as returns")
+            ->first();
+
+        $payments = Payment::query()
+            ->where('tenant_id', $shift->tenant_id)
+            ->where('shift_id', $shift->id)
+            ->where(function ($query) use ($shift): void {
+                $query->where('branch_id', $shift->branch_id)->orWhereNull('branch_id');
+            })
+            ->where('payment_method', 'cash')
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'receipt' THEN amount ELSE 0 END), 0) as cash_receipts")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END), 0) as cash_payments")
+            ->first();
+
+        $cashReceipts = (float) ($payments?->cash_receipts ?? 0);
+        $cashPayments = (float) ($payments?->cash_payments ?? 0);
+
+        return [
+            'sales' => (float) ($orders?->sales ?? 0),
+            'returns' => (float) ($orders?->returns ?? 0),
+            'cash_receipts' => $cashReceipts,
+            'cash_payments' => $cashPayments,
+            'expected_cash' => (float) $shift->opening_cash + $cashReceipts - $cashPayments,
+        ];
+    }
+
+    /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} $summary */
+    private function applyShiftSummary(Shift $shift, array $summary): void
+    {
+        $shift->setAttribute('live_total_sales', $summary['sales']);
+        $shift->setAttribute('live_total_returns', $summary['returns']);
+        $shift->setAttribute('live_cash_sales', $summary['cash_receipts']);
+        $shift->setAttribute('live_cash_returns', $summary['cash_payments']);
+        $shift->setAttribute('live_expected_cash', $summary['expected_cash']);
+    }
+
+    /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} $summary */
+    private function shiftSummaryChanged(array $summary): bool
+    {
+        return round($this->shift_total_sales, 2) !== round($summary['sales'], 2)
+            || round($this->shift_total_returns, 2) !== round($summary['returns'], 2)
+            || round($this->shift_cash_receipts, 2) !== round($summary['cash_receipts'], 2)
+            || round($this->shift_cash_payments, 2) !== round($summary['cash_payments'], 2)
+            || round($this->shift_expected_cash, 2) !== round($summary['expected_cash'], 2);
+    }
+
+    private function invalidateActiveShiftCache(): void
+    {
+        $this->activeShiftCache = null;
+        $this->activeShiftLoaded = false;
     }
 
     public function updatedSelectedBranchId($value): void
@@ -392,6 +461,7 @@ new class extends Component {
         if ($branchId && $tenantId && Branch::query()->where('tenant_id', $tenantId)->whereKey($branchId)->exists()) {
             session(['active_branch_id' => $branchId]);
             $this->selectedBranchId = $branchId;
+            $this->invalidateActiveShiftCache();
             $this->activeShiftId = null;
             $this->loadHeldInvoices();
             $this->checkActiveShift();
@@ -400,6 +470,7 @@ new class extends Component {
         }
 
         $this->selectedBranchId = null;
+        $this->invalidateActiveShiftCache();
         $this->activeShiftId = null;
         session()->forget('active_branch_id');
         $this->quickProducts = [];
@@ -409,6 +480,7 @@ new class extends Component {
 
     public function checkActiveShift(): void
     {
+        $this->invalidateActiveShiftCache();
         $this->activeShiftId = $this->activeShift()?->id;
     }
 
@@ -422,11 +494,17 @@ new class extends Component {
 
         $this->opening_cash = 0;
         $this->shift_notes = '';
+        $this->errorMessage = null;
         $this->showOpenShiftModal = true;
     }
 
     public function openShift(): void
     {
+        if (!$this->showOpenShiftModal) {
+            $this->errorMessage = 'افتح نافذة بدء الشيفت أولاً.';
+            return;
+        }
+
         $tenantId = $this->tenantId();
         $user = Auth::user();
         $branchId = $this->getActiveBranchId();
@@ -441,8 +519,19 @@ new class extends Component {
             return;
         }
 
+        $this->validate([
+            'opening_cash' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shift_notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
         try {
             $shift = DB::transaction(function () use ($tenantId, $branchId, $user): Shift {
+                $branch = Branch::query()->where('tenant_id', $tenantId)->whereKey($branchId)->lockForUpdate()->first();
+
+                if (!$branch) {
+                    throw new \RuntimeException('الفرع غير موجود لهذا المتجر.');
+                }
+
                 $existing = Shift::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('opened_by', $user->id)->where('status', 'open')->lockForUpdate()->latest('id')->first();
 
                 if ($existing) {
@@ -452,7 +541,7 @@ new class extends Component {
                 return Shift::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
-                    'opening_cash' => max(0, $this->opening_cash),
+                    'opening_cash' => $this->opening_cash,
                     'status' => 'open',
                     'opened_at' => now(),
                     'opened_by' => $user->id,
@@ -460,11 +549,17 @@ new class extends Component {
                 ]);
             });
 
+            $this->invalidateActiveShiftCache();
             $this->activeShiftId = $shift->id;
             $this->showOpenShiftModal = false;
             $this->errorMessage = null;
-            $this->successMessage = 'تم فتح الشيفت بنجاح. رقم الشيفت: #' . $shift->id;
-            $this->dispatch('pos-sound', type: 'shift-open');
+            $this->successMessage = $shift->wasRecentlyCreated
+                ? 'تم فتح الشيفت بنجاح. رقم الشيفت: #' . $shift->id
+                : 'يوجد شيفت مفتوح بالفعل برقم #' . $shift->id;
+
+            if ($shift->wasRecentlyCreated) {
+                $this->dispatch('pos-sound', type: 'shift-open');
+            }
         } catch (\Throwable $e) {
             Log::error('POS shift opening failed', [
                 'tenant_id' => $tenantId,
@@ -476,8 +571,21 @@ new class extends Component {
         }
     }
 
+    public function cancelOpenShift(): void
+    {
+        $this->showOpenShiftModal = false;
+        $this->errorMessage = null;
+    }
+
     public function prepareCloseShift(): void
     {
+        if (!empty($this->cart)) {
+            $this->errorMessage = 'احفظ الفاتورة أو ألغها قبل إغلاق الشيفت حتى لا تفقد البيانات.';
+            return;
+        }
+
+        $this->errorMessage = null;
+
         $shift = $this->activeShift();
 
         if (!$shift) {
@@ -491,61 +599,126 @@ new class extends Component {
             return;
         }
 
-        $tenantId = $this->tenantId();
-
+        $summary = $this->shiftFinancialSummary($shift);
+        $this->activeShiftId = $shift->id;
         $this->shift_opening_cash = (float) $shift->opening_cash;
-        $this->shift_total_sales = (float) Order::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'pos')->where('status', 'completed')->sum('total');
-        $this->shift_total_returns = abs((float) Order::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'return')->where('status', 'completed')->sum('total'));
-        $this->shift_cash_receipts = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'receipt')->where('payment_method', 'cash')->sum('amount');
-        $this->shift_cash_payments = (float) Payment::query()->where('tenant_id', $tenantId)->where('shift_id', $shift->id)->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
-        $this->shift_expected_cash = $this->shift_opening_cash + $this->shift_cash_receipts - $this->shift_cash_payments;
+        $this->shift_total_sales = $summary['sales'];
+        $this->shift_total_returns = $summary['returns'];
+        $this->shift_cash_receipts = $summary['cash_receipts'];
+        $this->shift_cash_payments = $summary['cash_payments'];
+        $this->shift_expected_cash = $summary['expected_cash'];
         $this->actual_cash = $this->shift_expected_cash;
-        $this->shift_notes = $shift->notes ?? '';
+        $this->shift_notes = '';
         $this->showCloseShiftModal = true;
     }
 
     public function closeShift(): void
     {
-        $shift = $this->activeShift();
+        if (!$this->showCloseShiftModal) {
+            $this->errorMessage = 'افتح نافذة التسوية وراجع الرصيد قبل تأكيد الإغلاق.';
+            return;
+        }
 
-        if (!$shift) {
+        if (!empty($this->cart)) {
+            $this->errorMessage = 'احفظ الفاتورة أو ألغها قبل إغلاق الشيفت حتى لا تفقد البيانات.';
+            return;
+        }
+
+        $this->validate([
+            'actual_cash' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shift_notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+        $userId = Auth::id();
+        $shiftId = $this->activeShiftId;
+
+        if (!$tenantId || !$branchId || !$userId || !$shiftId) {
             $this->errorMessage = 'لا يوجد شيفت مفتوح لإغلاقه.';
             return;
         }
 
-        try {
-            DB::transaction(function () use ($shift): void {
-                $lockedShift = Shift::query()->whereKey($shift->id)->lockForUpdate()->first();
+        $actualCash = (float) $this->actual_cash;
+        $closingNotes = trim($this->shift_notes);
 
-                if (!$lockedShift || $lockedShift->status !== 'open') {
+        try {
+            $result = DB::transaction(function () use ($tenantId, $branchId, $userId, $shiftId, $actualCash, $closingNotes): array {
+                $lockedShift = Shift::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('branch_id', $branchId)
+                    ->where('opened_by', $userId)
+                    ->where('status', 'open')
+                    ->whereKey($shiftId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$lockedShift) {
                     throw new \RuntimeException('الشيفت مغلق بالفعل.');
                 }
 
+                $summary = $this->shiftFinancialSummary($lockedShift);
+
+                if ($this->shiftSummaryChanged($summary)) {
+                    return ['closed' => false, 'summary' => $summary];
+                }
+
+                $difference = round($actualCash - $summary['expected_cash'], 2);
+                $openingNotes = trim((string) $lockedShift->notes);
+                $notes = $openingNotes;
+
+                if ($closingNotes !== '') {
+                    $notes = trim(($openingNotes !== '' ? "ملاحظات الفتح:\n{$openingNotes}\n\n" : '') . "ملاحظات الإغلاق:\n{$closingNotes}");
+                }
+
                 $lockedShift->update([
-                    'expected_cash' => $this->shift_expected_cash,
-                    'actual_cash' => max(0, $this->actual_cash),
-                    'difference' => $this->actual_cash - $this->shift_expected_cash,
-                    'notes' => trim($this->shift_notes) ?: null,
+                    'expected_cash' => $summary['expected_cash'],
+                    'actual_cash' => $actualCash,
+                    'difference' => $difference,
+                    'notes' => $notes ?: null,
                     'status' => 'closed',
                     'closed_at' => now(),
-                    'closed_by' => Auth::id(),
-                    'total_sales' => $this->shift_total_sales,
-                    'total_returns' => $this->shift_total_returns,
+                    'closed_by' => $userId,
+                    'total_sales' => $summary['sales'],
+                    'total_returns' => $summary['returns'],
                 ]);
+
+                return ['closed' => true, 'summary' => $summary];
             });
 
+            if (!$result['closed']) {
+                $this->shift_total_sales = $result['summary']['sales'];
+                $this->shift_total_returns = $result['summary']['returns'];
+                $this->shift_cash_receipts = $result['summary']['cash_receipts'];
+                $this->shift_cash_payments = $result['summary']['cash_payments'];
+                $this->shift_expected_cash = $result['summary']['expected_cash'];
+                $this->errorMessage = 'حدثت حركة جديدة أثناء التسوية. أعد عدّ النقد الموجود في الصندوق ثم أكد الإغلاق.';
+                return;
+            }
+
+            $this->invalidateActiveShiftCache();
             $this->activeShiftId = null;
             $this->showCloseShiftModal = false;
             $this->clearCartState(false);
+            $this->errorMessage = null;
             $this->successMessage = 'تم إغلاق الشيفت وتسوية الصندوق بنجاح.';
             $this->dispatch('pos-sound', type: 'shift-close');
         } catch (\Throwable $e) {
             Log::error('POS shift closing failed', [
-                'shift_id' => $shift->id,
+                'tenant_id' => $tenantId,
+                'branch_id' => $branchId,
+                'user_id' => $userId,
+                'shift_id' => $shiftId,
                 'message' => $e->getMessage(),
             ]);
-            $this->errorMessage = 'تعذر إغلاق الشيفت. قد يكون أُغلق من جلسة أخرى.';
+            $this->errorMessage = 'تعذر إغلاق الشيفت. حدّث البيانات وتأكد أن الشيفت ما زال مفتوحاً.';
         }
+    }
+
+    public function cancelCloseShift(): void
+    {
+        $this->showCloseShiftModal = false;
+        $this->errorMessage = null;
     }
 
     public function updatedProductSearchQuery(): void
@@ -572,23 +745,29 @@ new class extends Component {
 
         $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
+        if (mb_strlen($search) < 2 && !ctype_digit($search)) {
+            $this->inlineSearchResults = [];
+            return;
+        }
+
         $this->inlineSearchResults = Product::query()
+            ->select(['id', 'tenant_id', 'name'])
             ->where('tenant_id', $tenantId)
             ->where(function ($query) use ($keywords, $search, $tenantId): void {
                 $query
                     ->where(function ($nameQuery) use ($keywords): void {
-                        foreach ($keywords as $keyword) {
-                            $nameQuery->where('name', 'like', "%{$keyword}%");
+                        foreach ($keywords as $index => $keyword) {
+                            $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
                         }
                     })
-                    ->orWhere('id', '=', $search)
+                    ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
                     ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
-                        $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%");
+                        $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
                     });
             })
             ->with([
-                'barcodes' => fn($query) => $query->where('tenant_id', $tenantId),
-                'branchProducts' => fn($query) => $query->where('branch_id', $branchId),
+                'barcodes' => fn ($query) => $query->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
+                'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
             ])
             ->limit(8)
             ->get()
@@ -666,10 +845,11 @@ new class extends Component {
         }
 
         $query = Product::query()
+            ->select(['id', 'tenant_id', 'name', 'category_id'])
             ->where('tenant_id', $tenantId)
             ->with([
-                'barcodes' => fn($q) => $q->where('tenant_id', $tenantId),
-                'branchProducts' => fn($q) => $q->where('branch_id', $branchId),
+                'barcodes' => fn ($q) => $q->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
+                'branchProducts' => fn ($q) => $q->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity', 'offer_quantity', 'offer_price'])->where('branch_id', $branchId),
             ]);
 
         if ($this->selectedCategoryId) {
@@ -678,17 +858,22 @@ new class extends Component {
 
         $search = trim($this->productSearchQuery);
         if ($search !== '') {
+            if (mb_strlen($search) < 2 && !ctype_digit($search)) {
+                $this->quickProducts = [];
+                return;
+            }
+
             $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
 
             $query->where(function ($q) use ($keywords, $search, $tenantId): void {
                 $q->where(function ($nameQuery) use ($keywords): void {
-                    foreach ($keywords as $keyword) {
-                        $nameQuery->where('name', 'like', "%{$keyword}%");
+                    foreach ($keywords as $index => $keyword) {
+                        $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
                     }
                 })
-                ->orWhere('id', '=', $search)
+                ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
                 ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
-                    $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%");
+                    $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
                 });
             });
         }
@@ -730,9 +915,12 @@ new class extends Component {
             return;
         }
 
-        $record = ProductBarcode::query()->where('tenant_id', $this->tenantId())->where('barcode', $barcode)->with('product')->first();
+        $record = ProductBarcode::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('barcode', $barcode)
+            ->first(['id', 'product_id']);
 
-        if (!$record?->product) {
+        if (!$record) {
             $this->errorMessage = "لم يتم العثور على منتج بالباركود: {$barcode}";
             $this->dispatch('pos-sound', type: 'error');
             $this->barcode = '';
@@ -826,7 +1014,6 @@ new class extends Component {
         }
 
         $this->recalculatePrices();
-        $this->loadQuickProducts();
 
         $this->dispatch('pos-sound', type: 'add');
         $this->dispatch('pos-scroll-cart-bottom');
@@ -2058,6 +2245,7 @@ new class extends Component {
             $savedInvoiceNumber = (string) $order->invoice_number;
             $wasEditing = (bool) $editingInvoiceId;
 
+            $this->invalidateActiveShiftCache();
             $this->activeShiftId = $shift->id;
 
             $this->clearCartState();
