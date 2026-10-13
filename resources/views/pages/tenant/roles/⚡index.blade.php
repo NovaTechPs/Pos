@@ -1332,7 +1332,7 @@ new class extends Component
                                                        text-zinc-800
                                                        dark:text-zinc-200"
                                             >
-                                                {{ $group ?: 'عام' }}
+                                                {{ $group ? __('Permission Group: '.$group) : __('General') }}
                                             </div>
 
                                             <div
@@ -1419,7 +1419,9 @@ new class extends Component
                                                            text-zinc-800
                                                            dark:text-zinc-200"
                                                 >
-                                                    {{ $permission->display_name }}
+                                                    {{ app()->getLocale() === 'ar'
+                                                        ? $permission->display_name
+                                                        : \Illuminate\Support\Str::headline(str_replace('.', ' ', $permission->name)) }}
                                                 </div>
 
                                                 @if ($permission->name)

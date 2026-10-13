@@ -27,81 +27,105 @@ Route::middleware(['auth', 'verified'])
 
         // Dashboard
         Route::view('/', 'pages.tenant.dashboard')
+            ->middleware('can:dashboard.view')
             ->name('dashboard');
 
         // Branches / Employees / Roles / Customers
         Route::livewire('/branch', 'pages::tenant.branches.index')
+            ->middleware('can:branches.view')
             ->name('branch');
 
         Route::livewire('/role', 'pages::tenant.roles.index')
+            ->middleware('can:roles.view')
             ->name('role');
 
         Route::livewire('/employees', 'pages::tenant.employees.index')
+            ->middleware('can:employees.view')
             ->name('employees');
 
         Route::livewire('/customer', 'pages::tenant.customers.index')
+            ->middleware('can:customers.view')
             ->name('customer');
 
         // Categories / Products
         Route::livewire('/category', 'pages::tenant.categories.index')
+            ->middleware('can:categories.view')
             ->name('category');
 
         Route::livewire('/product', 'pages::tenant.products.index')
+            ->middleware('can:products.view')
             ->name('product');
 
         Route::livewire('/barcode/printer', 'pages::tenant.products.printer')
+            ->middleware('can:products.barcode.manage')
             ->name('barcode.printer');
 
         // POS
         Route::livewire('/pos', 'pages::tenant.pos.sales')
+            ->middleware('can:pos.view')
             ->name('pos');
 
         // Sales
         Route::livewire('/sale-invoices', 'pages::tenant.sales.invoices')
+            ->middleware('can:sales_invoices.view')
             ->name('sale-invoices');
 
         // Wholesale
         Route::livewire('/wholesale-sales', 'pages::tenant.wholesale.sales')
+            ->middleware('can:wholesale_sales.view')
             ->name('wholesale-sales');
 
         Route::livewire('/wholesale-invoices', 'pages::tenant.wholesale.invoices')
+            ->middleware('can:van_sales.view')
             ->name('wholesale-invoices');
 
         Route::livewire('/stock-transfers', 'pages::tenant.stock-transfers.index')
+            ->middleware('can:stock_transfers.view')
             ->name('tenant.stock-transfers');
         // Purchases
         Route::livewire('/purchase-invoices', 'pages::tenant.purchases.invoices')
+            ->middleware('can:purchases.view')
             ->name('purchase-invoices');
 
         // Online Store
         Route::livewire('/store/{slug}', 'pages::tenant.stores.index')
+            ->middleware('can:store.view')
             ->name('store');
 
         Route::livewire('/online-orders', 'pages::tenant.stores.online')
+            ->middleware('can:store.orders.view')
             ->name('online-orders');
 
         // Reports
         Route::livewire('/analytics', 'pages::tenant.reports.analytics')
+            ->middleware('can:reports.analytics')
             ->name('analytics');
 
         // Accounting
         Route::livewire('/daily-settlement', 'pages::tenant.accounting.daily-settlement')
+            ->middleware('can:reports.daily_settlement')
             ->name('daily-settlement');
         Route::livewire('/payment', 'pages::tenant.accounting.payment')
+            ->middleware('can:accounting.voucher.view')
             ->name('payment');
         Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
+            ->middleware('can:accounting.receipt.view')
             ->name('receipts');
 
         // System
         Route::livewire('/excel', 'pages::tenant.system.excel')
+            ->middleware('can:excel.manage')
             ->name('excel');
 
         Route::livewire('/backup', 'pages::tenant.system.backup')
+            ->middleware('can:backup.view')
             ->name('backup');
 
         Route::livewire('/logs', 'pages::tenant.system.logs')
+            ->middleware('can:logs.view')
             ->name('logs');
         Route::livewire('/payroll-manager', 'pages::tenant.hr.payroll-manager')
+            ->middleware('can:payroll.view')
             ->name('payroll-manager');
     });
 require __DIR__.'/settings.php';

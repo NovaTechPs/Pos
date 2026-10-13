@@ -163,18 +163,42 @@ class DatabaseSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
-        if (method_exists($adminRole, 'syncPermissions')) {
-
-            $adminRole->syncPermissions(
-                Permission::all()
-            );
-
-            $cashierRole->syncPermissions([
-                'orders.view',
-                'orders.create',
-                'products.view',
-            ]);
-        }
+        $adminRole->permissions()->sync(Permission::query()->pluck('id'));
+        $cashierRole->permissions()->sync(
+            Permission::query()
+                ->whereIn('name', [
+                    'pos.view',
+                    'pos.product.search',
+                    'pos.product.add',
+                    'pos.product.remove',
+                    'pos.product.quantity',
+                    'pos.sale.create',
+                    'pos.sale.checkout',
+                    'pos.sale.print',
+                    'pos.shift.open',
+                    'pos.shift.close',
+                    'products.view',
+                    'customers.view',
+                    'customers.create',
+                ])
+                ->pluck('id')
+        );
+        $wholesaleRole->permissions()->sync(
+            Permission::query()
+                ->whereIn('name', [
+                    'wholesale_sales.view',
+                    'wholesale_sales.create',
+                    'wholesale_sales.edit',
+                    'wholesale_sales.print',
+                    'van_sales.view',
+                    'van_sales.create',
+                    'van_sales.edit',
+                    'van_sales.print',
+                    'products.view',
+                    'customers.view',
+                ])
+                ->pluck('id')
+        );
 
         /*
         |--------------------------------------------------------------------------

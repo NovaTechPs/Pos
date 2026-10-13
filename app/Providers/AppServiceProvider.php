@@ -2,18 +2,22 @@
 
 namespace App\Providers;
 
-use Carbon\CarbonImmutable;
-use App\Models\User;
+use App\Models\AuditLog;
 use App\Models\Product;
-use Illuminate\Support\Facades\Gate;
+use App\Models\User;
+use App\Observers\AuditObserver;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
-use Illuminate\Support\Facades\URL;
-use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\Session;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -30,6 +34,19 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        foreach (File::allFiles(app_path('Models')) as $modelFile) {
+            $modelPath = str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $modelFile->getRelativePathname());
+            $modelClass = 'App\\Models\\'.$modelPath;
+
+            if (
+                class_exists($modelClass)
+                && is_subclass_of($modelClass, Model::class)
+                && $modelClass !== AuditLog::class
+            ) {
+                $modelClass::observe(AuditObserver::class);
+            }
+        }
+
         view()->composer('*', function () {
             if (Session::has('locale')) {
                 App::setLocale(Session::get('locale'));
@@ -58,7 +75,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('create-product', function (User $user) {
             $tenant = $user->tenant;
 
-            if (!$tenant || !$tenant->hasFeature('products_limit')) {
+            if (! $tenant || ! $tenant->hasFeature('products_limit')) {
                 return false;
             }
 
@@ -87,7 +104,7 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Password::defaults(
-            fn(): ?Password => app()->isProduction()
+            fn (): ?Password => app()->isProduction()
                 ? Password::min(12)
                     ->mixedCase()
                     ->letters()

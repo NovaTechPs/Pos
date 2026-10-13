@@ -103,13 +103,11 @@ new class extends Component
             return null;
         }
 
-        $tenantId = session('active_tenant_id');
+        $tenantId = session('active_tenant_id') ?: auth()->user()?->tenant_id;
 
         return AuditLog::query()
             ->with('user')
-            ->when($tenantId, function ($query) use ($tenantId) {
-                $query->where('tenant_id', $tenantId);
-            })
+            ->where('tenant_id', $tenantId ?? 0)
             ->find($this->selectedLogId);
     }
 
@@ -122,14 +120,11 @@ new class extends Component
 
     public function getLogsProperty()
     {
-        $tenantId = session('active_tenant_id');
+        $tenantId = session('active_tenant_id') ?: auth()->user()?->tenant_id;
 
         return AuditLog::query()
             ->with('user')
-
-            ->when($tenantId, function ($query) use ($tenantId) {
-                $query->where('tenant_id', $tenantId);
-            })
+            ->where('tenant_id', $tenantId ?? 0)
 
             ->when($this->search !== '', function ($query) {
 
@@ -139,11 +134,11 @@ new class extends Component
 
                     $q->where('id', $search)
 
-                        ->orWhere('action', 'ilike', "%{$search}%")
+                        ->orWhere('action', 'like', "%{$search}%")
 
                         ->orWhere(
                             'subject_type',
-                            'ilike',
+                            'like',
                             "%{$search}%"
                         )
 
@@ -158,12 +153,12 @@ new class extends Component
                             $userQuery
                                 ->where(
                                     'name',
-                                    'ilike',
+                                    'like',
                                     "%{$search}%"
                                 )
                                 ->orWhere(
                                     'email',
-                                    'ilike',
+                                    'like',
                                     "%{$search}%"
                                 );
 
@@ -183,7 +178,7 @@ new class extends Component
 
                 $query->where(
                     'subject_type',
-                    'ilike',
+                    'like',
                     "%{$this->modelType}%"
                 );
 

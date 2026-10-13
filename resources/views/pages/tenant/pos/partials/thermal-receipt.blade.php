@@ -1,4 +1,11 @@
 @php
+    $receiptTotal = (float) str_replace(',', '', (string) ($receipt['total_amount'] ?? 0));
+    $receiptPaid = (float) str_replace(',', '', (string) ($receipt['paid'] ?? 0));
+    $receiptChange = (float) str_replace(',', '', (string) ($receipt['change'] ?? 0));
+    $receiptDue = max(0, $receiptTotal - $receiptPaid);
+    $showPaid = isset($receipt['paid']) && abs($receiptPaid - $receiptTotal) > 0.001;
+    $showChange = isset($receipt['change']) && $receiptChange > 0.001;
+
     // Generate CODE128-B on the server so the barcode is part of the HTML
     // sent to the printer. This does not depend on JavaScript or external libraries.
     $invoiceBarcodeValue = trim((string) ($receipt['invoice_no'] ?? ''));
@@ -117,11 +124,6 @@
         </tbody>
     </table>
 
-    <div class="info-box">
-        <span>مجموع الكميات :</span>
-        <strong>{{ $receipt['total_qty'] ?? 0 }}</strong>
-    </div>
-
     @if (isset($receipt['subtotal']))
         <div class="info-box">
             <span>المجموع :</span>
@@ -148,14 +150,21 @@
         <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
     </div>
 
-    @if (isset($receipt['paid']))
+    @if ($showPaid)
         <div class="info-box">
             <span>المدفوع :</span>
             <strong>{{ $receipt['paid'] }}</strong>
         </div>
     @endif
 
-    @if (isset($receipt['change']))
+    @if ($receiptDue > 0.001)
+        <div class="info-box">
+            <span>المتبقي :</span>
+            <strong>{{ number_format($receiptDue, 2) }}</strong>
+        </div>
+    @endif
+
+    @if ($showChange)
         <div class="info-box">
             <span>الباقي :</span>
             <strong>{{ $receipt['change'] }}</strong>
@@ -200,10 +209,10 @@
         display: none;
         width: 80mm;
         background: #fff;
-        padding: 5px;
+        padding: 3px;
         box-sizing: border-box;
         font-family: Tahoma, Arial, sans-serif;
-        font-size: 15px;
+        font-size: 12px;
         color: #000;
         direction: rtl;
         text-align: center;
@@ -211,59 +220,59 @@
     }
 
     .header .store-title {
-        font-size: 21px;
+        font-size: 18px;
         font-weight: bold;
-        margin: 0 0 4px;
+        margin: 0 0 2px;
     }
 
     .header .notice {
-        font-size: 13px;
-        margin: 2px 0;
+        font-size: 11px;
+        margin: 1px 0;
         font-weight: bold;
     }
 
     .header .copy-type {
-        font-size: 14px;
+        font-size: 12px;
         font-weight: bold;
-        margin: 3px 0 10px;
+        margin: 2px 0 6px;
     }
 
     .meta-info {
         display: flex;
         justify-content: space-between;
         gap: 4px;
-        font-size: 12px;
+        font-size: 10px;
         font-weight: bold;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         padding: 0 2px;
     }
 
     .cashier {
-        font-size: 12px;
+        font-size: 10px;
         font-weight: bold;
-        margin-bottom: 7px;
+        margin-bottom: 5px;
     }
 
     .items-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
     }
 
     .items-table th,
     .items-table td {
         border: 1px solid #000;
-        padding: 6px 3px;
+        padding: 4px 2px;
         text-align: center;
-        font-size: 12px;
+        font-size: 10px;
         font-weight: bold;
         vertical-align: middle;
     }
 
     .items-table .item-name {
         text-align: right;
-        font-size: 12px;
-        line-height: 1.35;
+        font-size: 10px;
+        line-height: 1.2;
         word-break: break-word;
     }
 
@@ -293,39 +302,39 @@
     }
 
     .promotion-total-box {
-        border: 2px solid #000;
-        padding: 5px 8px;
-        margin: 6px 0;
+        border: 1px solid #000;
+        padding: 4px 6px;
+        margin: 4px 0;
         text-align: center;
         font-weight: bold;
     }
 
     .promotion-total-title {
-        font-size: 12px;
+        font-size: 10px;
     }
 
     .promotion-total-value {
         margin-top: 2px;
-        font-size: 17px;
+        font-size: 13px;
     }
 
     .info-box {
         border: 1px solid #000;
-        padding: 6px 8px;
-        margin-bottom: 5px;
+        padding: 4px 6px;
+        margin-bottom: 3px;
         display: flex;
         justify-content: center;
         gap: 15px;
-        font-size: 14px;
+        font-size: 11px;
         font-weight: bold;
     }
 
     .notes-box {
         border: 1px dashed #000;
-        padding: 7px 8px;
-        margin: 7px 0;
+        padding: 5px 6px;
+        margin: 5px 0;
         text-align: right;
-        font-size: 13px;
+        font-size: 11px;
         line-height: 1.45;
         font-weight: bold;
         white-space: pre-wrap;
@@ -339,29 +348,29 @@
 
     .net-box {
         border: 2px solid #000;
-        padding: 6px 8px;
-        margin: 6px 0;
+        padding: 5px 6px;
+        margin: 4px 0;
         display: flex;
         justify-content: center;
         align-items: center;
-        gap: 15px;
-        font-size: 18px;
+        gap: 10px;
+        font-size: 14px;
         font-weight: bold;
     }
 
     .net-value {
-        font-size: 16px;
+        font-size: 14px;
     }
 
     .barcode-section {
-        margin-top: 8px;
-        padding-top: 5px;
+        margin-top: 5px;
+        padding-top: 3px;
         text-align: center;
     }
 
     .invoice-barcode-wrap {
-        margin-top: 10px;
-        padding-top: 8px;
+        margin-top: 6px;
+        padding-top: 5px;
         border-top: 1px dashed #000;
         text-align: center;
     }
@@ -371,7 +380,7 @@
         align-items: stretch;
         justify-content: center;
         width: 94%;
-        height: 58px;
+        height: 40px;
         margin: 0 auto;
         padding: 0 8px;
         box-sizing: border-box;
@@ -385,7 +394,7 @@
     .barcode-space {
         display: block;
         flex: 0 0 auto;
-        height: 58px;
+        height: 40px;
     }
 
     .barcode-bar {
@@ -397,13 +406,13 @@
     }
 
     .system-name {
-        font-size: 12px;
-        margin: 3px 0 0;
+        font-size: 10px;
+        margin: 2px 0 0;
     }
 
     .print-time {
-        font-size: 10px;
-        margin: 2px 0;
+        font-size: 9px;
+        margin: 1px 0;
     }
 
     @media print {

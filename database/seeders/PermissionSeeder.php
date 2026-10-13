@@ -674,6 +674,62 @@ class PermissionSeeder extends Seeder
                 'group' => 'الإدارة',
             ],
 
+            [
+                'name' => 'stock_transfers.view',
+                'display_name' => 'عرض تحويلات المخزون',
+                'group' => 'المخزون',
+            ],
+            [
+                'name' => 'stock_transfers.create',
+                'display_name' => 'إنشاء تحويل مخزون',
+                'group' => 'المخزون',
+            ],
+            [
+                'name' => 'stock_transfers.edit',
+                'display_name' => 'تعديل تحويل مخزون',
+                'group' => 'المخزون',
+            ],
+            [
+                'name' => 'stock_transfers.delete',
+                'display_name' => 'حذف تحويل مخزون',
+                'group' => 'المخزون',
+            ],
+            [
+                'name' => 'excel.manage',
+                'display_name' => 'استيراد وتصدير البيانات',
+                'group' => 'النظام',
+            ],
+            [
+                'name' => 'logs.view',
+                'display_name' => 'عرض سجل العمليات',
+                'group' => 'النظام',
+            ],
+            [
+                'name' => 'payroll.view',
+                'display_name' => 'عرض وإدارة الرواتب',
+                'group' => 'الموارد البشرية',
+            ],
+            [
+                'name' => 'payroll.create',
+                'display_name' => 'إنشاء مسير رواتب',
+                'group' => 'الموارد البشرية',
+            ],
+            [
+                'name' => 'payroll.edit',
+                'display_name' => 'تعديل الرواتب',
+                'group' => 'الموارد البشرية',
+            ],
+            [
+                'name' => 'payroll.delete',
+                'display_name' => 'حذف مسير رواتب',
+                'group' => 'الموارد البشرية',
+            ],
+            [
+                'name' => 'payroll.pay',
+                'display_name' => 'صرف رواتب الموظفين',
+                'group' => 'الموارد البشرية',
+            ],
+
         ];
 
         foreach ($permissions as $permission) {
@@ -687,4 +743,3 @@ class PermissionSeeder extends Seeder
         }
     }
 }
-
