@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Models\AuditLog;
+use App\Models\BranchSyncOperation;
 use App\Models\Product;
+use App\Models\TenantSetting;
 use App\Models\User;
 use App\Observers\AuditObserver;
 use Carbon\CarbonImmutable;
@@ -42,15 +44,27 @@ class AppServiceProvider extends ServiceProvider
                 class_exists($modelClass)
                 && is_subclass_of($modelClass, Model::class)
                 && $modelClass !== AuditLog::class
+                && $modelClass !== BranchSyncOperation::class
             ) {
                 $modelClass::observe(AuditObserver::class);
             }
         }
 
-        view()->composer('*', function () {
+        view()->composer('*', function ($view): void {
             if (Session::has('locale')) {
                 App::setLocale(Session::get('locale'));
             }
+
+            $theme = request()->attributes->get('app_theme');
+
+            if (! is_string($theme)) {
+                $tenantId = Session::get('active_tenant_id') ?? auth()->user()?->tenant_id;
+                $storedTheme = $tenantId ? TenantSetting::get((int) $tenantId, 'ui_theme', 'blue') : 'blue';
+                $theme = in_array($storedTheme, ['blue', 'orange', 'green'], true) ? $storedTheme : 'blue';
+                request()->attributes->set('app_theme', $theme);
+            }
+
+            $view->with('appTheme', $theme);
         });
 
         $this->configureDefaults();

@@ -7,6 +7,11 @@
         inset="left"
     />
 
+    <a href="{{ route('tenant.dashboard') }}" class="ms-2 inline-flex items-center gap-2 font-extrabold text-slate-800 dark:text-white" wire:navigate aria-label="NOVO">
+        <img src="{{ asset('novo-mark.svg') }}" class="size-8" alt="">
+        <span>NOVO</span>
+    </a>
+
 
     <flux:spacer />
 

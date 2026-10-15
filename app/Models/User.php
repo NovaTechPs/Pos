@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -25,14 +24,14 @@ class User extends Authenticatable implements PasskeyUser
         'tenant_id',
         'branch_id',
         'is_owner',
-        'role_id'
+        'role_id',
     ];
 
     protected $hidden = [
         'password',
         'two_factor_secret',
         'two_factor_recovery_codes',
-        'remember_token'
+        'remember_token',
     ];
 
     protected function casts(): array
@@ -50,7 +49,7 @@ class User extends Authenticatable implements PasskeyUser
         $initials = Str::initials($this->name, true);
 
         return Str::length($initials) > 1
-            ? Str::substr($initials, 0, 1) . Str::substr($initials, -1)
+            ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
             : $initials;
     }
 
@@ -99,22 +98,19 @@ class User extends Authenticatable implements PasskeyUser
         return ! $this->is_owner && $this->role?->name === 'Cashier';
     }
 
+    public function hasPermission(string $permissionName): bool
+    {
+        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+            return true;
+        }
 
-public function hasPermission(string $permissionName): bool
-{
-    if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
-        return true;
+        if (! $this->role_id) {
+            return false;
+        }
+
+        return $this->role
+            ->permissions()
+            ->where('name', $permissionName)
+            ->exists();
     }
-
-    if (!$this->role_id) {
-        return false;
-    }
-
-    return $this->role
-        ->permissions()
-        ->where('name', $permissionName)
-        ->exists();
-}
-
-
 }

@@ -129,6 +129,11 @@ class Party extends Model
         return $this->hasMany(Order::class, 'customer_id');
     }
 
+    public function purchases()
+    {
+        return $this->hasMany(Purchase::class, 'supplier_id');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Payments / Receipts

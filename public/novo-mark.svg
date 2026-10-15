@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 250" fill="none">
+  <title>NOVO</title>
+  <defs>
+    <linearGradient id="mark" x1="38" y1="30" x2="205" y2="211" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2859D9"/>
+      <stop offset="1" stop-color="#17347D"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="76" y1="61" x2="171" y2="175" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#43DFC0"/>
+      <stop offset="1" stop-color="#18A98C"/>
+    </linearGradient>
+  </defs>
+  <rect x="22" y="22" width="206" height="206" rx="58" fill="url(#mark)"/>
+  <path d="M69 174V78C69 70.3 78.1 66.9 82.9 72.9L164 174V78" stroke="#fff" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M164 174V147" stroke="url(#accent)" stroke-width="21" stroke-linecap="round"/>
+  <circle cx="164" cy="78" r="15" fill="url(#accent)"/>
+</svg>

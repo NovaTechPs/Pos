@@ -323,6 +323,34 @@ new class extends Component {
         $this->dispatch('focus-quantity');
     }
 
+    public function selectProductByBarcode(string $barcode): bool
+    {
+        $barcode = trim($barcode);
+        $tenantId = $this->tenantId();
+
+        if ($barcode === '' || mb_strlen($barcode) > 100 || ! $tenantId) {
+            return false;
+        }
+
+        $productId = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->where(function ($query) use ($barcode, $tenantId): void {
+                $query->where('product_number', $barcode)
+                    ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
+                        ->where('tenant_id', $tenantId)
+                        ->where('barcode', $barcode));
+            })
+            ->value('id');
+
+        if (! $productId) {
+            return false;
+        }
+
+        $this->selectProduct((int) $productId);
+
+        return true;
+    }
+
     public function commitRowToCart(): void
     {
         if (!$this->selectedProductId) {
@@ -901,7 +929,7 @@ new class extends Component {
                         });
 
                     if (is_numeric($search)) {
-                        $query->orWhereKey((int) $search);
+                        $query->orWhere('id', (int) $search);
                     }
                 })
                 ->orderBy('name')
@@ -1260,7 +1288,6 @@ new class extends Component {
                             x-ref="productSearch"
                             type="text"
                             wire:model.live.debounce.120ms="rowSearch"
-                            wire:keydown.enter.prevent="commitRowToCart"
                             autocomplete="off"
                             placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..."
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
@@ -1314,8 +1341,8 @@ new class extends Component {
                         type="number"
                         min="0.01"
                         step="0.01"
-                        wire:model="selectedQuantity"
-                        wire:keydown.enter.prevent="commitRowToCart"
+                        wire:model.live="selectedQuantity"
+                        x-on:keydown.enter.prevent="$nextTick(() => $refs.priceInput?.focus())"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
                     />
                 </div>
@@ -1327,7 +1354,7 @@ new class extends Component {
                         type="number"
                         step="0.01"
                         min="0"
-                        wire:model="selectedPrice"
+                        wire:model.live="selectedPrice"
                         wire:keydown.enter.prevent="commitRowToCart"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
                     />
@@ -1929,12 +1956,20 @@ new class extends Component {
                 }
 
                 if (key === 'Enter') {
-                    const clicked = this.clickCurrentResult('product');
+                    event.preventDefault();
+                    this.$wire.selectProductByBarcode(target.value).then((barcodeMatched) => {
+                        if (barcodeMatched) {
+                            this.productIndex = -1;
+                            return;
+                        }
 
-                    if (clicked) {
-                        event.preventDefault();
-                    }
-
+                        const products = this.productResults();
+                        if (this.productIndex >= 0 && products[this.productIndex]) {
+                            products[this.productIndex].click();
+                        } else {
+                            products[0]?.click();
+                        }
+                    });
                     return;
                 }
             }

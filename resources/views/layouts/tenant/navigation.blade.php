@@ -17,9 +17,10 @@
             ['permission' => 'purchases.view', 'route' => 'tenant.purchase-invoices', 'label' => 'Purchase Invoices', 'icon' => 'arrow-down-tray'],
             ['permission' => 'store.view', 'route' => 'tenant.store', 'label' => 'Store', 'icon' => 'building-storefront'],
             ['permission' => 'store.orders.view', 'route' => 'tenant.online-orders', 'label' => 'Online Orders', 'icon' => 'shopping-cart'],
-            ['permission' => 'reports.analytics', 'route' => 'tenant.analytics', 'label' => 'Analytics', 'icon' => 'chart-bar-square'],
+            ['permission' => 'reports.analytics', 'route' => 'tenant.analytics', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],
             ['permission' => 'reports.daily_settlement', 'route' => 'tenant.daily-settlement', 'label' => 'Daily Settlement', 'icon' => 'scale'],
             ['permission' => 'accounting.voucher.view', 'route' => 'tenant.payment', 'label' => 'Vouchers', 'icon' => 'banknotes'],
+            ['permission' => 'currency_rates.manage', 'route' => 'tenant.currency-rates', 'label' => 'أسعار الصرف / Exchange Rates', 'icon' => 'currency-dollar'],
             ['permission' => 'accounting.receipt.view', 'route' => 'tenant.receipts', 'label' => 'Receipts', 'icon' => 'receipt-percent'],
             ['permission' => 'excel.manage', 'route' => 'tenant.excel', 'label' => 'Excel Import Export', 'icon' => 'document-arrow-up'],
             ['permission' => 'backup.view', 'route' => 'tenant.backup', 'label' => 'Backup', 'icon' => 'server-stack'],
@@ -40,13 +41,13 @@
 
                 @if ($activeBranch?->domain)
                     <flux:sidebar.item :icon="$item['icon']" :href="route($item['route'], ['slug' => $activeBranch->domain])"
-                        :current="request()->routeIs($item['route'])">
+                        :current="request()->routeIs($item['route'])" wire:navigate>
                         {{ __($item['label']) }}
                     </flux:sidebar.item>
                 @endif
             @else
                 <flux:sidebar.item :icon="$item['icon']" :href="route($item['route'])"
-                    :current="request()->routeIs($item['route'])">
+                    :current="request()->routeIs($item['route'])" wire:navigate>
                     {{ __($item['label']) }}
                 </flux:sidebar.item>
             @endif

@@ -2,6 +2,7 @@
 
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\BranchSyncOperation;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -11,9 +12,11 @@ use App\Models\Party;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Shift;
+use App\Models\Tenant;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use App\Models\TenantSetting;
@@ -83,6 +86,10 @@ new class extends Component {
     public bool $allowNegativeStock = false;
     public bool $unifiedStock = false;
     public bool $mergeSimilarProducts = false;
+    #[Locked]
+    public int $pendingSyncOperations = 0;
+    #[Locked]
+    public int $conflictedSyncOperations = 0;
 
     private ?Shift $activeShiftCache = null;
     private bool $activeShiftLoaded = false;
@@ -107,10 +114,33 @@ new class extends Component {
             'unified_stock',
             false
         );
+        $this->mergeSimilarProducts = TenantSetting::getBool(
+            (int) $tenantId,
+            'merge_similar_products',
+            false
+        );
 
         $this->loadHeldInvoices();
         $this->checkActiveShift();
         $this->loadQuickProducts();
+        $this->refreshBranchSyncStatus();
+    }
+
+    public function refreshBranchSyncStatus(): void
+    {
+        if (config('branch-sync.mode') !== 'edge') {
+            $this->pendingSyncOperations = 0;
+            $this->conflictedSyncOperations = 0;
+
+            return;
+        }
+
+        $operations = BranchSyncOperation::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->getActiveBranchId());
+
+        $this->pendingSyncOperations = (clone $operations)->where('status', 'pending')->count();
+        $this->conflictedSyncOperations = (clone $operations)->whereIn('status', ['conflict', 'failed'])->count();
     }
 
     private function resolveCartLineKey(string $lineKeyOrProductId): ?string
@@ -538,7 +568,7 @@ new class extends Component {
                     return $existing;
                 }
 
-                return Shift::create([
+                $shift = Shift::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
                     'opening_cash' => $this->opening_cash,
@@ -547,6 +577,10 @@ new class extends Component {
                     'opened_by' => $user->id,
                     'notes' => trim($this->shift_notes) ?: null,
                 ]);
+
+                $this->queueShiftOpenForSync($shift);
+
+                return $shift;
             });
 
             $this->invalidateActiveShiftCache();
@@ -556,6 +590,7 @@ new class extends Component {
             $this->successMessage = $shift->wasRecentlyCreated
                 ? 'تم فتح الشيفت بنجاح. رقم الشيفت: #' . $shift->id
                 : 'يوجد شيفت مفتوح بالفعل برقم #' . $shift->id;
+            $this->refreshBranchSyncStatus();
 
             if ($shift->wasRecentlyCreated) {
                 $this->dispatch('pos-sound', type: 'shift-open');
@@ -683,6 +718,8 @@ new class extends Component {
                     'total_returns' => $summary['returns'],
                 ]);
 
+                $this->queueShiftCloseForSync($lockedShift->fresh());
+
                 return ['closed' => true, 'summary' => $summary];
             });
 
@@ -697,6 +734,7 @@ new class extends Component {
             }
 
             $this->invalidateActiveShiftCache();
+            $this->refreshBranchSyncStatus();
             $this->activeShiftId = null;
             $this->showCloseShiftModal = false;
             $this->clearCartState(false);
@@ -1301,7 +1339,7 @@ new class extends Component {
                 $q->where('invoice_number', $query)->orWhere('invoice_number', 'like', "%{$query}%");
 
                 if (is_numeric($query)) {
-                    $q->orWhereKey((int) $query);
+                    $q->orWhere('id', (int) $query);
                 }
 
                 if ($digitsOnly !== '') {
@@ -1882,6 +1920,12 @@ new class extends Component {
 
         $editingInvoiceId = $this->editingInvoiceId ?: ($this->currentInvoiceId ? (int) $this->currentInvoiceId : null);
 
+        if (config('branch-sync.mode') === 'edge' && $editingInvoiceId) {
+            $this->errorMessage = 'لا يمكن تعديل فاتورة محفوظة أثناء وضع الفرع المحلي. سجّل مرتجعًا ثم فاتورة جديدة. / Saved invoices cannot be edited in local mode; record a return and a new sale.';
+
+            return null;
+        }
+
         $shift = $this->activeShift();
         if (!$shift) {
             $this->checkActiveShift();
@@ -2105,7 +2149,7 @@ new class extends Component {
                         'customer_name' => $customer?->name ?? 'زبون عام',
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
-                        'invoice_number' => $this->makeInvoiceNumber($invoiceType, $tenantId),
+                        'invoice_number' => $this->makeInvoiceNumber($invoiceType, $tenantId, $branchId),
                         'type' => $invoiceType,
                         'status' => 'completed',
                         'subtotal' => $subtotal,
@@ -2176,6 +2220,8 @@ new class extends Component {
                         'unit_price' => $item['unit_price'],
                         'cost_price' => $item['cost_price'],
                         'total_price' => $item['total_price'],
+                        'total_cost' => $this->roundMoney($item['cost_price'] * $item['quantity']),
+                        'discount' => 0,
                     ]);
 
                     $branchProduct = BranchProduct::query()
@@ -2236,6 +2282,8 @@ new class extends Component {
                     $existingPayment->delete();
                 }
 
+                $this->queueSaleForSync($order, $lockedShift->fresh());
+
                 return Order::query()
                     ->whereKey($order->id)
                     ->with(['items.product', 'user', 'branch'])
@@ -2249,6 +2297,7 @@ new class extends Component {
             $this->activeShiftId = $shift->id;
 
             $this->clearCartState();
+            $this->refreshBranchSyncStatus();
             $this->activeShiftId = $shift->id;
 
             $this->successMessage = $wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
@@ -2326,12 +2375,146 @@ new class extends Component {
         }
     }
 
-    private function makeInvoiceNumber(string $type, int $tenantId): string
+    private function queueSaleForSync(Order $order, Shift $shift): void
+    {
+        if (config('branch-sync.mode') !== 'edge') {
+            return;
+        }
+
+        $payment = Payment::query()
+            ->where('tenant_id', $order->tenant_id)
+            ->where('order_id', $order->id)
+            ->first();
+
+        $items = OrderItem::query()
+            ->where('tenant_id', $order->tenant_id)
+            ->where('order_id', $order->id)
+            ->get()
+            ->map(fn (OrderItem $item): array => [
+                'product_id' => (int) $item->product_id,
+                'quantity' => (float) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+                'total_price' => (float) $item->total_price,
+                'cost_price' => (float) $item->cost_price,
+                'total_cost' => (float) $item->total_cost,
+                'discount' => (float) $item->discount,
+            ])->all();
+
+        $paymentData = $payment ? [
+            'amount' => (float) $payment->amount,
+            'type' => $payment->type,
+            'voucher_number' => $payment->voucher_number,
+            'payment_method' => $payment->payment_method,
+            'payment_date' => $payment->payment_date->toISOString(),
+            'notes' => $payment->notes,
+        ] : null;
+
+        BranchSyncOperation::query()->create([
+            'tenant_id' => $order->tenant_id,
+            'branch_id' => $order->branch_id,
+            'operation_uuid' => (string) Str::uuid(),
+            'operation_type' => 'sale.upsert',
+            'status' => 'pending',
+            'payload' => [
+                'order' => [
+                    'sync_uuid' => $order->sync_uuid,
+                    'invoice_number' => $order->invoice_number,
+                    'created_at' => $order->created_at->toISOString(),
+                    'created_by' => $order->created_by,
+                    'customer_id' => $order->customer_id,
+                    'customer_name' => $order->customer_name ?: 'زبون عام',
+                    'customer_phone' => $order->customer_phone,
+                    'customer_address' => $order->customer_address,
+                    'type' => $order->type,
+                    'subtotal' => (float) $order->subtotal,
+                    'tax_amount' => (float) $order->tax_amount,
+                    'discount_type' => $order->discount_type,
+                    'discount_rate' => (float) $order->discount_rate,
+                    'discount' => (float) $order->discount,
+                    'delivery_fee' => (float) $order->delivery_fee,
+                    'total' => (float) $order->total,
+                    'total_cost' => (float) $order->total_cost,
+                    'total_profit' => (float) $order->total_profit,
+                    'paid_amount' => (float) $order->paid_amount,
+                    'payment_status' => $order->payment_status,
+                    'notes' => $order->notes,
+                ],
+                'shift' => [
+                    'sync_uuid' => $shift->sync_uuid,
+                    'status' => 'open',
+                    'opening_cash' => (float) $shift->opening_cash,
+                    'opened_at' => $shift->opened_at->toISOString(),
+                    'opened_by' => $shift->opened_by,
+                    'notes' => $shift->notes,
+                ],
+                'items' => $items,
+                'payment' => $paymentData,
+            ],
+        ]);
+    }
+
+    private function queueShiftOpenForSync(Shift $shift): void
+    {
+        if (config('branch-sync.mode') !== 'edge') {
+            return;
+        }
+
+        BranchSyncOperation::query()->create([
+            'tenant_id' => $shift->tenant_id,
+            'branch_id' => $shift->branch_id,
+            'operation_uuid' => (string) Str::uuid(),
+            'operation_type' => 'shift.opened',
+            'status' => 'pending',
+            'payload' => [
+                'shift' => [
+                    'sync_uuid' => $shift->sync_uuid,
+                    'opening_cash' => (float) $shift->opening_cash,
+                    'opened_at' => $shift->opened_at->toISOString(),
+                    'opened_by' => $shift->opened_by,
+                    'notes' => $shift->notes,
+                ],
+            ],
+        ]);
+    }
+
+    private function queueShiftCloseForSync(?Shift $shift): void
+    {
+        if (config('branch-sync.mode') !== 'edge' || ! $shift) {
+            return;
+        }
+
+        BranchSyncOperation::query()->create([
+            'tenant_id' => $shift->tenant_id,
+            'branch_id' => $shift->branch_id,
+            'operation_uuid' => (string) Str::uuid(),
+            'operation_type' => 'shift.closed',
+            'status' => 'pending',
+            'payload' => [
+                'shift' => [
+                    'sync_uuid' => $shift->sync_uuid,
+                    'status' => 'closed',
+                    'opening_cash' => (float) $shift->opening_cash,
+                    'expected_cash' => (float) $shift->expected_cash,
+                    'actual_cash' => (float) $shift->actual_cash,
+                    'difference' => (float) $shift->difference,
+                    'total_sales' => (float) $shift->total_sales,
+                    'total_returns' => (float) $shift->total_returns,
+                    'opened_at' => $shift->opened_at->toISOString(),
+                    'opened_by' => $shift->opened_by,
+                    'closed_at' => $shift->closed_at->toISOString(),
+                    'closed_by' => $shift->closed_by,
+                    'notes' => $shift->notes,
+                ],
+            ],
+        ]);
+    }
+
+    private function makeInvoiceNumber(string $type, int $tenantId, int $branchId): string
     {
         $prefix = $type === 'return' ? 'R' : 'A';
 
         do {
-            $number = $prefix . random_int(100000000, 999999999);
+            $number = $prefix . $branchId . '-' . random_int(100000000, 999999999);
         } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
 
         return $number;
@@ -2604,8 +2787,13 @@ new class extends Component {
         $totalPromotionSavings = $this->roundMoney($totalPromotionSavings);
 
         $createdAt = $order->created_at ?: now();
+        $tenant = Tenant::query()->find($this->tenantId());
+        $currency = (string) TenantSetting::get((int) $this->tenantId(), 'currency', 'ILS');
+        $currencySymbols = ['ILS' => '₪', 'USD' => '$', 'JOD' => 'د.أ'];
         $this->receipt = [
-            'store_name' => $order->branch?->name ?? 'نقطة البيع',
+            'store_name' => $tenant?->name ?? $order->branch?->name ?? 'نقطة البيع',
+            'store_phone' => $tenant?->phone,
+            'store_address' => TenantSetting::get((int) $this->tenantId(), 'store_address', ''),
             'copy_type' => $order->type === 'return' ? 'فاتورة مرتجع' : 'فاتورة بيع',
             'invoice_no' => (string) $order->invoice_number,
             'date' => $createdAt->format('Y/m/d'),
@@ -2621,8 +2809,8 @@ new class extends Component {
             'total_amount' => number_format(abs((float) $order->total), 2),
             'paid' => number_format((float) $order->paid_amount, 2),
             'change' => number_format(max(0, (float) $order->paid_amount - abs((float) $order->total)), 2),
-            'currency' => 'ش.ض',
-            'notice' => 'شكراً لتعاملكم معنا',
+            'currency' => $currencySymbols[$currency] ?? '₪',
+            'notice' => TenantSetting::get((int) $this->tenantId(), 'receipt_footer', 'شكراً لتعاملكم معنا'),
         ];
     }
 
@@ -2901,6 +3089,23 @@ new class extends Component {
 };
 ?>
 <div>
+    @if (config('branch-sync.mode') === 'edge')
+        <div class="mx-auto mt-3 flex max-w-7xl flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
+            <div>
+                <strong>نقطة البيع تعمل على قاعدة الفرع المحلية</strong>
+                <span class="mx-1 text-sky-500">/</span>
+                <strong>POS is using this branch's local database</strong>
+                <span class="mx-2">·</span>
+                <span>{{ $pendingSyncOperations }} بانتظار المزامنة / pending</span>
+                @if ($conflictedSyncOperations > 0)
+                    <span class="mx-2 font-bold text-rose-700">{{ $conflictedSyncOperations }} تعارض للمراجعة / conflicts to review</span>
+                @endif
+            </div>
+            <button type="button" wire:click="refreshBranchSyncStatus" class="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold hover:bg-sky-100">
+                تحديث الحالة / Refresh status
+            </button>
+        </div>
+    @endif
     <div dir="rtl" class="h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 font-sans select-none">
 
         <div x-data x-cloak

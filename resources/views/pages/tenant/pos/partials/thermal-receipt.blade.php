@@ -66,6 +66,12 @@
 <div id="thermal-receipt" class="receipt-box" dir="rtl">
     <div class="header">
         <h2 class="store-title">{{ $receipt['store_name'] ?? 'نقطة البيع' }}</h2>
+        @if (!empty($receipt['store_address']))
+            <p class="notice">{{ $receipt['store_address'] }}</p>
+        @endif
+        @if (!empty($receipt['store_phone']))
+            <p class="notice" dir="ltr">{{ $receipt['store_phone'] }}</p>
+        @endif
         <p class="notice">{{ $receipt['notice'] ?? 'شكراً لتعاملكم معنا' }}</p>
         <p class="copy-type">{{ $receipt['copy_type'] ?? 'فاتورة بيع' }}</p>
     </div>

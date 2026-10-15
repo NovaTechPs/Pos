@@ -6,14 +6,23 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Shift extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $shift): void {
+            $shift->sync_uuid ??= (string) Str::uuid();
+        });
+    }
+
     protected $fillable = [
         'tenant_id',
         'branch_id',
+        'sync_uuid',
         'user_id',
         'opening_cash',
         'total_sales',
@@ -25,7 +34,7 @@ class Shift extends Model
         'notes',
         'opened_at',
         'closed_at',
-          'opened_by',
+        'opened_by',
         'closed_by',
     ];
 

@@ -54,14 +54,14 @@
 
                             <div class="mt-7 flex flex-wrap gap-3">
                                 @can('pos.view')
-                                    <a href="{{ route('tenant.pos') }}" class="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-indigo-800 shadow-lg shadow-indigo-950/20 transition hover:-translate-y-0.5 hover:bg-indigo-50">
+                                    <a href="{{ route('tenant.pos') }}" wire:navigate class="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-indigo-800 shadow-lg shadow-indigo-950/20 transition hover:-translate-y-0.5 hover:bg-indigo-50">
                                         <flux:icon.calculator class="size-4" />
                                         {{ __('Open point of sale') }}
                                     </a>
                                 @endcan
 
                                 @can('sales_invoices.view')
-                                    <a href="{{ route('tenant.sale-invoices') }}" class="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/15">
+                                    <a href="{{ route('tenant.sale-invoices') }}" wire:navigate class="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/15">
                                         <flux:icon.receipt-percent class="size-4" />
                                         {{ __('Browse invoices') }}
                                     </a>

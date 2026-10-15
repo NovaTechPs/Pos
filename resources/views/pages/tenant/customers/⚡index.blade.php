@@ -507,7 +507,8 @@ new class extends Component {
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->with([
-                'orders' => function ($query) {
+                'orders' => function ($query) use ($tenantId) {
+                    $query->withoutGlobalScope('tenant_id')->where('tenant_id', $tenantId);
                     $query->select(
                         'id',
                         'customer_id',
@@ -518,7 +519,8 @@ new class extends Component {
                     );
                 },
 
-                'payments' => function ($query) {
+                'payments' => function ($query) use ($tenantId) {
+                    $query->where('tenant_id', $tenantId);
                     $query->select(
                         'id',
                         'party_id',
@@ -526,9 +528,22 @@ new class extends Component {
                         'amount',
                         'payment_method',
                         'order_id',
+                        'purchase_id',
                         'created_at',
                         'payment_date',
                         'notes'
+                    );
+                },
+                'purchases' => function ($query) use ($tenantId) {
+                    $query->withoutGlobalScope('tenant_id')->where('tenant_id', $tenantId);
+                    $query->select(
+                        'id',
+                        'tenant_id',
+                        'supplier_id',
+                        'reference_number',
+                        'total',
+                        'paid_amount',
+                        'created_at'
                     );
                 },
             ])
@@ -577,6 +592,16 @@ new class extends Component {
             ]);
         }
 
+        foreach ($party->purchases as $purchase) {
+            $transactions->push([
+                'id' => 'purchase-' . $purchase->id,
+                'date' => $purchase->created_at,
+                'description' => 'فاتورة مشتريات #' . ($purchase->reference_number ?: $purchase->id),
+                'debit' => abs((float) $purchase->total),
+                'credit' => abs((float) $purchase->paid_amount),
+            ]);
+        }
+
 
         /*
         |--------------------------------------------------------------------------
@@ -587,6 +612,22 @@ new class extends Component {
         foreach ($party->payments as $payment) {
             $isRefund = $payment->type === 'payment';
             $amount = abs((float) $payment->amount);
+            $isSupplierPayment = $payment->purchase_id !== null
+                || ($payment->order_id === null
+                    && in_array($party->type, ['supplier', 'both'], true)
+                    && $payment->type === 'payment');
+
+            if ($isSupplierPayment) {
+                $transactions->push([
+                    'id' => 'payment-' . $payment->id,
+                    'date' => $payment->payment_date ?: $payment->created_at,
+                    'description' => $this->paymentDescription($payment, true),
+                    'debit' => 0.00,
+                    'credit' => $amount,
+                ]);
+
+                continue;
+            }
 
             $transactions->push([
                 'id' => 'payment-' . $payment->id,
@@ -623,11 +664,11 @@ new class extends Component {
     /**
      * وصف الدفعة.
      */
-    private function paymentDescription($payment): string
+    private function paymentDescription($payment, bool $isSupplier = false): string
     {
-        $description = $payment->type === 'payment'
-            ? 'مبلغ مردود للعميل'
-            : 'سند قبض';
+        $description = $isSupplier
+            ? 'سداد للمورد'
+            : ($payment->type === 'payment' ? 'مبلغ مردود للعميل' : 'سند قبض');
 
         if (!empty($payment->order_id)) {
             $description .= ' للفاتورة #' . $payment->order_id;

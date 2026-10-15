@@ -1527,7 +1527,7 @@ new class extends Component {
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get();
+                ->get(['id', 'name']);
         }
 
         /*
@@ -1542,7 +1542,7 @@ new class extends Component {
             $allBranches = DB::table('branches')
                 ->where('tenant_id', $tenantId)
                 ->orderBy('name')
-                ->get();
+                ->get(['id', 'name']);
         }
 
         /*
@@ -1609,48 +1609,19 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $totalProducts = $tenantId
-            ? Product::where(
-                'tenant_id',
-                $tenantId
-            )->count()
-            : 0;
+        $productStatistics = $tenantId
+            ? Product::query()
+                ->where('tenant_id', $tenantId)
+                ->selectRaw('COUNT(*) as total_products')
+                ->selectRaw('COALESCE(SUM(CASE WHEN show_in_website = ? THEN 1 ELSE 0 END), 0) as website_products', [true])
+                ->selectRaw('COALESCE(SUM(CASE WHEN show_in_website = ? THEN 1 ELSE 0 END), 0) as hidden_products', [false])
+                ->first()
+            : null;
 
-        $websiteProducts = $tenantId
-            ? Product::where(
-                'tenant_id',
-                $tenantId
-            )
-                ->where(
-                    'show_in_website',
-                    true
-                )
-                ->count()
-            : 0;
-
-        $hiddenProducts = $tenantId
-            ? Product::where(
-                'tenant_id',
-                $tenantId
-            )
-                ->where(
-                    'show_in_website',
-                    false
-                )
-                ->count()
-            : 0;
-
-        $totalCategories = $tenantId
-            ? Category::where(
-                'tenant_id',
-                $tenantId
-            )
-                ->where(
-                    'is_active',
-                    true
-                )
-                ->count()
-            : 0;
+        $totalProducts = (int) ($productStatistics?->total_products ?? 0);
+        $websiteProducts = (int) ($productStatistics?->website_products ?? 0);
+        $hiddenProducts = (int) ($productStatistics?->hidden_products ?? 0);
+        $totalCategories = $categories->count();
 
         /*
         |--------------------------------------------------------------------------

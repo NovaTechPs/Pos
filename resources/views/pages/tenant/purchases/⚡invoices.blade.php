@@ -318,6 +318,34 @@ new class extends Component {
         $this->dispatch('focus-quantity');
     }
 
+    public function selectProductByBarcode(string $barcode): bool
+    {
+        $barcode = trim($barcode);
+        $tenantId = $this->tenantId();
+
+        if ($barcode === '' || mb_strlen($barcode) > 100 || ! $tenantId) {
+            return false;
+        }
+
+        $productId = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->where(function ($query) use ($barcode, $tenantId): void {
+                $query->where('product_number', $barcode)
+                    ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
+                        ->where('tenant_id', $tenantId)
+                        ->where('barcode', $barcode));
+            })
+            ->value('id');
+
+        if (! $productId) {
+            return false;
+        }
+
+        $this->selectProduct((int) $productId);
+
+        return true;
+    }
+
     public function commitRowToCart(): void
     {
         if (!$this->selectedProductId) {
@@ -580,10 +608,16 @@ new class extends Component {
                             throw new \RuntimeException('تعذر العثور على مخزون أحد أصناف الفاتورة السابقة.');
                         }
 
-                        $newStock = max(
-                            0,
-                            (float) $branchProduct->stock_quantity - (float) $oldItem->quantity
-                        );
+                        $currentStock = (float) $branchProduct->stock_quantity;
+                        $previousPurchaseQuantity = (float) $oldItem->quantity;
+
+                        if ($currentStock + 0.000001 < $previousPurchaseQuantity) {
+                            throw new \DomainException(
+                                'لا يمكن تعديل فاتورة الشراء لأن جزءًا من كمياتها استُهلك أو أُخرج من المخزون. سجّل حركة تصحيح للمخزون أولًا.'
+                            );
+                        }
+
+                        $newStock = $currentStock - $previousPurchaseQuantity;
 
                         DB::table('branch_products')
                             ->where('id', $branchProduct->id)
@@ -740,7 +774,9 @@ new class extends Component {
 
         } catch (\Throwable $e) {
             report($e);
-            $this->errorMessage = 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
+            $this->errorMessage = $e instanceof \DomainException
+                ? $e->getMessage()
+                : 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
         }
     }
 
@@ -1277,7 +1313,6 @@ new class extends Component {
                                 x-ref="productSearch"
                                 type="text"
                                 wire:model.live.debounce.160ms="rowSearch"
-                                wire:keydown.enter="commitRowToCart"
                                 placeholder="ابحث عن مادة أو امسح الباركود ثم Enter..."
                                 autocomplete="off"
                                 class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-black text-slate-900 outline-none focus:border-indigo-400"
@@ -1319,11 +1354,11 @@ new class extends Component {
                                 </div>
                                 <div class="lg:col-span-2">
                                     <label class="mb-1 block text-[10px] font-black text-indigo-700">الكمية</label>
-                                    <input id="quantity-input" x-ref="quantity" type="number" min="0.01" step="0.01" wire:model="selectedQuantity" wire:keydown.enter="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                                    <input id="quantity-input" x-ref="quantity" type="number" min="0.01" step="0.01" wire:model.live="selectedQuantity" x-on:keydown.enter.prevent="$nextTick(() => $refs.purchasePriceInput?.focus())" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
                                 </div>
                                 <div class="lg:col-span-2">
                                     <label class="mb-1 block text-[10px] font-black text-indigo-700">سعر التكلفة</label>
-                                    <input type="number" min="0" step="0.01" wire:model.live="selectedPurchasePrice" wire:keydown.enter="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                                    <input x-ref="purchasePriceInput" type="number" min="0" step="0.01" wire:model.live="selectedPurchasePrice" wire:keydown.enter.prevent="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
                                 </div>
                                 <div class="lg:col-span-2">
                                     <label class="mb-1 block text-[10px] font-black text-indigo-700">المخزون قبل</label>
@@ -1597,7 +1632,7 @@ new class extends Component {
         },
 
         registerKeyboard() {
-            window.addEventListener('keydown', (event) => {
+            window.addEventListener('keydown', async (event) => {
                 const target = event.target;
 
                 const isTextField =
@@ -1685,12 +1720,19 @@ new class extends Component {
 
                         if (target === this.$refs.productSearch) {
                             event.preventDefault();
+                            const barcodeMatched = await this.$wire.selectProductByBarcode(target.value);
+
+                            if (barcodeMatched) {
+                                this.productIndex = -1;
+                                return;
+                            }
+
                             const active = document.querySelector('[data-product-result][data-result-index="' + this.productIndex + '"]');
 
                             if (active) {
                                 active.click();
-                            } else {
-                                this.$wire.commitRowToCart();
+                            } else if (this.$refs.productResults?.querySelector('[data-product-result]')) {
+                                this.$refs.productResults.querySelector('[data-product-result]').click();
                             }
 
                             return;

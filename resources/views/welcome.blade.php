@@ -3,7 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>NovoPOS - Modern Point of Sale System</title>
+    <title>NOVO - Retail Management System</title>
+    <link rel="icon" href="{{ asset('favicon.ico') }}?v=novo-2" sizes="any">
+    <link rel="icon" href="{{ asset('favicon.svg') }}?v=novo-2" type="image/svg+xml">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,10 +40,8 @@
     <!-- Navigation Header -->
     <header class="container mx-auto px-6 py-6 flex justify-between items-center">
         <div class="flex items-center space-x-3">
-            <div class="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl text-white shadow-lg shadow-indigo-500/30">
-                N
-            </div>
-            <span class="text-2xl font-bold tracking-tight text-white">Novo<span class="text-indigo-400">POS</span></span>
+            <img src="{{ asset('novo-mark.svg') }}" class="h-10 w-10" alt="">
+            <span class="text-2xl font-bold tracking-tight text-white">NOVO</span>
         </div>
 
         <nav class="flex items-center gap-4">
@@ -79,7 +79,7 @@
         </div>
 
         <h1 class="text-4xl md:text-6xl font-extrabold text-white max-w-4xl tracking-tight leading-tight mb-6">
-            Smart Checkout & Inventory Management for <span class="text-indigo-400">NovoPOS</span>
+            Smart Checkout & Inventory Management for <span class="text-indigo-400">NOVO</span>
         </h1>
 
         <p class="text-slate-400 text-lg md:text-xl max-w-2xl mb-10 leading-relaxed">
@@ -132,7 +132,7 @@
 
     <!-- Footer -->
     <footer class="container mx-auto px-6 py-6 text-center text-slate-500 text-sm">
-        &copy; {{ date('Y') }} NovoPOS Terminal. All rights reserved.
+        &copy; {{ date('Y') }} NOVO. All rights reserved.
     </footer>
 
 </body>

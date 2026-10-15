@@ -18,7 +18,15 @@ test('authenticated users can visit the dashboard', function () {
     $this->actingAs($user);
 
     $response = $this->get(route('tenant.dashboard'));
-    $response->assertOk();
+    $response->assertOk()
+        ->assertSee('wire:navigate', false);
+
+    $branchNavigationLink = preg_match(
+        '/<a\b(?=[^>]*href="'.preg_quote(route('tenant.branch'), '/').'")(?=[^>]*wire:navigate)[^>]*>/',
+        $response->getContent(),
+    );
+
+    expect($branchNavigationLink)->toBe(1);
 });
 
 test('tenant users without the dashboard permission are denied', function () {

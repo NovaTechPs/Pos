@@ -108,6 +108,10 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/payment', 'pages::tenant.accounting.payment')
             ->middleware('can:accounting.voucher.view')
             ->name('payment');
+
+        Route::livewire('/exchange-rates', 'pages::tenant.accounting.exchange-rates')
+            ->middleware('can:currency_rates.manage')
+            ->name('currency-rates');
         Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
             ->middleware('can:accounting.receipt.view')
             ->name('receipts');

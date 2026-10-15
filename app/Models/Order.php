@@ -5,10 +5,18 @@ namespace App\Models;
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Order extends Model
 {
     use BelongsToTenant, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $order): void {
+            $order->sync_uuid ??= (string) Str::uuid();
+        });
+    }
 
     protected $guarded = [];
 

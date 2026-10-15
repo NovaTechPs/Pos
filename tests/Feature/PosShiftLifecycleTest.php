@@ -1,8 +1,11 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\BranchProduct;
+use App\Models\BranchSyncOperation;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
@@ -29,6 +32,14 @@ function posShiftComponent(): Testable
 {
     return Livewire::test('pages::tenant.pos.sales');
 }
+
+test('the POS displays a live online or offline connectivity status without a simulation control', function (): void {
+    $component = posShiftComponent();
+
+    $component->assertSee('أونلاين / Online')
+        ->assertSee('أوفلاين / Offline')
+        ->assertDontSee('Simulate offline');
+});
 
 test('opening a shift validates the opening amount and prevents duplicate open shifts', function (): void {
     $component = posShiftComponent();
@@ -186,4 +197,94 @@ test('closing requires opening the cash reconciliation modal first', function ()
         ->assertSet('errorMessage', 'افتح نافذة التسوية وراجع الرصيد قبل تأكيد الإغلاق.');
 
     expect($shift->fresh()->status)->toBe('open');
+});
+
+test('edge mode queues the closed shift snapshot in the same transaction', function (): void {
+    config(['branch-sync.mode' => 'edge']);
+
+    $shift = Shift::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'opening_cash' => 50,
+        'status' => 'open',
+        'opened_at' => now(),
+        'opened_by' => $this->user->id,
+    ]);
+
+    posShiftComponent()
+        ->call('prepareCloseShift')
+        ->set('actual_cash', 50)
+        ->call('closeShift')
+        ->assertSet('showCloseShiftModal', false);
+
+    $operation = BranchSyncOperation::query()->sole();
+    expect($operation->operation_type)->toBe('shift.closed')
+        ->and($operation->status)->toBe('pending')
+        ->and($operation->payload['shift']['sync_uuid'])->toBe($shift->sync_uuid)
+        ->and($operation->payload['shift']['status'])->toBe('closed');
+});
+
+test('edge mode queues a shift opening in the same transaction', function (): void {
+    config(['branch-sync.mode' => 'edge']);
+
+    posShiftComponent()
+        ->call('triggerOpenShiftModal')
+        ->set('opening_cash', 75)
+        ->set('shift_notes', 'بداية الدوام')
+        ->call('openShift');
+
+    $shift = Shift::query()->sole();
+    $operation = BranchSyncOperation::query()->sole();
+    expect($operation->operation_type)->toBe('shift.opened')
+        ->and($operation->status)->toBe('pending')
+        ->and($operation->payload['shift']['sync_uuid'])->toBe($shift->sync_uuid)
+        ->and((float) $operation->payload['shift']['opening_cash'])->toBe(75.0);
+});
+
+test('edge mode queues a complete sale snapshot in the checkout transaction', function (): void {
+    config(['branch-sync.mode' => 'edge']);
+
+    Shift::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'opening_cash' => 50,
+        'status' => 'open',
+        'opened_at' => now(),
+        'opened_by' => $this->user->id,
+    ]);
+    $product = Product::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'منتج نقطة البيع',
+        'cost_price' => 4,
+    ]);
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'product_id' => $product->id,
+        'stock_quantity' => 5,
+        'retail_price' => 10,
+    ]);
+
+    $component = posShiftComponent()
+        ->set('cart', [
+            'item_'.$product->id => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'quantity' => 2,
+                'price' => 10,
+                'cost_price' => 4,
+                'subtotal' => 20,
+            ],
+        ])
+        ->set('paid_amount', 20);
+    $component->call('checkout');
+
+    expect($component->get('successMessage'))->toContain('تم حفظ الفاتورة');
+
+    $operation = BranchSyncOperation::query()->sole();
+    expect($operation->operation_type)->toBe('sale.upsert')
+        ->and($operation->status)->toBe('pending')
+        ->and($operation->payload['items'][0]['product_id'])->toBe($product->id)
+        ->and($operation->payload['order']['sync_uuid'])->toBe(Order::query()->sole()->sync_uuid)
+        ->and((float) BranchProduct::query()->value('stock_quantity'))->toBe(3.0);
 });

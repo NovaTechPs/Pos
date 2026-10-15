@@ -705,6 +705,16 @@ class PermissionSeeder extends Seeder
                 'group' => 'النظام',
             ],
             [
+                'name' => 'store.settings.manage',
+                'display_name' => 'إدارة إعدادات المتجر',
+                'group' => 'النظام',
+            ],
+            [
+                'name' => 'currency_rates.manage',
+                'display_name' => 'إدارة أسعار الصرف',
+                'group' => 'المالية',
+            ],
+            [
                 'name' => 'payroll.view',
                 'display_name' => 'عرض وإدارة الرواتب',
                 'group' => 'الموارد البشرية',

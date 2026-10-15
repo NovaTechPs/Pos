@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark" data-theme="{{ $appTheme }}">
 
 <head>
     @include('layouts.partials.head')
@@ -24,7 +24,7 @@
 
                 <div class="hidden border-s border-zinc-200 ps-4 dark:border-zinc-700 md:block">
                     <flux:sidebar.item icon="home" :href="route('tenant.dashboard')"
-                        :current="request()->routeIs('tenant.dashboard')" target="_blank">
+                        :current="request()->routeIs('tenant.dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                 </div>

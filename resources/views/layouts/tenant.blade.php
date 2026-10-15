@@ -2,6 +2,7 @@
 <html
     lang="{{ str_replace('_', '-', app()->getLocale()) }}"
     dir="{{ app()->getLocale() == 'ar' ? 'rtl' : 'ltr' }}"
+    data-theme="{{ $appTheme }}"
 >
 <head>
     @include('layouts.partials.head')

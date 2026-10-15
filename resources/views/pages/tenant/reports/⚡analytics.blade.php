@@ -5,6 +5,8 @@ use Livewire\WithPagination;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Branch;
+use App\Models\Party;
+use App\Models\BranchProduct;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -213,7 +215,8 @@ new class extends Component {
 
         $query
             ->where('orders.tenant_id', $tenantId)
-            ->whereIn('orders.type', $types);
+            ->whereIn('orders.type', $types)
+            ->where('orders.status', 'completed');
 
         $branchId = $this->effectiveBranchId();
 
@@ -379,6 +382,12 @@ new class extends Component {
                 'dailySales' => collect(),
                 'topProducts' => collect(),
                 'paymentBreakdown' => collect(),
+                'purchaseStats' => (object) ['count' => 0, 'total' => 0, 'paid' => 0, 'remaining' => 0],
+                'topCustomers' => collect(),
+                'topSuppliers' => collect(),
+                'topPurchasedProducts' => collect(),
+                'topReturnedProducts' => collect(),
+                'lowStockProducts' => collect(),
             ])->layout('layouts::tenant');
         }
 
@@ -515,6 +524,140 @@ new class extends Component {
             ->get();
 
         // --------------------------------------------------------
+        // Purchases, parties and stock reports share the active period
+        // and branch filters so figures can be reconciled together.
+        // --------------------------------------------------------
+
+        $purchasesQuery = DB::table('purchases')
+            ->where('purchases.tenant_id', $tenantId)
+            ->whereNull('purchases.deleted_at');
+
+        if ($branchId = $this->effectiveBranchId()) {
+            $purchasesQuery->where('purchases.branch_id', $branchId);
+        }
+
+        if ($this->date_from) {
+            $purchasesQuery->whereDate('purchases.created_at', '>=', $this->date_from);
+        }
+
+        if ($this->date_to) {
+            $purchasesQuery->whereDate('purchases.created_at', '<=', $this->date_to);
+        }
+
+        $purchaseStats = (clone $purchasesQuery)
+            ->selectRaw('COUNT(*) as count')
+            ->selectRaw('COALESCE(SUM(total), 0) as total')
+            ->selectRaw('COALESCE(SUM(paid_amount), 0) as paid')
+            ->selectRaw('COALESCE(SUM(CASE WHEN total > paid_amount THEN total - paid_amount ELSE 0 END), 0) as remaining')
+            ->first();
+
+        $topSuppliers = (clone $purchasesQuery)
+            ->whereNotNull('purchases.supplier_id')
+            ->leftJoin('parties', function ($join) use ($tenantId): void {
+                $join->on('parties.id', '=', 'purchases.supplier_id')
+                    ->where('parties.tenant_id', '=', $tenantId)
+                    ->whereNull('parties.deleted_at');
+            })
+            ->select('purchases.supplier_id')
+            ->selectRaw("COALESCE(parties.name, 'مورد محذوف') as name")
+            ->selectRaw('COUNT(*) as invoices_count')
+            ->selectRaw('COALESCE(SUM(purchases.total), 0) as total')
+            ->selectRaw('COALESCE(SUM(purchases.paid_amount), 0) as paid')
+            ->selectRaw('COALESCE(SUM(CASE WHEN purchases.total > purchases.paid_amount THEN purchases.total - purchases.paid_amount ELSE 0 END), 0) as remaining')
+            ->selectRaw('COALESCE(parties.current_balance, 0) as current_balance')
+            ->groupBy('purchases.supplier_id', 'parties.name', 'parties.current_balance')
+            ->orderByDesc('total')
+            ->limit(8)
+            ->get();
+
+        $topCustomers = Order::query()
+            ->where('orders.tenant_id', $tenantId)
+            ->whereIn('orders.type', ['pos', 'wholesale', 'online', 'return'])
+            ->where('orders.status', 'completed')
+            ->whereNotNull('orders.customer_id')
+            ->whereNull('orders.deleted_at')
+            ->when($this->effectiveBranchId(), fn ($query, $branchId) => $query->where('orders.branch_id', $branchId))
+            ->when($this->date_from, fn ($query, $date) => $query->whereDate('orders.created_at', '>=', $date))
+            ->when($this->date_to, fn ($query, $date) => $query->whereDate('orders.created_at', '<=', $date))
+            ->leftJoin('parties', function ($join) use ($tenantId): void {
+                $join->on('parties.id', '=', 'orders.customer_id')
+                    ->where('parties.tenant_id', '=', $tenantId)
+                    ->whereNull('parties.deleted_at');
+            })
+            ->select('orders.customer_id')
+            ->selectRaw("COALESCE(parties.name, MAX(orders.customer_name), 'عميل محذوف') as name")
+            ->selectRaw('COUNT(*) as invoices_count')
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END) as net_sales")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.paid_amount) ELSE orders.paid_amount END) as net_paid")
+            ->groupBy('orders.customer_id', 'parties.name')
+            ->orderByDesc('net_sales')
+            ->limit(8)
+            ->get();
+
+        $topPurchasedProductsQuery = DB::table('purchase_items')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
+            ->join('products', 'products.id', '=', 'purchase_items.product_id')
+            ->where('purchases.tenant_id', $tenantId)
+            ->where('products.tenant_id', $tenantId)
+            ->whereNull('purchases.deleted_at')
+            ->whereNull('products.deleted_at');
+
+        if ($branchId = $this->effectiveBranchId()) {
+            $topPurchasedProductsQuery->where('purchases.branch_id', $branchId);
+        }
+
+        if ($this->date_from) {
+            $topPurchasedProductsQuery->whereDate('purchases.created_at', '>=', $this->date_from);
+        }
+
+        if ($this->date_to) {
+            $topPurchasedProductsQuery->whereDate('purchases.created_at', '<=', $this->date_to);
+        }
+
+        $topPurchasedProducts = $topPurchasedProductsQuery
+            ->select('products.name')
+            ->selectRaw('SUM(purchase_items.quantity) as quantity')
+            ->selectRaw('SUM(purchase_items.subtotal) as total')
+            ->groupBy('products.name')
+            ->orderByDesc('quantity')
+            ->limit(8)
+            ->get();
+
+        $topReturnedProductsQuery = OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('products', 'products.id', '=', 'order_items.product_id')
+            ->where('order_items.tenant_id', $tenantId)
+            ->where('orders.tenant_id', $tenantId)
+            ->where('products.tenant_id', $tenantId)
+            ->where('orders.type', 'return')
+            ->where('orders.status', 'completed')
+            ->whereNull('products.deleted_at')
+            ->when($this->effectiveBranchId(), fn ($query, $branchId) => $query->where('orders.branch_id', $branchId))
+            ->when($this->date_from, fn ($query, $date) => $query->whereDate('orders.created_at', '>=', $date))
+            ->when($this->date_to, fn ($query, $date) => $query->whereDate('orders.created_at', '<=', $date));
+
+        $topReturnedProducts = $topReturnedProductsQuery
+            ->select('products.name')
+            ->selectRaw('SUM(ABS(order_items.quantity)) as quantity')
+            ->selectRaw('SUM(ABS(order_items.total_price)) as total')
+            ->groupBy('products.name')
+            ->orderByDesc('quantity')
+            ->limit(8)
+            ->get();
+
+        $lowStockProducts = BranchProduct::query()
+            ->join('products', 'products.id', '=', 'branch_products.product_id')
+            ->where('branch_products.tenant_id', $tenantId)
+            ->where('products.tenant_id', $tenantId)
+            ->whereNull('products.deleted_at')
+            ->whereColumn('branch_products.stock_quantity', '<=', 'branch_products.alert_quantity')
+            ->when($this->effectiveBranchId(), fn ($query, $branchId) => $query->where('branch_products.branch_id', $branchId))
+            ->select('products.name', 'branch_products.stock_quantity', 'branch_products.alert_quantity')
+            ->orderBy('branch_products.stock_quantity')
+            ->limit(12)
+            ->get();
+
+        // --------------------------------------------------------
         // Main order list
         // --------------------------------------------------------
 
@@ -554,6 +697,12 @@ new class extends Component {
             'maxDailySales' => $maxDailySales,
             'topProducts' => $topProducts,
             'paymentBreakdown' => $paymentBreakdown,
+            'purchaseStats' => $purchaseStats,
+            'topCustomers' => $topCustomers,
+            'topSuppliers' => $topSuppliers,
+            'topPurchasedProducts' => $topPurchasedProducts,
+            'topReturnedProducts' => $topReturnedProducts,
+            'lowStockProducts' => $lowStockProducts,
         ])->layout('layouts::tenant');
     }
 
@@ -989,6 +1138,106 @@ new class extends Component {
                 <div class="flex items-center justify-between rounded-xl bg-violet-50 px-3 py-3 text-xs">
                     <span class="font-black text-violet-700">الربح</span>
                     <span class="font-mono font-black text-violet-800">{{ number_format($stats['profit'], 2) }}</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {{-- ============================================================
+         Purchases, customer and supplier reports
+    ============================================================= --}}
+    <section class="mb-5 space-y-5">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                <div class="text-[11px] font-black text-sky-700">فواتير المشتريات / Purchase invoices</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">{{ number_format((int) $purchaseStats->count) }}</div>
+            </div>
+            <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                <div class="text-[11px] font-black text-sky-700">إجمالي المشتريات / Purchases total</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->total, 2) }}</div>
+            </div>
+            <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <div class="text-[11px] font-black text-emerald-700">المدفوع للموردين / Paid to suppliers</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->paid, 2) }}</div>
+            </div>
+            <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div class="text-[11px] font-black text-amber-700">المستحق للموردين / Due to suppliers</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->remaining, 2) }}</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="border-b border-slate-100 p-4">
+                    <h3 class="text-sm font-black text-slate-900">تقرير العملاء / Customer report</h3>
+                    <p class="mt-1 text-[10px] font-semibold text-slate-400">صافي الفواتير بعد المرتجعات ضمن الفترة والفرع المحددين / Net invoices after returns for the selected period and branch.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-right text-xs">
+                        <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">العميل / Customer</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">صافي المبيعات / Net sales</th><th class="px-4 py-3">صافي المقبوض / Net received</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($topCustomers as $customer)
+                                <tr><td class="px-4 py-3 font-bold text-slate-800">{{ $customer->name }}</td><td class="px-4 py-3">{{ number_format((int) $customer->invoices_count) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $customer->net_sales, 2) }}</td><td class="px-4 py-3 font-mono">₪ {{ number_format((float) $customer->net_paid, 2) }}</td></tr>
+                            @empty
+                                <tr><td colspan="4" class="p-6 text-center text-slate-400">لا توجد فواتير مرتبطة بعملاء خلال هذه الفترة / No customer invoices in this period.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="border-b border-slate-100 p-4">
+                    <h3 class="text-sm font-black text-slate-900">تقرير الموردين / Supplier report</h3>
+                    <p class="mt-1 text-[10px] font-semibold text-slate-400">قيمة فواتير الشراء، المدفوع، والمستحق لكل مورد / Purchase totals, paid amounts, and balances due.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-right text-xs">
+                        <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">المورد / Supplier</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">المشتريات / Purchases</th><th class="px-4 py-3">المتبقي بالفترة / Period due</th><th class="px-4 py-3">الرصيد الحالي / Current balance</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @forelse($topSuppliers as $supplier)
+                                <tr><td class="px-4 py-3 font-bold text-slate-800">{{ $supplier->name }}</td><td class="px-4 py-3">{{ number_format((int) $supplier->invoices_count) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $supplier->total, 2) }}</td><td class="px-4 py-3 font-mono font-black text-amber-700">₪ {{ number_format((float) $supplier->remaining, 2) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $supplier->current_balance, 2) }}</td></tr>
+                            @empty
+                                <tr><td colspan="5" class="p-6 text-center text-slate-400">لا توجد فواتير شراء مرتبطة بموردين خلال هذه الفترة / No supplier purchase invoices in this period.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="border-b border-slate-100 p-4"><h3 class="text-sm font-black text-slate-900">الأكثر شراءً / Most purchased items</h3><p class="mt-1 text-[10px] font-semibold text-slate-400">حسب الكمية وقيمة فواتير المشتريات / Ranked by quantity and purchase value.</p></div>
+                <div class="overflow-x-auto"><table class="min-w-full text-right text-xs"><thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية / Quantity</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
+                    @forelse($topPurchasedProducts as $product)
+                        <tr><td class="px-4 py-3 font-bold">{{ $product->name }}</td><td class="px-4 py-3 font-mono">{{ number_format((float) $product->quantity, 2) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $product->total, 2) }}</td></tr>
+                    @empty
+                        <tr><td colspan="3" class="p-6 text-center text-slate-400">لا توجد أصناف مشتراة خلال هذه الفترة / No purchased items in this period.</td></tr>
+                    @endforelse
+                </tbody></table></div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-sm">
+                <div class="border-b border-orange-100 p-4"><h3 class="text-sm font-black text-slate-900">الأكثر إرجاعًا / Most returned items</h3><p class="mt-1 text-[10px] font-semibold text-slate-400">الأصناف الأعلى كمية وقيمة في مرتجعات نقطة البيع / POS returns ranked by quantity and value.</p></div>
+                <div class="overflow-x-auto"><table class="min-w-full text-right text-xs"><thead class="bg-orange-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية المرتجعة / Returned</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
+                    @forelse($topReturnedProducts as $product)
+                        <tr><td class="px-4 py-3 font-bold">{{ $product->name }}</td><td class="px-4 py-3 font-mono">{{ number_format((float) $product->quantity, 2) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $product->total, 2) }}</td></tr>
+                    @empty
+                        <tr><td colspan="3" class="p-6 text-center text-slate-400">لا توجد مرتجعات خلال هذه الفترة / No returns in this period.</td></tr>
+                    @endforelse
+                </tbody></table></div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm xl:col-span-2">
+                <div class="flex items-center justify-between border-b border-rose-100 p-4">
+                    <div><h3 class="text-sm font-black text-slate-900">الأصناف التي وصلت حد التنبيه / Low stock</h3><p class="mt-1 text-[10px] font-semibold text-slate-400">المخزون الحالي مقارنة بحد التنبيه، مع مراعاة الفرع المحدد / Current quantity versus the alert threshold for the selected branch.</p></div>
+                    <span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">{{ number_format($lowStockProducts->count()) }} صنف / items</span>
+                </div>
+                <div class="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                    @forelse($lowStockProducts as $product)
+                        <div class="flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-rose-50/60 p-3"><span class="truncate text-xs font-bold text-slate-800">{{ $product->name }}</span><span class="shrink-0 font-mono text-xs font-black text-rose-700">{{ number_format((float) $product->stock_quantity, 2) }} / {{ number_format((float) $product->alert_quantity, 2) }}</span></div>
+                    @empty
+                        <p class="col-span-full p-5 text-center text-xs font-bold text-emerald-700">لا توجد أصناف تحت حد التنبيه في النطاق المحدد / No products below the alert threshold.</p>
+                    @endforelse
                 </div>
             </div>
         </div>

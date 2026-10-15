@@ -135,6 +135,19 @@
 
         @endif
 
+        <div
+            x-data="{ browserOnline: navigator.onLine }"
+            x-on:online.window="browserOnline = true"
+            x-on:offline.window="browserOnline = false"
+            class="flex h-[42px] items-center gap-2 rounded-xl border px-3 text-xs font-black"
+            :class="browserOnline ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-800'"
+            role="status"
+            aria-live="polite"
+        >
+            <span class="inline-block h-2.5 w-2.5 rounded-full" :class="browserOnline ? 'bg-emerald-500' : 'bg-amber-500'"></span>
+            <strong x-show="browserOnline">أونلاين / Online</strong>
+            <strong x-show="!browserOnline">أوفلاين / Offline</strong>
+        </div>
 
         {{-- =====================================================
              المرتجع
