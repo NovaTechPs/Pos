@@ -147,6 +147,9 @@ class DatabaseSeeder extends Seeder
                 'description' => 'كاشير مبيعات',
             ]
         );
+
+        $this->syncPostgresSequence('roles');
+
         $wholesaleRole = Role::updateOrCreate(
             [
                 'tenant_id' => $targetTenantId,
@@ -363,5 +366,27 @@ class DatabaseSeeder extends Seeder
                     'updated_at' => now(),
                 ]);
         }
+
+        foreach (['plans', 'tenants', 'branches', 'roles'] as $table) {
+            $this->syncPostgresSequence($table);
+        }
+    }
+
+    private function syncPostgresSequence(string $table): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $tables = ['plans', 'tenants', 'branches', 'roles'];
+
+        if (! in_array($table, $tables, true)) {
+            throw new \InvalidArgumentException('Unsupported sequence table.');
+        }
+
+        DB::selectOne(
+            "SELECT setval(pg_get_serial_sequence(?, 'id'), COALESCE((SELECT MAX(id) FROM \"{$table}\"), 1), EXISTS (SELECT 1 FROM \"{$table}\"))",
+            [$table],
+        );
     }
 }
