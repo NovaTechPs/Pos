@@ -146,4 +146,9 @@ class Party extends Model
     {
         return $this->hasMany(Payment::class, 'party_id');
     }
+
+    public function purchaseReturns()
+    {
+        return $this->hasMany(PurchaseReturn::class, 'supplier_id');
+    }
 }

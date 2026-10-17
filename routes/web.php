@@ -87,6 +87,10 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:purchases.view')
             ->name('purchase-invoices');
 
+        Route::livewire('/returns', 'pages::tenant.returns.index')
+            ->middleware('can:returns.view')
+            ->name('returns');
+
         // Online Store
         Route::livewire('/store/{slug}', 'pages::tenant.stores.index')
             ->middleware('can:store.view')

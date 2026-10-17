@@ -11,6 +11,17 @@ class PermissionSeeder extends Seeder
     {
         $permissions = [
 
+            [
+                'name' => 'returns.view',
+                'display_name' => 'عرض مردودات المبيعات والمشتريات',
+                'group' => 'المردودات',
+            ],
+            [
+                'name' => 'returns.create',
+                'display_name' => 'إنشاء مردودات المبيعات والمشتريات',
+                'group' => 'المردودات',
+            ],
+
             /*
             |--------------------------------------------------------------------------
             | Dashboard

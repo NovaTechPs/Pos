@@ -13,6 +13,11 @@ class PurchaseItem extends Model
         return $this->belongsTo(Purchase::class);
     }
 
+    public function returns()
+    {
+        return $this->hasMany(PurchaseReturnItem::class);
+    }
+
     public function product()
     {
         return $this->belongsTo(Product::class)->withTrashed();

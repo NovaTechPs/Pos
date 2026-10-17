@@ -546,6 +546,16 @@ new class extends Component {
                         'created_at'
                     );
                 },
+                'purchaseReturns' => function ($query) use ($tenantId) {
+                    $query->where('tenant_id', $tenantId)->select(
+                        'id',
+                        'tenant_id',
+                        'supplier_id',
+                        'reference_number',
+                        'total',
+                        'created_at'
+                    );
+                },
             ])
             ->findOrFail($partyId);
     }
@@ -599,6 +609,16 @@ new class extends Component {
                 'description' => 'فاتورة مشتريات #' . ($purchase->reference_number ?: $purchase->id),
                 'debit' => abs((float) $purchase->total),
                 'credit' => abs((float) $purchase->paid_amount),
+            ]);
+        }
+
+        foreach ($party->purchaseReturns as $purchaseReturn) {
+            $transactions->push([
+                'id' => 'purchase-return-' . $purchaseReturn->id,
+                'date' => $purchaseReturn->created_at,
+                'description' => 'مردود مشتريات #' . ($purchaseReturn->reference_number ?: $purchaseReturn->id),
+                'debit' => 0.00,
+                'credit' => abs((float) $purchaseReturn->total),
             ]);
         }
 

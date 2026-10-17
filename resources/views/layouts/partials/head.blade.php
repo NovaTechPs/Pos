@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 @php
-    $appName = config('app.name', 'NOVO');
+    $appName = config('app.name', 'WaslaPOS');
     $activeRouteName = request()->route()?->getName();
     $routeTitles = [
         'admin.dashboard' => ['ar' => 'لوحة الإدارة', 'en' => 'Admin Dashboard'],
@@ -32,6 +32,7 @@
         'tenant.payroll-manager' => ['ar' => 'مسير الرواتب', 'en' => 'Payroll'],
         'tenant.pos' => ['ar' => 'نقطة البيع', 'en' => 'Point of Sale'],
         'tenant.product' => ['ar' => 'المنتجات', 'en' => 'Products'],
+        'tenant.returns' => ['ar' => 'المردودات', 'en' => 'Returns'],
         'tenant.purchase-invoices' => ['ar' => 'فواتير المشتريات', 'en' => 'Purchase Invoices'],
         'tenant.receipts' => ['ar' => 'السندات المالية', 'en' => 'Financial Vouchers'],
         'tenant.role' => ['ar' => 'الأدوار والصلاحيات', 'en' => 'Roles and Permissions'],
@@ -50,9 +51,9 @@
 
 <title>{{ $pageTitle === $appName ? $appName : $pageTitle.' - '.$appName }}</title>
 
-<link rel="icon" href="{{ asset('favicon.ico') }}?v=novo-2" sizes="any">
-<link rel="icon" href="{{ asset('favicon.svg') }}?v=novo-2" type="image/svg+xml">
-<link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}?v=novo-2">
+<link rel="icon" href="{{ asset('favicon.ico') }}?v=waslapos-1" sizes="any">
+<link rel="icon" href="{{ asset('favicon.svg') }}?v=waslapos-1" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}?v=waslapos-1">
 
 @fonts
 

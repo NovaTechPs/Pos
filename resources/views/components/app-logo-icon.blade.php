@@ -1,16 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 250" {{ $attributes->merge(['role' => 'img', 'aria-label' => 'NOVO']) }}>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 250" {{ $attributes->merge(['role' => 'img', 'aria-label' => 'WaslaPOS']) }}>
     <defs>
-        <linearGradient id="novoLogoMark" x1="38" y1="30" x2="205" y2="211" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#2859D9" />
-            <stop offset="1" stop-color="#17347D" />
+        <linearGradient id="waslaLogoTile" x1="36" y1="30" x2="215" y2="222" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#2864E8" />
+            <stop offset="1" stop-color="#123272" />
         </linearGradient>
-        <linearGradient id="novoLogoAccent" x1="76" y1="61" x2="171" y2="175" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#43DFC0" />
-            <stop offset="1" stop-color="#18A98C" />
+        <linearGradient id="waslaLogoLink" x1="72" y1="87" x2="185" y2="166" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#75F0D5" />
+            <stop offset="1" stop-color="#20C6A6" />
         </linearGradient>
     </defs>
-    <rect x="22" y="22" width="206" height="206" rx="58" fill="url(#novoLogoMark)" />
-    <path d="M69 174V78C69 70.3 78.1 66.9 82.9 72.9L164 174V78" stroke="white" stroke-width="21" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M164 174V147" stroke="url(#novoLogoAccent)" stroke-width="21" stroke-linecap="round" />
-    <circle cx="164" cy="78" r="15" fill="url(#novoLogoAccent)" />
+    <rect x="18" y="18" width="214" height="214" rx="62" fill="url(#waslaLogoTile)" />
+    <path d="M111 84H91a33 33 0 0 0 0 66h31m17 16h20a33 33 0 0 0 0-66h-31" stroke="white" stroke-width="19" stroke-linecap="round" />
+    <path d="m105 145 40-40" stroke="url(#waslaLogoLink)" stroke-width="20" stroke-linecap="round" />
+    <circle cx="105" cy="145" r="9" fill="#75F0D5" />
+    <circle cx="145" cy="105" r="9" fill="#75F0D5" />
 </svg>

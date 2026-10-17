@@ -183,6 +183,8 @@ class DatabaseSeeder extends Seeder
                     'products.view',
                     'customers.view',
                     'customers.create',
+                    'returns.view',
+                    'returns.create',
                 ])
                 ->pluck('id')
         );
@@ -199,6 +201,8 @@ class DatabaseSeeder extends Seeder
                     'van_sales.print',
                     'products.view',
                     'customers.view',
+                    'returns.view',
+                    'returns.create',
                 ])
                 ->pluck('id')
         );

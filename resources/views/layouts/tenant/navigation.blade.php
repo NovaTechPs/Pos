@@ -15,6 +15,7 @@
             ['permission' => 'van_sales.view', 'route' => 'tenant.wholesale-invoices', 'label' => 'Van Sales', 'icon' => 'truck'],
             ['permission' => 'stock_transfers.view', 'route' => 'tenant.tenant.stock-transfers', 'label' => 'Stock Transfers', 'icon' => 'arrows-right-left'],
             ['permission' => 'purchases.view', 'route' => 'tenant.purchase-invoices', 'label' => 'Purchase Invoices', 'icon' => 'arrow-down-tray'],
+            ['permission' => 'returns.view', 'route' => 'tenant.returns', 'label' => 'Returns', 'icon' => 'arrow-uturn-left'],
             ['permission' => 'store.view', 'route' => 'tenant.store', 'label' => 'Store', 'icon' => 'building-storefront'],
             ['permission' => 'store.orders.view', 'route' => 'tenant.online-orders', 'label' => 'Online Orders', 'icon' => 'shopping-cart'],
             ['permission' => 'reports.analytics', 'route' => 'tenant.analytics', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],

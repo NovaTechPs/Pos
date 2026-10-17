@@ -546,10 +546,28 @@ new class extends Component {
 
         $purchaseStats = (clone $purchasesQuery)
             ->selectRaw('COUNT(*) as count')
-            ->selectRaw('COALESCE(SUM(total), 0) as total')
+            ->selectRaw('COALESCE(SUM(total), 0) as gross_total')
             ->selectRaw('COALESCE(SUM(paid_amount), 0) as paid')
             ->selectRaw('COALESCE(SUM(CASE WHEN total > paid_amount THEN total - paid_amount ELSE 0 END), 0) as remaining')
             ->first();
+
+        $purchaseReturnsQuery = DB::table('purchase_returns')
+            ->where('purchase_returns.tenant_id', $tenantId);
+
+        if ($branchId = $this->effectiveBranchId()) {
+            $purchaseReturnsQuery->where('purchase_returns.branch_id', $branchId);
+        }
+
+        if ($this->date_from) {
+            $purchaseReturnsQuery->whereDate('purchase_returns.created_at', '>=', $this->date_from);
+        }
+
+        if ($this->date_to) {
+            $purchaseReturnsQuery->whereDate('purchase_returns.created_at', '<=', $this->date_to);
+        }
+
+        $purchaseStats->returns = (float) (clone $purchaseReturnsQuery)->sum('total');
+        $purchaseStats->total = (float) $purchaseStats->gross_total - $purchaseStats->returns;
 
         $topSuppliers = (clone $purchasesQuery)
             ->whereNotNull('purchases.supplier_id')
@@ -1147,13 +1165,21 @@ new class extends Component {
          Purchases, customer and supplier reports
     ============================================================= --}}
     <section class="mb-5 space-y-5">
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
                 <div class="text-[11px] font-black text-sky-700">فواتير المشتريات / Purchase invoices</div>
                 <div class="mt-1 text-2xl font-black text-slate-900">{{ number_format((int) $purchaseStats->count) }}</div>
             </div>
             <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
-                <div class="text-[11px] font-black text-sky-700">إجمالي المشتريات / Purchases total</div>
+                <div class="text-[11px] font-black text-sky-700">إجمالي المشتريات قبل المرتجعات / Gross purchases</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->gross_total, 2) }}</div>
+            </div>
+            <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <div class="text-[11px] font-black text-rose-700">مردودات المشتريات / Purchase returns</div>
+                <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->returns, 2) }}</div>
+            </div>
+            <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                <div class="text-[11px] font-black text-sky-700">صافي المشتريات / Net purchases</div>
                 <div class="mt-1 text-2xl font-black text-slate-900">₪ {{ number_format((float) $purchaseStats->total, 2) }}</div>
             </div>
             <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">

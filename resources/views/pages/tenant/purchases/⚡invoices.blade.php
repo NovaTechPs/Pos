@@ -585,6 +585,11 @@ new class extends Component {
                         throw new \RuntimeException('فاتورة المشتريات المطلوب تعديلها غير موجودة.');
                     }
 
+                    if (DB::table('purchase_returns')->where('tenant_id', $tenantId)
+                        ->where('purchase_id', $purchase->id)->exists()) {
+                        throw new \DomainException('لا يمكن تعديل فاتورة عليها مرتجعات مسجلة؛ سجّل مرتجعاً إضافياً عند الحاجة.');
+                    }
+
                     $oldSupplierId = $purchase->supplier_id;
                     $oldOutstanding = max(
                         0,

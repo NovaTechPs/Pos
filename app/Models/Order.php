@@ -25,6 +25,16 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function originalOrder()
+    {
+        return $this->belongsTo(self::class, 'original_order_id');
+    }
+
+    public function returns()
+    {
+        return $this->hasMany(self::class, 'original_order_id');
+    }
+
     public function branch()
     {
         return $this->belongsTo(Branch::class);

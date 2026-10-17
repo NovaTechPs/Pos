@@ -859,17 +859,8 @@ new class extends Component {
 
     public function toggleReturnMode(): void
     {
-        if (!$this->ensureInvoiceEditable()) {
-            return;
-        }
-        if (!empty($this->cart)) {
-            $this->errorMessage = 'لا يمكن تغيير نوع الفاتورة بعد إضافة أصناف. أنشئ فاتورة جديدة أولاً.';
-            return;
-        }
-
-        $this->isReturnMode = !$this->isReturnMode;
-        $this->errorMessage = null;
-        $this->successMessage = $this->isReturnMode ? 'تم تفعيل وضع المرتجع. هذه الفاتورة بالكامل مرتجع.' : 'تم تفعيل وضع البيع. هذه الفاتورة بالكامل بيع.';
+        $this->isReturnMode = false;
+        $this->errorMessage = 'سجّل المرتجعات من صفحة مردودات المبيعات، لربطها بفاتورتها وضبط الكميات والمخزون.';
     }
 
     public function loadQuickProducts(): void
@@ -1958,6 +1949,10 @@ new class extends Component {
         }
 
         $invoiceType = $this->isReturnMode ? 'return' : 'pos';
+        if ($invoiceType === 'return') {
+            $this->errorMessage = 'استخدم صفحة مردودات المبيعات لربط المرتجع بفاتورته الأصلية.';
+            return null;
+        }
         $paidInput = max(0, (float) ($this->paid_amount ?: 0));
 
         $customer = null;
@@ -1995,6 +1990,11 @@ new class extends Component {
 
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
+                    }
+
+                    if ($order->type === 'return' || Order::query()->where('tenant_id', $tenantId)
+                        ->where('original_order_id', $order->id)->exists()) {
+                        throw new \DomainException('لا يمكن تعديل فاتورة مرتبطة بمرتجع؛ سجّل مرتجعاً جديداً أو أنشئ فاتورة جديدة.');
                     }
 
                     $oldItems = OrderItem::query()
