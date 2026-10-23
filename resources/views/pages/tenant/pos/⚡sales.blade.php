@@ -1877,7 +1877,7 @@ new class extends Component {
     public function checkoutAndPrint(): void
     {
         if ($this->invoiceIsLocked()) {
-            $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً.';
+            $this->printReceipt();
             return;
         }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
@@ -3117,7 +3117,22 @@ new class extends Component {
     @endif
     <div dir="rtl" class="h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 font-sans select-none">
 
-        <div x-data x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus(); input?.select(); })"
+        <div x-data="{
+                printInProgress: false,
+                async saveAndPrint() {
+                    if (this.printInProgress) return;
+                    this.printInProgress = true;
+                    try {
+                        const field = document.activeElement?.closest?.('[data-pos-field]');
+                        if (field && !field.disabled && field.dataset.lineKey && field.dataset.posField) {
+                            await this.$wire.updateCartField(field.dataset.lineKey, field.dataset.posField, field.value);
+                        }
+                        await this.$wire.checkoutAndPrint();
+                    } finally {
+                        this.printInProgress = false;
+                    }
+                }
+            }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus(); input?.select(); })"
             x-on:keydown.window.escape="$wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
@@ -3130,7 +3145,8 @@ new class extends Component {
                     await $wire.saveOrEditInvoice();
                 })()
             "
-            x-on:keydown.window.f4.prevent="$wire.clearCart()" x-on:keydown.window.f6.prevent="$wire.checkoutAndPrint()"
+            x-on:keydown.window.f4.prevent="$wire.clearCart()"
+            x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
             x-on:keydown.window.f10.prevent="$nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
             class="flex h-full min-h-0 flex-col gap-1.5">
             @include('pages.tenant.pos.partials.toolbar')

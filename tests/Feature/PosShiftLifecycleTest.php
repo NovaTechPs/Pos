@@ -59,6 +59,38 @@ test('product cards retain assigned branch prices and stock after subsequent req
     expect(data_get($component->get('quickProducts'), '0.retail_price'))->toEqual(10.0);
 });
 
+test('F6 saves and dispatches printing then reprints a loaded invoice without another sale', function (): void {
+    Shift::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opening_cash' => 0, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $this->user->id,
+    ]);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'F6 product', 'cost_price' => 4]);
+    $stock = BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id,
+        'retail_price' => 10, 'stock_quantity' => 5,
+    ]);
+
+    $component = posShiftComponent()
+        ->assertSee('if (!$event.repeat) saveAndPrint()', false)
+        ->call('selectInlineProduct', $product->id)
+        ->set('paid_amount', 10)
+        ->call('checkoutAndPrint')
+        ->assertDispatched('print-receipt');
+
+    $order = Order::query()->sole();
+    expect((float) $stock->fresh()->stock_quantity)->toBe(4.0);
+    $component->call('loadInvoice', $order->id)
+        ->call('checkoutAndPrint')->assertDispatched('print-receipt');
+
+    expect(Order::query()->count())->toBe(1)
+        ->and((float) $stock->fresh()->stock_quantity)->toBe(4.0);
+});
+
+test('F6 does not print when saving requires an open shift', function (): void {
+    posShiftComponent()->call('checkoutAndPrint')->assertNotDispatched('print-receipt');
+    expect(Order::query()->count())->toBe(0);
+});
+
 test('the POS displays a live online or offline connectivity status without a simulation control', function (): void {
     $component = posShiftComponent();
 

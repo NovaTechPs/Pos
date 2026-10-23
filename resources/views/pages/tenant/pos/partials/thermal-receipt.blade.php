@@ -478,6 +478,7 @@
 
     let receiptPlaceholder = null;
     let originalDisplay = '';
+    let printScheduled = false;
 
     function prepareReceipt() {
         const receipt = document.getElementById('thermal-receipt');
@@ -502,11 +503,13 @@
             receipt.style.display = originalDisplay;
         }
         receiptPlaceholder = null;
+        printScheduled = false;
         document.body.classList.remove('printing-pos-receipt');
     }
 
     function doPosPrint() {
-        if (!prepareReceipt()) return;
+        if (printScheduled || !prepareReceipt()) return;
+        printScheduled = true;
         setTimeout(function () {
             if (document.body.classList.contains('printing-pos-receipt')) window.print();
         }, 100);

@@ -663,8 +663,8 @@
 
             <button
                 type="button"
-                wire:click="{{ $invoiceLocked ? 'printReceipt' : 'checkoutAndPrint' }}"
-                @disabled(empty($cart))
+                x-on:click="saveAndPrint()"
+                x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
                 title="{{ $invoiceLocked ? 'طباعة الفاتورة القديمة' : 'حفظ الفاتورة وطباعة' }}"
                 class="rounded-xl px-1.5 py-2.5 text-[9px] font-black text-white shadow-sm transition disabled:bg-slate-200 disabled:text-slate-400
                     {{
