@@ -3798,31 +3798,7 @@ new class extends Component {
         }
     }
 
-    @media print {
-        body * {
-            visibility: hidden !important;
-        }
 
-        #thermal-receipt,
-        #thermal-receipt * {
-            visibility: visible !important;
-        }
-
-        #thermal-receipt {
-            display: block !important;
-            position: absolute !important;
-            right: 0 !important;
-            top: 0 !important;
-            width: 80mm !important;
-            margin: 0 !important;
-            padding: 2mm !important;
-        }
-
-        @page {
-            size: 80mm auto;
-            margin: 0;
-        }
-    }
 </style>
 
 <script>

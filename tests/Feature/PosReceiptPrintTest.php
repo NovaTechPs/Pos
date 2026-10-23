@@ -52,3 +52,38 @@ test('thermal receipt shows partial payment and remaining balance', function () 
         ->toContain('المتبقي :')
         ->toContain('19.00');
 });
+
+test('thermal receipt fits the printable roll area and uses lighter table text', function (): void {
+    $html = posReceiptPrintView();
+
+    expect($html)->toContain('width: 72mm !important;', 'max-width: 100% !important;',
+        'position: static !important;', 'table-layout: fixed;', 'overflow-wrap: anywhere;',
+        'body.printing-pos-receipt > :not(#thermal-receipt)', 'document.body.appendChild(receipt)',
+        'receiptPlaceholder.replaceWith(receipt)', "window.addEventListener('afterprint', restoreReceipt)")
+        ->not->toContain('width: 80mm', 'font-weight: bold;', 'size: 80mm auto');
+});
+
+test('long receipt preserves every item and its final payment details', function (): void {
+    $items = collect(range(1, 75))->map(fn (int $index): array => [
+        'id' => $index, 'name' => 'اسم صنف طويل للغاية للاختبار '.$index,
+        'qty' => 1, 'price' => '10.00', 'total' => '10.00',
+    ])->all();
+    $html = posReceiptPrintView(['items' => $items, 'total_amount' => '750.00', 'paid' => '700.00']);
+
+    foreach ($items as $item) {
+        expect($html)->toContain($item['name']);
+    }
+    expect($html)->toContain('750.00', '700.00', '50.00', 'break-inside: avoid;');
+});
+
+test('long invoice barcode scales to the available receipt width without dropping bars', function (): void {
+    $invoice = 'POS-2026-10-23-12345678901234567890';
+    $html = posReceiptPrintView(['invoice_no' => $invoice]);
+    preg_match('/viewBox="0 0 (\d+) 40"/', $html, $viewBox);
+    preg_match_all('/<rect x="(\d+)" y="0" width="(\d+)"/', $html, $bars, PREG_SET_ORDER);
+
+    expect($html)->toContain('preserveAspectRatio="xMidYMid meet"', $invoice);
+    expect($bars)->not->toBeEmpty();
+    $lastBar = end($bars);
+    expect((int) $lastBar[1] + (int) $lastBar[2])->toBeLessThanOrEqual((int) $viewBox[1] - 10);
+});

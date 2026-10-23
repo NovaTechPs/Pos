@@ -180,7 +180,7 @@
     @if (!empty($receipt['notes']))
         <div class="notes-box">
             <span class="notes-title">ملاحظات:</span>
-            <span>{{ $receipt['notes'] }}</span>
+            <span class="notes-content">{{ $receipt['notes'] }}</span>
         </div>
     @endif
 
@@ -192,15 +192,18 @@
 
         <div class="invoice-barcode-wrap">
             @if (!empty($barcodeBars))
-                <div class="receipt-barcode" role="img" aria-label="باركود رقم الفاتورة {{ $invoiceBarcodeValue }}">
+                @php $barcodeOffset = 10; @endphp
+                <svg class="receipt-barcode" xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 {{ array_sum(array_map('abs', $barcodeBars)) + 20 }} 40"
+                    preserveAspectRatio="xMidYMid meet" role="img"
+                    aria-label="باركود رقم الفاتورة {{ $invoiceBarcodeValue }}">
                     @foreach ($barcodeBars as $bar)
                         @if ($bar > 0)
-                            <span class="barcode-bar" style="width: {{ $bar }}px"></span>
-                        @else
-                            <span class="barcode-space" style="width: {{ abs($bar) }}px"></span>
+                            <rect x="{{ $barcodeOffset }}" y="0" width="{{ $bar }}" height="40" fill="#000" />
                         @endif
+                        @php $barcodeOffset += abs($bar); @endphp
                     @endforeach
-                </div>
+                </svg>
             @endif
         </div>
     </div>
@@ -213,12 +216,14 @@
 <style>
     .receipt-box {
         display: none;
-        width: 80mm;
+        width: 72mm;
+        max-width: 100%;
         background: #fff;
         padding: 3px;
         box-sizing: border-box;
         font-family: Tahoma, Arial, sans-serif;
-        font-size: 12px;
+        font-size: 11px;
+        font-weight: 400;
         color: #000;
         direction: rtl;
         text-align: center;
@@ -226,53 +231,68 @@
     }
 
     .header .store-title {
-        font-size: 18px;
-        font-weight: bold;
+        font-size: 16px;
+        font-weight: 600;
         margin: 0 0 2px;
     }
 
     .header .notice {
         font-size: 11px;
         margin: 1px 0;
-        font-weight: bold;
+        font-weight: 400;
     }
 
     .header .copy-type {
-        font-size: 12px;
-        font-weight: bold;
+        font-size: 11px;
+        font-weight: 400;
         margin: 2px 0 6px;
     }
 
     .meta-info {
         display: flex;
         justify-content: space-between;
+        flex-wrap: wrap;
+        overflow-wrap: anywhere;
         gap: 4px;
         font-size: 10px;
-        font-weight: bold;
+        font-weight: 400;
         margin-bottom: 4px;
         padding: 0 2px;
     }
 
     .cashier {
         font-size: 10px;
-        font-weight: bold;
+        font-weight: 400;
         margin-bottom: 5px;
     }
 
     .items-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
         margin-bottom: 4px;
     }
 
     .items-table th,
     .items-table td {
         border: 1px solid #000;
-        padding: 4px 2px;
+        padding: 3px 2px;
         text-align: center;
-        font-size: 10px;
-        font-weight: bold;
+        font-size: 9.5px;
+        overflow-wrap: anywhere;
         vertical-align: middle;
+    }
+
+    .items-table th {
+        font-weight: 600;
+    }
+
+    .items-table td {
+        font-weight: 400;
+    }
+
+    .items-table tr {
+        break-inside: avoid;
     }
 
     .items-table .item-name {
@@ -286,25 +306,25 @@
     .receipt-promotion-label {
         margin-top: 2px;
         font-size: 9px;
-        font-weight: bold;
+        font-weight: 400;
         line-height: 1.25;
     }
 
     .receipt-final-total {
-        font-weight: bold;
+        font-weight: 500;
     }
 
     .receipt-original-total {
         margin-top: 1px;
         font-size: 9px;
         text-decoration: line-through;
-        font-weight: bold;
+        font-weight: 400;
     }
 
     .receipt-savings {
         margin-top: 1px;
         font-size: 9px;
-        font-weight: bold;
+        font-weight: 400;
     }
 
     .promotion-total-box {
@@ -312,7 +332,7 @@
         padding: 4px 6px;
         margin: 4px 0;
         text-align: center;
-        font-weight: bold;
+        font-weight: 400;
     }
 
     .promotion-total-title {
@@ -330,9 +350,11 @@
         margin-bottom: 3px;
         display: flex;
         justify-content: center;
-        gap: 15px;
+        flex-wrap: wrap;
+        overflow-wrap: anywhere;
+        gap: 4px 10px;
         font-size: 11px;
-        font-weight: bold;
+        font-weight: 400;
     }
 
     .notes-box {
@@ -342,14 +364,19 @@
         text-align: right;
         font-size: 11px;
         line-height: 1.45;
-        font-weight: bold;
-        white-space: pre-wrap;
+        font-weight: 400;
+        white-space: normal;
         word-break: break-word;
     }
 
     .notes-title {
         display: block;
         margin-bottom: 3px;
+    }
+
+    .notes-content {
+        display: block;
+        white-space: pre-wrap;
     }
 
     .net-box {
@@ -359,13 +386,20 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        gap: 10px;
-        font-size: 14px;
-        font-weight: bold;
+        flex-wrap: wrap;
+        overflow-wrap: anywhere;
+        gap: 4px 8px;
+        font-size: 13px;
+        font-weight: 600;
     }
 
     .net-value {
-        font-size: 14px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .receipt-box strong {
+        font-weight: 600;
     }
 
     .barcode-section {
@@ -382,33 +416,16 @@
     }
 
     .receipt-barcode {
-        display: flex;
-        align-items: stretch;
-        justify-content: center;
+        display: block;
         width: 94%;
         height: 40px;
         margin: 0 auto;
-        padding: 0 8px;
+        padding: 0;
         box-sizing: border-box;
-        overflow: hidden;
+        overflow: visible;
         background: #fff;
         line-height: 0;
         white-space: nowrap;
-    }
-
-    .barcode-bar,
-    .barcode-space {
-        display: block;
-        flex: 0 0 auto;
-        height: 40px;
-    }
-
-    .barcode-bar {
-        background: #000;
-    }
-
-    .barcode-space {
-        background: #fff;
     }
 
     .system-name {
@@ -422,85 +439,90 @@
     }
 
     @media print {
-        body * {
-            visibility: hidden !important;
+        html,
+        body.printing-pos-receipt {
+            display: block !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
-        #thermal-receipt,
-        #thermal-receipt * {
-            visibility: visible !important;
+        body.printing-pos-receipt > :not(#thermal-receipt) {
+            display: none !important;
         }
 
         #thermal-receipt {
             display: block !important;
-            position: absolute !important;
-            right: 0 !important;
-            left: auto !important;
-            top: 0 !important;
-            width: 80mm !important;
-            padding: 0 !important;
-            margin: 0 !important;
+            position: static !important;
+            width: 72mm !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            padding: 1mm !important;
+            margin: 0 auto !important;
         }
 
         @page {
-            size: 80mm auto;
-            margin: 0;
+            size: auto;
+            margin: 2mm;
         }
     }
 </style>
 
 <script>
 (function () {
-    function doPosPrint() {
+    if (window.__posThermalPrintInitialized) return;
+    window.__posThermalPrintInitialized = true;
+
+    let receiptPlaceholder = null;
+    let originalDisplay = '';
+
+    function prepareReceipt() {
         const receipt = document.getElementById('thermal-receipt');
-        if (!receipt) {
-            console.error('POS: #thermal-receipt not found');
-            return;
+        if (!receipt) return false;
+
+        if (!receiptPlaceholder) {
+            originalDisplay = receipt.style.display;
+            receiptPlaceholder = document.createComment('thermal-receipt-position');
+            receipt.before(receiptPlaceholder);
+            document.body.appendChild(receipt);
         }
 
-        // تأكد أن الفاتورة ظهرت قبل فتح نافذة الطباعة.
+        document.body.classList.add('printing-pos-receipt');
         receipt.style.display = 'block';
+        return true;
+    }
 
+    function restoreReceipt() {
+        const receipt = document.getElementById('thermal-receipt');
+        if (receiptPlaceholder && receiptPlaceholder.isConnected && receipt) {
+            receiptPlaceholder.replaceWith(receipt);
+            receipt.style.display = originalDisplay;
+        }
+        receiptPlaceholder = null;
+        document.body.classList.remove('printing-pos-receipt');
+    }
+
+    function doPosPrint() {
+        if (!prepareReceipt()) return;
         setTimeout(function () {
-            window.print();
+            if (document.body.classList.contains('printing-pos-receipt')) window.print();
         }, 100);
     }
 
     function registerPrintListener() {
-        if (window.__posThermalPrintRegistered) {
-            return;
-        }
-
-        if (!window.Livewire) {
-            return;
-        }
-
+        if (window.__posThermalPrintRegistered || !window.Livewire) return;
         window.__posThermalPrintRegistered = true;
-
-        Livewire.on('print-receipt', function () {
-            doPosPrint();
-        });
+        Livewire.on('print-receipt', doPosPrint);
     }
 
-    // Livewire 3
     document.addEventListener('livewire:init', registerPrintListener);
-
-    // إذا كان Livewire قد بدأ قبل تنفيذ هذا السكربت.
-    if (window.Livewire) {
-        registerPrintListener();
-    }
-
-    // دعم إعادة رسم الصفحة/المكوّن بواسطة Livewire.
-    document.addEventListener('livewire:navigated', function () {
-        setTimeout(registerPrintListener, 50);
-    });
-
-    // إرجاع الصفحة لطبيعتها بعد إغلاق نافذة الطباعة.
-    window.addEventListener('afterprint', function () {
-        const receipt = document.getElementById('thermal-receipt');
-        if (receipt) {
-            receipt.style.display = '';
-        }
-    });
+    if (window.Livewire) registerPrintListener();
+    document.addEventListener('livewire:navigated', registerPrintListener);
+    document.addEventListener('livewire:navigating', restoreReceipt);
+    window.addEventListener('beforeprint', prepareReceipt);
+    window.addEventListener('afterprint', restoreReceipt);
 })();
 </script>
