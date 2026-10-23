@@ -25,6 +25,12 @@ class PayrollCalculatorService
         DB::transaction(function () use ($period) {
             $period = PayrollPeriod::query()->lockForUpdate()->findOrFail($period->id);
 
+            if (! $period->tenant_id) {
+                throw ValidationException::withMessages([
+                    'selectedPeriodId' => 'يجب ربط فترة الرواتب بمنشأة قبل احتسابها.',
+                ]);
+            }
+
             if (in_array($period->status, ['approved', 'paid'], true)) {
                 throw ValidationException::withMessages([
                     'selectedPeriodId' => 'لا يمكن إعادة احتساب مسير معتمد أو مدفوع. أنشئ تسوية مستقلة للتصحيح.',
@@ -32,6 +38,7 @@ class PayrollCalculatorService
             }
 
             $employees = Employee::query()
+                ->where('tenant_id', $period->tenant_id)
                 ->where('is_active', true)
                 ->whereDate('hire_date', '<=', $period->end_date)
                 ->orderBy('id')
@@ -129,7 +136,7 @@ class PayrollCalculatorService
                     $carryoverBudget -= $amount;
                     $carryoverPlans[] = ['carryover' => $carryover, 'amount' => $amount];
                     // Reserve this carryover so another draft period cannot claim it.
-                    $carryover->target_period_id = $period->id;
+                    $carryover->targetPeriod()->associate($period);
                     $carryover->save();
                 }
 
@@ -138,8 +145,8 @@ class PayrollCalculatorService
 
                 if (! $payroll) {
                     $payroll = new EmployeePayroll;
-                    $payroll->payroll_period_id = $period->id;
-                    $payroll->employee_id = $employee->id;
+                    $payroll->payrollPeriod()->associate($period);
+                    $payroll->employee()->associate($employee);
                     $payroll->paid_amount = 0;
                     $payroll->payment_status = 'unpaid';
                 }
@@ -156,7 +163,7 @@ class PayrollCalculatorService
                 if ($bonuses > 0) {
                     EmployeePayrollItem::create([
                         'employee_payroll_id' => $payroll->id,
-                        'type' => 'allowance',
+                        'type' => 'addition',
                         'title' => 'مكافآت وبدلات الفترة',
                         'amount' => round($bonuses, 2),
                     ]);

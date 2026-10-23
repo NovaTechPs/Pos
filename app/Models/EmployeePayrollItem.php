@@ -13,6 +13,7 @@ class EmployeePayrollItem extends Model
         'amount' => 'decimal:2',
     ];
 
+    /** @return BelongsTo<EmployeePayroll, $this> */
     public function payroll(): BelongsTo
     {
         return $this->belongsTo(
@@ -21,6 +22,7 @@ class EmployeePayrollItem extends Model
         );
     }
 
+    /** @return BelongsTo<EmployeeAdvance, $this> */
     public function advance(): BelongsTo
     {
         return $this->belongsTo(
@@ -29,6 +31,7 @@ class EmployeePayrollItem extends Model
         );
     }
 
+    /** @return BelongsTo<EmployeePayrollCarryover, $this> */
     public function carryover(): BelongsTo
     {
         return $this->belongsTo(

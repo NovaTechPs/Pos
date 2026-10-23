@@ -115,6 +115,16 @@ class PermissionSeeder extends Seeder
                 'display_name' => 'حذف الموظف',
                 'group' => 'الموظفون',
             ],
+            [
+                'name' => 'employees.advances.view',
+                'display_name' => 'عرض طلبات السلف',
+                'group' => 'الموظفون',
+            ],
+            [
+                'name' => 'employees.advances.manage',
+                'display_name' => 'إدارة وصرف السلف',
+                'group' => 'الموظفون',
+            ],
 
             /*
             |--------------------------------------------------------------------------
@@ -334,6 +344,11 @@ class PermissionSeeder extends Seeder
             [
                 'name' => 'suppliers.view',
                 'display_name' => 'عرض الموردين',
+                'group' => 'المشتريات',
+            ],
+            [
+                'name' => 'suppliers.statement',
+                'display_name' => 'عرض كشف حساب المورد',
                 'group' => 'المشتريات',
             ],
             [

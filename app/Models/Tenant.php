@@ -3,6 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Tenant extends Model
 {
@@ -12,27 +15,32 @@ class Tenant extends Model
         'is_active' => 'boolean',
     ];
 
-    public function plan()
+    /** @return BelongsTo<Plan, $this> */
+    public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
     }
 
-    public function owner()
+    /** @return BelongsTo<User, $this> */
+    public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
     }
 
-    public function users()
+    /** @return HasMany<User, $this> */
+    public function users(): HasMany
     {
-        return $this->belongsToMany(User::class);
+        return $this->hasMany(User::class);
     }
 
-    public function branches()
+    /** @return HasMany<Branch, $this> */
+    public function branches(): HasMany
     {
         return $this->hasMany(Branch::class);
     }
 
-    public function products()
+    /** @return HasMany<Product, $this> */
+    public function products(): HasMany
     {
         return $this->hasMany(Product::class);
     }
@@ -46,7 +54,7 @@ class Tenant extends Model
         return $this->plan->hasFeature($key);
     }
 
-    public function getLimit(string $key, $default = 0)
+    public function getLimit(string $key, mixed $default = 0): mixed
     {
         if (! $this->plan) {
             return $default;
@@ -54,8 +62,10 @@ class Tenant extends Model
 
         return $this->plan->getFeatureValue($key, $default);
     }
-    public function settings()
-{
-    return $this->hasOne(TenantSetting::class);
-}
+
+    /** @return HasOne<TenantSetting, $this> */
+    public function settings(): HasOne
+    {
+        return $this->hasOne(TenantSetting::class);
+    }
 }

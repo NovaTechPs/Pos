@@ -268,6 +268,7 @@ class BranchSyncOperationProcessor
         $this->syncPayment($operation, $order, $payload['payment'] ?? null);
     }
 
+    /** @param array<string, mixed>|null $payment */
     private function syncPayment(BranchSyncOperation $operation, Order $order, ?array $payment): void
     {
         $existing = Payment::withTrashed()
@@ -307,7 +308,10 @@ class BranchSyncOperationProcessor
         }
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
     private function validateSale(array $payload): array
     {
         return Validator::make($payload, [
@@ -357,7 +361,10 @@ class BranchSyncOperationProcessor
         ])->validate();
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
     private function validateShift(array $payload): array
     {
         return Validator::make($payload, [

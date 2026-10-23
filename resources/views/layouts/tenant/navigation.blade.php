@@ -11,11 +11,12 @@
             ['permission' => 'products.barcode.manage', 'route' => 'tenant.barcode.printer', 'label' => 'Barcode Printer', 'icon' => 'printer'],
             ['permission' => 'pos.view', 'route' => 'tenant.pos', 'label' => 'POS', 'icon' => 'calculator'],
             ['permission' => 'sales_invoices.view', 'route' => 'tenant.sale-invoices', 'label' => 'Sales Invoices', 'icon' => 'document-text'],
+            ['permission' => 'returns.view', 'route' => 'tenant.sales-returns', 'label' => 'Sales Returns', 'icon' => 'arrow-uturn-left'],
             ['permission' => 'wholesale_sales.view', 'route' => 'tenant.wholesale-sales', 'label' => 'Wholesale Sales', 'icon' => 'building-office'],
             ['permission' => 'van_sales.view', 'route' => 'tenant.wholesale-invoices', 'label' => 'Van Sales', 'icon' => 'truck'],
             ['permission' => 'stock_transfers.view', 'route' => 'tenant.tenant.stock-transfers', 'label' => 'Stock Transfers', 'icon' => 'arrows-right-left'],
             ['permission' => 'purchases.view', 'route' => 'tenant.purchase-invoices', 'label' => 'Purchase Invoices', 'icon' => 'arrow-down-tray'],
-            ['permission' => 'returns.view', 'route' => 'tenant.returns', 'label' => 'Returns', 'icon' => 'arrow-uturn-left'],
+            ['permission' => 'returns.view', 'route' => 'tenant.purchase-returns', 'label' => 'Purchase Returns', 'icon' => 'arrow-uturn-left'],
             ['permission' => 'store.view', 'route' => 'tenant.store', 'label' => 'Store', 'icon' => 'building-storefront'],
             ['permission' => 'store.orders.view', 'route' => 'tenant.online-orders', 'label' => 'Online Orders', 'icon' => 'shopping-cart'],
             ['permission' => 'reports.analytics', 'route' => 'tenant.analytics', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],
@@ -31,6 +32,7 @@
     @endphp
 
     @foreach ($navigationItems as $item)
+        @continue($item['route'] === 'tenant.backup' && ! auth()->user()?->isSaaSAdmin())
         @can($item['permission'])
             @if ($item['route'] === 'tenant.store')
                 @php

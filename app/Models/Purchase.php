@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Purchase extends Model
@@ -12,17 +14,20 @@ class Purchase extends Model
 
     protected $guarded = [];
 
-    public function supplier()
+    /** @return BelongsTo<Party, $this> */
+    public function supplier(): BelongsTo
     {
         return $this->belongsTo(Party::class, 'supplier_id')->withTrashed();
     }
 
-    public function items()
+    /** @return HasMany<PurchaseItem, $this> */
+    public function items(): HasMany
     {
         return $this->hasMany(PurchaseItem::class);
     }
 
-    public function returns()
+    /** @return HasMany<PurchaseReturn, $this> */
+    public function returns(): HasMany
     {
         return $this->hasMany(PurchaseReturn::class);
     }

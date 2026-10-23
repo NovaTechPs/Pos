@@ -111,6 +111,7 @@
         // --- Employee Actions ---
         public function saveEmployee()
         {
+        $this->authorize('employees.create');
             $this->validate([
                 'employee_code' => 'required|unique:employees,employee_code',
                 'first_name' => 'required|string|max:100',
@@ -120,6 +121,8 @@
             ]);
 
             Employee::create([
+                'tenant_id' => auth()->user()?->tenant_id,
+                'branch_id' => auth()->user()?->branch_id,
                 'employee_code' => $this->employee_code,
                 'first_name' => $this->first_name,
                 'last_name' => $this->last_name,
@@ -139,6 +142,7 @@
         // --- Attendance Actions ---
         public function recordAttendance()
         {
+        $this->authorize('payroll.edit');
             $this->validate([
                 'employee_id' => 'required|exists:employees,id',
                 'attendance_date' => 'required|date',
@@ -170,6 +174,7 @@
 
         public function updateAttendance()
         {
+        $this->authorize('payroll.edit');
             $this->validate([
                 'edit_check_out' => 'nullable|after:edit_check_in',
             ], [
@@ -217,6 +222,7 @@
         // --- Departures Actions ---
         public function saveDeparture()
         {
+        $this->authorize('payroll.edit');
             $this->validate([
                 'departure_employee_id' => 'required|exists:employees,id',
                 'departure_date' => 'required|date',
@@ -245,6 +251,7 @@
         // --- Leaves Actions (التحقق من عدم وجود حضور يومي) ---
         public function saveLeave()
         {
+        $this->authorize('payroll.edit');
             $this->validate([
                 'leave_employee_id' => 'required|exists:employees,id',
                 'leave_start_date' => 'required|date',
@@ -281,6 +288,7 @@
         // --- Advance Actions ---
         public function saveAdvance()
         {
+        $this->authorize('employees.advances.manage');
             $this->validate([
                 'advance_employee_id' => 'required|exists:employees,id',
                 'advance_amount' => 'required|numeric|gt:0',
@@ -303,6 +311,7 @@
         // --- Payments / Ledger Actions ---
         public function savePayment()
         {
+        $this->authorize('payroll.pay');
             $this->validate([
                 'payment_employee_id' => 'required|exists:employees,id',
                 'payment_period_id' => 'required|exists:payroll_periods,id',
@@ -367,7 +376,8 @@
                     $carryover->employee_id = $payroll->employee_id;
                     $carryover->amount = $overpayment;
                     $carryover->remaining_amount = $remainingCarryover;
-                    $carryover->note = 'دفعة راتب مقدمة - مكسور من الشهر السابق';
+                    $carryover->type = EmployeePayrollCarryover::TYPE_DEDUCTION;
+                    $carryover->reason = 'دفعة راتب مقدمة - مكسور من الشهر السابق';
                     $carryover->status = $remainingCarryover > 0 ? 'pending' : 'applied';
                     if ($remainingCarryover > 0) {
                         $carryover->target_period_id = null;
@@ -393,6 +403,7 @@
         // --- Payroll Actions ---
         public function createPeriod()
         {
+        $this->authorize('payroll.create');
             $this->validate([
                 'period_title' => 'required|string',
                 'period_start_date' => 'required|date',
@@ -413,6 +424,7 @@
 
         public function calculatePayroll(PayrollCalculatorService $calculator)
         {
+        $this->authorize('payroll.edit');
             if (!$this->selectedPeriodId) return;
             $period = PayrollPeriod::findOrFail($this->selectedPeriodId);
             $calculator->calculateForPeriod($period);
@@ -421,6 +433,7 @@
 
         public function approvePayroll()
         {
+        $this->authorize('payroll.edit');
             if (!$this->selectedPeriodId) return;
 
             DB::transaction(function () {
@@ -494,6 +507,7 @@
                                 'amount' => round($amount, 2),
                             ]);
                             $carryover->remaining_amount = round((float) $carryover->remaining_amount - $amount, 2);
+                            $carryover->applied_amount = round((float) $carryover->applied_amount + $amount, 2);
                             if ($carryover->remaining_amount <= 0) {
                                 $carryover->remaining_amount = 0;
                                 $carryover->status = 'applied';

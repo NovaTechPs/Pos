@@ -14,7 +14,21 @@ class AuditLog extends Model
 
     protected $casts = ['old_values' => 'array', 'new_values' => 'array'];
 
-    public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    /** @return BelongsTo<Tenant, $this> */
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 }

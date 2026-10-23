@@ -33,6 +33,8 @@
         'tenant.pos' => ['ar' => 'نقطة البيع', 'en' => 'Point of Sale'],
         'tenant.product' => ['ar' => 'المنتجات', 'en' => 'Products'],
         'tenant.returns' => ['ar' => 'المردودات', 'en' => 'Returns'],
+        'tenant.sales-returns' => ['ar' => 'مردود المبيعات', 'en' => 'Sales Returns'],
+        'tenant.purchase-returns' => ['ar' => 'مردود المشتريات', 'en' => 'Purchase Returns'],
         'tenant.purchase-invoices' => ['ar' => 'فواتير المشتريات', 'en' => 'Purchase Invoices'],
         'tenant.receipts' => ['ar' => 'السندات المالية', 'en' => 'Financial Vouchers'],
         'tenant.role' => ['ar' => 'الأدوار والصلاحيات', 'en' => 'Roles and Permissions'],

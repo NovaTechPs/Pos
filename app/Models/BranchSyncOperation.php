@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property array<string, mixed> $payload */
 class BranchSyncOperation extends Model
 {
     protected $fillable = [
@@ -31,11 +32,13 @@ class BranchSyncOperation extends Model
         ];
     }
 
+    /** @return BelongsTo<BranchSyncDevice, $this> */
     public function device(): BelongsTo
     {
         return $this->belongsTo(BranchSyncDevice::class, 'device_id');
     }
 
+    /** @return BelongsTo<Branch, $this> */
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

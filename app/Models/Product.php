@@ -3,7 +3,11 @@
 namespace App\Models;
 
 use App\Traits\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
@@ -17,27 +21,35 @@ class Product extends Model
         'images' => 'array',
     ];
 
-    public function scopeVisibleOnWebsite($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeVisibleOnWebsite(Builder $query): Builder
     {
         return $query->where('show_in_website', true);
     }
 
-    public function branchProducts()
+    /** @return HasMany<BranchProduct, $this> */
+    public function branchProducts(): HasMany
     {
         return $this->hasMany(BranchProduct::class);
     }
 
-    public function category()
+    /** @return BelongsTo<Category, $this> */
+    public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    public function barcodes()
+    /** @return HasMany<ProductBarcode, $this> */
+    public function barcodes(): HasMany
     {
         return $this->hasMany(ProductBarcode::class);
     }
 
-    public function branches()
+    /** @return BelongsToMany<Branch, $this> */
+    public function branches(): BelongsToMany
     {
         return $this->belongsToMany(Branch::class, 'branch_products')
             ->withPivot(
@@ -52,7 +64,7 @@ class Product extends Model
             ->withTimestamps();
     }
 
-    public function priceForBranch($branchId)
+    public function priceForBranch(int $branchId): ?BranchProduct
     {
         return $this->branchProducts()->where('branch_id', $branchId)->first();
     }

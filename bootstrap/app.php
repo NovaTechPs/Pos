@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Middleware\AuthenticateBranchSyncDevice;
+use App\Http\Middleware\EnsureActiveAccount;
+use App\Http\Middleware\EnsureApiTenant;
 use App\Http\Middleware\IsAdmin;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,9 +17,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [EnsureActiveAccount::class]);
         $middleware->alias([
             'is_admin' => IsAdmin::class,
             'branch.sync' => AuthenticateBranchSyncDevice::class,
+            'api.tenant' => EnsureApiTenant::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

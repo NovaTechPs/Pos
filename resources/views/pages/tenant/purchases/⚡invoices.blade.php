@@ -528,6 +528,7 @@ new class extends Component {
 
     public function saveInvoice(bool $shouldPrint = false): void
     {
+        $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
         $this->errorMessage = null;
         $this->successMessage = null;
 

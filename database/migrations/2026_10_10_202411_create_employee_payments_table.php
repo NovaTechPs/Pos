@@ -26,6 +26,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['employee_id', 'payment_type', 'payment_date']);
+            $table->index(['employee_id', 'payment_date'], 'employee_payments_employee_date_index');
         });
     }
 

@@ -3,17 +3,20 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Plan extends Model
 {
     protected $fillable = ['name', 'price', 'slug'];
 
-    public function tenants()
+    /** @return HasMany<Tenant, $this> */
+    public function tenants(): HasMany
     {
         return $this->hasMany(Tenant::class);
     }
 
-    public function features()
+    /** @return HasMany<PlanFeature, $this> */
+    public function features(): HasMany
     {
         return $this->hasMany(PlanFeature::class);
     }
@@ -23,9 +26,10 @@ class Plan extends Model
         return $this->features()->where('feature_key', $key)->exists();
     }
 
-    public function getFeatureValue(string $key, $default = null)
+    public function getFeatureValue(string $key, mixed $default = null): mixed
     {
         $feature = $this->features()->where('feature_key', $key)->first();
+
         return $feature ? $feature->value : $default;
     }
 }

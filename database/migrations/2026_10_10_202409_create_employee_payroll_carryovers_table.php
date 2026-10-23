@@ -9,7 +9,6 @@ return new class extends Migration
     public function up(): void
     {
 
-        Schema::disableForeignKeyConstraints();
         Schema::create('employee_payroll_carryovers', function (Blueprint $table) {
             $table->id();
 
@@ -54,7 +53,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('employee_payroll_carryover_applications');
         Schema::dropIfExists('employee_payroll_carryovers');
     }
 };

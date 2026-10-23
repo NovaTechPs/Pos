@@ -530,6 +530,7 @@ new class extends Component {
 
     public function openShift(): void
     {
+        $this->authorize('pos.shift.open');
         if (!$this->showOpenShiftModal) {
             $this->errorMessage = 'افتح نافذة بدء الشيفت أولاً.';
             return;
@@ -649,6 +650,7 @@ new class extends Component {
 
     public function closeShift(): void
     {
+        $this->authorize('pos.shift.close');
         if (!$this->showCloseShiftModal) {
             $this->errorMessage = 'افتح نافذة التسوية وراجع الرصيد قبل تأكيد الإغلاق.';
             return;
@@ -923,14 +925,14 @@ new class extends Component {
             ->all();
     }
 
-    public function scanBarcode(): void
+    public function scanBarcode(string $scannedBarcode = ''): void
     {
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
         $this->errorMessage = null;
         $this->successMessage = null;
-        $barcode = trim($this->barcode);
+        $barcode = trim($scannedBarcode !== '' ? $scannedBarcode : $this->barcode);
 
         if ($barcode === '') {
             return;
@@ -1232,6 +1234,7 @@ new class extends Component {
 
     public function holdInvoice(): void
     {
+        $this->authorize('pos.invoice.hold');
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
@@ -1906,6 +1909,7 @@ new class extends Component {
 
     private function processCheckout(): ?Order
     {
+        $this->authorize('pos.sale.checkout');
         $this->errorMessage = null;
         $this->successMessage = null;
 
@@ -3108,7 +3112,7 @@ new class extends Component {
     @endif
     <div dir="rtl" class="h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 font-sans select-none">
 
-        <div x-data x-cloak
+        <div x-data x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus(); input?.select(); })"
             x-on:keydown.window.escape="$wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
@@ -3213,7 +3217,7 @@ new class extends Component {
                                                 $wire.selectInlineProduct($wire.quickProducts[0].id);
                                             }
                                         "
-                                        wire:model.live.debounce.250ms="productSearchQuery" @disabled($this->invoiceIsLocked())
+                                        wire:model.live.debounce.100ms="productSearchQuery" @disabled($this->invoiceIsLocked())
                                         type="text" autocomplete="off" placeholder="ابحث عن الصنف، رقم ID، أو الباركود..."
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                 </div>

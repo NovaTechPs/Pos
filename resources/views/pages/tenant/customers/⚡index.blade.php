@@ -287,6 +287,7 @@ new class extends Component {
      */
     public function save(): void
     {
+        $this->authorize($this->partyId ? 'customers.edit' : 'customers.create');
         $validated = $this->validate();
 
         $tenantId = $this->getTenantId();
@@ -385,6 +386,7 @@ new class extends Component {
      */
     public function deleteParty(int $id): void
     {
+        $this->authorize('customers.delete');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {

@@ -22,6 +22,7 @@ return new class extends Migration
             $table->softDeletes();
 
             $table->index(['tenant_id', 'branch_id', 'created_at']);
+            $table->index(['tenant_id', 'supplier_id', 'created_at'], 'purchases_party_return_lookup');
         });
     }
 

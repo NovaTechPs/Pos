@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseReturnItem extends Model
 {
@@ -11,12 +12,14 @@ class PurchaseReturnItem extends Model
 
     protected $guarded = [];
 
-    public function purchaseReturn()
+    /** @return BelongsTo<PurchaseReturn, $this> */
+    public function purchaseReturn(): BelongsTo
     {
         return $this->belongsTo(PurchaseReturn::class);
     }
 
-    public function purchaseItem()
+    /** @return BelongsTo<PurchaseItem, $this> */
+    public function purchaseItem(): BelongsTo
     {
         return $this->belongsTo(PurchaseItem::class);
     }

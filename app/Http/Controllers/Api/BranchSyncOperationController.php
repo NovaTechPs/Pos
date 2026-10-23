@@ -51,7 +51,9 @@ class BranchSyncOperationController extends Controller
 
                 if ($existing) {
                     $sameType = $existing->operation_type === $operation['operation_type'];
-                    $samePayload = $this->normalizePayload($existing->payload) === $this->normalizePayload($operation['payload']);
+                    $existingPayload = $existing->getAttribute('payload');
+                    $samePayload = is_array($existingPayload)
+                        && $this->normalizePayload($existingPayload) === $this->normalizePayload($operation['payload']);
 
                     if (! $sameType || ! $samePayload) {
                         return 'conflict';

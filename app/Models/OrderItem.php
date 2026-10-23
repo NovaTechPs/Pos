@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderItem extends Model
 {
@@ -13,27 +15,32 @@ class OrderItem extends Model
 
     protected $guarded = [];
 
-    public function order()
+    /** @return BelongsTo<Order, $this> */
+    public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
     }
 
-    public function originalOrderItem()
+    /** @return BelongsTo<OrderItem, $this> */
+    public function originalOrderItem(): BelongsTo
     {
         return $this->belongsTo(self::class, 'original_order_item_id');
     }
 
-    public function returns()
+    /** @return HasMany<OrderItem, $this> */
+    public function returns(): HasMany
     {
         return $this->hasMany(self::class, 'original_order_item_id');
     }
 
-    public function product()
+    /** @return BelongsTo<Product, $this> */
+    public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
     }
 
-    public function offer()
+    /** @return BelongsTo<ProductOffer, $this> */
+    public function offer(): BelongsTo
     {
         return $this->belongsTo(ProductOffer::class, 'offer_id');
     }

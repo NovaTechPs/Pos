@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeePayrollCarryoverApplication extends Model
 {
+    /** @use HasFactory<Factory<static>> */
     use HasFactory;
 
     protected $fillable = [
@@ -20,6 +22,7 @@ class EmployeePayrollCarryoverApplication extends Model
         'amount' => 'decimal:2',
     ];
 
+    /** @return BelongsTo<EmployeePayrollCarryover, $this> */
     public function carryover(): BelongsTo
     {
         return $this->belongsTo(
@@ -28,6 +31,7 @@ class EmployeePayrollCarryoverApplication extends Model
         );
     }
 
+    /** @return BelongsTo<EmployeePayroll, $this> */
     public function payroll(): BelongsTo
     {
         return $this->belongsTo(

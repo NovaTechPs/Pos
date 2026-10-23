@@ -69,21 +69,27 @@ return new class extends Migration
             $table->index([
                 'tenant_id',
                 'type',
-                'payment_date'
+                'payment_date',
             ]);
 
             $table->index([
                 'tenant_id',
                 'branch_id',
-                'payment_method'
+                'payment_method',
             ]);
 
             $table->index([
                 'tenant_id',
-                'party_id'
+                'party_id',
             ]);
+
+            $table->index(
+                ['tenant_id', 'branch_id', 'shift_id', 'payment_method'],
+                'payments_shift_summary_index'
+            );
         });
     }
+
     public function down(): void
     {
         Schema::dropIfExists('payments');

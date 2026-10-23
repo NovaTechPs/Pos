@@ -91,6 +91,14 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:returns.view')
             ->name('returns');
 
+        Route::livewire('/sales-returns', 'pages::tenant.returns.index')
+            ->middleware('can:returns.view')
+            ->name('sales-returns');
+
+        Route::livewire('/purchase-returns', 'pages::tenant.returns.index')
+            ->middleware('can:returns.view')
+            ->name('purchase-returns');
+
         // Online Store
         Route::livewire('/store/{slug}', 'pages::tenant.stores.index')
             ->middleware('can:store.view')
@@ -126,7 +134,7 @@ Route::middleware(['auth', 'verified'])
             ->name('excel');
 
         Route::livewire('/backup', 'pages::tenant.system.backup')
-            ->middleware('can:backup.view')
+            ->middleware(['is_admin', 'can:backup.view'])
             ->name('backup');
 
         Route::livewire('/logs', 'pages::tenant.system.logs')

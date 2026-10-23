@@ -301,6 +301,7 @@ return new class extends Component {
     public function saveTransfer(): void
 
     {
+        $this->authorize('stock_transfers.create');
 
         $tenantId = $this->tenantId();
 
@@ -493,6 +494,7 @@ return new class extends Component {
     public function approve(int $id): void
 
     {
+        $this->authorize('stock_transfers.edit');
 
         $tenantId = $this->tenantId();
 
@@ -685,6 +687,7 @@ return new class extends Component {
     public function cancel(int $id): void
 
     {
+        $this->authorize('stock_transfers.delete');
 
         $tenantId = $this->tenantId();
 

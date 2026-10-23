@@ -15,11 +15,12 @@ return new class extends Migration
             $table->foreignId('shift_id')->nullable()->constrained('shifts')->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('customer_id')->nullable()->constrained('parties')->nullOnDelete();
+            $table->foreignId('original_order_id')->nullable()->constrained('orders')->nullOnDelete();
             $table->string('customer_name')->nullable();
             $table->string('customer_phone')->nullable();
             $table->text('customer_address')->nullable();
             $table->string('invoice_number');
-            $table->enum('type', ['pos', 'wholesale', 'online','return'])->default('pos');
+            $table->enum('type', ['pos', 'wholesale', 'online', 'return'])->default('pos');
             $table->enum('status', ['pending', 'processing', 'completed', 'cancelled'])->default('completed');
             $table->decimal('subtotal', 12, 2);
             $table->decimal('tax_amount', 12, 2)->default(0);
@@ -32,8 +33,9 @@ return new class extends Migration
             $table->decimal('total_cost', 12, 2)->default(0.00);
             $table->decimal('total_profit', 12, 2)->default(0.00);
             $table->decimal('paid_amount', 12, 2)->default(0.00);
-            $table->enum('payment_status', ['paid', 'partial', 'unpaid'])->default('paid');
+            $table->enum('payment_status', ['paid', 'partial', 'unpaid', 'refunded'])->default('paid');
             $table->text('notes')->nullable();
+            $table->uuid('sync_uuid')->nullable()->unique();
             $table->timestamps();
             $table->softDeletes();
 
@@ -41,6 +43,9 @@ return new class extends Migration
             $table->index(['tenant_id', 'branch_id', 'type']);
             $table->index(['tenant_id', 'created_at']);
             $table->index(['tenant_id', 'branch_id', 'created_at']);
+            $table->index(['tenant_id', 'customer_id', 'type', 'created_at'], 'orders_party_return_lookup');
+            $table->index(['tenant_id', 'original_order_id']);
+            $table->index(['tenant_id', 'branch_id', 'shift_id', 'status'], 'orders_shift_summary_index');
         });
     }
 

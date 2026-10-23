@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('original_order_item_id')->nullable()->constrained('order_items')->nullOnDelete();
             $table->foreignId('product_id')->constrained();
             $table->decimal('quantity', 12, 2);
             $table->decimal('unit_price', 12, 2);
@@ -19,16 +20,18 @@ return new class extends Migration
             $table->decimal('cost_price', 12, 2)->default(0.00);
             $table->decimal('discount', 12, 2)->default(0.00);
             $table->decimal('total_cost', 12, 2)->default(0.00);
-                                $table->foreignId('offer_id')->nullable()->constrained('product_offers')->nullOnDelete();
-                    $table->decimal('offer_quantity', 12, 3)->nullable();
-                    $table->decimal('offer_price', 12, 2)->nullable();
-                    $table->decimal('normal_subtotal', 12, 2)->default(0);
-                    $table->decimal('promotion_savings', 12, 2)->default(0);
+            $table->foreignId('offer_id')->nullable()->constrained('product_offers')->nullOnDelete();
+            $table->decimal('offer_quantity', 12, 3)->nullable();
+            $table->decimal('offer_price', 12, 2)->nullable();
+            $table->decimal('normal_subtotal', 12, 2)->default(0);
+            $table->decimal('promotion_savings', 12, 2)->default(0);
 
             $table->timestamps();
 
             $table->index(['tenant_id', 'order_id']);
             $table->index(['tenant_id', 'product_id']);
+            $table->index(['tenant_id', 'original_order_item_id']);
+            $table->index(['product_id', 'order_id'], 'order_items_product_order_lookup');
         });
     }
 

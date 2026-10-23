@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('product_number')->nullable();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('category_id')->nullable()->nullOnDelete();
+            $table->foreignId('category_id')->nullable()->constrained()->nullOnDelete();
             $table->string('name');
             $table->decimal('cost_price', 12, 2)->default(0.00);
             $table->boolean('is_price_unified')->default(true);
@@ -25,6 +25,9 @@ return new class extends Migration
             $table->softDeletes();
 
             $table->index(['tenant_id', 'category_id']);
+            $table->index(['tenant_id', 'name'], 'products_tenant_name_index');
+            $table->index(['tenant_id', 'created_at'], 'products_tenant_created_at_index');
+            $table->index(['tenant_id', 'show_in_website'], 'products_tenant_website_index');
         });
     }
 

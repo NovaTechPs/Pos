@@ -25,9 +25,11 @@ return new class extends Migration
             $table->timestamp('closed_at')->nullable();
             $table->foreignId('closed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->text('notes')->nullable();
+            $table->uuid('sync_uuid')->nullable()->unique();
             $table->timestamps();
 
             $table->index(['tenant_id', 'branch_id', 'status']);
+            $table->index(['tenant_id', 'branch_id', 'opened_by', 'status', 'id'], 'shifts_active_lookup_index');
         });
     }
 

@@ -113,6 +113,7 @@ new class extends Component
 
     public function openCreateModal(): void
     {
+        $this->authorize('roles.create');
         $this->resetInputFields();
 
         $this->isEditing = false;
@@ -128,6 +129,7 @@ new class extends Component
 
     public function edit(int $id): void
     {
+        $this->authorize('roles.edit');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -265,6 +267,8 @@ new class extends Component
 
     public function save(): void
     {
+        $this->authorize($this->isEditing && $this->role_id ? 'roles.edit' : 'roles.create');
+        $this->authorize('roles.permissions');
         $validated = $this->validate();
 
         $tenantId = $this->getTenantId();
@@ -346,6 +350,7 @@ new class extends Component
 
     public function delete(int $id): void
     {
+        $this->authorize('roles.delete');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {

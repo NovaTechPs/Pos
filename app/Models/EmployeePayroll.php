@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEmployeeTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EmployeePayroll extends Model
 {
+    use BelongsToEmployeeTenant;
+
     protected $guarded = [];
 
     protected $casts = [
@@ -19,16 +22,19 @@ class EmployeePayroll extends Model
         'paid_amount' => 'decimal:2',
     ];
 
+    /** @return BelongsTo<PayrollPeriod, $this> */
     public function payrollPeriod(): BelongsTo
     {
         return $this->belongsTo(PayrollPeriod::class);
     }
 
+    /** @return BelongsTo<Employee, $this> */
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
     }
 
+    /** @return HasMany<EmployeePayrollItem, $this> */
     public function items(): HasMany
     {
         return $this->hasMany(
@@ -37,6 +43,7 @@ class EmployeePayroll extends Model
         );
     }
 
+    /** @return HasMany<EmployeePayment, $this> */
     public function payments(): HasMany
     {
         return $this->hasMany(
@@ -45,6 +52,7 @@ class EmployeePayroll extends Model
         );
     }
 
+    /** @return HasMany<EmployeePayrollCarryoverApplication, $this> */
     public function carryoverApplications(): HasMany
     {
         return $this->hasMany(

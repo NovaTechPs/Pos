@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -20,32 +22,38 @@ class Order extends Model
 
     protected $guarded = [];
 
-    public function items()
+    /** @return HasMany<OrderItem, $this> */
+    public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
     }
 
-    public function originalOrder()
+    /** @return BelongsTo<Order, $this> */
+    public function originalOrder(): BelongsTo
     {
         return $this->belongsTo(self::class, 'original_order_id');
     }
 
-    public function returns()
+    /** @return HasMany<Order, $this> */
+    public function returns(): HasMany
     {
         return $this->hasMany(self::class, 'original_order_id');
     }
 
-    public function branch()
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
 
-    public function user()
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function party()
+    /** @return BelongsTo<Party, $this> */
+    public function party(): BelongsTo
     {
         return $this->belongsTo(Party::class, 'customer_id');
     }

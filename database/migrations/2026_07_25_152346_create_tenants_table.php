@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('phone')->nullable();
-            $table->foreignId('plan_id')->nullable()->nullOnDelete();
+            $table->foreignId('plan_id')->nullable()->constrained()->nullOnDelete();
             $table->boolean('is_active')->default(true);
             $table->unsignedBigInteger('owner_id')->nullable();
             $table->timestamps();

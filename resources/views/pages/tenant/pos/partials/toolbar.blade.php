@@ -44,6 +44,7 @@
 
                 <input
                     wire:model="searchInvoiceQuery"
+                    data-pos-invoice-search
                     type="text"
                     placeholder="ابحث برقم الفاتورة أو ID..."
                     class="h-[42px] w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"

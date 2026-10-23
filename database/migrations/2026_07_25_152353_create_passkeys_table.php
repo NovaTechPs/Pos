@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-
     public function up(): void
     {
         Schema::create('passkeys', function (Blueprint $table) {
@@ -21,7 +20,6 @@ return new class extends Migration
             $table->index('user_id');
         });
     }
-
 
     public function down(): void
     {

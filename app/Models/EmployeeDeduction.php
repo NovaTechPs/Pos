@@ -2,18 +2,24 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEmployeeTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeDeduction extends Model
 {
+    use BelongsToEmployeeTenant;
+
     protected $guarded = [];
 
-    public function employee()
+    /** @return BelongsTo<Employee, $this> */
+    public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
     }
 
-    public function payrollPeriod()
+    /** @return BelongsTo<PayrollPeriod, $this> */
+    public function payrollPeriod(): BelongsTo
     {
         return $this->belongsTo(PayrollPeriod::class);
     }

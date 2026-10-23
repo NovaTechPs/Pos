@@ -93,6 +93,7 @@ new class extends Component {
 
     public function save(): void
     {
+        $this->authorize($this->category_id ? 'categories.edit' : 'categories.create');
         $this->validate();
 
         $tenantId = session('active_tenant_id');
@@ -132,6 +133,7 @@ new class extends Component {
 
     public function delete(int $id): void
     {
+        $this->authorize('categories.delete');
         $tenantId = session('active_tenant_id');
 
         $category = Category::query()

@@ -338,6 +338,7 @@ new class extends Component
 
     public function openCreateModal(): void
     {
+        $this->authorize('branches.create');
         $this->resetInputFields();
 
         $this->isEditing = false;
@@ -353,6 +354,7 @@ new class extends Component
 
     public function edit(int $id): void
     {
+        $this->authorize('branches.edit');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -394,6 +396,7 @@ new class extends Component
 
     public function save(): void
     {
+        $this->authorize($this->isEditing ? 'branches.edit' : 'branches.create');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -500,6 +503,7 @@ new class extends Component
 
     public function delete(int $id): void
     {
+        $this->authorize('branches.delete');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {

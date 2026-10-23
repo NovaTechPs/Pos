@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
@@ -19,11 +20,41 @@ uses(RefreshDatabase::class);
 function returnsTestUser(Tenant $tenant): User
 {
     $role = Role::query()->create(['tenant_id' => $tenant->id, 'name' => 'returns_manager']);
-    $permission = Permission::query()->create(['name' => 'returns.create', 'display_name' => 'Returns', 'group' => 'Returns']);
-    $role->permissions()->attach($permission->id);
+    $permissions = collect(['returns.create', 'returns.view'])->map(fn (string $name): Permission => Permission::query()->create([
+        'name' => $name,
+        'display_name' => 'Returns',
+        'group' => 'Returns',
+    ]));
+    $role->permissions()->attach($permissions->pluck('id')->all());
 
     return User::factory()->create(['tenant_id' => $tenant->id, 'role_id' => $role->id, 'type' => 'tenant_user']);
 }
+
+test('sales and purchase returns have separate invoice pages', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر صفحات المرتجعات']);
+    $user = returnsTestUser($tenant);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+
+    $this->get(route('tenant.sales-returns'))
+        ->assertOk()
+        ->assertSee('فاتورة مردود مبيعات')
+        ->assertSee('العميل')
+        ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
+        ->assertSee('اختر العميل أولاً')
+        ->assertSee(route('tenant.sales-returns'))
+        ->assertSee(route('tenant.purchase-returns'))
+        ->assertSee('Sales returns')
+        ->assertSee('Purchase returns')
+        ->assertDontSee('Return type');
+
+    $this->get(route('tenant.purchase-returns'))
+        ->assertOk()
+        ->assertSee('فاتورة مردود مشتريات')
+        ->assertSee('المورد')
+        ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
+        ->assertSee('اختر المورد أولاً')
+        ->assertDontSee('Return type');
+});
 
 test('sales return is account-based, uses the customer last sale price, and tracks aggregate return limits', function (): void {
     $tenant = Tenant::query()->create(['name' => 'متجر مرتجعات المبيعات']);
@@ -31,6 +62,7 @@ test('sales return is account-based, uses the customer last sale price, and trac
     $user = returnsTestUser($tenant);
     $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل المرتجع', 'type' => 'customer']);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'منتج', 'cost_price' => 5]);
+    ProductBarcode::query()->create(['tenant_id' => $tenant->id, 'product_id' => $product->id, 'barcode' => 'RET-SKU-1']);
     $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
         'product_id' => $product->id, 'stock_quantity' => 3, 'retail_price' => 15]);
     $olderSale = Order::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
@@ -50,7 +82,7 @@ test('sales return is account-based, uses the customer last sale price, and trac
     $this->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
     $component = Livewire::actingAs($user)->test('pages::tenant.returns.index')
         ->set('kind', 'sale')->set('selectedPartyId', $customer->id)->set('selectedPartyName', $customer->name)
-        ->call('addProduct', $product->id)->assertSet('lines.0.price', 10.0)
+        ->set('productSearch', 'RET-SKU-1')->call('addFirstProduct')->assertSet('lines.0.price', 10.0)
         ->set('lines.0.quantity', 2)->call('saveReturn')->assertHasNoErrors();
 
     expect((float) $stock->fresh()->stock_quantity)->toBe(5.0);

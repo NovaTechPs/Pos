@@ -19,6 +19,7 @@ class TenantSetting extends Model
     |--------------------------------------------------------------------------
     */
 
+    /** @return BelongsTo<Tenant, $this> */
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
@@ -40,7 +41,7 @@ class TenantSetting extends Model
             ->where('key', $key)
             ->first();
 
-        if (!$setting) {
+        if (! $setting) {
             return $default;
         }
 
@@ -64,7 +65,7 @@ class TenantSetting extends Model
                 'key' => $key,
             ],
             [
-                'value' => static::normalizeValue($value),
+                'value' => self::normalizeValue($value),
             ]
         );
     }
@@ -130,7 +131,7 @@ class TenantSetting extends Model
             return json_encode(
                 $value,
                 JSON_UNESCAPED_UNICODE |
-                JSON_UNESCAPED_SLASHES
+                JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
             );
         }
 

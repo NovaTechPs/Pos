@@ -212,6 +212,7 @@ new class extends Component
 
     public function savePayment(): void
     {
+        $this->authorize($this->paymentId ? 'accounting.voucher.edit' : 'accounting.voucher.create');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -341,6 +342,7 @@ new class extends Component
 
     public function delete(): void
     {
+        $this->authorize('accounting.voucher.delete');
         $tenantId = $this->getTenantId();
 
         if (!$this->deleteId || !$tenantId) {

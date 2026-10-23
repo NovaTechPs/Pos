@@ -25,6 +25,10 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
         ]);
 
+        if (! app()->environment(['local', 'testing'])) {
+            return;
+        }
+
         /*
         |--------------------------------------------------------------------------
         | 2. Plan
@@ -307,7 +311,7 @@ class DatabaseSeeder extends Seeder
 
         foreach ($users as $userData) {
 
-            $user = User::updateOrCreate(
+            $user = User::firstOrCreate(
                 [
                     'email' => $userData['email'],
                 ],

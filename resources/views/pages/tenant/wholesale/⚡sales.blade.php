@@ -1242,6 +1242,7 @@ new class extends Component {
 
     public function completeSale(bool $shouldPrint = false): void
     {
+        $this->authorize('wholesale_sales.create');
         if ($this->editingInvoiceId) {
             $this->updateOldInvoice($shouldPrint);
             return;
@@ -2206,6 +2207,7 @@ new class extends Component {
 
     public function saveReceipt(bool $printAfterSave = false, bool $sendWhatsappAfterSave = false): void
     {
+        $this->authorize('accounting.receipt.create');
         $tenantId = $this->tenantId();
         $user = $this->currentUser();
 

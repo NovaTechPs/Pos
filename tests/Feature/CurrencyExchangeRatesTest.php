@@ -3,7 +3,6 @@
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -58,9 +57,9 @@ test('store owner cannot load exchange rates from another tenant', function (): 
     ]);
     $this->withSession(['active_tenant_id' => $otherTenant->id]);
 
-    $this->expectException(ModelNotFoundException::class);
-
-    Livewire::actingAs($owner)->test('pages::tenant.accounting.exchange-rates');
+    Livewire::actingAs($owner)
+        ->test('pages::tenant.accounting.exchange-rates')
+        ->assertStatus(404);
 });
 
 test('store owner can refresh rates from Open Exchange Rates and cached rates are saved', function (): void {

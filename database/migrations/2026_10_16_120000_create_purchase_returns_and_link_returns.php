@@ -8,21 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('orders', function (Blueprint $table): void {
-            $table->foreignId('original_order_id')->nullable()->after('customer_id')->constrained('orders')->nullOnDelete();
-            $table->index(['tenant_id', 'original_order_id']);
-        });
-
-        Schema::table('order_items', function (Blueprint $table): void {
-            $table->foreignId('original_order_item_id')->nullable()->after('order_id')->constrained('order_items')->nullOnDelete();
-            $table->index(['tenant_id', 'original_order_item_id']);
-        });
-
         Schema::create('purchase_returns', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('purchase_id')->constrained()->restrictOnDelete();
+            $table->foreignId('purchase_id')->nullable()->constrained()->restrictOnDelete();
             $table->foreignId('supplier_id')->nullable()->constrained('parties')->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('reference_number');
@@ -37,13 +27,14 @@ return new class extends Migration
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('purchase_return_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('purchase_item_id')->constrained()->restrictOnDelete();
+            $table->foreignId('purchase_item_id')->nullable()->constrained()->restrictOnDelete();
             $table->foreignId('product_id')->constrained()->restrictOnDelete();
             $table->decimal('quantity', 12, 2);
             $table->decimal('unit_cost', 12, 2);
             $table->decimal('subtotal', 12, 2);
             $table->timestamps();
             $table->index(['tenant_id', 'purchase_item_id']);
+            $table->index(['product_id', 'purchase_return_id'], 'purchase_return_items_product_return_lookup');
         });
     }
 
@@ -51,11 +42,5 @@ return new class extends Migration
     {
         Schema::dropIfExists('purchase_return_items');
         Schema::dropIfExists('purchase_returns');
-        Schema::table('order_items', function (Blueprint $table): void {
-            $table->dropConstrainedForeignId('original_order_item_id');
-        });
-        Schema::table('orders', function (Blueprint $table): void {
-            $table->dropConstrainedForeignId('original_order_id');
-        });
     }
 };

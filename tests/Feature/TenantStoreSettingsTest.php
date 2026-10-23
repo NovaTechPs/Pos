@@ -3,7 +3,6 @@
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -98,8 +97,7 @@ test('store owner cannot load another tenant settings by changing the active ten
 
     $this->withSession(['active_tenant_id' => $otherTenant->id]);
 
-    $this->expectException(ModelNotFoundException::class);
-
     Livewire::actingAs($owner)
-        ->test('pages::settings.store');
+        ->test('pages::settings.store')
+        ->assertStatus(404);
 });

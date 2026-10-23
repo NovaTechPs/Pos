@@ -24,6 +24,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['employee_id', 'status']);
+            $table->index(['employee_id', 'status', 'start_date'], 'employee_leaves_employee_status_start_index');
         });
     }
 

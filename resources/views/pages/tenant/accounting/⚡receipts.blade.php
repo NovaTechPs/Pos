@@ -383,6 +383,7 @@ new class extends Component {
     public function saveReceipt(): void
 
     {
+        $this->authorize($this->paymentId ? 'accounting.receipt.edit' : 'accounting.receipt.create');
 
         $tenantId = $this->getTenantId();
 
@@ -629,6 +630,7 @@ new class extends Component {
     public function delete(): void
 
     {
+        $this->authorize('accounting.receipt.delete');
 
         $tenantId = $this->getTenantId();
 

@@ -15,7 +15,7 @@ class CreateBranchSyncDevice extends Command
 {
     public function handle(): int
     {
-        $branch = Branch::query()->find($this->argument('branch'));
+        $branch = Branch::query()->whereKey($this->argument('branch'))->first();
 
         if (! $branch) {
             $this->error('Branch not found.');

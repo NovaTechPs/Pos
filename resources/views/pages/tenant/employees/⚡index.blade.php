@@ -3,8 +3,10 @@
 use Livewire\Component;
 use Livewire\Attributes\On;
 use App\Models\User;
+use App\Models\Employee;
 use App\Models\Role;
 use App\Models\Branch;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
@@ -17,6 +19,7 @@ new class extends Component
     */
 
     public $employees = [];
+    public $employeeProfiles = [];
     public $roles = [];
     public $branches = [];
 
@@ -28,10 +31,10 @@ new class extends Component
 
     public $user_id = null;
 
-    public string $name = '';
     public string $email = '';
     public string $password = '';
 
+    public $employee_profile_id = null;
     public $branch_id = null;
     public $role_id = null;
 
@@ -91,12 +94,6 @@ new class extends Component
         $tenantId = $this->getTenantId();
 
         return [
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-
             'email' => [
                 'required',
                 'email',
@@ -115,6 +112,21 @@ new class extends Component
                 'integer',
                 Rule::exists('branches', 'id')
                     ->where(fn ($query) => $query->where('tenant_id', $tenantId)),
+            ],
+
+            'employee_profile_id' => [
+                'required',
+                'integer',
+                Rule::exists('employees', 'id')->where(function ($query) use ($tenantId): void {
+                    $query->where('tenant_id', $tenantId)
+                        ->where(function ($query): void {
+                            $query->whereNull('user_id');
+
+                            if ($this->user_id) {
+                                $query->orWhere('user_id', $this->user_id);
+                            }
+                        });
+                }),
             ],
 
             'role_id' => [
@@ -145,6 +157,7 @@ new class extends Component
 
         if (!$tenantId) {
             $this->employees = collect();
+            $this->employeeProfiles = collect();
             $this->roles = collect();
             $this->branches = collect();
 
@@ -234,6 +247,13 @@ new class extends Component
             ->where('tenant_id', $tenantId)
             ->orderBy('name')
             ->get();
+
+        $this->employeeProfiles = Employee::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('user_id')
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
     }
 
     /*
@@ -255,6 +275,18 @@ new class extends Component
     public function updatedBranchFilter(): void
     {
         $this->loadData();
+    }
+
+    public function updatedEmployeeProfileId(): void
+    {
+        $profile = Employee::query()
+            ->where('tenant_id', $this->getTenantId())
+            ->whereKey($this->employee_profile_id)
+            ->first();
+
+        if ($profile?->branch_id) {
+            $this->branch_id = $profile->branch_id;
+        }
     }
 
     public function clearFilters(): void
@@ -296,11 +328,16 @@ new class extends Component
             ->findOrFail($id);
 
         $this->user_id = $employee->id;
-        $this->name = $employee->name;
         $this->email = $employee->email;
-        $this->branch_id = $employee->branch_id;
         $this->role_id = $employee->role_id;
         $this->is_active = (bool) $employee->is_active;
+        $linkedProfile = Employee::query()->where('user_id', $employee->id)->first();
+        $this->employee_profile_id = $linkedProfile?->id;
+        $this->branch_id = $linkedProfile?->branch_id ?? $employee->branch_id;
+
+        if ($linkedProfile && !$this->employeeProfiles->contains('id', $linkedProfile->id)) {
+            $this->employeeProfiles->push($linkedProfile);
+        }
 
         $this->password = '';
 
@@ -325,6 +362,7 @@ new class extends Component
 
     public function save(): void
     {
+        $this->authorize($this->user_id ? 'employees.edit' : 'employees.create');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -343,40 +381,55 @@ new class extends Component
         |--------------------------------------------------------------------------
         */
 
-        if (!$this->isEditing) {
-            $employee = new User();
+        $existingUserId = $this->user_id;
 
-            $employee->tenant_id = $tenantId;
-            $employee->type = 'tenant_user';
-            $employee->is_owner = false;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Update
-        |--------------------------------------------------------------------------
-        */
-
-        if ($this->isEditing) {
-            $employee = User::query()
+        DB::transaction(function () use ($validated, $tenantId, $existingUserId): void {
+            $profile = Employee::query()
                 ->where('tenant_id', $tenantId)
-                ->where('is_owner', false)
-                ->findOrFail($this->user_id);
-        }
+                ->whereKey($validated['employee_profile_id'])
+                ->where(function ($query) use ($existingUserId): void {
+                    $query->whereNull('user_id');
 
-        $employee->name = $validated['name'];
-        $employee->email = $validated['email'];
-        $employee->branch_id = $validated['branch_id'];
-        $employee->role_id = $validated['role_id'];
-        $employee->is_active = $validated['is_active'];
+                    if ($existingUserId) {
+                        $query->orWhere('user_id', $existingUserId);
+                    }
+                })
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if (filled($validated['password'] ?? null)) {
-            $employee->password = Hash::make(
-                $validated['password']
-            );
-        }
+            if (!$this->isEditing) {
+                $employee = new User();
+                $employee->tenant_id = $tenantId;
+                $employee->type = 'tenant_user';
+                $employee->is_owner = false;
+            } else {
+                $employee = User::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('is_owner', false)
+                    ->findOrFail($this->user_id);
+            }
 
-        $employee->save();
+            $employee->name = trim($profile->first_name.' '.$profile->last_name);
+            $employee->email = $validated['email'];
+            $employee->branch_id = $validated['branch_id'];
+            $employee->role_id = $validated['role_id'];
+            $employee->is_active = $validated['is_active'];
+
+            if (filled($validated['password'] ?? null)) {
+                $employee->password = Hash::make($validated['password']);
+            }
+
+            $employee->save();
+
+            Employee::query()
+                ->where('user_id', $employee->id)
+                ->where('id', '!=', $profile->id)
+                ->update(['user_id' => null]);
+
+            $profile->user_id = $employee->id;
+            $profile->branch_id = $employee->branch_id;
+            $profile->save();
+        });
 
         $message = $this->isEditing
             ? 'تم تحديث بيانات الموظف بنجاح.'
@@ -396,6 +449,7 @@ new class extends Component
 
     public function delete(int $id): void
     {
+        $this->authorize('employees.delete');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
@@ -429,10 +483,10 @@ new class extends Component
     {
         $this->user_id = null;
 
-        $this->name = '';
         $this->email = '';
         $this->password = '';
 
+        $this->employee_profile_id = null;
         $this->branch_id = null;
         $this->role_id = null;
 
@@ -1097,8 +1151,8 @@ new class extends Component
                         <flux:subheading class="mt-1">
 
                             {{ $isEditing
-                                ? 'حدّث بيانات الحساب والفرع والدور الوظيفي.'
-                                : 'أنشئ حساب الموظف وحدد الفرع والدور المناسب.'
+                                ? 'حدّث حساب الدخول واربطه بملف الموظف، ثم اختر الفرع والدور.'
+                                : 'اختر ملف الموظف الموجود لإنشاء حساب دخول مرتبط به.'
                             }}
 
                         </flux:subheading>
@@ -1115,25 +1169,32 @@ new class extends Component
             <div class="space-y-4">
 
                 <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    بيانات الحساب
+                    بيانات الدخول
                 </div>
 
-
-                {{-- Name --}}
 
                 <flux:field>
 
                     <flux:label>
-                        اسم الموظف
+                        ملف الموظف
                     </flux:label>
 
-                    <flux:input
-                        wire:model="name"
-                        placeholder="مثال: خالد العلي"
-                        autocomplete="name"
-                    />
+                    <flux:select wire:model="employee_profile_id">
+                        <option value="">اختر ملف الموظف الذي أُضيف من الرواتب</option>
+                        @foreach ($employeeProfiles as $profile)
+                            <option value="{{ $profile->id }}">
+                                {{ $profile->first_name }} {{ $profile->last_name }} — {{ $profile->employee_code }}
+                            </option>
+                        @endforeach
+                    </flux:select>
 
-                    <flux:error name="name" />
+                    <flux:error name="employee_profile_id" />
+
+                    @if ($employeeProfiles->isEmpty())
+                        <flux:description>
+                            أضف ملف الموظف أولًا من «الرواتب ← الموظفين»، ثم ارجع هنا لإنشاء حساب الدخول.
+                        </flux:description>
+                    @endif
 
                 </flux:field>
 

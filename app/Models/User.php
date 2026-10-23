@@ -2,7 +2,11 @@
 
 namespace App\Models;
 
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -10,10 +14,16 @@ use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements PasskeyUser
 {
-    use HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes, TwoFactorAuthenticatable;
+    protected $attributes = ['is_active' => true, 'is_owner' => false, 'type' => 'tenant_user'];
+
+    use HasApiTokens, Notifiable, PasskeyAuthenticatable, SoftDeletes, TwoFactorAuthenticatable;
+
+    /** @use HasFactory<UserFactory> */
+    use HasFactory;
 
     protected $fillable = [
         'name',
@@ -53,24 +63,45 @@ class User extends Authenticatable implements PasskeyUser
             : $initials;
     }
 
-    public function ownedTenants()
+    /** @return HasMany<Tenant, $this> */
+    public function ownedTenants(): HasMany
     {
         return $this->hasMany(Tenant::class, 'owner_id');
     }
 
-    public function tenants()
+    /** @return BelongsTo<Tenant, $this> */
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function canAccessApplication(): bool
+    {
+        return $this->is_active && (! $this->tenant_id || $this->tenant?->is_active === true);
+    }
+
+    /** @return HasMany<Tenant, $this> */
+    public function tenants(): HasMany
     {
         return $this->hasMany(Tenant::class, 'owner_id');
     }
 
-    public function role()
+    /** @return BelongsTo<Role, $this> */
+    public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
     }
 
-    public function branch()
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /** @return HasOne<Employee, $this> */
+    public function employee(): HasOne
+    {
+        return $this->hasOne(Employee::class);
     }
 
     public function isSaaSAdmin(): bool
@@ -104,12 +135,13 @@ class User extends Authenticatable implements PasskeyUser
             return true;
         }
 
-        if (! $this->role_id) {
+        $role = $this->role;
+
+        if (! $role || (int) $role->tenant_id !== (int) $this->tenant_id) {
             return false;
         }
 
-        return $this->role
-            ->permissions()
+        return $role->permissions()
             ->where('name', $permissionName)
             ->exists();
     }

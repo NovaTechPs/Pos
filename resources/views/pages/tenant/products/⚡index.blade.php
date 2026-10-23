@@ -715,6 +715,7 @@ new class extends Component {
 
     public function save(): void
     {
+        $this->authorize($this->product_id ? 'products.edit' : 'products.create');
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
@@ -1175,6 +1176,7 @@ new class extends Component {
 
     public function saveOffer(): void
     {
+        $this->authorize('products.price.edit');
         $tenantId = $this->tenantId();
 
         if (!$tenantId || !$this->offerProductId) {
@@ -1301,6 +1303,7 @@ new class extends Component {
 
     public function saveCategory(): void
     {
+        $this->authorize('categories.create');
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
@@ -1365,6 +1368,7 @@ new class extends Component {
 
     public function delete(int $id): void
     {
+        $this->authorize('products.delete');
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {

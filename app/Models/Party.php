@@ -2,13 +2,20 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Party extends Model
 {
-    use HasFactory, SoftDeletes;
+    /** @use HasFactory<Factory<static>> */
+    use HasFactory;
+
+    use SoftDeletes;
 
     protected $fillable = [
         'tenant_id',
@@ -38,13 +45,13 @@ class Party extends Model
 
         static::creating(function (Party $party): void {
             if (auth()->check() && empty($party->created_by)) {
-                $party->created_by = auth()->id();
+                $party->creator()->associate(auth()->user());
             }
         });
 
         static::updating(function (Party $party): void {
             if (auth()->check()) {
-                $party->updated_by = auth()->id();
+                $party->updater()->associate(auth()->user());
             }
         });
     }
@@ -54,7 +61,8 @@ class Party extends Model
     | User who created the party
     |--------------------------------------------------------------------------
     */
-    public function creator()
+    /** @return BelongsTo<User, $this> */
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
@@ -64,7 +72,8 @@ class Party extends Model
     | User who last updated the party
     |--------------------------------------------------------------------------
     */
-    public function updater()
+    /** @return BelongsTo<User, $this> */
+    public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
@@ -74,7 +83,8 @@ class Party extends Model
     | Tenant
     |--------------------------------------------------------------------------
     */
-    public function tenant()
+    /** @return BelongsTo<Tenant, $this> */
+    public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
     }
@@ -84,7 +94,8 @@ class Party extends Model
     | Branch
     |--------------------------------------------------------------------------
     */
-    public function branch()
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
@@ -95,7 +106,11 @@ class Party extends Model
     |--------------------------------------------------------------------------
     */
 
-    public function scopeCustomers($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeCustomers(Builder $query): Builder
     {
         return $query->whereIn('type', [
             'customer',
@@ -103,7 +118,11 @@ class Party extends Model
         ]);
     }
 
-    public function scopeSuppliers($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeSuppliers(Builder $query): Builder
     {
         return $query->whereIn('type', [
             'supplier',
@@ -111,7 +130,11 @@ class Party extends Model
         ]);
     }
 
-    public function scopeActive($query)
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
@@ -124,12 +147,14 @@ class Party extends Model
     | orders.customer_id → parties.id
     |
     */
-    public function orders()
+    /** @return HasMany<Order, $this> */
+    public function orders(): HasMany
     {
         return $this->hasMany(Order::class, 'customer_id');
     }
 
-    public function purchases()
+    /** @return HasMany<Purchase, $this> */
+    public function purchases(): HasMany
     {
         return $this->hasMany(Purchase::class, 'supplier_id');
     }
@@ -142,12 +167,14 @@ class Party extends Model
     | payments.party_id → parties.id
     |
     */
-    public function payments()
+    /** @return HasMany<Payment, $this> */
+    public function payments(): HasMany
     {
         return $this->hasMany(Payment::class, 'party_id');
     }
 
-    public function purchaseReturns()
+    /** @return HasMany<PurchaseReturn, $this> */
+    public function purchaseReturns(): HasMany
     {
         return $this->hasMany(PurchaseReturn::class, 'supplier_id');
     }

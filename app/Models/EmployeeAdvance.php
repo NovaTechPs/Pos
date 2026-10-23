@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToEmployeeTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EmployeeAdvance extends Model
 {
+    use BelongsToEmployeeTenant;
+
     protected $guarded = [];
 
     protected $casts = [
@@ -17,11 +20,13 @@ class EmployeeAdvance extends Model
         'start_installment_date' => 'date',
     ];
 
+    /** @return BelongsTo<Employee, $this> */
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
     }
 
+    /** @return HasMany<EmployeePayment, $this> */
     public function payments(): HasMany
     {
         return $this->hasMany(

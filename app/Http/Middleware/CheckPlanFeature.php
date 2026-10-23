@@ -13,11 +13,11 @@ class CheckPlanFeature
      *
      * @param  Closure(Request): (Response)  $next
      */
-   public function handle(Request $request, Closure $next, string $featureKey)
+    public function handle(Request $request, Closure $next, string $featureKey): Response
     {
         $user = $request->user();
 
-        if (!$user || !$user->tenant || !$user->tenant->hasFeature($featureKey)) {
+        if (! $user || ! $user->tenant || ! $user->tenant->hasFeature($featureKey)) {
             abort(403, 'هذه الميزة غير متاحة في خطة اشتراكك الحالية.');
         }
 

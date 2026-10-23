@@ -9,7 +9,7 @@
         {{-- Barcode --}}
         <div class="relative">
 
-            <input data-pos-barcode-input wire:model="barcode" wire:keydown.enter.prevent="scanBarcode" @disabled($invoiceLocked) type="text"
+            <input data-pos-barcode-input @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
                 placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
                 class="w-full rounded-xl border-2
@@ -312,6 +312,13 @@
 
     const FIELD_SELECTOR = '[data-pos-field]';
     const BARCODE_SELECTOR = '[data-pos-barcode-input]';
+    const barcodeQueue = [];
+    let isProcessingBarcodeQueue = false;
+    let externalBarcodeBuffer = '';
+    let externalBarcodeLastKeyAt = 0;
+    let externalBarcodeCaptured = false;
+    let externalBarcodeTarget = null;
+    let externalBarcodeOriginalValue = null;
 
     function rows() {
         const grouped = new Map();
@@ -336,6 +343,20 @@
         if (!input || !document.contains(input)) return;
         input.focus({ preventScroll: true });
         if (typeof input.select === 'function') input.select();
+
+        const cart = input.closest('[data-pos-cart-scroll]');
+        const row = input.closest('tr');
+        if (!cart || !row) return;
+
+        const cartBounds = cart.getBoundingClientRect();
+        const rowBounds = row.getBoundingClientRect();
+        const scrollMargin = 32;
+
+        if (rowBounds.top < cartBounds.top) {
+            cart.scrollBy({ top: rowBounds.top - cartBounds.top - scrollMargin, behavior: 'smooth' });
+        } else if (rowBounds.bottom > cartBounds.bottom) {
+            cart.scrollBy({ top: rowBounds.bottom - cartBounds.bottom + scrollMargin, behavior: 'smooth' });
+        }
     }
 
     function focusBarcode() {
@@ -344,6 +365,119 @@
         input.focus({ preventScroll: true });
         if (typeof input.select === 'function') input.select();
     }
+
+    function enqueueBarcode(barcode, origin) {
+        const componentRoot = origin?.closest?.('[wire\\:id]') || document.querySelector('[wire\\:id]');
+        const componentId = componentRoot?.getAttribute('wire:id');
+        if (!componentId || !barcode) return;
+
+        barcodeQueue.push({ barcode, componentId });
+        processBarcodeQueue();
+    }
+
+    function resetExternalBarcodeCapture(restoreTarget = false) {
+        if (restoreTarget && externalBarcodeCaptured && externalBarcodeTarget && document.contains(externalBarcodeTarget)) {
+            externalBarcodeTarget.value = externalBarcodeOriginalValue ?? '';
+            externalBarcodeTarget.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        externalBarcodeBuffer = '';
+        externalBarcodeLastKeyAt = 0;
+        externalBarcodeCaptured = false;
+        externalBarcodeTarget = null;
+        externalBarcodeOriginalValue = null;
+    }
+
+    async function processBarcodeQueue() {
+        if (isProcessingBarcodeQueue || barcodeQueue.length === 0) return;
+
+        isProcessingBarcodeQueue = true;
+
+        try {
+            while (barcodeQueue.length > 0) {
+                const { barcode, componentId } = barcodeQueue.shift();
+                const component = window.Livewire?.find(componentId);
+
+                if (!component || !barcode) continue;
+
+                await component.$call('scanBarcode', barcode);
+            }
+        } catch (error) {
+            console.error('تعذر تسجيل أحد الباركودات في نقطة البيع.', error);
+        } finally {
+            isProcessingBarcodeQueue = false;
+            focusBarcode();
+        }
+    }
+
+    document.addEventListener('keydown', function(event) {
+        const input = event.target?.closest?.(BARCODE_SELECTOR);
+        if (input) {
+            if (event.key !== 'Enter') return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const barcode = input.value.trim();
+            input.value = '';
+            enqueueBarcode(barcode, input);
+            return;
+        }
+
+        if (event.target?.closest?.('[data-pos-invoice-search]')) {
+            resetExternalBarcodeCapture();
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            if (externalBarcodeCaptured && externalBarcodeBuffer.length >= 4) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const barcode = externalBarcodeBuffer;
+                const origin = externalBarcodeTarget;
+                resetExternalBarcodeCapture(true);
+                enqueueBarcode(barcode, origin);
+            } else {
+                resetExternalBarcodeCapture();
+            }
+            return;
+        }
+
+        if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) {
+            return;
+        }
+
+        const now = Date.now();
+        if (!externalBarcodeLastKeyAt || now - externalBarcodeLastKeyAt > 90) {
+            resetExternalBarcodeCapture();
+            externalBarcodeBuffer = event.key;
+            externalBarcodeTarget = event.target;
+            externalBarcodeOriginalValue = typeof event.target?.value === 'string' ? event.target.value : null;
+            externalBarcodeLastKeyAt = now;
+            return;
+        }
+
+        externalBarcodeBuffer += event.key;
+        externalBarcodeLastKeyAt = now;
+
+        if (externalBarcodeBuffer.length >= 2) {
+            externalBarcodeCaptured = true;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (externalBarcodeTarget && externalBarcodeOriginalValue !== null) {
+                externalBarcodeTarget.value = externalBarcodeOriginalValue;
+            }
+        }
+    }, true);
+
+    window.addEventListener('pos-scroll-cart-bottom', function() {
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                const cart = document.querySelector('[data-pos-cart-scroll]');
+                if (cart) cart.scrollTop = cart.scrollHeight;
+            });
+        });
+    });
 
     document.addEventListener('keydown', function(event) {
         const current = event.target?.closest?.(FIELD_SELECTOR);

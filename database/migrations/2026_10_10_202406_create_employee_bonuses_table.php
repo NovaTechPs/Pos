@@ -21,6 +21,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['employee_id', 'payroll_period_id']);
+            $table->index(['employee_id', 'date'], 'employee_bonuses_employee_date_index');
         });
     }
 

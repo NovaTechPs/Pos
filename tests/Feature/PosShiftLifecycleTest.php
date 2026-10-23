@@ -6,6 +6,7 @@ use App\Models\BranchSyncOperation;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
@@ -17,7 +18,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->tenant = Tenant::query()->create(['name' => 'متجر الاختبار']);
-    $this->user = User::factory()->create(['tenant_id' => $this->tenant->id]);
+    $this->user = User::factory()->create(['tenant_id' => $this->tenant->id, 'is_owner' => true]);
     $this->branch = Branch::query()->create([
         'tenant_id' => $this->tenant->id,
         'name' => 'الفرع الرئيسي',
@@ -38,7 +39,89 @@ test('the POS displays a live online or offline connectivity status without a si
 
     $component->assertSee('أونلاين / Online')
         ->assertSee('أوفلاين / Offline')
+        ->assertSee("component.\$call('scanBarcode', barcode)", false)
+        ->assertDontSee('component.$wire.call', false)
+        ->assertSee('data-pos-invoice-search', false)
+        ->assertSee('data-pos-barcode-input', false)
+        ->assertSee('const scrollMargin = 32', false)
+        ->assertSee('rowBounds.bottom - cartBounds.bottom + scrollMargin', false)
+        ->assertSee('pos-scroll-cart-bottom', false)
         ->assertDontSee('Simulate offline');
+});
+
+test('rapid repeated product selections each add one unit to the POS cart', function (): void {
+    $product = Product::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_number' => 'POS-FAST-1',
+        'name' => 'صنف سريع',
+        'cost_price' => 4,
+    ]);
+
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'product_id' => $product->id,
+        'stock_quantity' => 10,
+        'retail_price' => 8,
+        'wholesale_price' => 7,
+    ]);
+
+    Shift::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'opening_cash' => 0,
+        'status' => 'open',
+        'opened_at' => now(),
+        'opened_by' => $this->user->id,
+    ]);
+
+    $component = posShiftComponent()
+        ->call('selectInlineProduct', $product->id)
+        ->call('selectInlineProduct', $product->id);
+
+    expect(collect($component->get('cart'))->sum(fn (array $item): float => (float) $item['quantity']))
+        ->toBe(2.0);
+});
+
+test('rapid repeated barcode scans each add one unit to the POS cart', function (): void {
+    $product = Product::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_number' => 'POS-BARCODE-FAST-1',
+        'name' => 'صنف باركود سريع',
+        'cost_price' => 4,
+    ]);
+
+    ProductBarcode::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_id' => $product->id,
+        'barcode' => 'FAST-123456',
+    ]);
+
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'product_id' => $product->id,
+        'stock_quantity' => 10,
+        'retail_price' => 8,
+        'wholesale_price' => 7,
+    ]);
+
+    Shift::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'opening_cash' => 0,
+        'status' => 'open',
+        'opened_at' => now(),
+        'opened_by' => $this->user->id,
+    ]);
+
+    $component = posShiftComponent()
+        ->call('scanBarcode', 'FAST-123456')
+        ->call('scanBarcode', 'FAST-123456')
+        ->assertDispatched('pos-scroll-cart-bottom');
+
+    expect(collect($component->get('cart'))->sum(fn (array $item): float => (float) $item['quantity']))
+        ->toBe(2.0);
 });
 
 test('opening a shift validates the opening amount and prevents duplicate open shifts', function (): void {
