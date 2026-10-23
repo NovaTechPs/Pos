@@ -9,7 +9,7 @@
         {{-- Barcode --}}
         <div class="relative">
 
-            <input data-pos-barcode-input @disabled($invoiceLocked) type="text"
+            <input data-pos-barcode-input data-pos-component-id="{{ $this->getId() }}" @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
                 placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
                 class="w-full rounded-xl border-2
@@ -366,9 +366,10 @@
         if (typeof input.select === 'function') input.select();
     }
 
-    function enqueueBarcode(barcode, origin) {
-        const componentRoot = origin?.closest?.('[wire\\:id]') || document.querySelector('[wire\\:id]');
-        const componentId = componentRoot?.getAttribute('wire:id');
+    function enqueueBarcode(barcode) {
+        const barcodeInput = document.querySelector(BARCODE_SELECTOR);
+        const componentId = barcodeInput?.dataset.posComponentId;
+        if (!barcodeInput || barcodeInput.disabled) return;
         if (!componentId || !barcode) return;
 
         barcodeQueue.push({ barcode, componentId });
@@ -396,6 +397,8 @@
         try {
             while (barcodeQueue.length > 0) {
                 const { barcode, componentId } = barcodeQueue.shift();
+                const barcodeInput = document.querySelector(BARCODE_SELECTOR);
+                if (!barcodeInput || barcodeInput.disabled || barcodeInput.dataset.posComponentId !== componentId) continue;
                 const component = window.Livewire?.find(componentId);
 
                 if (!component || !barcode) continue;
@@ -411,6 +414,11 @@
     }
 
     document.addEventListener('keydown', function(event) {
+        const barcodeInput = document.querySelector(BARCODE_SELECTOR);
+        if (!barcodeInput || barcodeInput.disabled) {
+            resetExternalBarcodeCapture();
+            return;
+        }
         const input = event.target?.closest?.(BARCODE_SELECTOR);
         if (input) {
             if (event.key !== 'Enter') return;
@@ -420,7 +428,7 @@
 
             const barcode = input.value.trim();
             input.value = '';
-            enqueueBarcode(barcode, input);
+            enqueueBarcode(barcode);
             return;
         }
 
@@ -434,9 +442,8 @@
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 const barcode = externalBarcodeBuffer;
-                const origin = externalBarcodeTarget;
                 resetExternalBarcodeCapture(true);
-                enqueueBarcode(barcode, origin);
+                enqueueBarcode(barcode);
             } else {
                 resetExternalBarcodeCapture();
             }
@@ -469,6 +476,11 @@
             }
         }
     }, true);
+
+    document.addEventListener('livewire:navigating', function() {
+        barcodeQueue.length = 0;
+        resetExternalBarcodeCapture();
+    });
 
     window.addEventListener('pos-scroll-cart-bottom', function() {
         requestAnimationFrame(function() {
