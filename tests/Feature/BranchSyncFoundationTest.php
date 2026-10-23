@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\BranchSyncOperationProcessor;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -387,4 +388,26 @@ test('edge synchronization retry returns a conflict to the pending outbox', func
 
     expect($operation->fresh()->status)->toBe('pending')
         ->and($operation->fresh()->last_error)->toBeNull();
+});
+
+test('central branch sync preserves gift marker price and stock movement', function (): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    $payload = branchSyncSalePayload($tenant, $branch, 'GIFT-SYNC');
+    $payload['items'][0]['is_gift'] = true;
+    $payload['items'][0]['unit_price'] = 0;
+    $payload['items'][0]['total_price'] = 0;
+    $payload['order']['subtotal'] = 0;
+    $payload['order']['total'] = 0;
+    $payload['order']['paid_amount'] = 0;
+    $payload['order']['total_profit'] = -10;
+    $payload['payment'] = null;
+    $operation = BranchSyncOperation::query()->create([
+        'tenant_id' => $tenant->id, 'branch_id' => $branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'sale.upsert',
+        'payload' => $payload, 'status' => 'pending',
+    ]);
+    app(BranchSyncOperationProcessor::class)->process($operation);
+    $item = Order::query()->where('invoice_number', 'GIFT-SYNC')->sole()->items()->sole();
+    expect($item->is_gift)->toBeTrue()->and((float) $item->unit_price)->toBe(0.0)
+        ->and((float) BranchProduct::query()->sole()->stock_quantity)->toBe(8.0);
 });

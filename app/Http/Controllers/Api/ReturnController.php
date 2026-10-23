@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Party;
 use App\Models\Payment;
+use App\Services\ApiShiftLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +36,18 @@ class ReturnController extends Controller
             ], 404);
         }
 
+        $returned = OrderItem::query()->whereHas('order', fn ($query) => $query
+            ->where('tenant_id', $tenantId)->where('original_order_id', $order->id)
+            ->where('type', 'return')->where('status', 'completed'))->get();
+        foreach ($order->items as $item) {
+            $used = $returned->filter(fn ($line) => $line->original_order_item_id
+                ? (int) $line->original_order_item_id === (int) $item->id
+                : (int) $line->product_id === (int) $item->product_id)->sum(fn ($line) => abs((float) $line->quantity));
+            $item->setAttribute('remaining_quantity', max(0, abs((float) $item->quantity) - $used));
+            $ratio = (float) $order->subtotal > 0 ? (float) $order->total / (float) $order->subtotal : 0;
+            $item->setAttribute('refund_unit_price', (float) $item->unit_price * $ratio);
+        }
+
         return response()->json([
             'order' => $order,
         ]);
@@ -45,7 +59,8 @@ class ReturnController extends Controller
             'original_order_id' => ['required', 'integer'],
             'branch_id' => ['required', 'integer'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'distinct'],
+            'items.*.product_id' => ['required', 'integer'],
+            'items.*.original_order_item_id' => ['nullable', 'integer', 'distinct'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.01'],
             'items.*.price' => ['required', 'numeric', 'min:0'],
             'subtotal' => ['nullable', 'numeric', 'min:0'],
@@ -59,6 +74,7 @@ class ReturnController extends Controller
         $tenantId = $user->tenant_id;
 
         $returnOrder = DB::transaction(function () use ($validated, $user, $tenantId): Order {
+            $shift = ApiShiftLedger::activeForWrite($tenantId, (int) $validated['branch_id'], $user->id);
             $originalOrder = Order::query()->where('tenant_id', $tenantId)
                 ->where('branch_id', $validated['branch_id'])
                 ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
@@ -68,16 +84,24 @@ class ReturnController extends Controller
                 ->lockForUpdate()
                 ->whereKey((int) $validated['original_order_id'])->firstOrFail();
 
-            $returnableItems = $originalOrder->items->keyBy('product_id');
             $lines = [];
+            $selectedLines = [];
             $subtotal = 0.0;
             foreach ($validated['items'] as $item) {
-                $originalItem = $returnableItems->get($item['product_id']);
+                $matches = $originalOrder->items->where('product_id', $item['product_id']);
+                $originalItem = isset($item['original_order_item_id'])
+                    ? $matches->firstWhere('id', $item['original_order_item_id'])
+                    : ($matches->count() === 1 ? $matches->first() : null);
                 if (! $originalItem) {
                     throw ValidationException::withMessages(['items' => 'يوجد صنف غير موجود في الفاتورة الأصلية.']);
                 }
+                if (in_array($originalItem->id, $selectedLines, true)) {
+                    throw ValidationException::withMessages(['items' => 'لا يمكن تكرار سطر الفاتورة في المرتجع.']);
+                }
+                $selectedLines[] = $originalItem->id;
 
                 $returnedQuantity = (float) OrderItem::query()->where('product_id', $originalItem->product_id)
+                    ->where(fn ($query) => $query->where('original_order_item_id', $originalItem->id)->orWhereNull('original_order_item_id'))
                     ->whereHas('order', fn ($query) => $query->where('tenant_id', $tenantId)
                         ->where('original_order_id', $originalOrder->id)
                         ->whereIn('type', ['return', 'pos_return'])
@@ -102,7 +126,14 @@ class ReturnController extends Controller
             }
 
             $subtotal = round($subtotal, 2);
-            foreach (['subtotal' => $subtotal, 'total_amount' => $subtotal] as $field => $computed) {
+            $ratio = (float) $originalOrder->subtotal > 0 ? $subtotal / (float) $originalOrder->subtotal : 0;
+            $tax = round((float) $originalOrder->tax_amount * $ratio, 2);
+            $discount = round((float) $originalOrder->discount * $ratio, 2);
+            $total = round($subtotal + $tax - $discount, 2);
+            $alreadyRefunded = abs((float) $originalOrder->returns()->where('status', 'completed')->sum('total'));
+            $total = min($total, max(0, round((float) $originalOrder->total - $alreadyRefunded, 2)));
+            $discount = round($subtotal + $tax - $total, 2);
+            foreach (['subtotal' => $subtotal, 'total_amount' => $total] as $field => $computed) {
                 if (isset($validated[$field]) && abs((float) $validated[$field] - $computed) > 0.02) {
                     throw ValidationException::withMessages([$field => 'إجمالي المرتجع لا يطابق أصناف الفاتورة الأصلية.']);
                 }
@@ -110,13 +141,23 @@ class ReturnController extends Controller
             if ((float) ($validated['tax_amount'] ?? 0) !== 0.0 || (float) ($validated['discount'] ?? 0) !== 0.0) {
                 throw ValidationException::withMessages(['total_amount' => 'المرتجع يعكس أسعار الفاتورة الأصلية دون إضافة ضريبة أو خصم.']);
             }
-            $tax = 0.0;
-            $discount = 0.0;
-            $total = $subtotal;
+            $totalCost = collect($lines)->sum(fn ($line) => (float) $line['originalItem']->cost_price * $line['quantity']);
+            $originalPaid = $originalOrder->payment_status === 'paid'
+                ? (float) $originalOrder->total : (float) $originalOrder->paid_amount;
+            $previousRefunds = abs((float) $originalOrder->returns()->where('status', 'completed')->sum('paid_amount'));
+            $previousCredit = max(0, $alreadyRefunded - $previousRefunds);
+            $outstanding = max(0, (float) $originalOrder->total - $originalPaid - $previousCredit);
+            $credit = min($total, $outstanding);
+            $cashRefund = round($total - $credit, 2);
+            if ($credit > 0 && $originalOrder->customer_id) {
+                Party::query()->where('tenant_id', $tenantId)->whereKey($originalOrder->customer_id)
+                    ->lockForUpdate()->firstOrFail()->decrement('current_balance', $credit);
+            }
 
             $returnOrder = Order::create([
                 'tenant_id' => $tenantId,
                 'branch_id' => $validated['branch_id'],
+                'shift_id' => $shift?->id,
                 'created_by' => $user->id,
                 'customer_id' => $originalOrder->customer_id,
                 'original_order_id' => $originalOrder->id,
@@ -127,7 +168,9 @@ class ReturnController extends Controller
                 'tax_amount' => -abs($tax),
                 'discount' => -abs($discount),
                 'total' => -abs($total),
-                'paid_amount' => -abs($total),
+                'total_cost' => -abs($totalCost),
+                'total_profit' => round(-$total + $totalCost, 2),
+                'paid_amount' => -abs($cashRefund),
                 'payment_status' => 'refunded',
                 'notes' => $validated['reason'] ?? 'مرتجع مبيعات',
             ]);
@@ -147,17 +190,20 @@ class ReturnController extends Controller
                 $line['stock']->increment('stock_quantity', $line['quantity']);
             }
 
-            Payment::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $validated['branch_id'],
-                'created_by' => $user->id,
-                'type' => 'payment',
-                'voucher_number' => 'VCH-RET-'.time().'-'.rand(100, 999),
-                'amount' => abs($total),
-                'payment_method' => 'cash',
-                'payment_date' => now(),
-                'order_id' => $returnOrder->id,
-            ]);
+            if ($cashRefund > 0) {
+                Payment::create([
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $validated['branch_id'],
+                    'shift_id' => $shift?->id,
+                    'created_by' => $user->id,
+                    'type' => 'payment',
+                    'voucher_number' => 'VCH-RET-'.time().'-'.rand(100, 999),
+                    'amount' => $cashRefund,
+                    'payment_method' => 'cash',
+                    'payment_date' => now(),
+                    'order_id' => $returnOrder->id,
+                ]);
+            }
 
             return $returnOrder->load('items', 'branch', 'originalOrder');
         });

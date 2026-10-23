@@ -18,6 +18,10 @@ new class extends Component {
     public string $search = '';
 
     public int $perPage = 10;
+    public string $typeFilter = '';
+    public string $statusFilter = 'active';
+    public string $balanceFilter = '';
+    public string $sort = 'latest';
 
 
     /*
@@ -170,6 +174,19 @@ new class extends Component {
     | Lifecycle / Pagination
     |--------------------------------------------------------------------------
     */
+
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['typeFilter', 'statusFilter', 'balanceFilter', 'sort'], true)) {
+            $this->resetPage();
+        }
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset('search', 'typeFilter', 'statusFilter', 'balanceFilter', 'sort', 'perPage');
+        $this->resetPage();
+    }
 
     public function updatingSearch(): void
     {
@@ -1070,7 +1087,18 @@ new class extends Component {
         /*
          * عرض الأطراف النشطة فقط.
          */
-        $query->where('is_active', true);
+        if (in_array($this->statusFilter, ['active', 'inactive'], true)) {
+            $query->where('is_active', $this->statusFilter === 'active');
+        }
+        if (in_array($this->typeFilter, ['customer', 'supplier', 'both'], true)) {
+            $query->where('type', $this->typeFilter);
+        }
+        match ($this->balanceFilter) {
+            'debit' => $query->where('current_balance', '>', 0),
+            'credit' => $query->where('current_balance', '<', 0),
+            'settled' => $query->where('current_balance', 0),
+            default => null,
+        };
 
 
         /*
@@ -1107,9 +1135,13 @@ new class extends Component {
         }
 
 
-        $parties = $query
-            ->latest()
-            ->paginate($this->perPage);
+        match ($this->sort) {
+            'name' => $query->orderBy('name')->orderBy('id'),
+            'balance_desc' => $query->orderByDesc('current_balance')->orderBy('id'),
+            'balance_asc' => $query->orderBy('current_balance')->orderBy('id'),
+            default => $query->latest('id'),
+        };
+        $parties = $query->paginate(in_array($this->perPage, [10, 25, 50], true) ? $this->perPage : 10);
 
 
         return $this->view([
@@ -1286,6 +1318,14 @@ new class extends Component {
 
         </div>
 
+
+        <div class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 dark:border-gray-700 dark:bg-gray-800">
+            <label class="text-xs">نوع الطرف<select wire:model.live="typeFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">الكل</option><option value="customer">عميل</option><option value="supplier">مورد</option><option value="both">عميل ومورد</option></select></label>
+            <label class="text-xs">الحالة<select wire:model.live="statusFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">كل الحالات</option><option value="active">نشط</option><option value="inactive">غير نشط</option></select></label>
+            <label class="text-xs">الرصيد<select wire:model.live="balanceFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">كل الأرصدة</option><option value="debit">مدين</option><option value="credit">دائن</option><option value="settled">رصيد صفر</option></select></label>
+            <label class="text-xs">الترتيب<select wire:model.live="sort" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="latest">الأحدث</option><option value="name">الاسم</option><option value="balance_desc">الرصيد من الأعلى</option><option value="balance_asc">الرصيد من الأقل</option></select></label>
+            <button type="button" wire:click="clearFilters" class="self-end rounded-lg border border-gray-200 p-2 text-sm">مسح الفلاتر</button>
+        </div>
 
         {{-- =========================================================
             TABLE

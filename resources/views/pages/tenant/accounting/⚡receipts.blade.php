@@ -20,6 +20,7 @@ use Livewire\WithPagination;
 new class extends Component {
 
     use WithPagination;
+    use \App\Traits\FiltersVouchers;
 
     public string $partySearch = '';
 
@@ -100,6 +101,7 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
 
             ->where('type', 'receipt')
+            ->tap(fn ($query) => $this->applyVoucherFilters($query))
 
             ->when(trim($this->tableSearch) !== '', function ($query) {
 

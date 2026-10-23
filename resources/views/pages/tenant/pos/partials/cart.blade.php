@@ -109,7 +109,7 @@
                 @forelse ($cart as $lineKey => $item)
                     @php
                         $belowCost =
-                            $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
+                            empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
 
                     <tr wire:key="pos-cart-{{ $lineKey }}"
@@ -138,6 +138,9 @@
                         <td class="px-3 py-2">
                             <div class="font-black text-slate-900">
                                 {{ $item['name'] }}
+                                @if (! empty($item['is_gift']))
+                                    <span class="rounded bg-fuchsia-100 px-2 py-0.5 text-xs text-fuchsia-700">هدية</span>
+                                @endif
                             </div>
 
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
@@ -179,7 +182,7 @@
                                     'price',
                                     $event.target.value
                                 )"
-                                @disabled($invoiceLocked)
+                                @disabled($invoiceLocked || ! empty($item['is_gift']))
                                 class="
                                     pos-cart-field w-20 rounded-lg border
                                     {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }}
@@ -209,7 +212,7 @@
                                             'subtotal',
                                             $event.target.value
                                         )"
-                                        @disabled($invoiceLocked)
+                                        @disabled($invoiceLocked || ! empty($item['is_gift']))
                                         class="pos-cart-field w-24 rounded-lg border px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none
                                             {{ $item['subtotal'] < 0
                                                 ? 'border-rose-300 bg-rose-50 text-rose-700'

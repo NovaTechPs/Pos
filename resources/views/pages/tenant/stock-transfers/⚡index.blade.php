@@ -33,6 +33,10 @@ return new class extends Component {
     public string $listSearch = '';
 
     public string $statusFilter = '';
+    public string $dateFrom = '';
+    public string $dateTo = '';
+    public ?int $sourceBranchFilter = null;
+    public ?int $destinationBranchFilter = null;
 
     public string $notes = '';
 
@@ -162,6 +166,19 @@ return new class extends Component {
 
         $this->resetPage();
 
+    }
+
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['dateFrom', 'dateTo', 'sourceBranchFilter', 'destinationBranchFilter'], true)) {
+            $this->resetPage();
+        }
+    }
+
+    public function clearListFilters(): void
+    {
+        $this->reset('listSearch', 'statusFilter', 'dateFrom', 'dateTo', 'sourceBranchFilter', 'destinationBranchFilter');
+        $this->resetPage();
     }
 
     public function openCreate(): void
@@ -1070,6 +1087,10 @@ return new class extends Component {
             })
 
             ->when($this->statusFilter !== '', fn ($q) => $q->where('status', $this->statusFilter))
+            ->when($this->sourceBranchFilter, fn ($q) => $q->where('from_branch_id', $this->sourceBranchFilter))
+            ->when($this->destinationBranchFilter, fn ($q) => $q->where('to_branch_id', $this->destinationBranchFilter))
+            ->when($this->dateFrom !== '' && validator(['date' => $this->dateFrom], ['date' => 'date_format:Y-m-d'])->passes(), fn ($q) => $q->whereDate('transfer_date', '>=', $this->dateFrom))
+            ->when($this->dateTo !== '' && validator(['date' => $this->dateTo], ['date' => 'date_format:Y-m-d'])->passes(), fn ($q) => $q->whereDate('transfer_date', '<=', $this->dateTo))
 
             ->latest('id')
 
@@ -1184,6 +1205,14 @@ return new class extends Component {
                     </select>
                 </div>
             </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 border-b border-zinc-200 p-4 sm:grid-cols-2 lg:grid-cols-5">
+            <label class="text-xs font-bold">من تاريخ<input type="date" wire:model.live="dateFrom" class="mt-1 w-full rounded-xl border border-zinc-200 p-2"></label>
+            <label class="text-xs font-bold">إلى تاريخ<input type="date" wire:model.live="dateTo" class="mt-1 w-full rounded-xl border border-zinc-200 p-2"></label>
+            <label class="text-xs font-bold">الفرع المرسل<select wire:model.live="sourceBranchFilter" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white p-2"><option value="">الكل</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select></label>
+            <label class="text-xs font-bold">الفرع المستقبل<select wire:model.live="destinationBranchFilter" class="mt-1 w-full rounded-xl border border-zinc-200 bg-white p-2"><option value="">الكل</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select></label>
+            <button type="button" wire:click="clearListFilters" class="self-end rounded-xl border border-zinc-200 p-2 text-sm">مسح الفلاتر</button>
         </div>
 
         <div class="overflow-x-auto">

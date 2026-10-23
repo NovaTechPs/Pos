@@ -88,6 +88,25 @@
         </div>
 
 
+        @can('pos.sale.checkout')
+            <button type="button" wire:click="startGiftSelection"
+                @disabled($this->invoiceIsLocked() || $isReturnMode)
+                class="flex h-[42px] items-center gap-2 rounded-xl bg-fuchsia-600 px-4 text-xs font-black text-white transition hover:bg-fuchsia-700 disabled:opacity-50">
+                🎁 إضافة هدية
+            </button>
+        @endcan
+
+        @can('sales_invoices.delete')
+            @if ($currentInvoiceId)
+                <button type="button" wire:click="deleteInvoice"
+                    wire:confirm="هل تريد حذف هذه الفاتورة وإلغاء سنداتها وإعادة كمياتها للمخزون؟"
+                    wire:loading.attr="disabled" wire:target="deleteInvoice"
+                    class="flex h-[42px] items-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50">
+                    حذف الفاتورة
+                </button>
+            @endif
+        @endcan
+
         {{-- =====================================================
              فاتورة جديدة
         ====================================================== --}}

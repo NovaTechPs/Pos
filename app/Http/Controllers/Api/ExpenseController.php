@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
-use App\Models\Shift;
+use App\Services\ApiShiftLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ExpenseController extends Controller
 {
@@ -41,24 +42,22 @@ class ExpenseController extends Controller
         $tenantId = $user->tenant_id;
         $branchId = $validated['branch_id'];
 
-        $activeShift = Shift::where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->where('status', 'open')
-            ->latest('opened_at')
-            ->first();
+        $payment = DB::transaction(function () use ($validated, $user, $tenantId, $branchId): Payment {
+            $activeShift = ApiShiftLedger::activeForWrite($tenantId, (int) $branchId, $user->id);
 
-        $payment = Payment::create([
-            'tenant_id' => $tenantId,
-            'branch_id' => $branchId,
-            'created_by' => $user->id,
-            'shift_id' => $activeShift?->id,
-            'type' => 'payment',
-            'voucher_number' => 'EXP-'.time().'-'.rand(100, 999),
-            'amount' => $validated['amount'],
-            'payment_method' => $validated['payment_method'] ?? 'cash',
-            'payment_date' => now(),
-            'notes' => $validated['notes'] ?? 'مصروفات نقدية من الصندوق',
-        ]);
+            return Payment::create([
+                'tenant_id' => $tenantId,
+                'branch_id' => $branchId,
+                'created_by' => $user->id,
+                'shift_id' => $activeShift?->id,
+                'type' => 'payment',
+                'voucher_number' => 'EXP-'.time().'-'.rand(100, 999),
+                'amount' => $validated['amount'],
+                'payment_method' => $validated['payment_method'] ?? 'cash',
+                'payment_date' => now(),
+                'notes' => $validated['notes'] ?? 'مصروفات نقدية من الصندوق',
+            ]);
+        });
 
         return response()->json([
             'message' => 'تم تسجيل المصروف بنجاح',

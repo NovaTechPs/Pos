@@ -3,7 +3,7 @@
         <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl">
             <div class="shrink-0 border-b border-slate-200 bg-slate-900 p-3 text-white">
                 <div class="flex flex-wrap items-center gap-2">
-                    <div class="text-sm font-black">📦 قائمة الأصناف</div>
+                    <div class="text-sm font-black">{{ $selectingGift ? '🎁 اختر صنف الهدية — بدون مقابل' : '📦 قائمة الأصناف' }}</div>
                     <select wire:model.live="selectedCategoryId" class="rounded-lg border-0 bg-white px-2 py-1.5 text-xs font-bold text-slate-900">
                         <option value="">كل التصنيفات</option>
                         @foreach ($categories as $category)

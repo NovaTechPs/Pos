@@ -12,6 +12,7 @@ use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\TenantSetting;
+use App\Services\ApiShiftLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -69,8 +70,9 @@ class PosController extends Controller
     public function hold(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'held_order_id' => ['nullable', 'integer'],
             'branch_id' => ['required', 'integer'], 'customer_id' => ['nullable', 'integer'],
-            'items' => ['required', 'array', 'min:1'], 'items.*.product_id' => ['required', 'exists:products,id'],
+            'items' => ['required', 'array', 'min:1'], 'items.*.product_id' => ['required', 'integer', 'distinct'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.01'], 'items.*.price' => ['required', 'numeric', 'min:0'],
             'subtotal' => ['required', 'numeric', 'min:0'], 'tax_amount' => ['nullable', 'numeric', 'in:0'],
             'discount' => ['nullable', 'numeric', 'min:0'], 'total_amount' => ['required', 'numeric', 'min:0'],
@@ -80,6 +82,10 @@ class PosController extends Controller
         $tenantId = $user->tenant_id;
         $branchId = (int) $validated['branch_id'];
         $order = DB::transaction(function () use ($validated, $user, $tenantId, $branchId) {
+            $held = ! empty($validated['held_order_id'])
+                ? Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('status', 'pending')->where('type', 'pos')->lockForUpdate()
+                    ->whereKey((int) $validated['held_order_id'])->firstOrFail() : null;
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
@@ -94,7 +100,11 @@ class PosController extends Controller
                 $branchProduct = BranchProduct::query()->where('tenant_id', $tenantId)
                     ->where('branch_id', $branchId)->where('product_id', $product->id)->lockForUpdate()->firstOrFail();
                 $price = (float) $item['price'];
-                if (abs($price - (float) $branchProduct->retail_price) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
+                $pricingBranchId = $customer?->branch_id ?: $branchId;
+                $pricing = $pricingBranchId === $branchId ? $branchProduct
+                    : BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $pricingBranchId)
+                        ->where('product_id', $product->id)->firstOrFail();
+                if (abs($price - (float) $pricing->retail_price) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
                     throw ValidationException::withMessages(['items' => "ليس لديك صلاحية تغيير سعر {$product->name}."]);
                 }
                 $subtotal += round((float) $item['quantity'] * $price, 2);
@@ -114,13 +124,18 @@ class PosController extends Controller
                 throw ValidationException::withMessages(['total_amount' => 'إجمالي الفاتورة لا يطابق تفاصيل الأصناف.']);
             }
 
-            $order = Order::create([
+            $order = $held ?? new Order;
+            $order->fill([
                 'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id,
-                'customer_id' => $customer?->id, 'invoice_number' => 'HOLD-'.str()->uuid(),
+                'customer_id' => $customer?->id, 'invoice_number' => $held->invoice_number ?? 'HOLD-'.str()->uuid(),
                 'type' => 'pos', 'status' => 'pending', 'subtotal' => $subtotal,
                 'tax_amount' => $tax, 'discount' => $discount,
                 'total' => $total, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'notes' => $validated['notes'] ?? null,
             ]);
+            $order->save();
+            if ($held) {
+                $order->items()->delete();
+            }
             foreach ($items as [$item, $product, $price]) {
                 $cost = (float) $product->cost_price;
                 OrderItem::create(['tenant_id' => $tenantId, 'order_id' => $order->id, 'product_id' => $product->id,
@@ -181,6 +196,14 @@ class PosController extends Controller
             ];
         }
 
+        foreach ($categories as &$category) {
+            foreach ($category['products'] as &$product) {
+                $product['pricing_branch_id'] = $branchId;
+            }
+            unset($product);
+        }
+        unset($category);
+
         return response()->json([
             'categories' => $categories,
         ]);
@@ -211,6 +234,7 @@ class PosController extends Controller
                     'id' => $product->id,
                     'name' => $product->name,
                     'barcode' => $product->barcodes->first()?->barcode,
+                    'barcodes' => $product->barcodes->pluck('barcode')->all(),
                     'category_id' => $product->category_id,
                     'category_name' => $product->category->name ?? 'بدون تصنيف',
                     'price' => (float) (($branchProduct->wholesale_price ?? 0) > 0 ? $branchProduct->wholesale_price : ($branchProduct->retail_price ?? 0)),
@@ -248,6 +272,7 @@ class PosController extends Controller
         $unifiedStock = TenantSetting::getBool($tenantId, 'unified_stock', false);
 
         $order = DB::transaction(function () use ($validated, $user, $tenantId, $branchId, $allowNegativeStock, $unifiedStock): Order {
+            $shift = ApiShiftLedger::activeForWrite($tenantId, $branchId, $user->id);
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
@@ -295,8 +320,14 @@ class PosController extends Controller
                 : min($subtotal, (float) ($validated['discount_amount'] ?? 0));
             $total = max(0, round($subtotal - $discount, 2));
             $paid = min($total, round((float) $validated['paid_amount'], 2));
+            if ((float) $validated['paid_amount'] > $total + 0.005) {
+                throw ValidationException::withMessages(['paid_amount' => 'المبلغ المدفوع يتجاوز إجمالي الفاتورة.']);
+            }
+            if ($paid < $total && ! $customer) {
+                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
+            }
             $order = Order::create([
-                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id,
+                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                 'customer_id' => $customer?->id, 'customer_name' => $customer->name ?? 'زبون جملة عابر',
                 'customer_phone' => $customer?->phone,
                 'invoice_number' => 'W-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
@@ -334,7 +365,7 @@ class PosController extends Controller
 
             if ($paid > 0) {
                 Payment::create([
-                    'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id,
+                    'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                     'type' => 'receipt', 'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
                     'party_id' => $customer?->id, 'amount' => $paid, 'payment_method' => $validated['payment_method'],
                     'order_id' => $order->id, 'notes' => 'دفعة على فاتورة الجملة '.$order->invoice_number,
@@ -354,6 +385,7 @@ class PosController extends Controller
     public function storeOrder(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'held_order_id' => ['nullable', 'integer'],
             'branch_id' => ['required', 'integer'],
             'customer_id' => ['nullable', 'integer'],
             'items' => ['required', 'array', 'min:1'],
@@ -374,6 +406,11 @@ class PosController extends Controller
         $unifiedStock = TenantSetting::getBool($tenantId, 'unified_stock', false);
 
         $order = DB::transaction(function () use ($validated, $user, $tenantId, $branchId, $allowNegativeStock, $unifiedStock): Order {
+            $shift = ApiShiftLedger::activeForWrite($tenantId, $branchId, $user->id);
+            $held = ! empty($validated['held_order_id'])
+                ? Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('status', 'pending')->where('type', 'pos')->lockForUpdate()
+                    ->whereKey((int) $validated['held_order_id'])->firstOrFail() : null;
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
@@ -441,9 +478,11 @@ class PosController extends Controller
 
             $paymentMethod = $validated['payment_method'] ?? 'cash';
 
-            $order = Order::create([
+            $order = $held ?? new Order;
+            $order->fill([
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
+                'shift_id' => $shift?->id,
                 'created_by' => $user->id,
                 'customer_id' => $customer?->id,
                 'customer_name' => $customer?->name,
@@ -460,6 +499,10 @@ class PosController extends Controller
                 'total_cost' => round($totalCost, 2),
                 'total_profit' => round($total - $totalCost, 2),
             ]);
+            $order->save();
+            if ($held) {
+                $order->items()->delete();
+            }
 
             foreach ($lines as $line) {
                 OrderItem::create([
@@ -493,6 +536,7 @@ class PosController extends Controller
             Payment::create([
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
+                'shift_id' => $shift?->id,
                 'created_by' => $user->id,
                 'type' => 'receipt',
                 'voucher_number' => 'VCH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),

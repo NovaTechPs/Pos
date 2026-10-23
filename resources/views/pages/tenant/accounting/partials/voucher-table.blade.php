@@ -146,6 +146,16 @@
         </div>
     </div>
 
+    <div class="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-4">
+        <label class="text-xs font-bold text-slate-600">من تاريخ<input type="date" wire:model.live="filterDateFrom" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
+        <label class="text-xs font-bold text-slate-600">إلى تاريخ<input type="date" wire:model.live="filterDateTo" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
+        <label class="text-xs font-bold text-slate-600">طريقة الدفع<select wire:model.live="filterMethod" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="">الكل</option><option value="cash">نقدي</option><option value="bank">بنكي</option><option value="card">بطاقة</option><option value="check">شيك</option><option value="transfer">تحويل</option></select></label>
+        <label class="text-xs font-bold text-slate-600">مصدر السند<select wire:model.live="filterSource" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="">الكل</option><option value="invoice">مرتبط بفاتورة</option><option value="manual">سند مستقل</option></select></label>
+        <label class="text-xs font-bold text-slate-600">المبلغ من<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMinAmount" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
+        <label class="text-xs font-bold text-slate-600">المبلغ إلى<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMaxAmount" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
+        <button type="button" wire:click="clearVoucherFilters" class="self-end rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold">مسح الفلاتر</button>
+    </div>
+
     {{-- Table --}}
     <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 

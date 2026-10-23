@@ -10,10 +10,12 @@ use App\Http\Controllers\Api\PartyStatementController;
 use App\Http\Controllers\Api\PosController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ReturnController;
+use App\Http\Controllers\Api\SaleOperationController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\ThemeController;
 use App\Http\Controllers\Api\VoucherController;
+use App\Http\Middleware\EnsureSaleIdempotency;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('api.login');
@@ -25,12 +27,13 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
 
     Route::get('/pos/products', [PosController::class, 'index'])->middleware('can:pos.view');
     Route::get('/wholesale/products', [PosController::class, 'wholesaleProducts'])->middleware('can:wholesale_sales.view');
-    Route::post('/wholesale/orders', [PosController::class, 'storeWholesaleOrder'])->middleware('can:wholesale_sales.create');
+    Route::post('/wholesale/orders', [PosController::class, 'storeWholesaleOrder'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
     Route::get('/wholesale/orders', [PosController::class, 'wholesaleOrders'])->middleware('can:wholesale_sales.view');
     Route::get('/sales/orders', [PosController::class, 'salesOrders'])->middleware('can:sales_invoices.view');
-    Route::post('/pos/orders', [PosController::class, 'storeOrder'])->middleware('can:pos.sale.checkout');
+    Route::post('/pos/orders', [PosController::class, 'storeOrder'])->middleware(['can:pos.sale.checkout', EnsureSaleIdempotency::class]);
+    Route::get('/sale-operations/{operationUuid}', [SaleOperationController::class, 'show'])->whereUuid('operationUuid');
     Route::get('/pos/held', [PosController::class, 'held'])->middleware('can:pos.invoice.search');
-    Route::post('/pos/held', [PosController::class, 'hold'])->middleware('can:pos.invoice.hold');
+    Route::post('/pos/held', [PosController::class, 'hold'])->middleware(['can:pos.invoice.hold', EnsureSaleIdempotency::class]);
     Route::delete('/pos/held/{order}', [PosController::class, 'deleteHeld'])->middleware('can:pos.invoice.hold');
 
     Route::get('/shifts/active', [ShiftController::class, 'active'])->middleware('can:pos.view');
@@ -44,11 +47,11 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/parties/{party}/statement', [PartyStatementController::class, 'show']);
 
     Route::get('/orders/invoice/{invoiceNumber}', [ReturnController::class, 'findInvoice'])->middleware('can:returns.view');
-    Route::post('/orders/returns', [ReturnController::class, 'storeReturn'])->middleware('can:returns.create');
+    Route::post('/orders/returns', [ReturnController::class, 'storeReturn'])->middleware(['can:returns.create', EnsureSaleIdempotency::class]);
 
     Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('can:accounting.voucher.view');
-    Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('can:accounting.voucher.create');
-    Route::post('/vouchers/receipts', [VoucherController::class, 'storeReceipt'])->middleware('can:accounting.receipt.create');
+    Route::post('/expenses', [ExpenseController::class, 'store'])->middleware(['can:accounting.voucher.create', EnsureSaleIdempotency::class]);
+    Route::post('/vouchers/receipts', [VoucherController::class, 'storeReceipt'])->middleware(['can:accounting.receipt.create', EnsureSaleIdempotency::class]);
     Route::get('/vouchers', [VoucherController::class, 'index']);
     Route::post('/vouchers/payments', [VoucherController::class, 'storePayment'])->middleware('can:accounting.payments.create');
 

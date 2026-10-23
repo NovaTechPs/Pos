@@ -15,6 +15,11 @@ class OrderItem extends Model
 
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return ['is_gift' => 'boolean'];
+    }
+
     /** @return BelongsTo<Order, $this> */
     public function order(): BelongsTo
     {

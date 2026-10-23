@@ -26,6 +26,9 @@
 
         // Active Tab State
         public string $activeTab = 'employees';
+        public string $employeeSearchFilter = '';
+        public string $employeeStatusFilter = '';
+        public ?int $employeeListFilter = null;
 
         // Employee Form Fields
         public bool $showEmployeeModal = false;
@@ -63,6 +66,19 @@
         public $selectedPeriodId;
         public $period_title, $period_start_date, $period_end_date;
         public bool $showPeriodModal = false;
+
+        public function updated(string $property): void
+        {
+            if (in_array($property, ['activeTab', 'employeeSearchFilter', 'employeeStatusFilter', 'employeeListFilter'], true)) {
+                $this->resetPage();
+            }
+        }
+
+        public function clearListFilters(): void
+        {
+            $this->reset('employeeSearchFilter', 'employeeStatusFilter', 'employeeListFilter');
+            $this->resetPage();
+        }
 
         public function mount()
         {
@@ -531,6 +547,7 @@
         public function with()
         {
             $attendances = EmployeeAttendance::with('employee')
+                ->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))
                 ->where('date', $this->attendance_date)
                 ->get();
 
@@ -711,12 +728,21 @@
             }
 
             return [
-                'employees' => Employee::latest()->paginate(10),
+                'employees' => Employee::query()
+                    ->when(trim($this->employeeSearchFilter) !== '', function ($query): void {
+                        $search = '%' . trim($this->employeeSearchFilter) . '%';
+                        $query->where(function ($employee) use ($search): void {
+                            $employee->where('first_name', 'like', $search)->orWhere('last_name', 'like', $search)
+                                ->orWhere('employee_code', 'like', $search)->orWhere('phone', 'like', $search);
+                        });
+                    })
+                    ->when(in_array($this->employeeStatusFilter, ['active', 'inactive'], true), fn ($query) => $query->where('is_active', $this->employeeStatusFilter === 'active'))
+                    ->latest()->paginate(10),
                 'allEmployees' => Employee::where('is_active', true)->get(),
                 'attendances' => $attendances,
-                'departures' => EmployeeDeparture::with('employee')->latest()->paginate(10),
-                'leaves' => EmployeeLeave::with('employee')->latest()->paginate(10),
-                'advances' => EmployeeAdvance::with('employee')->latest()->paginate(10),
+                'departures' => EmployeeDeparture::with('employee')->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))->latest()->paginate(10),
+                'leaves' => EmployeeLeave::with('employee')->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))->latest()->paginate(10),
+                'advances' => EmployeeAdvance::with('employee')->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))->latest()->paginate(10),
                 'ledgerData' => $ledgerData,
                 'periods' => PayrollPeriod::latest()->get(),
                 'payrolls' => $this->selectedPeriodId
@@ -787,6 +813,18 @@
                 مسير الرواتب
             </flux:button>
         </div>
+
+        @if (in_array($activeTab, ['employees', 'attendance', 'departures', 'leaves', 'advances'], true))
+            <div class="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900">
+                @if ($activeTab === 'employees')
+                    <label class="min-w-[200px] flex-1 text-xs">بحث الموظفين<input wire:model.live.debounce.300ms="employeeSearchFilter" placeholder="الاسم أو رقم الموظف أو الهاتف" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"></label>
+                    <label class="text-xs">الحالة<select wire:model.live="employeeStatusFilter" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"><option value="">الكل</option><option value="active">نشط</option><option value="inactive">غير نشط</option></select></label>
+                @else
+                    <label class="min-w-[200px] flex-1 text-xs">الموظف<select wire:model.live="employeeListFilter" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"><option value="">كل الموظفين</option>@foreach ($allEmployees as $filterEmployee)<option value="{{ $filterEmployee->id }}">{{ $filterEmployee->first_name }} {{ $filterEmployee->last_name }}</option>@endforeach</select></label>
+                @endif
+                <button type="button" wire:click="clearListFilters" class="rounded-lg border border-zinc-200 p-2 text-sm">مسح الفلاتر</button>
+            </div>
+        @endif
 
         <!-- Tab 1: الموظفين -->
         @if($activeTab === 'employees')

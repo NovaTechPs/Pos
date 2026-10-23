@@ -21,6 +21,7 @@ return new class extends Migration
             $table->decimal('discount', 12, 2)->default(0.00);
             $table->decimal('total_cost', 12, 2)->default(0.00);
             $table->foreignId('offer_id')->nullable()->constrained('product_offers')->nullOnDelete();
+            $table->boolean('is_gift')->default(false);
             $table->decimal('offer_quantity', 12, 3)->nullable();
             $table->decimal('offer_price', 12, 2)->nullable();
             $table->decimal('normal_subtotal', 12, 2)->default(0);

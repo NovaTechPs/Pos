@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Party;
 use App\Models\Payment;
-use App\Models\Shift;
+use App\Services\ApiShiftLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,10 +43,8 @@ class VoucherController extends Controller
         ]);
         $user = $request->user();
         $branchId = (int) $validated['branch_id'];
-        $activeShift = Shift::query()->where('tenant_id', $user->tenant_id)->where('branch_id', $branchId)
-            ->where('status', 'open')->latest('opened_at')->first();
-
-        $payment = DB::transaction(function () use ($validated, $user, $branchId, $activeShift): Payment {
+        $payment = DB::transaction(function () use ($validated, $user, $branchId): Payment {
+            $activeShift = ApiShiftLedger::activeForWrite($user->tenant_id, $branchId, $user->id);
             $customer = ! empty($validated['customer_id'])
                 ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'both'])
                     ->where('is_active', true)->lockForUpdate()->findOrFail((int) $validated['customer_id'])
@@ -78,13 +76,14 @@ class VoucherController extends Controller
         $user = $request->user();
         $branchId = (int) $validated['branch_id'];
         $payment = DB::transaction(function () use ($validated, $user, $branchId): Payment {
+            $activeShift = ApiShiftLedger::activeForWrite($user->tenant_id, $branchId, $user->id);
             $supplier = ! empty($validated['supplier_id'])
                 ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['supplier', 'both'])
                     ->where('is_active', true)->lockForUpdate()->findOrFail((int) $validated['supplier_id'])
                 : null;
             $payment = Payment::create([
                 'tenant_id' => $user->tenant_id, 'branch_id' => $branchId, 'created_by' => $user->id,
-                'party_id' => $supplier?->id, 'type' => 'payment',
+                'party_id' => $supplier?->id, 'type' => 'payment', 'shift_id' => $activeShift?->id,
                 'voucher_number' => 'PAY-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
                 'amount' => $validated['amount'], 'payment_method' => $validated['payment_method'],
                 'payment_date' => $validated['payment_date'] ?? now(), 'notes' => $validated['notes'] ?? null,

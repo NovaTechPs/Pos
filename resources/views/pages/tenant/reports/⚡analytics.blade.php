@@ -439,7 +439,8 @@ new class extends Component {
         // --------------------------------------------------------
 
         $quantityQuery = OrderItem::query()
-            ->join('orders', 'orders.id', '=', 'order_items.order_id');
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->whereNull('orders.deleted_at');
 
         $this->applyOrderFilters($quantityQuery, ['pos']);
 
@@ -513,6 +514,7 @@ new class extends Component {
             ->selectRaw('SUM(order_items.total_cost) as total_cost')
             ->selectRaw('SUM(order_items.total_price - order_items.total_cost) as profit')
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->whereNull('orders.deleted_at')
             ->leftJoin('products', 'products.id', '=', 'order_items.product_id');
 
         $this->applyOrderFilters($topProductsQuery, ['pos']);
@@ -643,6 +645,7 @@ new class extends Component {
 
         $topReturnedProductsQuery = OrderItem::query()
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->whereNull('orders.deleted_at')
             ->join('products', 'products.id', '=', 'order_items.product_id')
             ->where('order_items.tenant_id', $tenantId)
             ->where('orders.tenant_id', $tenantId)

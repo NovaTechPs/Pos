@@ -62,6 +62,7 @@ new class extends Component {
 
     public string $pendingCheckoutMode = 'checkout';
     public bool $showProductsModal = false;
+    public bool $selectingGift = false;
     public bool $isReturnMode = false;
     #[Locked]
     public ?int $activeShiftId = null;
@@ -173,6 +174,9 @@ new class extends Component {
         }
 
         $lineKey = $resolvedKey;
+        if (! empty($this->cart[$lineKey]['is_gift']) && in_array($field, ['price', 'subtotal'], true)) {
+            return;
+        }
         $value = str_replace(',', '.', trim((string) $value));
 
         switch ($field) {
@@ -274,7 +278,7 @@ new class extends Component {
                 continue;
             }
 
-            $groupKey = (string) $productId;
+            $groupKey = (string) $productId . (! empty($item['is_gift']) ? '_gift' : '');
 
             if (!isset($merged[$groupKey])) {
                 $merged[$groupKey] = $item;
@@ -824,6 +828,18 @@ new class extends Component {
             ->all();
     }
 
+    public function startGiftSelection(): void
+    {
+        $this->authorize('pos.sale.checkout');
+        if (! $this->ensureInvoiceEditable() || $this->isReturnMode) {
+            return;
+        }
+        $this->selectingGift = true;
+        $this->productSearchQuery = '';
+        $this->loadQuickProducts();
+        $this->showProductsModal = true;
+    }
+
     public function selectInlineProduct(int $productId): void
     {
         $this->addToCart($productId);
@@ -999,6 +1015,11 @@ new class extends Component {
             return;
         }
 
+        $isGift = $this->selectingGift && $this->showProductsModal;
+        if ($isGift) {
+            $this->authorize('pos.sale.checkout');
+        }
+        $this->selectingGift = false;
         $this->showProductsModal = false;
         $changeQty = $this->isReturnMode ? -1 : 1;
 
@@ -1014,7 +1035,7 @@ new class extends Component {
 
         if ($this->mergeSimilarProducts) {
             foreach ($this->cart as $lineKey => $item) {
-                if ((int) ($item['id'] ?? 0) === $productId && (float) ($item['quantity'] ?? 0) < 0 === $changeQty < 0) {
+                if ((bool) ($item['is_gift'] ?? false) === $isGift && (int) ($item['id'] ?? 0) === $productId && (float) ($item['quantity'] ?? 0) < 0 === $changeQty < 0) {
                     $existingLineKey = (string) $lineKey;
                     break;
                 }
@@ -1028,13 +1049,14 @@ new class extends Component {
                 unset($this->cart[$existingLineKey]);
             }
         } else {
-            $lineKey = $this->mergeSimilarProducts ? (string) $productId : 'line_' . str()->uuid()->toString();
+            $lineKey = $this->mergeSimilarProducts ? (string) $productId . ($isGift ? '_gift' : '') : 'line_' . str()->uuid()->toString();
 
             $this->cart[$lineKey] = [
                 'id' => $productId,
                 'name' => $product->name,
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
-                'price' => (float) $branchProduct->retail_price,
+                'is_gift' => $isGift,
+                'price' => $isGift ? 0.0 : (float) $branchProduct->retail_price,
                 'cost_price' => (float) ($product->cost_price ?? 0),
                 'quantity' => $changeQty,
                 'subtotal' => $this->roundMoney((float) $branchProduct->retail_price * $changeQty),
@@ -1109,7 +1131,7 @@ new class extends Component {
             return;
         }
 
-        $this->cart[$lineKey]['price'] = max(0, (float) $newPrice);
+        $this->cart[$lineKey]['price'] = ! empty($this->cart[$lineKey]['is_gift']) ? 0.0 : max(0, (float) $newPrice);
         $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney((float) $this->cart[$lineKey]['quantity'] * (float) $this->cart[$lineKey]['price']);
         $this->recalculatePrices();
@@ -1128,6 +1150,9 @@ new class extends Component {
 
         $lineKey = $resolvedKey;
 
+        if (! empty($this->cart[$lineKey]['is_gift'])) {
+            return;
+        }
         $quantity = (float) ($this->cart[$lineKey]['quantity'] ?? 0);
 
         if (abs($quantity) < 0.000001) {
@@ -1206,6 +1231,7 @@ new class extends Component {
 
     private function clearCartState(bool $reloadProducts = true): void
     {
+        $this->selectingGift = false;
         $this->cart = [];
         $this->receipt = [];
         $this->paid_amount = 0;
@@ -1377,7 +1403,7 @@ new class extends Component {
         $this->cart = [];
 
         foreach ($invoice->items as $item) {
-            $lineKey = $this->mergeSimilarProducts ? (string) $item->product_id : 'invoice_' . $item->id;
+            $lineKey = $this->mergeSimilarProducts ? (string) $item->product_id . ($item->is_gift ? '_gift' : '') : 'invoice_' . $item->id;
 
             if ($this->mergeSimilarProducts && isset($this->cart[$lineKey])) {
                 $this->cart[$lineKey]['quantity'] += (float) $item->quantity;
@@ -1393,6 +1419,7 @@ new class extends Component {
 
             $this->cart[$lineKey] = [
                 'id' => $item->product_id,
+                'is_gift' => (bool) $item->is_gift,
                 'name' => $item->product?->name ?? 'منتج غير محدد',
                 'barcode' => '',
                 'price' => (float) $item->unit_price,
@@ -1426,6 +1453,78 @@ new class extends Component {
         $this->clearCartState();
         $this->errorMessage = null;
         $this->successMessage = 'تم فتح فاتورة جديدة.';
+    }
+
+    public function deleteInvoice(): void
+    {
+        $this->authorize('sales_invoices.delete');
+        $this->errorMessage = null;
+        $this->successMessage = null;
+
+        if (config('branch-sync.mode') === 'edge') {
+            $this->errorMessage = 'حذف الفواتير المحفوظة غير متاح أثناء وضع الفرع المحلي. استخدم النظام المركزي.';
+            return;
+        }
+
+        $invoice = $this->invoiceNavigationQuery()->find($this->currentInvoiceId);
+        if (! $invoice) {
+            $this->errorMessage = 'اختر فاتورة محفوظة وغير محذوفة أولاً.';
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($invoice): void {
+                $shift = $invoice->shift_id ? Shift::query()
+                    ->where('tenant_id', $this->tenantId())
+                    ->where('branch_id', $this->getActiveBranchId())
+                    ->lockForUpdate()->find($invoice->shift_id) : null;
+                if ($invoice->shift_id && (! $shift || $shift->status !== 'open')) {
+                    throw new \RuntimeException('لا يمكن حذف فاتورة من شفت مغلق.');
+                }
+
+                $order = $this->invoiceNavigationQuery()->lockForUpdate()->find($invoice->id);
+                if (! $order) {
+                    throw new \RuntimeException('الفاتورة محذوفة أو غير متاحة.');
+                }
+                if ($order->type === 'return' || $order->returns()->withTrashed()->exists()) {
+                    throw new \RuntimeException('لا يمكن حذف مرتجع أو فاتورة مرتبطة بمرتجعات.');
+                }
+                if (! in_array($order->status, ['completed', 'pending'], true)) {
+                    throw new \RuntimeException('حالة الفاتورة لا تسمح بالحذف.');
+                }
+
+                if ($order->status === 'completed') {
+                    foreach ($order->items()->orderBy('product_id')->get() as $item) {
+                        $stock = BranchProduct::query()->where('tenant_id', $this->tenantId())
+                            ->where('branch_id', $order->branch_id)->where('product_id', $item->product_id)
+                            ->lockForUpdate()->first();
+                        if (! $stock) {
+                            throw new \RuntimeException('تعذر إعادة مخزون أحد أصناف الفاتورة.');
+                        }
+                        $stock->increment('stock_quantity', (float) $item->quantity);
+                    }
+                }
+
+                foreach (Payment::query()->where('tenant_id', $this->tenantId())
+                    ->where('branch_id', $order->branch_id)
+                    ->where(function ($query) use ($order): void {
+                        $query->where('order_id', $order->id)
+                            ->orWhere('voucher_number', 'PAY-' . $order->invoice_number);
+                    })->lockForUpdate()->get() as $payment) {
+                    $payment->delete();
+                }
+                $order->delete();
+            });
+        } catch (\RuntimeException $exception) {
+            $this->errorMessage = $exception->getMessage();
+            return;
+        }
+
+        $this->clearCartState();
+        $this->invalidateActiveShiftCache();
+        $this->loadHeldInvoices();
+        $this->loadQuickProducts();
+        $this->successMessage = "تم حذف الفاتورة {$invoice->invoice_number} وإعادة مخزونها. لن تظهر في قوائم الفواتير.";
     }
 
     private function invoiceNavigationQuery()
@@ -1786,7 +1885,7 @@ new class extends Component {
     public function getHasBelowCostItemProperty(): bool
     {
         foreach ($this->cart as $item) {
-            if ((int) $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0)) {
+            if (empty($item['is_gift']) && (int) $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0)) {
                 return true;
             }
         }
@@ -2050,13 +2149,15 @@ new class extends Component {
                 }
 
                 $validatedItems = [];
+                $saleQuantities = [];
                 $subtotal = 0;
                 $totalCost = 0;
 
                 foreach ($this->cart as $rawItem) {
                     $productId = (int) ($rawItem['id'] ?? 0);
                     $quantity = (float) ($rawItem['quantity'] ?? 0);
-                    $price = max(0, (float) ($rawItem['price'] ?? 0));
+                    $isGift = (bool) ($rawItem['is_gift'] ?? false);
+                    $price = $isGift ? 0.0 : max(0, (float) ($rawItem['price'] ?? 0));
 
                     if (!$productId || $quantity === 0) {
                         throw new \RuntimeException('يوجد صنف أو كمية غير صالحة في الفاتورة.');
@@ -2082,6 +2183,10 @@ new class extends Component {
                         ? $this->roundMoney((float) $rawItem['subtotal'])
                         : $this->roundMoney($price * $quantity);
 
+                    if ($isGift) {
+                        $lineTotal = 0.0;
+                    }
+
                     if ($quantity < 0) {
                         $lineTotal = -abs($lineTotal);
                     } else {
@@ -2089,11 +2194,12 @@ new class extends Component {
                     }
 
                     if ($quantity > 0) {
+                        $saleQuantities[$productId] = ($saleQuantities[$productId] ?? 0) + $quantity;
                         $this->validateSaleStockAvailability(
                             $tenantId,
                             $branchId,
                             $productId,
-                            $quantity,
+                            $saleQuantities[$productId],
                             $product->name
                         );
                     } elseif (!$this->unifiedStock) {
@@ -2113,6 +2219,7 @@ new class extends Component {
                     $totalCost += $costPrice * $quantity;
 
                     $validatedItems[] = [
+                        'is_gift' => $isGift,
                         'product_id' => $productId,
                         'quantity' => $quantity,
                         'unit_price' => $price,
@@ -2222,6 +2329,7 @@ new class extends Component {
 
                 foreach ($validatedItems as $item) {
                     $orderItem = OrderItem::create([
+                        'is_gift' => $item['is_gift'],
                         'tenant_id' => $tenantId,
                         'order_id' => $order->id,
                         'product_id' => $item['product_id'],
@@ -2401,6 +2509,7 @@ new class extends Component {
             ->get()
             ->map(fn (OrderItem $item): array => [
                 'product_id' => (int) $item->product_id,
+                'is_gift' => (bool) $item->is_gift,
                 'quantity' => (float) $item->quantity,
                 'unit_price' => (float) $item->unit_price,
                 'total_price' => (float) $item->total_price,
@@ -2585,6 +2694,13 @@ new class extends Component {
         $branchId = $this->getActiveBranchId();
 
         foreach ($this->cart as $id => $item) {
+            if (! empty($item['is_gift'])) {
+                $this->cart[$id]['price'] = 0.0;
+                $this->cart[$id]['subtotal'] = 0.0;
+                $this->cart[$id]['normal_total'] = 0.0;
+                $this->cart[$id]['promotion_savings'] = 0.0;
+                continue;
+            }
             $quantity = (float) ($item['quantity'] ?? 0);
             $unitPrice = (float) ($item['price'] ?? 0);
 
@@ -2696,12 +2812,13 @@ new class extends Component {
             if ($productId <= 0) {
                 $groupKey = 'item_' . $item->id;
             } else {
-                $groupKey = 'product_' . $productId;
+                $groupKey = 'product_' . $productId . ($item->is_gift ? '_gift' : '');
             }
 
             if (!isset($groupedItems[$groupKey])) {
                 $groupedItems[$groupKey] = [
-                    'name' => $item->product?->name ?? 'منتج غير محدد',
+                    'is_gift' => (bool) $item->is_gift,
+                    'name' => ($item->product?->name ?? 'منتج غير محدد') . ($item->is_gift ? ' — هدية' : ''),
                     'qty' => $quantity,
                     'total' => $lineTotal,
                     'normal_total' => abs($quantity) * $unitPrice,
@@ -2866,7 +2983,7 @@ new class extends Component {
 
         foreach ($invoice->items as $item) {
             $lineKey = $this->mergeSimilarProducts
-                ? (string) $item->product_id
+                ? (string) $item->product_id . ($item->is_gift ? '_gift' : '')
                 : 'copy_' . str()->uuid()->toString();
 
             $quantity = (float) $item->quantity;
@@ -2890,6 +3007,7 @@ new class extends Component {
 
             $this->cart[$lineKey] = [
                 'id' => (int) $item->product_id,
+                'is_gift' => (bool) $item->is_gift,
                 'name' => $item->product?->name ?? 'منتج غير محدد',
                 'barcode' => '',
                 'price' => (float) $item->unit_price,
@@ -2952,7 +3070,7 @@ new class extends Component {
 
             $productName = trim((string) ($item->product?->name ?? 'منتج غير محدد'));
             $nameWords = preg_split('/\s+/u', $productName, -1, PREG_SPLIT_NO_EMPTY);
-            $shortName = implode(' ', array_slice($nameWords ?: ['منتج'], 0, 2));
+            $shortName = implode(' ', array_slice($nameWords ?: ['منتج'], 0, 2)) . ($item->is_gift ? ' (هدية)' : '');
 
             $unitPrice = number_format(abs((float) $item->unit_price), 2);
             $lineTotal = number_format(abs((float) $item->total_price), 2);
@@ -3133,7 +3251,7 @@ new class extends Component {
                     }
                 }
             }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus(); input?.select(); })"
-            x-on:keydown.window.escape="$wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
+            x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
             x-on:keydown.window.f3.prevent="
@@ -3785,6 +3903,7 @@ new class extends Component {
                 </div>
             @endif
 
+            @include('pages.tenant.pos.partials.products-modal')
             @include('pages.tenant.pos.partials.shift-open-modal')
             @include('pages.tenant.pos.partials.shift-close-modal')
             @include('pages.tenant.pos.partials.held-invoices-modal')

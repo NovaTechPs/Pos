@@ -246,7 +246,7 @@
 
                     <td>
                         {{ $ar(
-                            $item->product?->name ?? 'منتج غير محدد'
+                            ($item->product?->name ?? 'منتج غير محدد') . ($item->is_gift ? ' (هدية)' : '')
                         ) }}
                     </td>
 

@@ -116,6 +116,9 @@ new class extends Component {
     public string $search = '';
     public ?string $selectedCategoryFilter = '';
     public ?string $selectedWebsiteFilter = '';
+    public string $stockFilter = '';
+    public string $sort = 'product_number';
+    public int $perPage = 12;
 
     /*
     |--------------------------------------------------------------------------
@@ -288,6 +291,19 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['stockFilter', 'sort', 'perPage'], true)) {
+            $this->resetPage();
+        }
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset('search', 'selectedCategoryFilter', 'selectedWebsiteFilter', 'stockFilter', 'sort', 'perPage');
+        $this->resetPage();
+    }
+
     public function updatedSearch(): void
     {
         $this->resetPage();
@@ -321,6 +337,7 @@ new class extends Component {
         $this->search = '';
         $this->selectedCategoryFilter = '';
         $this->selectedWebsiteFilter = '';
+        $this->reset('stockFilter', 'sort', 'perPage');
     }
 
     /*
@@ -1573,6 +1590,7 @@ new class extends Component {
                                 'like',
                                 '%' . $search . '%'
                             )
+                            ->orWhere('product_number', 'like', '%' . $search . '%')
                             ->orWhereHas(
                                 'barcodes',
                                 function ($barcodeQuery) use ($search) {
@@ -1605,7 +1623,24 @@ new class extends Component {
                     );
                 }
             )
-            ->latest();
+            ->when(in_array($this->stockFilter, ['available', 'empty', 'low', 'unpriced'], true), function ($query) use ($tenantId, $branchId): void {
+                $query->whereHas('branchProducts', function ($stock) use ($tenantId, $branchId): void {
+                    $stock->where('tenant_id', $tenantId)->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+                    match ($this->stockFilter) {
+                        'available' => $stock->where('stock_quantity', '>', 0),
+                        'empty' => $stock->where('stock_quantity', '<=', 0),
+                        'low' => $stock->whereColumn('stock_quantity', '<=', 'alert_quantity'),
+                        'unpriced' => $stock->where('retail_price', '<=', 0),
+                    };
+                });
+            });
+
+        match ($this->sort) {
+            'name' => $productsQuery->orderBy('name')->orderBy('id'),
+            'latest' => $productsQuery->latest('id'),
+            default => $productsQuery->orderByRaw("CASE WHEN product_number IS NULL OR TRIM(product_number) = '' THEN 1 ELSE 0 END")
+                ->orderByRaw("NULLIF(TRIM(product_number), '') " . ($this->sort === 'number_desc' ? 'desc' : 'asc'))->orderBy('id'),
+        };
 
         /*
         |--------------------------------------------------------------------------
@@ -1634,7 +1669,7 @@ new class extends Component {
         */
 
         $products = $productsQuery
-            ->paginate(12);
+            ->paginate(in_array($this->perPage, [12, 24, 48], true) ? $this->perPage : 12);
 
         /*
         |--------------------------------------------------------------------------
@@ -1890,7 +1925,7 @@ new class extends Component {
             </div>
 
             <div class="text-sm text-zinc-500 dark:text-zinc-400">
-                ابحث باسم المنتج أو الباركود، ثم استخدم الفلاتر لتضييق النتائج.
+                ابحث برقم الصنف أو الاسم أو الباركود، ثم استخدم الفلاتر لتضييق النتائج.
             </div>
 
         </div>
@@ -1903,12 +1938,21 @@ new class extends Component {
 
                 <flux:input
                     wire:model.live.debounce.300ms="search"
-                    placeholder="ابحث باسم المنتج أو الباركود..."
+                    placeholder="ابحث برقم الصنف أو الاسم أو الباركود..."
                     icon="magnifying-glass"
                 />
 
             </div>
 
+
+            <div class="lg:col-span-3"><label class="mb-1 block text-xs">الترتيب</label><select wire:model.live="sort" class="w-full rounded-xl border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800">
+                <option value="product_number">رقم الصنف تصاعديًا</option><option value="number_desc">رقم الصنف تنازليًا</option><option value="name">اسم الصنف</option><option value="latest">الأحدث</option>
+            </select></div>
+            <div class="lg:col-span-3"><label class="mb-1 block text-xs">المخزون والأسعار</label><select wire:model.live="stockFilter" class="w-full rounded-xl border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800">
+                <option value="">كل الأصناف</option><option value="available">متوفر بالمخزون</option><option value="empty">نفد المخزون</option><option value="low">تحت حد التنبيه</option><option value="unpriced">بدون سعر بيع</option>
+            </select></div>
+            <div class="lg:col-span-3"><label class="mb-1 block text-xs">عدد النتائج</label><select wire:model.live="perPage" class="w-full rounded-xl border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"><option value="12">12 لكل صفحة</option><option value="24">24 لكل صفحة</option><option value="48">48 لكل صفحة</option></select></div>
+            <div class="flex items-end lg:col-span-3"><button type="button" wire:click="clearFilters" class="rounded-xl border border-zinc-200 px-3 py-2 text-sm">مسح الفلاتر</button></div>
 
             {{-- Category --}}
 
@@ -2059,7 +2103,7 @@ new class extends Component {
                                         </div>
 
                                         <div class="mt-1 text-xs text-zinc-400">
-                                            #{{ $product->id }}
+                                            {{ $product->product_number ?: '#' . $product->id }}
                                         </div>
 
                                     </div>
@@ -2392,6 +2436,7 @@ new class extends Component {
 
                                 <div class="mt-1 text-xs text-zinc-400">
                                     {{ $product->category->name ?? 'بدون تصنيف' }}
+                                    <span class="font-mono">{{ $product->product_number }}</span>
                                 </div>
 
                             </div>
