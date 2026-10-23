@@ -40,7 +40,7 @@ return new class extends Migration
         }
 
         if (! Schema::hasIndex('employees', ['user_id'], 'unique')) {
-            if (DB::table('employees')->whereNotNull('user_id')->groupBy('user_id')->havingRaw('COUNT(*) > 1')->exists()) {
+            if (DB::table('employees')->select('user_id')->whereNotNull('user_id')->groupBy('user_id')->havingRaw('COUNT(*) > 1')->exists()) {
                 throw new RuntimeException('Resolve duplicate employee user accounts before applying the release migration.');
             }
             Schema::table('employees', fn (Blueprint $table) => $table->unique('user_id'));

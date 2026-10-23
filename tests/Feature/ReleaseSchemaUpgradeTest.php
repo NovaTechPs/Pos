@@ -84,3 +84,39 @@ test('container applies migrations successfully before starting the web server w
     expect(strpos($startup, 'php artisan migrate'))->toBeLessThan(strpos($startup, 'php artisan optimize'))
         ->and(strpos($startup, 'php artisan migrate'))->toBeLessThan(strpos($startup, 'php-fpm'));
 });
+
+test('release migration selects only the grouped user id when checking duplicate employee accounts', function (): void {
+    Schema::table('employees', fn (Blueprint $table) => $table->dropUnique('employees_user_id_unique'));
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    try {
+        releaseCompatibilityMigration()->up();
+        $groupedQueries = collect(DB::getQueryLog())->pluck('query')
+            ->filter(fn (string $query): bool => str_contains(strtolower($query), 'having count(*) > 1'));
+
+        expect($groupedQueries)->toHaveCount(1);
+        expect($groupedQueries->first())->toContain('select "user_id"')->not->toContain('select *');
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+});
+
+test('release migration reports duplicate employee accounts without removing records', function (): void {
+    $user = User::factory()->create();
+    Schema::table('employees', fn (Blueprint $table) => $table->dropUnique('employees_user_id_unique'));
+    foreach (['DUPLICATE-ONE', 'DUPLICATE-TWO'] as $code) {
+        DB::table('employees')->insert([
+            'user_id' => $user->id,
+            'employee_code' => $code,
+            'first_name' => 'Duplicate',
+            'last_name' => 'Employee',
+            'hire_date' => '2026-01-01',
+        ]);
+    }
+
+    expect(fn () => releaseCompatibilityMigration()->up())
+        ->toThrow(RuntimeException::class, 'Resolve duplicate employee user accounts');
+    expect(DB::table('employees')->where('user_id', $user->id)->count())->toBe(2);
+});
