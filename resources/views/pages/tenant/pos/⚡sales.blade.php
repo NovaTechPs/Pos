@@ -913,14 +913,19 @@ new class extends Component {
             ->orderBy('name')
             ->limit(40)
             ->get()
-            ->map(function (Product $product): Product {
+            ->map(function (Product $product): array {
                 $branchProduct = $product->branchProducts->first();
-                $product->setAttribute('retail_price', (float) ($branchProduct?->retail_price ?? 0));
-                $product->setAttribute('stock_quantity', (float) ($branchProduct?->stock_quantity ?? 0));
-                $product->setAttribute('barcode_value', $product->barcodes->first()?->barcode);
-                $product->setAttribute('offer_quantity_value', (float) ($branchProduct?->offer_quantity ?? 0));
-                $product->setAttribute('offer_price_value', $branchProduct?->offer_price !== null ? (float) $branchProduct->offer_price : null);
-                return $product;
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'category_id' => $product->category_id,
+                    'retail_price' => (float) ($branchProduct?->retail_price ?? 0),
+                    'stock_quantity' => (float) ($branchProduct?->stock_quantity ?? 0),
+                    'barcode_value' => $product->barcodes->first()?->barcode,
+                    'offer_quantity_value' => (float) ($branchProduct?->offer_quantity ?? 0),
+                    'offer_price_value' => $branchProduct?->offer_price !== null ? (float) $branchProduct->offer_price : null,
+                ];
             })
             ->all();
     }
@@ -3251,23 +3256,23 @@ new class extends Component {
                                         @forelse ($quickProducts as $product)
                                             <button type="button" data-pos-product
                                                 data-product-index="{{ $loop->index }}"
-                                                wire:click="selectInlineProduct({{ $product->id }})"
+                                                wire:click="selectInlineProduct({{ $product['id'] }})"
                                                 @disabled($this->invoiceIsLocked())
-                                                wire:key="pos-quick-product-{{ $product->id }}"
+                                                wire:key="pos-quick-product-{{ $product['id'] }}"
                                                 class="min-h-[78px] rounded-xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
                                                 <div
                                                     class="line-clamp-2 min-h-[30px] text-[11px] font-black leading-4 text-slate-800">
-                                                    {{ $product->name }}
+                                                    {{ $product['name'] }}
                                                 </div>
 
                                                 <div class="mt-2 flex items-end justify-between gap-1">
                                                     <span class="font-mono text-sm font-black text-indigo-700">
-                                                        {{ number_format((float) $product->retail_price, 2) }}
+                                                        {{ number_format((float) $product['retail_price'], 2) }}
                                                     </span>
 
                                                     <span
-                                                        class="rounded-md px-1.5 py-0.5 text-[8px] font-black {{ (float) $product->stock_quantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">
-                                                        {{ number_format((float) $product->stock_quantity, 0) }}
+                                                        class="rounded-md px-1.5 py-0.5 text-[8px] font-black {{ (float) $product['stock_quantity'] > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">
+                                                        {{ number_format((float) $product['stock_quantity'], 0) }}
                                                     </span>
                                                 </div>
                                             </button>

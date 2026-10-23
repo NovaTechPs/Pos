@@ -20,17 +20,17 @@
             <div class="min-h-0 flex-1 overflow-auto bg-slate-50 p-2">
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     @forelse ($quickProducts as $product)
-                        <button wire:click="selectInlineProduct({{ $product->id }})" class="rounded-2xl border border-slate-200 bg-white p-3 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
+                        <button wire:click="selectInlineProduct({{ $product['id'] }})" class="rounded-2xl border border-slate-200 bg-white p-3 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
                             <div class="flex items-start justify-between gap-2">
-                                <div class="font-black text-slate-900">{{ $product->name }}</div>
-                                <span class="rounded-lg px-2 py-1 text-[9px] font-black {{ $product->stock_quantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">{{ number_format((float) $product->stock_quantity, 0) }}</span>
+                                <div class="font-black text-slate-900">{{ $product['name'] }}</div>
+                                <span class="rounded-lg px-2 py-1 text-[9px] font-black {{ $product['stock_quantity'] > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">{{ number_format((float) $product['stock_quantity'], 0) }}</span>
                             </div>
                             <div class="mt-3 flex items-end justify-between">
                                 <div>
                                     <div class="text-[9px] font-bold text-slate-400">سعر البيع</div>
-                                    <div class="font-mono text-base font-black text-indigo-700">{{ number_format((float) $product->retail_price, 2) }}</div>
+                                    <div class="font-mono text-base font-black text-indigo-700">{{ number_format((float) $product['retail_price'], 2) }}</div>
                                 </div>
-                                <div class="text-left text-[9px] font-mono text-slate-400">{{ $product->barcode_value ?: 'بدون باركود' }}</div>
+                                <div class="text-left text-[9px] font-mono text-slate-400">{{ $product['barcode_value'] ?: 'بدون باركود' }}</div>
                             </div>
                         </button>
                     @empty

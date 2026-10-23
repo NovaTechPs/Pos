@@ -34,6 +34,31 @@ function posShiftComponent(): Testable
     return Livewire::test('pages::tenant.pos.sales');
 }
 
+test('product cards retain assigned branch prices and stock after subsequent requests', function (): void {
+    $this->user->update(['is_owner' => false, 'name' => 'ياسمين']);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Hydration product']);
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id,
+        'retail_price' => 10, 'stock_quantity' => 25,
+    ]);
+    $otherBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Other branch']);
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $otherBranch->id, 'product_id' => $product->id,
+        'retail_price' => 99, 'stock_quantity' => 100,
+    ]);
+    $this->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $otherBranch->id]);
+
+    $component = posShiftComponent()->assertSee('10.00');
+    expect(data_get($component->get('quickProducts'), '0.retail_price'))->toEqual(10.0);
+
+    $component->call('refreshBranchSyncStatus');
+    expect(data_get($component->get('quickProducts'), '0.retail_price'))->toEqual(10.0);
+    expect(data_get($component->get('quickProducts'), '0.stock_quantity'))->toEqual(25.0);
+
+    $component->set('showProductsModal', true)->assertSee('10.00');
+    expect(data_get($component->get('quickProducts'), '0.retail_price'))->toEqual(10.0);
+});
+
 test('the POS displays a live online or offline connectivity status without a simulation control', function (): void {
     $component = posShiftComponent();
 
