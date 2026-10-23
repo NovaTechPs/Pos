@@ -28,6 +28,7 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && chmod -R 775 storage bootstrap/cache
 EXPOSE 80
 CMD php artisan package:discover --ansi --no-interaction \
+    && php artisan migrate --force --no-interaction \
     && php artisan storage:link --force --no-interaction \
     && php artisan optimize --no-interaction \
     && php-fpm -D \

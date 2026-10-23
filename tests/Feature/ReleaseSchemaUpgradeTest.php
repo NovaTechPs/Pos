@@ -46,3 +46,41 @@ test('release migration fills historical shift sync ids once', function (): void
     releaseCompatibilityMigration()->up();
     expect($uuid)->toBeString()->and(DB::table('shifts')->where('id', $id)->value('sync_uuid'))->toBe($uuid);
 });
+
+test('release migration upgrades the legacy employees table with missing tenant and branch columns', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'Legacy tenant']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'Legacy branch']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id]);
+
+    Schema::table('employees', function (Blueprint $table): void {
+        $table->dropConstrainedForeignId('tenant_id');
+        $table->dropConstrainedForeignId('branch_id');
+    });
+
+    $employeeId = DB::table('employees')->insertGetId([
+        'user_id' => $user->id,
+        'employee_code' => 'LEGACY-EMPLOYEE',
+        'first_name' => 'Legacy',
+        'last_name' => 'Employee',
+        'hire_date' => '2026-01-01',
+    ]);
+
+    releaseCompatibilityMigration()->up();
+    releaseCompatibilityMigration()->up();
+
+    $employee = Employee::query()->findOrFail($employeeId);
+    expect(Schema::hasColumns('employees', ['tenant_id', 'branch_id']))->toBeTrue()
+        ->and($employee->tenant_id)->toBe($tenant->id)
+        ->and($employee->branch_id)->toBe($branch->id)
+        ->and($employee->user_id)->toBe($user->id);
+});
+
+test('container applies migrations successfully before starting the web server without seeding demo data', function (): void {
+    $dockerfile = file_get_contents(base_path('Dockerfile'));
+    $startup = substr($dockerfile, strpos($dockerfile, 'CMD '));
+
+    expect($startup)->toContain('&& php artisan migrate --force --no-interaction')
+        ->not->toContain('--seed');
+    expect(strpos($startup, 'php artisan migrate'))->toBeLessThan(strpos($startup, 'php artisan optimize'))
+        ->and(strpos($startup, 'php artisan migrate'))->toBeLessThan(strpos($startup, 'php-fpm'));
+});
