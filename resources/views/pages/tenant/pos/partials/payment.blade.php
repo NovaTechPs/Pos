@@ -252,7 +252,7 @@
              ملخص المبالغ
         ========================================================== --}}
 
-        <div class="pos-payment-totals grid grid-cols-2 gap-2 sm:grid-cols-3 md:col-span-2 lg:col-span-6 lg:grid-cols-6">
+        <div class="pos-payment-totals md:order-1 lg:order-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:col-span-2 lg:col-span-6 lg:grid-cols-6">
 
 
             {{-- الإجمالي --}}
@@ -430,7 +430,7 @@
              طرق الدفع
         ========================================================== --}}
 
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
+        <div data-pos-payment-methods class="md:order-3 lg:order-2 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
 
             <div class="mb-1.5 flex items-center justify-between">
 
@@ -506,7 +506,7 @@
              العميل
         ========================================================== --}}
 
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
+        <div data-pos-customer-notes class="md:order-2 lg:order-1 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
 
             <div class="mb-1.5 flex items-center justify-between">
 

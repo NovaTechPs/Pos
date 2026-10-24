@@ -40,6 +40,14 @@ test('responsive POS keeps a single editable cart and checkout with products bef
         ->and($xpath->query('//*[@role="tab"]')->length)->toBe(0)
         ->and(strpos($html, 'id="pos-products-panel"'))->toBeLessThan(strpos($html, 'id="pos-cart-panel"'));
 
+    $methods = $xpath->query('//*[@data-pos-payment-methods]');
+    $customerNotes = $xpath->query('//*[@data-pos-customer-notes]');
+    expect($methods->length)->toBe(1)
+        ->and($customerNotes->length)->toBe(1)
+        ->and($methods->item(0)->getAttribute('class'))->toContain('lg:order-2')
+        ->and($customerNotes->item(0)->getAttribute('class'))->toContain('lg:order-1')
+        ->and($xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " pos-payment-totals ")]')->item(0)->getAttribute('class'))->toContain('lg:order-3');
+
     if ($previewPath = getenv('CODEX_POS_PREVIEW')) {
         $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
         $css = file_get_contents(public_path('build/'.$manifest['resources/css/app.css']['file']));
