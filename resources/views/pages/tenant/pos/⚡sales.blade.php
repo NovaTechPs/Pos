@@ -3474,18 +3474,23 @@ new class extends Component {
             class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
+            <nav data-pos-mobile-section-nav aria-label="التنقل بين الأصناف والسلة" class="pos-mobile-section-nav gap-2" dir="rtl">
+                <button type="button" x-on:click="$el.closest('.pos-layout').querySelector('#pos-products-panel').scrollIntoView({ block: 'start' })" class="min-h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">الأصناف</button>
+                <button type="button" x-on:click="$el.closest('.pos-layout').querySelector('#pos-cart-panel').scrollIntoView({ block: 'start' })" class="min-h-10 flex-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700">السلة ({{ count($cart) }}) ↓</button>
+            </nav>
+
             @if ($errorMessage || $successMessage)
                 <div class="grid shrink-0 gap-2 md:grid-cols-2">
                     @if ($errorMessage)
                         <div
-                            class="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 shadow-sm">
+                            data-pos-notice role="status" class="pos-notice flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 shadow-sm">
                             <span>⚠ {{ $errorMessage }}</span>
                             <button wire:click="$set('errorMessage', null)" class="mr-2 text-rose-500">✕</button>
                         </div>
                     @endif
                     @if ($successMessage)
                         <div
-                            class="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm">
+                            data-pos-notice role="status" class="pos-notice flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm">
                             <span>✓ {{ $successMessage }}</span>
                             <button wire:click="$set('successMessage', null)" class="mr-2 text-emerald-500">✕</button>
                         </div>
@@ -3495,7 +3500,7 @@ new class extends Component {
 
             @if ($this->has_below_cost_item)
                 <div
-                    class="flex shrink-0 items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 shadow-sm">
+                    data-pos-notice role="status" class="pos-notice flex shrink-0 items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 shadow-sm">
                     <span>⚠ توجد أصناف بسعر بيع أقل من التكلفة.</span>
                     <button wire:click="openCostModal" class="underline">عرض التفاصيل</button>
                 </div>
@@ -3503,8 +3508,8 @@ new class extends Component {
 
             @if ($this->invoiceIsLocked())
                 <div
-                    class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
-                    🔒 الفاتورة القديمة للعرض فقط — التعديل يحتاج «تعديل»، أما الطباعة وPDF وواتساب والنسخ فتعمل مباشرة.
+                    data-pos-notice role="status" class="pos-notice shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
+                    🔒 فاتورة محفوظة للعرض. اضغط «تعديل» لتغييرها؛ الطباعة والنسخ متاحان.
                 </div>
             @endif
 

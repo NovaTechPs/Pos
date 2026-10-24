@@ -83,7 +83,11 @@ test('point of sale keeps notes outside payment and offers one copy action for a
     $component->set('notes', 'ملاحظة العميل');
     captureResponsivePreview('pos-filled', $this->get('/dashboard/pos')->assertOk()->getContent());
     $component->set('paid_amount', 50)->call('checkoutAndPrint');
-    $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة العميل');
+    $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة العميل')
+        ->assertSee('data-pos-mobile-section-nav', false)
+        ->assertSee('data-pos-notice', false)
+        ->assertSee('اضغط «تعديل» لتغييرها');
+    captureResponsivePreview('pos-saved', $this->get('/dashboard/pos')->assertOk()->getContent());
     $dom = new DOMDocument;
     $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($dom);
