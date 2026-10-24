@@ -3453,7 +3453,7 @@ new class extends Component {
                         this.printInProgress = false;
                     }
                 }
-            }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
+            }" x-cloak x-init="$nextTick(() => { if (window.matchMedia('(pointer: coarse)').matches) return; const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
             x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="if (!$wire.showNewProductModal) $wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="if (!$wire.showNewProductModal) $wire.holdInvoice()"
@@ -3535,7 +3535,7 @@ new class extends Component {
                             dir="rtl">
                             <div class="flex h-full min-h-0 flex-col">
 
-                                <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-2.5">
+                                <div data-pos-product-search-header class="sticky top-0 z-10 shrink-0 border-b border-slate-200 bg-slate-50 p-2.5">
                                     <div class="flex items-center justify-between gap-2">
                                         <div>
                                             <div class="text-sm font-black text-slate-800">الأصناف</div>
@@ -3559,7 +3559,7 @@ new class extends Component {
                                             }
                                         "
                                         wire:model.live.debounce.100ms="productSearchQuery" @disabled($this->invoiceIsLocked())
-                                        type="text" autocomplete="off" placeholder="ابحث عن الصنف، رقم ID، أو الباركود..."
+                                        type="search" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود..."
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                 </div>
 
@@ -3669,7 +3669,7 @@ new class extends Component {
                                         '[data-pos-barcode-input]'
                                     );
 
-                                    if (!barcode) {
+                                    if (!barcode || window.matchMedia('(pointer: coarse)').matches) {
                                         return;
                                     }
 

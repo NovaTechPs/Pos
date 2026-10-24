@@ -27,8 +27,14 @@
     "file": "assets/instrument-sans-600-normal-B9e8oLYv.woff",
     "src": "_instrument-sans-600-normal-B9e8oLYv.woff"
   },
+  "node_modules/@zxing/browser/esm/index.js": {
+    "file": "assets/esm-f6zhdq2g.js",
+    "name": "esm",
+    "src": "node_modules/@zxing/browser/esm/index.js",
+    "isDynamicEntry": true
+  },
   "resources/css/app.css": {
-    "file": "assets/app-BRto6lwa.css",
+    "file": "assets/app-BLhZL3t1.css",
     "name": "app",
     "names": [
       "app.css"
@@ -37,10 +43,13 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-BZJNfeKc.js",
+    "file": "assets/app-wvfCVV_o.js",
     "name": "app",
     "src": "resources/js/app.js",
-    "isEntry": true
+    "isEntry": true,
+    "dynamicImports": [
+      "node_modules/@zxing/browser/esm/index.js"
+    ]
   },
   "resources/js/passkeys.js": {
     "file": "assets/passkeys-CsxEE3hN.js",
