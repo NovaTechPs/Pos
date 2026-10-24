@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Session;
@@ -36,18 +36,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        foreach (File::allFiles(app_path('Models')) as $modelFile) {
-            $modelPath = str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $modelFile->getRelativePathname());
-            $modelClass = 'App\\Models\\'.$modelPath;
-
-            if (
-                class_exists($modelClass)
-                && is_subclass_of($modelClass, Model::class)
-                && $modelClass !== AuditLog::class
-                && $modelClass !== BranchSyncOperation::class
-            ) {
-                $modelClass::observe(AuditObserver::class);
-            }
+        foreach (['created', 'updated', 'deleted', 'restored'] as $event) {
+            Event::listen('eloquent.'.$event.': App\\Models\\*', function (string $eventName, array $models) use ($event): void {
+                $model = $models[0] ?? null;
+                if ($model instanceof Model && ! $model instanceof AuditLog && ! $model instanceof BranchSyncOperation) {
+                    app(AuditObserver::class)->{$event}($model);
+                }
+            });
         }
 
         view()->composer('*', function ($view): void {

@@ -141,8 +141,24 @@ class User extends Authenticatable implements PasskeyUser
             return false;
         }
 
+        if ($role->relationLoaded('permissions')) {
+            return $role->permissions->contains('name', $permissionName);
+        }
+
         return $role->permissions()
             ->where('name', $permissionName)
             ->exists();
+    }
+
+    public function loadRolePermissions(): void
+    {
+        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+            return;
+        }
+
+        $this->load([
+            'role' => fn ($query) => $query->where('tenant_id', $this->tenant_id),
+            'role.permissions',
+        ]);
     }
 }

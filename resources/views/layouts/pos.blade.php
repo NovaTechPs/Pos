@@ -5,9 +5,10 @@
     @include('layouts.partials.head')
 </head>
 
-<body class="app-responsive pos-shell min-h-screen bg-zinc-100 dark:bg-zinc-900 antialiased">
+<body data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" class="{{ (request()->query('_workspace') === 'frame' || request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive pos-shell min-h-screen bg-zinc-100 dark:bg-zinc-900 antialiased">
 
     {{-- POS Header --}}
+    @if (request()->query('_workspace') !== 'frame' && request()->header('Sec-Fetch-Dest') !== 'iframe')
     <flux:header class="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <div class="flex w-full items-center justify-between">
 
@@ -66,11 +67,14 @@
 
         </div>
     </flux:header>
+    @endif
 
     {{-- POS Content --}}
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden">
 
+        <x-workspace-tabs :title="$pageTitle ?? null">
         {{ $slot }}
+    </x-workspace-tabs>
     </main>
 
     {{-- Toasts --}}

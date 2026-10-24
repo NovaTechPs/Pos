@@ -111,3 +111,19 @@ test('deleted POS invoices are excluded from report revenue and top products', f
         ->assertViewHas('topProducts', fn ($products): bool => $products->isEmpty())
         ->assertViewHas('stats', fn ($stats): bool => (float) $stats['total_units'] === 0.0);
 });
+
+test('delete button stays visible disabled on a new invoice and becomes available for a saved invoice', function (): void {
+    $component = Livewire::test('pages::tenant.pos.sales')->assertSee('حذف الفاتورة')->assertSee('اختر فاتورة محفوظة');
+    $readButton = function (string $html): DOMElement {
+        $dom = new DOMDocument;
+        $dom->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+
+        return (new DOMXPath($dom))->query('//*[@data-pos-delete-invoice]')->item(0);
+    };
+    expect($readButton($component->html())->hasAttribute('disabled'))->toBeTrue();
+    $component->call('loadInvoice', $this->order->id);
+    expect($readButton($component->html())->hasAttribute('disabled'))->toBeFalse();
+    $this->user->update(['is_owner' => false]);
+    $restricted = Livewire::test('pages::tenant.pos.sales')->assertSee('بدون صلاحية الحذف');
+    expect($readButton($restricted->html())->hasAttribute('disabled'))->toBeTrue();
+});

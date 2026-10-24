@@ -96,16 +96,23 @@
             </button>
         @endcan
 
-        @can('sales_invoices.delete')
-            @if ($currentInvoiceId)
-                <button type="button" wire:click="deleteInvoice"
-                    wire:confirm="هل تريد حذف هذه الفاتورة وإلغاء سنداتها وإعادة كمياتها للمخزون؟"
-                    wire:loading.attr="disabled" wire:target="deleteInvoice"
-                    class="flex h-[42px] items-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50">
-                    حذف الفاتورة
-                </button>
+        @php
+            $canDeleteInvoice = auth()->user()?->can('sales_invoices.delete') ?? false;
+            $deleteInvoiceHint = !$canDeleteInvoice
+                ? 'تحتاج صلاحية حذف فاتورة مبيعات'
+                : (!$currentInvoiceId ? 'اختر فاتورة محفوظة من البحث أو زر السابقة' : 'حذف الفاتورة وإعادة كمياتها للمخزون');
+        @endphp
+        <button type="button" data-pos-delete-invoice wire:click="deleteInvoice"
+            @disabled(!$canDeleteInvoice || !$currentInvoiceId)
+            title="{{ $deleteInvoiceHint }}"
+            wire:confirm="هل تريد حذف هذه الفاتورة وإلغاء سنداتها وإعادة كمياتها للمخزون؟"
+            wire:loading.attr="disabled" wire:target="deleteInvoice"
+            class="flex h-[42px] flex-col items-center justify-center gap-0.5 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <span>حذف الفاتورة</span>
+            @if (!$canDeleteInvoice || !$currentInvoiceId)
+                <span class="text-[9px] font-medium">{{ !$canDeleteInvoice ? 'بدون صلاحية الحذف' : 'اختر فاتورة محفوظة' }}</span>
             @endif
-        @endcan
+        </button>
 
         {{-- =====================================================
              فاتورة جديدة

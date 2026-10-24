@@ -25,6 +25,8 @@ class EnsureActiveAccount
             abort(403, __('Your account or tenant is inactive.'));
         }
 
+        $user?->loadRolePermissions();
+
         return $next($request);
     }
 }

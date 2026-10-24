@@ -113,7 +113,7 @@
                     @endphp
 
                     <tr data-pos-cart-line wire:key="pos-cart-{{ $lineKey }}"
-                        class="{{ $loop->odd ? 'bg-white' : 'bg-slate-50' }} hover:bg-indigo-50">
+                        class="{{ empty($item['is_gift']) && ($item['offer_quantity'] ?? 0) > 0 && isset($item['offer_price']) && $item['offer_price'] < $item['offer_quantity'] * $item['price'] ? 'bg-amber-50' : ($loop->odd ? 'bg-white' : 'bg-slate-50') }} hover:bg-indigo-50">
                         {{-- Row Number --}}
                         <td class="px-2 py-2 text-center">
                             <span
@@ -417,6 +417,11 @@
     }
 
     document.addEventListener('keydown', function(event) {
+        if (document.querySelector('[data-pos-missing-barcode-dialog]')) {
+            resetExternalBarcodeCapture();
+            return;
+        }
+
         const barcodeInput = document.querySelector(BARCODE_SELECTOR);
         if (!barcodeInput || barcodeInput.disabled) {
             resetExternalBarcodeCapture();
@@ -495,6 +500,11 @@
     });
 
     document.addEventListener('keydown', function(event) {
+        if (document.querySelector('[data-pos-missing-barcode-dialog]')) {
+            resetExternalBarcodeCapture();
+            return;
+        }
+
         const current = event.target?.closest?.(FIELD_SELECTOR);
         const key = event.key;
 

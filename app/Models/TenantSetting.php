@@ -7,6 +7,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TenantSetting extends Model
 {
+    protected static function booted(): void
+    {
+        $invalidate = static function (self $setting): void {
+            request()->attributes->remove('tenant_settings_values_'.$setting->tenant_id);
+            request()->attributes->remove('tenant_settings_values_'.$setting->getOriginal('tenant_id'));
+        };
+
+        static::saved($invalidate);
+        static::deleted($invalidate);
+    }
+
     protected $fillable = [
         'tenant_id',
         'key',
@@ -36,6 +47,17 @@ class TenantSetting extends Model
         string $key,
         mixed $default = null
     ): mixed {
+        if (request()->hasSession()) {
+            $cacheKey = 'tenant_settings_values_'.$tenantId;
+            if (! request()->attributes->has($cacheKey)) {
+                request()->attributes->set($cacheKey, static::query()
+                    ->where('tenant_id', $tenantId)->pluck('value', 'key')->all());
+            }
+            $values = request()->attributes->get($cacheKey);
+
+            return array_key_exists($key, $values) ? $values[$key] : $default;
+        }
+
         $setting = static::query()
             ->where('tenant_id', $tenantId)
             ->where('key', $key)

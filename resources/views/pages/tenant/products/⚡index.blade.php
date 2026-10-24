@@ -4,6 +4,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\WithFileUploads;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Locked;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\ProductBarcode;
@@ -16,6 +17,9 @@ use Illuminate\Support\Facades\DB;
 new class extends Component {
     use WithPagination;
     use WithFileUploads;
+
+    #[Locked]
+    public bool $posEmbedded = false;
 
     /*
     |--------------------------------------------------------------------------
@@ -379,6 +383,23 @@ new class extends Component {
     | Product Create
     |--------------------------------------------------------------------------
     */
+
+    public function mount(bool $posEmbedded = false, ?string $newBarcode = null): void
+    {
+        $this->posEmbedded = $posEmbedded;
+        if ($posEmbedded) {
+            $this->authorize('products.create');
+            $this->authorize('products.view');
+        }
+        $newBarcode ??= request()->query('new_barcode');
+        if (is_string($newBarcode) && trim($newBarcode) !== '') {
+            $this->authorize('products.create');
+            if (mb_strlen(trim($newBarcode)) <= 100) {
+                $this->openCreateModal();
+                $this->barcodes = [trim($newBarcode)];
+            }
+        }
+    }
 
     public function openCreateModal(): void
     {
@@ -1484,9 +1505,19 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
+    public function updatedShowModal(bool $value): void
+    {
+        if ($this->posEmbedded && !$value) {
+            $this->dispatch('pos-product-form-closed');
+        }
+    }
+
     public function closeModal(): void
     {
         $this->showModal = false;
+        if ($this->posEmbedded) {
+            $this->dispatch('pos-product-form-closed');
+        }
 
         $this->resetInputFields();
     }
@@ -1724,6 +1755,7 @@ new class extends Component {
 ?>
 
 <flux:main class="space-y-6" dir="rtl">
+    @if (!$posEmbedded)
 
     {{-- ================================================================
         FLASH MESSAGES
@@ -2646,6 +2678,8 @@ new class extends Component {
 
     </div>
 
+
+    @endif
 
     {{-- ================================================================
         PRODUCT MODAL

@@ -16,9 +16,10 @@ test('barcode keyboard listener targets the POS component and ignores other page
     const unrelatedField = {value: '', closest: selector => selector.includes('wire') ? unrelatedRoot : null, dispatchEvent() {}};
     let input = {dataset: {posComponentId: 'pos-sales'}, disabled: false, value: '', focus() {}, select() {}};
     input.closest = selector => selector === '[data-pos-barcode-input]' ? input : unrelatedRoot;
+    let missingBarcodeModalOpen = false;
     const document = {
         addEventListener: (name, callback) => listeners.set(name, [...(listeners.get(name) || []), callback]),
-        querySelector: selector => selector === '[data-pos-barcode-input]' ? input : unrelatedRoot,
+        querySelector: selector => selector === '[data-pos-missing-barcode-dialog]' ? (missingBarcodeModalOpen ? {} : null) : (selector === '[data-pos-barcode-input]' ? input : unrelatedRoot),
         querySelectorAll: () => [], contains: () => true,
     };
     const window = {
@@ -44,6 +45,13 @@ test('barcode keyboard listener targets the POS component and ignores other page
         key('Enter', input);
         await new Promise(setImmediate);
         assert.equal(calls[1][2], 'DIRECT-123');
+        missingBarcodeModalOpen = true;
+        const beforeModalTyping = prevented;
+        scan('SEARCH');
+        await new Promise(setImmediate);
+        assert.equal(calls.length, 2, 'Modal typing was treated as a barcode');
+        assert.equal(prevented, beforeModalTyping, 'Modal search typing was intercepted');
+        missingBarcodeModalOpen = false;
         for (const callback of listeners.get('livewire:navigating')) callback();
         input = null;
         prevented = 0;

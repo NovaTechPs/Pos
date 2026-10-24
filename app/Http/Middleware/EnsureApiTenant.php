@@ -43,6 +43,8 @@ class EnsureApiTenant
             abort_unless($branchQuery->exists(), 404);
         }
 
+        $user->loadRolePermissions();
+
         return $next($request);
     }
 }

@@ -18,12 +18,21 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\TenantSetting;
 
 new class extends Component {
+    #[Locked]
+    public ?string $draftContextKey = null;
     public array $receipt = [];
     public string $barcode = '';
+    #[Locked]
+    public string $missingBarcode = '';
+    public bool $showMissingBarcodeModal = false;
+    public bool $showNewProductModal = false;
+    public bool $linkMissingBarcode = false;
+    public string $missingBarcodeSearch = '';
     public array $cart = [];
     public $paid_amount = 0;
     public string $payment_method = 'cash';
@@ -125,6 +134,7 @@ new class extends Component {
         $this->checkActiveShift();
         $this->loadQuickProducts();
         $this->refreshBranchSyncStatus();
+        $this->restoreCurrentDraft();
     }
 
     public function refreshBranchSyncStatus(): void
@@ -364,6 +374,62 @@ new class extends Component {
         return Branch::query()->where('tenant_id', $tenantId)->whereKey((int) $branchId)->exists() ? (int) $branchId : null;
     }
 
+    private function draftFields(): array
+    {
+        return ['cart', 'paid_amount', 'payment_method', 'notes', 'selectedCustomerId', 'discount_amount',
+            'discount_type', 'delivery_fee', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
+            'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts'];
+    }
+
+    private function currentDraftKey(): ?string
+    {
+        $key = $this->heldSessionKey();
+
+        return $key ? str_replace('pos.held.', 'pos.draft.', $key) : null;
+    }
+
+    public function dehydrate(): void
+    {
+        $key = $this->currentDraftKey();
+        if (!$key || $key !== $this->draftContextKey) {
+            return;
+        }
+        if ($this->cart === [] && !$this->currentInvoiceId && $this->notes === '' && !$this->selectedCustomerId) {
+            session()->forget($key);
+            return;
+        }
+        $draft = [];
+        foreach ($this->draftFields() as $field) {
+            $draft[$field] = $this->{$field};
+        }
+        session()->put($key, $draft);
+    }
+
+    private function restoreCurrentDraft(): void
+    {
+        $this->draftContextKey = $this->currentDraftKey();
+        $draft = $this->draftContextKey ? session($this->draftContextKey) : null;
+        if (!is_array($draft) || !is_array($draft['cart'] ?? null)) {
+            return;
+        }
+        if (!empty($draft['currentInvoiceId']) && !$this->invoiceNavigationQuery()->whereKey($draft['currentInvoiceId'])->exists()) {
+            session()->forget($this->draftContextKey);
+            return;
+        }
+        foreach ($this->draftFields() as $field) {
+            if (array_key_exists($field, $draft)) {
+                $this->{$field} = $draft[$field];
+            }
+        }
+        if (!$this->currentInvoiceId || $this->invoiceEditMode) {
+            $customTotal = $this->custom_final_total;
+            $this->recalculatePrices();
+            if ($customTotal !== null) {
+                $this->custom_final_total = min(max(0, $customTotal), max(0, $this->subtotal + $this->delivery_fee));
+            }
+        }
+    }
+
     private function heldSessionKey(): ?string
     {
         $tenantId = $this->tenantId();
@@ -493,6 +559,7 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         if ($branchId && $tenantId && Branch::query()->where('tenant_id', $tenantId)->whereKey($branchId)->exists()) {
+            $this->clearCartState();
             session(['active_branch_id' => $branchId]);
             $this->selectedBranchId = $branchId;
             $this->invalidateActiveShiftCache();
@@ -500,6 +567,7 @@ new class extends Component {
             $this->loadHeldInvoices();
             $this->checkActiveShift();
             $this->loadQuickProducts();
+            $this->restoreCurrentDraft();
             return;
         }
 
@@ -815,8 +883,13 @@ new class extends Component {
             ])
             ->limit(8)
             ->get()
-            ->map(function (Product $product): array {
+            ->map(function (Product $product) use ($activeOffers): array {
                 $branchProduct = $product->branchProducts->first();
+                $offer = $activeOffers->get($product->id);
+                $offerQuantity = (float) ($offer?->offer_quantity ?? $branchProduct?->offer_quantity ?? 0);
+                $offerPrice = $offer?->offer_price ?? $branchProduct?->offer_price;
+                $hasOffer = $offerQuantity > 0 && $offerPrice !== null && (float) $offerPrice >= 0
+                    && (float) $offerPrice < $offerQuantity * (float) ($branchProduct?->retail_price ?? 0);
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -925,12 +998,22 @@ new class extends Component {
             });
         }
 
+        $activeOffers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->where('is_active', true)->where('start_at', '<=', now())
+            ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))
+            ->orderByDesc('start_at')->get()->unique('product_id')->keyBy('product_id');
+
         $this->quickProducts = $query
             ->orderBy('name')
             ->limit(40)
             ->get()
-            ->map(function (Product $product): array {
+            ->map(function (Product $product) use ($activeOffers): array {
                 $branchProduct = $product->branchProducts->first();
+                $offer = $activeOffers->get($product->id);
+                $offerQuantity = (float) ($offer?->offer_quantity ?? $branchProduct?->offer_quantity ?? 0);
+                $offerPrice = $offer?->offer_price ?? $branchProduct?->offer_price;
+                $hasOffer = $offerQuantity > 0 && $offerPrice !== null && (float) $offerPrice >= 0
+                    && (float) $offerPrice < $offerQuantity * (float) ($branchProduct?->retail_price ?? 0);
 
                 return [
                     'id' => $product->id,
@@ -939,8 +1022,9 @@ new class extends Component {
                     'retail_price' => (float) ($branchProduct?->retail_price ?? 0),
                     'stock_quantity' => (float) ($branchProduct?->stock_quantity ?? 0),
                     'barcode_value' => $product->barcodes->first()?->barcode,
-                    'offer_quantity_value' => (float) ($branchProduct?->offer_quantity ?? 0),
-                    'offer_price_value' => $branchProduct?->offer_price !== null ? (float) $branchProduct->offer_price : null,
+                    'offer_quantity_value' => $offerQuantity,
+                    'offer_price_value' => $offerPrice !== null ? (float) $offerPrice : null,
+                    'has_offer' => $hasOffer,
                 ];
             })
             ->all();
@@ -948,6 +1032,9 @@ new class extends Component {
 
     public function scanBarcode(string $scannedBarcode = ''): void
     {
+        if ($this->showMissingBarcodeModal || $this->showNewProductModal) {
+            return;
+        }
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
@@ -973,7 +1060,11 @@ new class extends Component {
             ->first(['id', 'product_id']);
 
         if (!$record) {
-            $this->errorMessage = "لم يتم العثور على منتج بالباركود: {$barcode}";
+            $this->missingBarcode = $barcode;
+            $this->showMissingBarcodeModal = true;
+            $this->linkMissingBarcode = false;
+            $this->missingBarcodeSearch = '';
+            $this->resetValidation();
             $this->dispatch('pos-sound', type: 'error');
             $this->barcode = '';
             return;
@@ -981,6 +1072,65 @@ new class extends Component {
 
         $this->addToCart((int) $record->product_id, $barcode);
         $this->barcode = '';
+    }
+
+    public function cancelMissingBarcode(): void
+    {
+        $this->showMissingBarcodeModal = false;
+        $this->missingBarcode = '';
+        $this->linkMissingBarcode = false;
+        $this->missingBarcodeSearch = '';
+        $this->resetValidation();
+        $this->dispatch('pos-focus-barcode');
+    }
+
+    public function createProductFromMissingBarcode(): void
+    {
+        $this->authorize('products.create');
+        $this->authorize('products.view');
+        if (!$this->showMissingBarcodeModal || $this->missingBarcode === '') {
+            return;
+        }
+        $this->validate(['missingBarcode' => ['required', 'string', 'max:100']]);
+        $this->showMissingBarcodeModal = false;
+        $this->showNewProductModal = true;
+    }
+
+    #[On('pos-product-form-closed')]
+    public function finishNewProductForm(): void
+    {
+        $this->showNewProductModal = false;
+        $this->cancelMissingBarcode();
+        $this->loadQuickProducts();
+    }
+
+    public function chooseExistingProductForBarcode(): void
+    {
+        $this->authorize('products.barcode.manage');
+        if ($this->missingBarcode !== '' && $this->showMissingBarcodeModal) {
+            $this->linkMissingBarcode = true;
+        }
+    }
+
+    public function attachMissingBarcode(int $productId): void
+    {
+        $this->authorize('products.barcode.manage');
+        if (!$this->ensureInvoiceEditable() || !$this->showMissingBarcodeModal || !$this->linkMissingBarcode) {
+            return;
+        }
+        $this->validate(['missingBarcode' => ['required', 'string', 'max:100']]);
+        $product = Product::query()->where('tenant_id', $this->tenantId())->findOrFail($productId);
+        $record = ProductBarcode::query()->firstOrCreate(
+            ['tenant_id' => $this->tenantId(), 'barcode' => $this->missingBarcode],
+            ['product_id' => $product->id],
+        );
+        if ((int) $record->product_id !== (int) $product->id) {
+            $this->addError('missingBarcode', 'تم تسجيل هذا الباركود لصنف آخر. ألغِ العملية وأعد مسحه.');
+            return;
+        }
+        $this->cancelMissingBarcode();
+        $this->loadQuickProducts();
+        $this->successMessage = 'تم ربط الباركود بالصنف. امسحه مرة أخرى لإضافته إلى الفاتورة.';
     }
 
     public function addToCart(int $productId, string $scannedBarcode = ''): void
@@ -2693,6 +2843,21 @@ new class extends Component {
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
 
+        $productIds = collect($this->cart)
+            ->filter(fn (array $item): bool => empty($item['is_gift']) && empty($item['price_manual']))
+            ->pluck('id')->filter()->unique()->values();
+        $branchPrices = collect();
+        $activeOffers = collect();
+        if ($tenantId && $branchId && $productIds->isNotEmpty()) {
+            $branchPrices = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                ->whereIn('product_id', $productIds)->get(['product_id', 'offer_quantity', 'offer_price'])->keyBy('product_id');
+            $now = now();
+            $activeOffers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                ->whereIn('product_id', $productIds)->where('is_active', true)->where('start_at', '<=', $now)
+                ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', $now))
+                ->orderByDesc('start_at')->get(['product_id', 'offer_quantity', 'offer_price'])->unique('product_id')->keyBy('product_id');
+        }
+
         foreach ($this->cart as $id => $item) {
             if (! empty($item['is_gift'])) {
                 $this->cart[$id]['price'] = 0.0;
@@ -2723,7 +2888,7 @@ new class extends Component {
 
             if ($tenantId && $branchId && (int) ($item['id'] ?? 0) > 0) {
                 $productId = (int) $item['id'];
-                $activeOffer = $this->getActiveProductOffer($productId, (int) $tenantId, (int) $branchId);
+                $activeOffer = $activeOffers->get($productId);
 
                 if ($activeOffer) {
                     $offerQuantity = (float) ($activeOffer->offer_quantity ?? 0);
@@ -2731,11 +2896,7 @@ new class extends Component {
                         ? (float) $activeOffer->offer_price
                         : null;
                 } else {
-                    $branchProduct = BranchProduct::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $branchId)
-                        ->where('product_id', $productId)
-                        ->first();
+                    $branchProduct = $branchPrices->get($productId);
 
                     if ($branchProduct) {
                         $offerQuantity = $branchProduct->offer_quantity !== null
@@ -2768,6 +2929,34 @@ new class extends Component {
             }
 
             $this->cart[$id]['promotion_savings'] = $this->roundMoney($savings);
+        }
+
+        $offerGroups = [];
+        foreach ($this->cart as $lineKey => $item) {
+            if (!empty($item['is_gift']) || !empty($item['price_manual']) || (float) $item['quantity'] == 0) {
+                continue;
+            }
+            $groupKey = json_encode([$item['id'], (float) $item['price'], (float) ($item['offer_quantity'] ?? 0), $item['offer_price'] ?? null, (float) $item['quantity'] < 0]);
+            $offerGroups[$groupKey][] = $lineKey;
+        }
+        foreach ($offerGroups as $lineKeys) {
+            if (count($lineKeys) < 2) {
+                continue;
+            }
+            $first = $this->cart[$lineKeys[0]];
+            $quantity = array_sum(array_map(fn ($key) => (float) $this->cart[$key]['quantity'], $lineKeys));
+            $groupTotal = $this->calculateOfferTotal($quantity, (float) $first['price'], (float) ($first['offer_quantity'] ?? 0), $first['offer_price'] ?? null);
+            $allocatedTotal = 0.0;
+            $allocatedQuantity = 0.0;
+            foreach ($lineKeys as $lineKey) {
+                $allocatedQuantity += (float) $this->cart[$lineKey]['quantity'];
+                $cumulativeTotal = $this->roundMoney($groupTotal * $allocatedQuantity / $quantity);
+                $lineTotal = $this->roundMoney($cumulativeTotal - $allocatedTotal);
+                $allocatedTotal = $cumulativeTotal;
+                $this->cart[$lineKey]['subtotal'] = $lineTotal;
+                $this->cart[$lineKey]['promotion_savings'] = (float) $this->cart[$lineKey]['quantity'] > 0
+                    ? $this->roundMoney(max(0, (float) $this->cart[$lineKey]['normal_total'] - $lineTotal)) : 0.0;
+            }
         }
 
         if (!empty($this->cart)) {
@@ -3213,7 +3402,19 @@ new class extends Component {
             $branches = Branch::query()->where('tenant_id', $tenantId)->orderBy('name')->get();
         }
 
-        return $this->view(['branches' => $branches])->layout('layouts::pos');
+        $missingBarcodeProducts = collect();
+        if ($this->linkMissingBarcode && Auth::user()?->can('products.barcode.manage')) {
+            $search = mb_substr(trim($this->missingBarcodeSearch), 0, 100);
+            if ($search !== '') {
+                $missingBarcodeProducts = Product::query()->where('tenant_id', $tenantId)
+                    ->where(function ($query) use ($search): void {
+                        $query->where('name', 'like', '%'.$search.'%')
+                            ->orWhere('product_number', $search)
+                            ->orWhereHas('barcodes', fn ($query) => $query->where('barcode', $search));
+                    })->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
+            }
+        }
+        return $this->view(['branches' => $branches, 'missingBarcodeProducts' => $missingBarcodeProducts])->layout('layouts::pos');
     }
 };
 ?>
@@ -3240,7 +3441,7 @@ new class extends Component {
         <div x-data="{
                 printInProgress: false,
                 async saveAndPrint() {
-                    if (this.printInProgress) return;
+                    if (this.printInProgress || this.$wire.showNewProductModal) return;
                     this.printInProgress = true;
                     try {
                         const field = document.activeElement?.closest?.('[data-pos-field]');
@@ -3254,10 +3455,11 @@ new class extends Component {
                 }
             }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
             x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
-            x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
-            x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
+            x-on:keydown.window.f1.prevent="if (!$wire.showNewProductModal) $wire.set('showHeldModal', !$wire.showHeldModal)"
+            x-on:keydown.window.f2.prevent="if (!$wire.showNewProductModal) $wire.holdInvoice()"
             x-on:keydown.window.f3.prevent="
                 (async () => {
+                    if ($wire.showNewProductModal) return;
                     const field = document.activeElement?.closest?.('[data-pos-field]');
                     if (field && !field.disabled && field.dataset.lineKey && field.dataset.posField) {
                         await $wire.updateCartField(field.dataset.lineKey, field.dataset.posField, field.value);
@@ -3265,9 +3467,9 @@ new class extends Component {
                     await $wire.saveOrEditInvoice();
                 })()
             "
-            x-on:keydown.window.f4.prevent="$wire.clearCart()"
+            x-on:keydown.window.f4.prevent="if (!$wire.showNewProductModal) $wire.clearCart()"
             x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
-            x-on:keydown.window.f10.prevent="$nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
+            x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal) $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
             class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
@@ -3393,10 +3595,13 @@ new class extends Component {
                                                 wire:click="selectInlineProduct({{ $product['id'] }})"
                                                 @disabled($this->invoiceIsLocked())
                                                 wire:key="pos-quick-product-{{ $product['id'] }}"
-                                                class="min-h-[78px] rounded-xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
+                                                class="{{ !empty($product['has_offer']) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white' }} min-h-[78px] rounded-xl border p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
                                                 <div
                                                     class="line-clamp-2 min-h-[30px] text-[11px] font-black leading-4 text-slate-800">
                                                     {{ $product['name'] }}
+                                                        @if (!empty($product['has_offer']))
+                                                            <span class="mt-1 block text-[10px] font-bold text-amber-700">عرض {{ $product['offer_quantity_value'] + 0 }} بـ {{ number_format($product['offer_price_value'], 2) }}</span>
+                                                        @endif
                                                 </div>
 
                                                 <div class="mt-2 flex items-end justify-between gap-1">
@@ -3910,6 +4115,12 @@ new class extends Component {
             @include('pages.tenant.pos.partials.held-invoices-modal')
             @include('pages.tenant.pos.partials.cost-modal')
             @include('pages.tenant.pos.partials.below-cost-modal')
+            @include('pages.tenant.pos.partials.missing-barcode-modal')
+            @if ($showNewProductModal)
+                <div data-pos-missing-barcode-dialog>
+                    <livewire:pages::tenant.products.index :pos-embedded="true" :new-barcode="$missingBarcode" :key="'pos-new-product-'.$missingBarcode" />
+                </div>
+            @endif
         </div>
 
         @include('pages.tenant.pos.partials.thermal-receipt')

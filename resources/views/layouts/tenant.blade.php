@@ -32,15 +32,19 @@
     </style>
 </head>
 
-<body class="app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+<body data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" class="{{ (request()->query('_workspace') === 'frame' || request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
 
     {{-- Sidebar --}}
+    @if (request()->query('_workspace') !== 'frame' && request()->header('Sec-Fetch-Dest') !== 'iframe')
     @include('layouts.tenant.sidebar')
 
     {{-- Mobile Header / Burger --}}
     @include('layouts.tenant.mobile-header')
+    @endif
 
-    {{ $slot }}
+    <x-workspace-tabs :title="$pageTitle ?? null" :shell-main="true">
+        {{ $slot }}
+    </x-workspace-tabs>
 
     @persist('toast')
         <flux:toast.group>

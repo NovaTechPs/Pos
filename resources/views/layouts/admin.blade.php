@@ -5,7 +5,7 @@
     @include('layouts.partials.head')
 </head>
 
-<body class="app-responsive min-h-screen bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
+<body data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" class="{{ (request()->query('_workspace') === 'frame' || request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
 
     {{-- Desktop Sidebar --}}
     @include('layouts.admin.sidebar')
@@ -105,7 +105,9 @@
 
     {{-- Main Content --}}
     <main class="app-shell-main min-w-0 min-h-[calc(100vh-4rem)]">
+        <x-workspace-tabs :title="$pageTitle ?? null">
         {{ $slot }}
+    </x-workspace-tabs>
     </main>
 
 
