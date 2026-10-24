@@ -24,7 +24,15 @@ test('mobile point of sale exposes search and accepts a camera barcode through t
         ->assertSee('البحث عن صنف بالاسم أو الرقم أو الباركود')
         ->assertSee('data-pos-camera-button', false)
         ->assertSee('playsinline', false)
+        ->assertSee('أدوات الفاتورة')
         ->set('productSearchQuery', 'Camera product');
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    expect($xpath->query('//*[@data-pos-toolbar-content]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-toolbar-content]//*[@id="pos-products-panel" or @id="pos-cart-panel"]')->length)->toBe(0)
+        ->and($xpath->query('//*[@id="pos-products-panel"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@id="pos-cart-panel"]')->length)->toBe(1);
     expect($component->get('quickProducts'))->toHaveCount(1);
     $component->call('scanBarcode', '0012345678905');
     expect($component->get('cart'))->toHaveCount(1)
