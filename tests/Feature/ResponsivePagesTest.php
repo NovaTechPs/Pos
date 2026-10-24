@@ -4,12 +4,15 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Category;
 use App\Models\Employee;
+use App\Models\Order;
 use App\Models\Party;
 use App\Models\Product;
 use App\Models\ProductBarcode;
+use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -69,6 +72,25 @@ test('tenant and settings pages render their responsive layouts with usable tabl
     ['/settings/profile', 'profile'], ['/settings/appearance', 'appearance'], ['/settings/store', 'store-settings'],
     ['/settings/security', 'security'],
 ]);
+
+test('point of sale keeps notes outside payment and offers one copy action for a saved invoice', function (): void {
+    Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'opened_by' => $this->user->id, 'opening_cash' => 0, 'status' => 'open', 'opened_at' => now()]);
+    $product = Product::query()->firstOrFail();
+    $component = Livewire::test('pages::tenant.pos.sales')->set('mergeSimilarProducts', false);
+    for ($index = 0; $index < 5; $index++) {
+        $component->call('selectInlineProduct', $product->id);
+    }
+    $component->set('notes', 'ملاحظة العميل');
+    captureResponsivePreview('pos-filled', $this->get('/dashboard/pos')->assertOk()->getContent());
+    $component->set('paid_amount', 50)->call('checkoutAndPrint');
+    $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة العميل');
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    expect($xpath->query('//*[@*[name()="wire:click"]="copyLoadedInvoice"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-notes-input]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-customer-notes]//*[@data-pos-notes-input]')->length)->toBe(0);
+});
 
 test('administrator pages render responsive layouts', function (string $path, string $key): void {
     $this->user->update(['type' => 'saas_admin']);

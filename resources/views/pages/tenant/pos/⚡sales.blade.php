@@ -3440,6 +3440,7 @@ new class extends Component {
 
         <div x-data="{
                 printInProgress: false,
+                notesOpen: false,
                 async saveAndPrint() {
                     if (this.printInProgress || this.$wire.showNewProductModal) return;
                     this.printInProgress = true;
@@ -3504,25 +3505,6 @@ new class extends Component {
                 <div
                     class="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
                     🔒 الفاتورة القديمة للعرض فقط — التعديل يحتاج «تعديل»، أما الطباعة وPDF وواتساب والنسخ فتعمل مباشرة.
-                </div>
-            @endif
-
-            @if ($currentInvoiceId)
-                <div
-                    class="shrink-0 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
-                    dir="rtl"
-                >
-                    <div class="ml-auto px-2 text-[10px] font-black text-slate-500">
-                        فاتورة #{{ $this->receipt['invoice_no'] ?? $currentInvoiceId }}
-                    </div>
-
-                    <button
-                        type="button"
-                        wire:click="copyLoadedInvoice"
-                        class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] font-black text-violet-700 hover:bg-violet-100"
-                    >
-                        📋 نسخ
-                    </button>
                 </div>
             @endif
 

@@ -187,7 +187,7 @@
                                     value="{{ $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
                                     wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)" @disabled($invoiceLocked)
-                                    class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black outline-none focus:ring-0"
+                                    class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black text-slate-900 outline-none focus:ring-0"
                                     inputmode="decimal" autocomplete="off">
                             </div>
                         </td>

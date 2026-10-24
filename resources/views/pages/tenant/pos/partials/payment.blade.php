@@ -601,25 +601,7 @@
             @endif
 
 
-            {{-- ملاحظات الفاتورة --}}
 
-            <div class="mt-2">
-
-                <label class="mb-1 block text-[9px] font-black text-slate-500">
-
-                    ملاحظات
-
-                </label>
-
-
-                <input
-                    wire:model.live="notes" @disabled($invoiceLocked)
-                    type="text"
-                    placeholder="ملاحظة الفاتورة..."
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-bold outline-none focus:border-indigo-500"
-                >
-
-            </div>
 
         </div>
 
