@@ -162,6 +162,7 @@
         @if ($items->count())
 
             <div class="overflow-x-auto">
+                <div class="app-table-scroll" role="region" aria-label="جدول السندات — اسحب لعرض بقية الأعمدة" tabindex="0">
                 <table class="w-full min-w-[900px] text-right">
 
                     <thead class="border-b border-slate-200 bg-slate-50">
@@ -375,6 +376,7 @@
 
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {{-- Pagination --}}

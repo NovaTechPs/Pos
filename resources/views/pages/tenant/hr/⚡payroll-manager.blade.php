@@ -837,6 +837,7 @@
                 </div>
 
                 <flux:card class="p-0 overflow-hidden">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead class="bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
                             <tr>
@@ -869,6 +870,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </flux:card>
             </div>
         @endif
@@ -906,6 +908,7 @@
 
                 <flux:card class="col-span-2 space-y-3">
                     <flux:heading size="lg">سجل اليوم: {{ $attendance_date }}</flux:heading>
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead>
                             <tr class="border-b dark:border-gray-700">
@@ -950,6 +953,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </flux:card>
             </div>
         @endif
@@ -965,6 +969,7 @@
                 </div>
 
                 <flux:card>
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead>
                             <tr class="border-b dark:border-gray-700">
@@ -997,6 +1002,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </flux:card>
             </div>
         @endif
@@ -1012,6 +1018,7 @@
                 </div>
 
                 <flux:card>
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead>
                             <tr class="border-b dark:border-gray-700">
@@ -1038,6 +1045,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </flux:card>
             </div>
         @endif
@@ -1053,6 +1061,7 @@
                 </div>
 
                 <flux:card>
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead>
                             <tr class="border-b dark:border-gray-700">
@@ -1079,6 +1088,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </flux:card>
             </div>
         @endif
@@ -1128,6 +1138,8 @@
                             </div>
                         </div>
 
+                        <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                         <table class="w-full text-right text-sm border-t dark:border-gray-700">
                             <tbody class="divide-y dark:divide-gray-700">
                                 <tr>
@@ -1168,11 +1180,13 @@
                                 </tr>
                             </tbody>
                         </table>
+                        </div>
                     </flux:card>
 
                     <!-- سجل الدفعات المسددة -->
                     <flux:card class="space-y-3">
                         <flux:heading size="md">سجل الدفعات المالية المسددة</flux:heading>
+                        <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                         <table class="w-full text-right text-sm">
                             <thead>
                                 <tr class="border-b dark:border-gray-700">
@@ -1195,6 +1209,7 @@
                                 @endforelse
                             </tbody>
                         </table>
+                        </div>
                     </flux:card>
                 @else
                     <flux:card class="text-center p-12 text-gray-500">
@@ -1248,6 +1263,7 @@
                         </div>
 
                         <flux:card>
+                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                             <table class="w-full text-right text-sm">
                                 <thead>
                                     <tr class="border-b dark:border-gray-700">
@@ -1285,6 +1301,7 @@
                                     @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </flux:card>
                     @else
                         <flux:card class="text-center p-8 text-gray-500">

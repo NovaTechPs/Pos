@@ -4,6 +4,7 @@ use Livewire\Component;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Party;
+use App\Models\Tenant;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -1035,6 +1036,7 @@ new class extends Component {
         $this->dispatch(
             'print-purchase-invoice',
             invoice: [
+                'store_name' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $purchase->reference_number,
                 'date' => $purchase->created_at,
                 'supplier' => $supplierName,
@@ -1380,6 +1382,7 @@ new class extends Component {
                     {{-- جدول المواد --}}
                     <div class="hidden md:block">
                         <div class="max-h-[52vh] overflow-auto">
+                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                             <table class="w-full min-w-[850px] text-right">
                                 <thead class="sticky top-0 z-20 border-b border-slate-200 bg-slate-50">
                                     <tr class="text-[11px] font-black text-slate-500">
@@ -1438,6 +1441,7 @@ new class extends Component {
                                     @endforelse
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     </div>
 
@@ -1881,7 +1885,8 @@ new class extends Component {
             <body>
                 <div class="head">
                     <div>
-                        <h1>فاتورة مشتريات</h1>
+                        <div data-invoice-store-name style="font-size:20px;font-weight:700;margin-bottom:8px">${esc(invoice.store_name ?? '')}</div>
+                            <h1>فاتورة مشتريات</h1>
                         <div class="muted">نظام إدارة المشتريات</div>
                     </div>
                     <div>
@@ -1918,6 +1923,8 @@ new class extends Component {
                 </div>
 
                 ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong> ${esc(invoice.notes)}</div>` : ''}
+
+                <x-invoice-copyright />
 
                 <script>
                     window.onload = function() {

@@ -1,9 +1,9 @@
-<div class="shrink-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
+<div class="pos-toolbar min-w-0 shrink-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
 
     {{-- =========================================================
          الشريط الرئيسي
     ========================================================== --}}
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="pos-toolbar-actions flex flex-wrap items-center gap-2">
 
         {{-- الفرع --}}
         @if (!Auth::user()->branch_id)
@@ -284,7 +284,7 @@
     {{-- =========================================================
          شريط معلومات الفاتورة
     ========================================================== --}}
-    <div class="mt-2.5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5">
+    <div data-pos-invoice-info class="mt-2.5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5">
 
         {{-- حالة الفاتورة --}}
         <span
@@ -364,6 +364,8 @@
             </span>
 
         @endif
+
+        @include('pages.tenant.pos.partials.invoice-actions')
 
     </div>
 

@@ -1,4 +1,4 @@
-<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+<div id="pos-cart-panel" class="pos-cart flex min-w-0 min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     @php $invoiceLocked = $this->invoiceIsLocked(); @endphp
 
     {{-- =========================================================
@@ -59,7 +59,7 @@
         </div>
     </div>
 
-    <div data-pos-cart-scroll class="min-h-0 flex-1 overflow-auto">
+    <div data-pos-cart-scroll class="pos-cart-scroll min-h-0 flex-1 overflow-auto">
 
         <table class="w-full text-right text-xs" dir="rtl">
 
@@ -112,7 +112,7 @@
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
 
-                    <tr wire:key="pos-cart-{{ $lineKey }}"
+                    <tr data-pos-cart-line wire:key="pos-cart-{{ $lineKey }}"
                         class="{{ $loop->odd ? 'bg-white' : 'bg-slate-50' }} hover:bg-indigo-50">
                         {{-- Row Number --}}
                         <td class="px-2 py-2 text-center">

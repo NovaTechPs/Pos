@@ -6,6 +6,7 @@ use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Party;
+use App\Models\Tenant;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -848,6 +849,7 @@ new class extends Component {
         $this->dispatch(
             'print-sales-invoice',
             invoice: [
+                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $order->invoice_number,
                 'date' => $order->created_at?->format('Y-m-d H:i'),
                 'customer' => $order->customer_name ?: 'زبون عام',
@@ -1382,6 +1384,7 @@ new class extends Component {
             ============================================================== --}}
 
             <div class="overflow-x-auto">
+                <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                 <table class="w-full min-w-[1050px] border-collapse text-right">
 
                     <thead>
@@ -1516,6 +1519,7 @@ new class extends Component {
                         @endforelse
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
 
@@ -2110,6 +2114,7 @@ new class extends Component {
                 <div class="page">
                     <div class="header">
                         <div>
+                            <div data-invoice-store-name style="font-size:20px;font-weight:700;margin-bottom:8px">${escapeHtml(invoice.store_name ?? '')}</div>
                             <div class="title">فاتورة مبيعات</div>
                             <div class="meta">
                                 رقم الفاتورة: <strong>${escapeHtml(invoice.number ?? '')}</strong><br>
@@ -2146,6 +2151,8 @@ new class extends Component {
 
                     ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong><br>${escapeHtml(invoice.notes)}</div>` : ''}
                 </div>
+                <x-invoice-copyright />
+
                 <script>
                     window.onload = function () {
                         setTimeout(function () { window.print(); }, 200);

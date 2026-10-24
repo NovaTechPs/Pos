@@ -87,3 +87,10 @@ test('long invoice barcode scales to the available receipt width without droppin
     $lastBar = end($bars);
     expect((int) $lastBar[1] + (int) $lastBar[2])->toBeLessThanOrEqual((int) $viewBox[1] - 10);
 });
+
+test('thermal receipt places the company copyright after the invoice barcode', function (): void {
+    $html = posReceiptPrintView();
+
+    expect($html)->toContain('جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS')
+        ->and(strpos($html, 'data-invoice-copyright'))->toBeGreaterThan(strpos($html, 'class="invoice-barcode-wrap"'));
+});

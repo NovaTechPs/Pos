@@ -235,23 +235,24 @@
         $whatsappMessage .=
             "\n\nشكراً لتعاملكم معنا 🌷";
     }
+    $whatsappMessage .= "\nجميع الحقوق محفوظة © ".now()->year.' — WaslaPOS';
 @endphp
 
 
 <div
-    class="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm"
+    class="pos-payment min-w-0 shrink-0 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm"
     x-data
     dir="rtl"
 >
 
-    <div class="grid grid-cols-1 gap-2 xl:grid-cols-[repeat(13,minmax(0,1fr))]">
+    <div class="pos-payment-grid grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-[repeat(13,minmax(0,1fr))]">
 
 
         {{-- =========================================================
              ملخص المبالغ
         ========================================================== --}}
 
-        <div class="grid grid-cols-2 gap-2 xl:col-span-6 xl:grid-cols-6">
+        <div class="pos-payment-totals grid grid-cols-2 gap-2 sm:grid-cols-3 md:col-span-2 lg:col-span-6 lg:grid-cols-6">
 
 
             {{-- الإجمالي --}}
@@ -429,7 +430,7 @@
              طرق الدفع
         ========================================================== --}}
 
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 xl:col-span-3">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
 
             <div class="mb-1.5 flex items-center justify-between">
 
@@ -505,7 +506,7 @@
              العميل
         ========================================================== --}}
 
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 xl:col-span-2">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
 
             <div class="mb-1.5 flex items-center justify-between">
 
@@ -635,137 +636,7 @@
              أزرار الفاتورة
         ========================================================== --}}
 
-        <div class="grid grid-cols-6 gap-1.5 xl:col-span-2">
 
-
-            {{-- حفظ --}}
-
-            <button
-                type="button"
-                wire:click="saveOrEditInvoice"
-                @disabled(empty($cart) && !$invoiceLocked)
-                class="rounded-xl bg-slate-900 px-1.5 py-2.5 text-[9px] font-black text-white shadow-sm transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
-            >
-
-                <span class="block">
-                    {{ $invoiceLocked ? 'تعديل' : 'حفظ' }}
-                </span>
-
-                <kbd class="mt-1 inline-block rounded bg-slate-700 px-1 py-0.5 text-[7px]">
-                    F3
-                </kbd>
-
-            </button>
-
-
-
-            {{-- طباعة / حفظ وطباعة --}}
-
-            <button
-                type="button"
-                x-on:click="saveAndPrint()"
-                x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
-                title="{{ $invoiceLocked ? 'طباعة الفاتورة القديمة' : 'حفظ الفاتورة وطباعة' }}"
-                class="rounded-xl px-1.5 py-2.5 text-[9px] font-black text-white shadow-sm transition disabled:bg-slate-200 disabled:text-slate-400
-                    {{
-                        $isReturnMode
-                            ? 'bg-rose-600 hover:bg-rose-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700'
-                    }}"
-            >
-
-                <span class="block">
-                    {{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}
-                </span>
-
-                @if (!$invoiceLocked)
-                    <kbd class="mt-1 inline-block rounded bg-black/20 px-1 py-0.5 text-[7px]">
-                        F6
-                    </kbd>
-                @else
-                    <span class="mt-1 block text-[7px] font-bold text-white/80">
-                        الفاتورة محفوظة
-                    </span>
-                @endif
-
-            </button>
-
-
-
-            {{-- فاتورة جديدة --}}
-
-            <button
-                type="button"
-                wire:click="clearCart"
-                @disabled(empty($cart))
-                class="rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-[9px] font-black text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
-            >
-
-                <span class="block">
-                    فاتورة جديدة
-                </span>
-
-                <kbd class="mt-1 inline-block rounded bg-slate-200 px-1 py-0.5 text-[7px]">
-                    F4
-                </kbd>
-
-            </button>
-
-
-
-            {{-- PDF --}}
-
-            <button
-                type="button"
-                wire:click="downloadInvoicePdf"
-                class="rounded-xl border border-red-200 bg-red-50 px-1.5 py-2.5 text-[9px] font-black text-red-700 transition hover:bg-red-100"
-                title="إنشاء PDF للفاتورة"
-            >
-
-                <span class="block">
-                    📄 PDF
-                </span>
-
-                <span class="mt-1 block text-[7px] font-bold text-red-600">
-                    فاتورة
-                </span>
-
-            </button>
-
-
-
-            {{-- نسخ الفاتورة --}}
-
-            <button
-                type="button"
-                wire:click="copyLoadedInvoice"
-                @disabled(empty($cart))
-                title="نسخ الفاتورة إلى فاتورة جديدة"
-                class="rounded-xl border border-violet-200 bg-violet-50 px-1.5 py-2.5 text-[9px] font-black text-violet-700 transition hover:bg-violet-100 disabled:opacity-40"
-            >
-                <span class="block">📋 نسخ</span>
-                <span class="mt-1 block text-[7px] font-bold text-violet-600">فاتورة جديدة</span>
-            </button>
-
-
-
-            {{-- واتساب --}}
-
-            <button
-                type="button"
-                x-on:click="window.__posWhatsAppWindow = window.open('about:blank', '_blank')"
-                wire:click="sendInvoiceWhatsApp"
-                wire:loading.attr="disabled"
-                title="حفظ الفاتورة أولاً ثم إرسالها عبر واتساب"
-                class="rounded-xl border border-green-200 bg-green-50 px-1.5 py-2.5 text-[9px] font-black text-green-700 transition hover:bg-green-100 disabled:opacity-50"
-            >
-                <span class="block">🟢 واتساب</span>
-                <span class="mt-1 block text-[7px] font-bold text-green-600">حفظ وإرسال</span>
-            </button>
-
-
-
-        </div>
 
     </div>
 

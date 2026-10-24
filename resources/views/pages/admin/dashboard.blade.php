@@ -67,6 +67,7 @@
                 </div>
 
                 <div class="overflow-x-auto flex-1">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full text-right text-sm">
                         <thead class="bg-neutral-100/70 dark:bg-zinc-900 text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
                             <tr>
@@ -107,6 +108,7 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
 

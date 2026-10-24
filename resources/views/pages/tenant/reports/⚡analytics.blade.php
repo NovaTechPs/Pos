@@ -1093,6 +1093,7 @@ new class extends Component {
 
             @if($topProducts->isNotEmpty())
                 <div class="overflow-x-auto">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="min-w-full text-right text-xs">
                         <thead class="border-b border-slate-100 bg-slate-50 text-[10px] font-black text-slate-500">
                             <tr>
@@ -1119,6 +1120,7 @@ new class extends Component {
                             @endforeach
                         </tbody>
                     </table>
+                    </div>
                 </div>
             @else
                 <div class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
@@ -1202,6 +1204,7 @@ new class extends Component {
                     <p class="mt-1 text-[10px] font-semibold text-slate-400">صافي الفواتير بعد المرتجعات ضمن الفترة والفرع المحددين / Net invoices after returns for the selected period and branch.</p>
                 </div>
                 <div class="overflow-x-auto">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="min-w-full text-right text-xs">
                         <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">العميل / Customer</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">صافي المبيعات / Net sales</th><th class="px-4 py-3">صافي المقبوض / Net received</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
@@ -1212,6 +1215,7 @@ new class extends Component {
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
 
@@ -1221,6 +1225,7 @@ new class extends Component {
                     <p class="mt-1 text-[10px] font-semibold text-slate-400">قيمة فواتير الشراء، المدفوع، والمستحق لكل مورد / Purchase totals, paid amounts, and balances due.</p>
                 </div>
                 <div class="overflow-x-auto">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="min-w-full text-right text-xs">
                         <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">المورد / Supplier</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">المشتريات / Purchases</th><th class="px-4 py-3">المتبقي بالفترة / Period due</th><th class="px-4 py-3">الرصيد الحالي / Current balance</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
@@ -1231,29 +1236,34 @@ new class extends Component {
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
 
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b border-slate-100 p-4"><h3 class="text-sm font-black text-slate-900">الأكثر شراءً / Most purchased items</h3><p class="mt-1 text-[10px] font-semibold text-slate-400">حسب الكمية وقيمة فواتير المشتريات / Ranked by quantity and purchase value.</p></div>
-                <div class="overflow-x-auto"><table class="min-w-full text-right text-xs"><thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية / Quantity</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
+                <div class="overflow-x-auto"><div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+<table class="min-w-full text-right text-xs"><thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية / Quantity</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
                     @forelse($topPurchasedProducts as $product)
                         <tr><td class="px-4 py-3 font-bold">{{ $product->name }}</td><td class="px-4 py-3 font-mono">{{ number_format((float) $product->quantity, 2) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $product->total, 2) }}</td></tr>
                     @empty
                         <tr><td colspan="3" class="p-6 text-center text-slate-400">لا توجد أصناف مشتراة خلال هذه الفترة / No purchased items in this period.</td></tr>
                     @endforelse
-                </tbody></table></div>
+                </tbody></table>
+</div></div>
             </div>
 
             <div class="overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-sm">
                 <div class="border-b border-orange-100 p-4"><h3 class="text-sm font-black text-slate-900">الأكثر إرجاعًا / Most returned items</h3><p class="mt-1 text-[10px] font-semibold text-slate-400">الأصناف الأعلى كمية وقيمة في مرتجعات نقطة البيع / POS returns ranked by quantity and value.</p></div>
-                <div class="overflow-x-auto"><table class="min-w-full text-right text-xs"><thead class="bg-orange-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية المرتجعة / Returned</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
+                <div class="overflow-x-auto"><div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+<table class="min-w-full text-right text-xs"><thead class="bg-orange-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الصنف / Product</th><th class="px-4 py-3">الكمية المرتجعة / Returned</th><th class="px-4 py-3">القيمة / Value</th></tr></thead><tbody class="divide-y divide-slate-100">
                     @forelse($topReturnedProducts as $product)
                         <tr><td class="px-4 py-3 font-bold">{{ $product->name }}</td><td class="px-4 py-3 font-mono">{{ number_format((float) $product->quantity, 2) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $product->total, 2) }}</td></tr>
                     @empty
                         <tr><td colspan="3" class="p-6 text-center text-slate-400">لا توجد مرتجعات خلال هذه الفترة / No returns in this period.</td></tr>
                     @endforelse
-                </tbody></table></div>
+                </tbody></table>
+</div></div>
             </div>
 
             <div class="overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm xl:col-span-2">
@@ -1288,6 +1298,7 @@ new class extends Component {
         </div>
 
         <div class="overflow-x-auto">
+            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
             <table class="min-w-[1100px] w-full text-right text-xs">
                 <thead class="border-b border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500">
                     <tr>
@@ -1372,6 +1383,7 @@ new class extends Component {
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
 
         @if($orders->hasPages())
@@ -1386,7 +1398,7 @@ new class extends Component {
     ============================================================= --}}
     @if($showDetailsModal && $selectedOrder)
         <div
-            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+            class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
             wire:click.self="closeModal"
         >
             <div class="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -1435,6 +1447,7 @@ new class extends Component {
                     </div>
 
                     <div class="overflow-x-auto rounded-xl border border-slate-200">
+                        <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                         <table class="min-w-[900px] w-full text-right text-xs">
                             <thead class="bg-slate-900 text-[10px] font-black text-white">
                                 <tr>
@@ -1461,6 +1474,7 @@ new class extends Component {
                                 @endforeach
                             </tbody>
                         </table>
+                        </div>
                     </div>
 
                     <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">

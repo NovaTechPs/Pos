@@ -950,7 +950,7 @@ new class extends Component {
 
         @if ($showDeleteModal)
 
-            <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+            <div class="app-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
 
                 <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
 

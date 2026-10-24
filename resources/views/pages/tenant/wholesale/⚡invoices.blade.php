@@ -3,6 +3,7 @@
 use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\Tenant;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -387,6 +388,7 @@ new class extends Component {
         $this->dispatch(
             'print-wholesale-invoice',
             data: [
+                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'title' => 'فاتورة مبيعات جملة',
                 'invoice_number' => $order->invoice_number,
                 'customer_name' => $order->customer_name
@@ -930,6 +932,8 @@ new class extends Component {
 
             <div class="overflow-x-auto">
 
+                <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                 <table class="w-full border-collapse text-right text-sm">
 
                     <thead class="border-b border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
@@ -1139,6 +1143,7 @@ new class extends Component {
                     </tbody>
 
                 </table>
+                </div>
 
             </div>
 
@@ -1460,6 +1465,8 @@ new class extends Component {
 
                     <div class="overflow-x-auto">
 
+                        <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                         <table class="w-full text-right text-sm">
 
                             <thead class="bg-zinc-100 dark:bg-zinc-800">
@@ -1529,6 +1536,7 @@ new class extends Component {
                             </tbody>
 
                         </table>
+                        </div>
 
                     </div>
 
@@ -1964,6 +1972,7 @@ new class extends Component {
 
             <body>
 
+                <div data-invoice-store-name class="center" style="font-size:20px;font-weight:700">${esc(data.store_name)}</div>
                 <h1>
                     ${esc(data.title)}
                 </h1>
@@ -2069,6 +2078,8 @@ new class extends Component {
                 <div class="footer">
                     شكراً لتعاملكم معنا
                 </div>
+
+                <x-invoice-copyright />
 
                 <script>
                     window.onload = () => {

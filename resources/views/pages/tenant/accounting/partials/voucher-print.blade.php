@@ -3,7 +3,7 @@
 @endphp
 
 <div
-    class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4"
+    class="app-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4"
     x-data
 >
     <div class="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -122,6 +122,7 @@
                 تم إنشاء السند بواسطة
                 {{ $voucher->user?->name ?? '-' }}
             </div>
+            <x-invoice-copyright />
         </div>
 
         <div class="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">

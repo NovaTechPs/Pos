@@ -1,0 +1,113 @@
+@media screen {
+    .app-responsive,
+    .app-responsive :where(main, [data-flux-main], [wire\:id]),
+    .app-responsive .app-shell-main {
+        min-width: 0;
+    }
+
+    .app-responsive .app-shell-main {
+        grid-area: main;
+    }
+
+    .app-responsive :where(.grid) > *,
+    .app-responsive :where(.flex) > .flex-1 {
+        min-width: 0;
+    }
+
+    .app-responsive :where(form, label, input, select, textarea) {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .app-responsive :where(img, video, canvas) {
+        max-width: 100%;
+    }
+
+    .app-responsive .app-table-scroll,
+    .app-responsive ui-table-scroll-area {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+
+    .app-responsive .app-table-scroll:focus-visible {
+        outline: 2px solid var(--color-accent, #4f46e5);
+        outline-offset: -2px;
+    }
+
+    .app-responsive .app-modal-overlay {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .app-responsive dialog {
+        max-height: calc(100dvh - 2rem);
+        max-width: calc(100vw - 2rem);
+        overflow-y: auto;
+    }
+}
+
+@media screen and (max-width: 767px) {
+    .app-responsive :where(main, [data-flux-main]) {
+        max-width: 100%;
+    }
+
+    .app-responsive [data-flux-main] {
+        padding-inline: 0.75rem;
+    }
+
+    .app-responsive :where(input, select, textarea):not([type='checkbox']):not([type='radio']) {
+        font-size: 16px;
+    }
+
+    .app-responsive :where(button, [data-flux-button]):not([role='switch']):not([role='checkbox']) {
+        min-height: 2.5rem;
+    }
+
+    .app-responsive :where(.grid-cols-3, .grid-cols-4, .grid-cols-5, .grid-cols-6) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .app-responsive .app-modal-overlay {
+        align-items: flex-start;
+        padding: 0.5rem;
+    }
+
+    .app-responsive .app-modal-overlay > :where(div, section, form) {
+        min-width: 0;
+        max-width: 100%;
+        max-height: calc(100dvh - 1rem);
+        overflow-y: auto;
+    }
+
+    .app-responsive dialog {
+        min-width: 0;
+        max-width: calc(100vw - 1rem);
+        max-height: calc(100dvh - 1rem);
+        padding: 1rem;
+    }
+
+    .app-responsive [data-flux-header] {
+        min-width: 0;
+        gap: 0.5rem;
+        padding-inline: 0.75rem;
+    }
+
+    .app-responsive [data-flux-header] ui-dropdown {
+        min-width: 0;
+    }
+
+    .app-responsive [data-flux-header] [data-flux-profile] > span {
+        display: none;
+    }
+}
+
+@media print {
+    .app-table-scroll {
+        display: contents;
+    }
+}

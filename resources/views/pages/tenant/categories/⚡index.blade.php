@@ -336,6 +336,7 @@ new class extends Component {
 
             {{-- Desktop --}}
             <div class="hidden overflow-x-auto lg:block">
+                <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                 <table class="w-full min-w-[900px] text-right">
                     <thead class="border-b border-slate-100 bg-slate-50">
                         <tr class="text-[11px] font-black text-slate-500">
@@ -405,6 +406,7 @@ new class extends Component {
                         @endforelse
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {{-- Mobile --}}
@@ -465,7 +467,7 @@ new class extends Component {
             x-data
             x-show="true"
             x-on:keydown.escape.window="$wire.closeModal()"
-            class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            class="app-modal-overlay fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
         >
             <div wire:click.stop class="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
                 <div class="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur sm:px-6">

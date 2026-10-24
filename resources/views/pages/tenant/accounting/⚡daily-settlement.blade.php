@@ -1550,6 +1550,8 @@ new class extends Component
 
                 <div class="overflow-x-auto">
 
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                     <table class="w-full min-w-[1000px] text-right text-xs">
 
                         <thead>
@@ -1815,6 +1817,7 @@ new class extends Component
                         </tbody>
 
                     </table>
+                    </div>
 
                 </div>
 

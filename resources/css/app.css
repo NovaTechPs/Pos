@@ -1,3 +1,5 @@
+@import './responsive.css';
+@import './pos.css';
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 

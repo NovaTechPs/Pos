@@ -585,6 +585,7 @@ new class extends Component {
                 </div>
 
                 <div class="overflow-x-auto">
+                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="w-full min-w-[900px] text-right">
                         <thead class="bg-slate-900 text-[11px] font-black text-white">
                             <tr><th class="w-12 px-3 py-3 text-center">#</th><th class="px-3 py-3">المادة</th><th class="w-32 px-3 py-3 text-center">المتاح للإرجاع</th><th class="w-32 px-3 py-3 text-center">الكمية</th><th class="w-36 px-3 py-3 text-center">{{ $kind === 'sale' ? 'سعر البيع' : 'تكلفة الشراء' }}</th><th class="w-36 px-3 py-3 text-center">الإجمالي</th><th class="w-16 px-3 py-3"></th></tr>
@@ -605,6 +606,7 @@ new class extends Component {
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                 </div>
         </section>
 

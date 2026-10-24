@@ -3,7 +3,7 @@
     <head>
         @include('layouts.partials.head')
     </head>
-    <body class="min-h-screen bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100" dir="rtl">
+    <body class="app-responsive min-h-screen bg-zinc-50 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100" dir="rtl">
 
         <!-- هيدر المتجر المخصص للزبائن -->
         <header class="sticky top-0 z-40 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">

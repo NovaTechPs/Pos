@@ -32,7 +32,7 @@
     </style>
 </head>
 
-<body class="min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+<body class="app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
 
     {{-- Sidebar --}}
     @include('layouts.tenant.sidebar')

@@ -185,7 +185,6 @@
     @endif
 
     <div class="barcode-section">
-        <p class="system-name">الشامل لايت للمحاسبة</p>
         <p class="print-time">
             تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
         </p>
@@ -207,6 +206,7 @@
             @endif
         </div>
     </div>
+    <x-invoice-copyright />
 </div>
 
 <div class="no-print" style="display:none !important;">

@@ -5,7 +5,7 @@
     @include('layouts.partials.head')
 </head>
 
-<body class="min-h-screen bg-zinc-100 dark:bg-zinc-900 antialiased">
+<body class="app-responsive pos-shell min-h-screen bg-zinc-100 dark:bg-zinc-900 antialiased">
 
     {{-- POS Header --}}
     <flux:header class="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">

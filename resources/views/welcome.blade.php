@@ -35,16 +35,16 @@
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 antialiased flex flex-col min-h-screen justify-between">
+<body class="app-responsive bg-slate-900 text-slate-100 antialiased flex flex-col min-h-screen justify-between">
 
     <!-- Navigation Header -->
-    <header class="container mx-auto px-6 py-6 flex justify-between items-center">
+    <header class="container mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4 sm:px-6 sm:py-6">
         <div class="flex items-center space-x-3">
             <img src="{{ asset('wasla-mark.svg') }}" class="h-10 w-10" alt="">
             <span class="text-2xl font-bold tracking-tight text-white">WaslaPOS</span>
         </div>
 
-        <nav class="flex items-center gap-4">
+        <nav class="flex flex-wrap items-center gap-2 sm:gap-4">
             @if (Route::has('login'))
                 @auth
                     <a href="{{ url('/dashboard') }}" class="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition shadow-md shadow-indigo-600/20">

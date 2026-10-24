@@ -6,6 +6,7 @@ use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Party;
+use App\Models\Tenant;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\TenantSetting;
@@ -1055,6 +1056,7 @@ new class extends Component {
 
         if ($shouldPrint && $order) {
             $this->dispatch('do-kiosk-print', data: [
+                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'header_title' => 'فاتورة مبيعات جملة',
                 'invoice_no' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
@@ -1727,7 +1729,8 @@ new class extends Component {
             $this->dispatch(
                 'do-kiosk-print',
                 data: [
-                    'header_title' => 'فاتورة مبيعات جملة',
+                    'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+                'header_title' => 'فاتورة مبيعات جملة',
 
                     'invoice_no' => $order->invoice_number,
 
@@ -3199,7 +3202,7 @@ new class extends Component {
     {{-- Old Invoice Search --}}
     {{-- ================================================================ --}}
     @if ($showInvoiceSearch)
-        <div class="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
+        <div class="app-modal-overlay fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
             <div class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
                 <div class="mb-4 flex items-center justify-between">
                     <div class="text-lg font-black">تعديل فاتورة قديمة</div>
@@ -3220,7 +3223,7 @@ new class extends Component {
     {{-- Receipt Options: New / Old --}}
     {{-- ================================================================ --}}
     @if ($showReceiptOptions)
-        <div class="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
+        <div class="app-modal-overlay fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
             <div class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
                 <div class="mb-4 flex items-center justify-between">
                     <div class="text-lg font-black">سند قبض</div>
@@ -3244,7 +3247,7 @@ new class extends Component {
     {{-- Old Receipt Search --}}
     {{-- ================================================================ --}}
     @if ($showReceiptSearch)
-        <div class="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
+        <div class="app-modal-overlay fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
             <div class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
                 <div class="mb-4 flex items-center justify-between">
                     <div class="text-lg font-black">تعديل سند قبض قديم</div>
@@ -3266,7 +3269,7 @@ new class extends Component {
     {{-- ================================================================ --}}
 
     @if ($showNewInvoiceConfirm)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        <div class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             dir="rtl">
 
             <div
@@ -3304,7 +3307,7 @@ new class extends Component {
     {{-- ================================================================ --}}
 
     @if ($showBelowCostConfirm)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        <div class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             dir="rtl">
 
             <div
@@ -3351,7 +3354,7 @@ new class extends Component {
 
     @if ($showPriceHistoryModal)
 
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        <div class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             dir="rtl">
 
             <div
@@ -3386,6 +3389,8 @@ new class extends Component {
                     @if ($selectedHistoryItem['has_history'] ?? false)
 
                         <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+
+                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
 
                             <table class="w-full text-right text-sm">
 
@@ -3430,6 +3435,7 @@ new class extends Component {
                                 </tbody>
 
                             </table>
+                            </div>
 
                         </div>
                     @else
@@ -3457,7 +3463,7 @@ new class extends Component {
          ولكن داخل صفحة بيع الجملة مباشرة.
     ========================================================== --}}
     @if ($showReceiptForm)
-        <div class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 sm:items-center"
+        <div class="app-modal-overlay fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/60 p-4 sm:items-center"
             wire:key="wholesale-receipt-form">
             <div class="my-auto flex w-full max-w-lg max-h-[calc(100dvh-2rem)] flex-col overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white shadow-2xl touch-pan-y dark:border-zinc-800 dark:bg-zinc-900"
                 dir="rtl" @click.stop>
@@ -3810,6 +3816,8 @@ new class extends Component {
                 }
 
 
+                text += '\n' + @js('جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS') + '\n';
+
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {
@@ -3860,6 +3868,7 @@ new class extends Component {
                     ${data.notes ? `<div class="line"></div><div><b>ملاحظات:</b> ${data.notes}</div>` : ''}
                     <div class="line"></div>
                     <div class="center">شكراً لتعاملكم معنا</div>
+                    <x-invoice-copyright />
                     <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };<\/script>
                 </body>
                 </html>
@@ -3921,6 +3930,7 @@ new class extends Component {
 
                 let text = '';
 
+                text += `${inv.store_name || 'المتجر'}\n`;
                 text += `رقم الفاتورة: ${inv.invoice_no || '-'}\n`;
                 text += `التاريخ: ${inv.date || '-'}\n`;
                 text += `العميل: ${inv.customer_name || 'نقدي'}\n`;
@@ -3972,6 +3982,8 @@ new class extends Component {
                 | Keep the normal browser fallback for PCs only.
                 |--------------------------------------------------------------------------
                 */
+                text += '\n' + @js('جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS') + '\n';
+
                 const isAndroid = /Android/i.test(navigator.userAgent || '');
 
                 if (isAndroid) {

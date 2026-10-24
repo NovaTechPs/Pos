@@ -5,7 +5,7 @@
     @include('layouts.partials.head')
 </head>
 
-<body class="min-h-screen bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
+<body class="app-responsive min-h-screen bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
 
     {{-- Desktop Sidebar --}}
     @include('layouts.admin.sidebar')
@@ -104,7 +104,7 @@
 
 
     {{-- Main Content --}}
-    <main class="min-h-[calc(100vh-4rem)]">
+    <main class="app-shell-main min-w-0 min-h-[calc(100vh-4rem)]">
         {{ $slot }}
     </main>
 

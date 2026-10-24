@@ -1335,6 +1335,8 @@ new class extends Component {
             class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-x-auto"
         >
 
+            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
             <table
                 class="w-full text-right border-collapse min-w-[900px] dark:text-gray-300"
             >
@@ -1594,6 +1596,7 @@ new class extends Component {
                 </tbody>
 
             </table>
+            </div>
 
         </div>
 
@@ -1616,7 +1619,7 @@ new class extends Component {
         @if ($showModal)
 
             <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+                class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
                 wire:key="party-form-modal"
             >
 
@@ -1987,7 +1990,7 @@ new class extends Component {
 
 
             <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+                class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
                 wire:key="statement-modal-{{ $selectedPartyForStatement->id }}"
             >
 
@@ -2170,6 +2173,8 @@ new class extends Component {
                         <div
                             class="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-700"
                         >
+
+                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
 
                             <table
                                 class="w-full text-right text-xs min-w-[650px] dark:text-gray-300"
@@ -2367,6 +2372,7 @@ new class extends Component {
                                 </tbody>
 
                             </table>
+                            </div>
 
                         </div>
 

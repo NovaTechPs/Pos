@@ -1216,6 +1216,7 @@ return new class extends Component {
         </div>
 
         <div class="overflow-x-auto">
+            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
             <table class="min-w-full text-right text-sm">
                 <thead class="bg-zinc-50 text-xs font-black text-zinc-600">
                     <tr>
@@ -1268,6 +1269,7 @@ return new class extends Component {
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
 
         @if ($transfers->hasPages())
@@ -1279,7 +1281,7 @@ return new class extends Component {
 
     {{-- Create modal --}}
     @if ($showForm)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" wire:keydown.escape="closeForm">
+        <div class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" wire:keydown.escape="closeForm">
             <div class="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" @click.stop>
                 <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                     <div>
@@ -1382,7 +1384,7 @@ return new class extends Component {
 
     {{-- View modal --}}
     @if ($viewTransfer)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
                 <div class="flex items-center justify-between border-b border-zinc-200 p-5">
                     <div>
@@ -1398,6 +1400,7 @@ return new class extends Component {
                 </div>
                 <div class="px-5 pb-5">
                     <div class="overflow-hidden rounded-xl border border-zinc-200">
+                        <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                         <table class="min-w-full text-sm">
                             <thead class="bg-zinc-50"><tr><th class="px-4 py-3 text-right font-black">الصنف</th><th class="px-4 py-3 text-right font-black">الكمية</th></tr></thead>
                             <tbody class="divide-y divide-zinc-100">
@@ -1406,6 +1409,7 @@ return new class extends Component {
                                 @endforeach
                             </tbody>
                         </table>
+                        </div>
                     </div>
                     @if ($viewTransfer->notes)
                         <div class="mt-4 rounded-xl bg-zinc-50 p-4 text-sm font-bold text-zinc-700"><span class="font-black">ملاحظات:</span> {{ $viewTransfer->notes }}</div>
@@ -1417,7 +1421,7 @@ return new class extends Component {
 
     {{-- Cancel confirmation --}}
     @if ($cancelTransferId)
-        <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div class="app-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
                 <h2 class="text-lg font-black text-zinc-900">تأكيد الإلغاء</h2>
                 <p class="mt-2 text-sm leading-6 text-zinc-600">سيتم إلغاء التحويل. إذا كان مكتملًا فسيتم عكس الكمية من الفرع المستلم إلى الفرع المصدر.</p>

@@ -3096,6 +3096,7 @@ new class extends Component {
 
         $lines[] = '';
         $lines[] = 'شكراً لتعاملكم معنا';
+        $lines[] = 'جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS';
 
         return implode("\n", $lines);
     }
@@ -3195,6 +3196,7 @@ new class extends Component {
 
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
+                'storeName' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: $order->branch?->name ?: 'المتجر',
             ]);
 
             echo $pdf->output();
@@ -3215,7 +3217,7 @@ new class extends Component {
     }
 };
 ?>
-<div>
+<div class="pos-page">
     @if (config('branch-sync.mode') === 'edge')
         <div class="mx-auto mt-3 flex max-w-7xl flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
             <div>
@@ -3233,7 +3235,7 @@ new class extends Component {
             </button>
         </div>
     @endif
-    <div dir="rtl" class="h-[calc(100vh-4rem)] overflow-hidden bg-slate-100 font-sans select-none">
+    <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
 
         <div x-data="{
                 printInProgress: false,
@@ -3250,7 +3252,7 @@ new class extends Component {
                         this.printInProgress = false;
                     }
                 }
-            }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus(); input?.select(); })"
+            }" x-cloak x-init="$nextTick(() => { const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
             x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
             x-on:keydown.window.f1.prevent="$wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="$wire.holdInvoice()"
@@ -3266,7 +3268,7 @@ new class extends Component {
             x-on:keydown.window.f4.prevent="$wire.clearCart()"
             x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
             x-on:keydown.window.f10.prevent="$nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
-            class="flex h-full min-h-0 flex-col gap-1.5">
+            class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
             @if ($errorMessage || $successMessage)
@@ -3322,14 +3324,12 @@ new class extends Component {
                 </div>
             @endif
 
-            <div class="min-h-0 flex-1">
-                <section class="h-full min-h-0">
-                    <div class="grid h-full min-h-0 grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]"
+            <div class="pos-content min-w-0">
+                <section class="pos-content-section min-w-0">
+                    <div class="pos-content-grid grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]"
                         dir="ltr">
-                        @include('pages.tenant.pos.partials.cart')
-
-                        <aside
-                            class="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm {{ $this->invoiceIsLocked() ? 'opacity-70' : '' }}"
+                        <aside id="pos-products-panel"
+                            class="pos-products min-w-0 min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm {{ $this->invoiceIsLocked() ? 'opacity-70' : '' }}"
                             dir="rtl">
                             <div class="flex h-full min-h-0 flex-col">
 
@@ -3386,7 +3386,7 @@ new class extends Component {
 
                                 <div data-pos-products-panel class="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-2"
                                     tabindex="0">
-                                    <div data-pos-product-grid class="grid grid-cols-2 gap-2 xl:grid-cols-3">
+                                    <div data-pos-product-grid class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-3">
                                         @forelse ($quickProducts as $product)
                                             <button type="button" data-pos-product
                                                 data-product-index="{{ $loop->index }}"
@@ -3432,6 +3432,7 @@ new class extends Component {
                             </div>
                         </aside>
 
+                        @include('pages.tenant.pos.partials.cart')
                     </div>
 
 
@@ -3467,7 +3468,7 @@ new class extends Component {
                                         return;
                                     }
 
-                                    barcode.focus();
+                                    barcode.focus({ preventScroll: true });
                                     barcode.select?.();
                                 }, 50);
                             });
@@ -3812,7 +3813,7 @@ new class extends Component {
             </div>
 
             @if ($showCustomerPaymentModal)
-                <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4"
+                <div class="app-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4"
                     wire:key="sales-customer-payment-modal">
                     <div class="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
                         dir="rtl" @click.stop>
@@ -3932,11 +3933,7 @@ new class extends Component {
         opacity: .45;
     }
 
-    @media (max-width: 1023px) {
-        flux-main {
-            overflow-y: auto !important;
-        }
-    }
+
 
 
 </style>

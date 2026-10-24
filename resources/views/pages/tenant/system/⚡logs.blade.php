@@ -549,6 +549,8 @@ new class extends Component
 
         <div class="overflow-x-auto">
 
+            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
             <table class="min-w-full text-right text-sm">
 
                 <thead class="bg-gray-50 text-gray-600">
@@ -724,6 +726,7 @@ new class extends Component
                 </tbody>
 
             </table>
+            </div>
 
         </div>
 
@@ -752,7 +755,7 @@ new class extends Component
     @if($this->selectedLog)
 
         <div
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
             wire:click.self="closeDetails"
         >
 
@@ -962,6 +965,8 @@ new class extends Component
 
                         <div class="overflow-hidden rounded-xl border border-gray-200">
 
+                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                             <table class="min-w-full text-right text-sm">
 
                                 <thead class="bg-gray-50">
@@ -1064,6 +1069,7 @@ new class extends Component
                                 </tbody>
 
                             </table>
+                            </div>
 
                         </div>
 

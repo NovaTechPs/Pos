@@ -898,6 +898,8 @@ new class extends Component {
 
             <div class="overflow-x-auto">
 
+                <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                 <table class="w-full min-w-[950px] text-right text-sm">
 
                     <thead class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
@@ -1160,6 +1162,7 @@ new class extends Component {
                     </tbody>
 
                 </table>
+                </div>
 
             </div>
 
@@ -1457,6 +1460,8 @@ new class extends Component {
 
                             <div class="overflow-x-auto">
 
+                                <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+
                                 <table class="w-full min-w-[600px] text-right text-sm">
 
                                     <thead class="bg-zinc-50 dark:bg-zinc-800/60">
@@ -1539,6 +1544,7 @@ new class extends Component {
                                     </tbody>
 
                                 </table>
+                                </div>
 
                             </div>
 

@@ -145,7 +145,7 @@
     <div class="header">
 
         <div class="store-name">
-            {{ $ar($order->branch?->name ?? 'نقطة البيع') }}
+            {{ $ar($storeName ?? $order->branch?->name ?? 'المتجر') }}
         </div>
 
         <div class="invoice-title">
@@ -379,5 +379,6 @@
         {{ $ar('شكراً لتعاملكم معنا') }}
     </div>
 
+    <x-invoice-copyright :pdf="true" />
 </body>
 </html>
