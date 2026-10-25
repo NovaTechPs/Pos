@@ -41,6 +41,17 @@ test('clearing or saving an invoice prevents its draft from returning on refresh
     expect(Order::query()->count())->toBe($action === 'checkoutAndPrint' ? 1 : 0);
 })->with(['clearCart', 'checkoutAndPrint']);
 
+test('starting a new invoice uses the toolbar status without a duplicate notice', function (): void {
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('selectInlineProduct', $this->product->id)
+        ->call('startNewInvoice')
+        ->assertSet('cart', [])
+        ->assertSet('successMessage', null)
+        ->assertSee('فاتورة جديدة جاهزة')
+        ->assertDontSee('تم فتح فاتورة جديدة.')
+        ->assertDontSee('data-pos-notice-strip', false);
+});
+
 test('drafts are isolated between users and branches', function (): void {
     Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
     $other = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'is_owner' => true]);

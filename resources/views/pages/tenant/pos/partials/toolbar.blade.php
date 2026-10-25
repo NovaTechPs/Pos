@@ -301,6 +301,7 @@
 
         {{-- حالة الفاتورة --}}
         <span
+            title="{{ $currentInvoiceId ? 'اضغط تعديل لتغيير الفاتورة؛ الطباعة والنسخ متاحان مباشرة.' : '' }}"
             class="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[10px] font-black
                 {{
                     $currentInvoiceId

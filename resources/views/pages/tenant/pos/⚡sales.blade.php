@@ -1595,14 +1595,14 @@ new class extends Component {
         $this->customerSearch = '';
         $this->isReturnMode = $invoice->type === 'return';
         $this->errorMessage = null;
-        $this->successMessage = "تم تحميل الفاتورة {$invoice->invoice_number} للعرض فقط. اضغط «تعديل» للسماح بالتغيير.";
+        $this->successMessage = null;
     }
 
     public function startNewInvoice(): void
     {
         $this->clearCartState();
         $this->errorMessage = null;
-        $this->successMessage = 'تم فتح فاتورة جديدة.';
+        $this->successMessage = null;
     }
 
     public function deleteInvoice(): void
@@ -3479,40 +3479,34 @@ new class extends Component {
                 <button type="button" x-on:click="$el.closest('.pos-layout').querySelector('#pos-cart-panel').scrollIntoView({ block: 'start' })" class="min-h-10 flex-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700">السلة ({{ count($cart) }}) ↓</button>
             </nav>
 
-            @if ($errorMessage || $successMessage)
-                <div class="grid shrink-0 gap-2 md:grid-cols-2">
+            @if ($errorMessage || $successMessage || $this->has_below_cost_item)
+                <div data-pos-notice-strip class="pos-notice-strip flex shrink-0 flex-wrap items-start gap-1.5" dir="rtl">
                     @if ($errorMessage)
-                        <div
-                            data-pos-notice role="status" class="pos-notice flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 shadow-sm">
-                            <span>⚠ {{ $errorMessage }}</span>
-                            <button wire:click="$set('errorMessage', null)" class="mr-2 text-rose-500">✕</button>
+                        <div data-pos-notice role="alert" class="pos-notice flex items-start gap-1 bg-rose-50 text-rose-800">
+                            <details class="min-w-0">
+                                <summary class="cursor-pointer">⚠ {{ \Illuminate\Support\Str::limit($errorMessage, 65) }}</summary>
+                                <p class="mt-1 max-w-lg whitespace-normal">{{ $errorMessage }}</p>
+                            </details>
+                            <button type="button" wire:click="$set('errorMessage', null)" aria-label="إغلاق التنبيه">✕</button>
                         </div>
                     @endif
                     @if ($successMessage)
-                        <div
-                            data-pos-notice role="status" class="pos-notice flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm">
-                            <span>✓ {{ $successMessage }}</span>
-                            <button wire:click="$set('successMessage', null)" class="mr-2 text-emerald-500">✕</button>
+                        <div data-pos-notice role="status" class="pos-notice flex items-start gap-1 bg-emerald-50 text-emerald-800">
+                            <details class="min-w-0">
+                                <summary class="cursor-pointer">✓ {{ \Illuminate\Support\Str::limit($successMessage, 65) }}</summary>
+                                <p class="mt-1 max-w-lg whitespace-normal">{{ $successMessage }}</p>
+                            </details>
+                            <button type="button" wire:click="$set('successMessage', null)" aria-label="إغلاق رسالة النجاح">✕</button>
+                        </div>
+                    @endif
+                    @if ($this->has_below_cost_item)
+                        <div data-pos-notice role="status" class="pos-notice flex items-center gap-2 bg-amber-50 text-amber-900">
+                            <span>⚠ بيع أقل من التكلفة</span>
+                            <button type="button" wire:click="openCostModal" class="underline">التفاصيل</button>
                         </div>
                     @endif
                 </div>
             @endif
-
-            @if ($this->has_below_cost_item)
-                <div
-                    data-pos-notice role="status" class="pos-notice flex shrink-0 items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 shadow-sm">
-                    <span>⚠ توجد أصناف بسعر بيع أقل من التكلفة.</span>
-                    <button wire:click="openCostModal" class="underline">عرض التفاصيل</button>
-                </div>
-            @endif
-
-            @if ($this->invoiceIsLocked())
-                <div
-                    data-pos-notice role="status" class="pos-notice shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-black text-amber-800">
-                    🔒 فاتورة محفوظة للعرض. اضغط «تعديل» لتغييرها؛ الطباعة والنسخ متاحان.
-                </div>
-            @endif
-
             <div class="pos-content min-w-0">
                 <section class="pos-content-section min-w-0">
                     <div class="pos-content-grid grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]"

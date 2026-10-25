@@ -67,8 +67,11 @@
 }
 
 @media screen {
-    .pos-notice { padding: 0.375rem 0.625rem; border: 0; border-radius: 0.5rem; font-size: 0.6875rem; font-weight: 500; line-height: 1.5; box-shadow: none; }
-    .pos-notice button { flex-shrink: 0; min-width: 1.75rem; min-height: 1.75rem; }
+    .pos-notice { max-width: 100%; padding: 0.25rem 0.5rem; border: 0; border-radius: 0.5rem; font-size: 0.6875rem; font-weight: 500; line-height: 1.5; box-shadow: none; }
+    .pos-notice button { flex-shrink: 0; min-width: 1.25rem; min-height: 1.25rem; }
+    .pos-notice summary { list-style: none; }
+    .pos-notice summary::-webkit-details-marker { display: none; }
+    .pos-notice summary::after { content: ' ⌄'; opacity: 0.6; }
     #pos-cart-panel, #pos-products-panel { scroll-margin-top: 0.5rem; }
 }
 
