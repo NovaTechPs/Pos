@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\TenantDashboardController;
 use Illuminate\Support\Facades\Route;
 
 // الصفحة الرئيسية
@@ -26,8 +27,7 @@ Route::middleware(['auth', 'verified'])
     ->group(function () {
 
         // Dashboard
-        Route::view('/', 'pages.tenant.dashboard')
-            ->middleware('can:dashboard.view')
+        Route::get('/', TenantDashboardController::class)
             ->name('dashboard');
 
         // Branches / Employees / Roles / Customers

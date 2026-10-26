@@ -54,15 +54,6 @@
 
     @fluxScripts
 
-    <script>
-        window.addEventListener('load', function () {
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js').catch(function (error) {
-                    console.warn('POS Service Worker registration failed:', error);
-                });
-            }
-        });
-    </script>
 
 </body>
 </html>

@@ -6,6 +6,7 @@
     <title>WaslaPOS - Retail Management System</title>
     <link rel="icon" href="{{ asset('favicon.ico') }}?v=waslapos-1" sizes="any">
     <link rel="icon" href="{{ asset('favicon.svg') }}?v=waslapos-1" type="image/svg+xml">
+    @include('layouts.partials.pwa')
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

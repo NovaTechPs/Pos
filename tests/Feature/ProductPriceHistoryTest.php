@@ -133,3 +133,23 @@ test('invoice offers price history for the selected product before adding it to 
     $button = (new DOMXPath($dom))->query('//button[@data-entry-price-history]')->item(0);
     expect($button->hasAttribute('disabled'))->toBeFalse();
 })->with(['pages::tenant.sales.invoices', 'pages::tenant.purchases.invoices']);
+
+test('price history presents three linked tabs with the appropriate initial selection', function (bool $withCustomer): void {
+    $component = Livewire::actingAs($this->user)->test('product-price-history-modal')
+        ->dispatch('open-product-price-history', productId: $this->product->id, customerId: $withCustomer ? $this->customer->id : null)
+        ->assertSee('أسعار هذا الزبون')->assertSee('أسعار كل الزبائن');
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    expect($xpath->query('//*[@role="tab"]')->length)->toBe(3)
+        ->and($xpath->query('//*[@role="tabpanel"]')->length)->toBe(3);
+    foreach (['costs', 'customerSales', 'sales'] as $tab) {
+        $button = $xpath->query('//*[@id="price-tab-'.$tab.'"]')->item(0);
+        $panel = $xpath->query('//*[@id="price-panel-'.$tab.'"]')->item(0);
+        expect($button->getAttribute('aria-controls'))->toBe($panel->getAttribute('id'))
+            ->and($panel->getAttribute('aria-labelledby'))->toBe($button->getAttribute('id'))
+            ->and($panel->getAttribute('x-show'))->toBe("activePriceTab === '".$tab."'");
+    }
+    $state = $xpath->query('//*[@x-data and @dir="rtl"]')->item(0)->getAttribute('x-data');
+    expect($state)->toContain("activePriceTab: '".($withCustomer ? 'customerSales' : 'costs')."'");
+})->with([true, false]);
