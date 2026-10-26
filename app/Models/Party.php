@@ -21,6 +21,7 @@ class Party extends Model
         'tenant_id',
         'branch_id',
         'name',
+        'code',
         'phone',
         'email',
         'tax_number',
@@ -38,6 +39,28 @@ class Party extends Model
         'opening_balance' => 'decimal:2',
         'current_balance' => 'decimal:2',
     ];
+
+    /** @param array<string, mixed> $options */
+    public function save(array $options = []): bool
+    {
+        if ($this->exists) {
+            return parent::save($options);
+        }
+
+        return $this->getConnection()->transaction(function () use ($options): bool {
+            Tenant::on($this->getConnectionName())->whereKey($this->tenant_id)->lockForUpdate()->firstOrFail();
+
+            if (blank($this->code)) {
+                $lastCode = static::on($this->getConnectionName())->withTrashed()
+                    ->where('tenant_id', $this->tenant_id)
+                    ->max($this->getConnection()->raw('CAST(code AS DECIMAL(20, 0))'));
+
+                $this->code = (string) ((int) $lastCode + 1);
+            }
+
+            return parent::save($options);
+        });
+    }
 
     protected static function boot(): void
     {

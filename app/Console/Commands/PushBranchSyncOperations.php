@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\BranchSyncOperation;
+use App\Services\BranchSyncCredentials;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\Http;
 #[Description('Send pending local branch operations to the central server.')]
 class PushBranchSyncOperations extends Command
 {
-    public function handle(): int
+    public function handle(BranchSyncCredentials $credentials): int
     {
         if (config('branch-sync.mode') !== 'edge') {
             $this->error('Branch synchronization push is available only in edge mode.');
@@ -20,8 +21,27 @@ class PushBranchSyncOperations extends Command
             return self::FAILURE;
         }
 
+        $connections = $credentials->all();
+        if ($connections === []) {
+            $this->error('Sign in online with an employee account to prepare branch synchronization.');
+
+            return self::FAILURE;
+        }
+        $result = self::SUCCESS;
+        foreach ($connections as $connection) {
+            if ($this->pushForBranch($connection) !== self::SUCCESS) {
+                $result = self::FAILURE;
+            }
+        }
+
+        return $result;
+    }
+
+    /** @param array{tenant_id: int, branch_id: int, token: string} $connection */
+    private function pushForBranch(array $connection): int
+    {
         $serverUrl = rtrim((string) config('branch-sync.server_url'), '/');
-        $token = (string) config('branch-sync.token');
+        $token = $connection['token'];
 
         if ($serverUrl === '' || $token === '') {
             $this->error('Set BRANCH_SYNC_SERVER_URL and BRANCH_SYNC_TOKEN on this branch server.');
@@ -36,6 +56,8 @@ class PushBranchSyncOperations extends Command
         }
 
         $operations = BranchSyncOperation::query()
+            ->when($connection['tenant_id'] > 0, fn ($query) => $query->where('tenant_id', $connection['tenant_id']))
+            ->when($connection['branch_id'] > 0, fn ($query) => $query->where('branch_id', $connection['branch_id']))
             ->where('status', 'pending')
             ->orderBy('id')
             ->limit(100)
@@ -52,6 +74,7 @@ class PushBranchSyncOperations extends Command
         try {
             $response = Http::acceptJson()
                 ->withToken($token)
+                ->connectTimeout(3)
                 ->timeout(20)
                 ->post($serverUrl.'/api/branch-sync/operations', [
                     'operations' => $operations->map(fn (BranchSyncOperation $operation): array => [

@@ -14,6 +14,7 @@ return [
     */
 
     'name' => env('APP_NAME', 'WaslaPOS'),
+    'desktop' => (bool) env('APP_DESKTOP', false),
 
     /*
     |--------------------------------------------------------------------------

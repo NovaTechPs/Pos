@@ -25,7 +25,7 @@ test('can list and create customers', function () {
     $response->assertStatus(200)
         ->assertJsonStructure([
             'customers' => [
-                '*' => ['id', 'name', 'phone'],
+                '*' => ['id', 'code', 'name', 'phone'],
             ],
         ]);
 
@@ -37,7 +37,8 @@ test('can list and create customers', function () {
     ]);
 
     $createResponse->assertStatus(201)
-        ->assertJsonPath('customer.name', 'محمد أحمد');
+        ->assertJsonPath('customer.name', 'محمد أحمد')
+        ->assertJsonPath('customer.code', '2');
 });
 
 test('can create and list suppliers without exposing another tenant', function () {

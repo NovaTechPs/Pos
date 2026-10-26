@@ -64,7 +64,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->configureDefaults();
 
-        if (config('app.env') !== 'local' || request()->header('X-Forwarded-Proto') === 'https') {
+        if (! config('app.desktop') && (config('app.env') !== 'local' || request()->header('X-Forwarded-Proto') === 'https')) {
             URL::forceScheme('https');
         }
 

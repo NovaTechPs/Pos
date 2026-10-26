@@ -161,17 +161,16 @@ return [
     */
 
     'features' => [
-        Features::registration(),
-        Features::resetPasswords(),
+        ...(config('app.desktop') ? [] : [Features::registration(), Features::resetPasswords()]),
         Features::emailVerification(),
         Features::twoFactorAuthentication([
             'confirm' => true,
             'confirmPassword' => true,
             // 'window' => 0
         ]),
-        Features::passkeys([
+        ...(config('app.desktop') ? [] : [Features::passkeys([
             'confirmPassword' => true,
-        ]),
+        ])]),
     ],
 
 ];

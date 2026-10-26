@@ -1130,7 +1130,7 @@ new class extends Component {
                     'tax_number',
                     'like',
                     '%' . $search . '%'
-                );
+                )->orWhere('code', 'like', '%' . $search . '%');
             });
         }
 
@@ -1257,7 +1257,7 @@ new class extends Component {
                     <input
                         type="text"
                         wire:model.live.debounce.300ms="search"
-                        placeholder="ابحث بالاسم، الهاتف، العنوان أو الرقم الضريبي..."
+                        placeholder="ابحث بالرمز، الاسم، الهاتف، العنوان أو الرقم الضريبي..."
                         class="w-full pl-4 pr-10 py-2.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600"
                     >
 
@@ -1352,6 +1352,10 @@ new class extends Component {
                         </th>
 
                         <th class="p-3 sm:p-4">
+                            رمز العميل
+                        </th>
+
+                        <th class="p-3 sm:p-4">
                             الطرف
                         </th>
 
@@ -1399,6 +1403,10 @@ new class extends Component {
                                 class="p-3 sm:p-4 text-gray-400"
                             >
                                 {{ $parties->firstItem() + $loop->index }}
+                            </td>
+
+                            <td class="p-3 sm:p-4 font-semibold whitespace-nowrap" dir="ltr" data-party-code="{{ $party->code }}">
+                                {{ $party->code ?? '-' }}
                             </td>
 
 
@@ -1563,7 +1571,7 @@ new class extends Component {
                         <tr>
 
                             <td
-                                colspan="8"
+                                colspan="9"
                                 class="p-12 text-center"
                             >
 

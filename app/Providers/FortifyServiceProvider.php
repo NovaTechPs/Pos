@@ -5,8 +5,10 @@ namespace App\Providers;
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Models\User;
+use App\Services\EmployeeBranchSyncLogin;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -39,6 +41,14 @@ class FortifyServiceProvider extends ServiceProvider
     private function configureActions(): void
     {
         Fortify::authenticateUsing(function (Request $request): ?User {
+            if (config('branch-sync.mode') === 'edge') {
+                $user = app(EmployeeBranchSyncLogin::class)->authenticate($request);
+                if ($user) {
+                    defer(fn () => Artisan::call('branch-sync:pull'), 'branch-sync.pull');
+                }
+
+                return $user;
+            }
             $user = User::query()->where('email', $request->string('email')->toString())->first();
 
             return $user && $user->canAccessApplication() && Hash::check($request->string('password')->toString(), $user->password)

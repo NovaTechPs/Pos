@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\BranchSyncDevice;
 use App\Models\Employee;
 use App\Models\EmployeeAttendance;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 
@@ -20,6 +22,7 @@ class AuthController extends Controller
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
             'code' => ['nullable', 'string', 'regex:/^[0-9]{6}$/'],
+            'offline_device_name' => ['sometimes', 'required', 'string', 'max:120'],
         ]);
 
         $user = User::query()->where('email', $validated['email'])->first();
@@ -51,6 +54,31 @@ class AuthController extends Controller
         }
 
         $user->load(['role', 'branch']);
+        if (isset($validated['offline_device_name'])) {
+            abort_unless(config('branch-sync.mode') === 'central', 403);
+            abort_unless($user->hasPermission('pos.view') && $user->hasPermission('pos.sale.checkout') && $user->branch
+                && (int) $user->branch->tenant_id === (int) $user->tenant_id, 403, 'A POS employee must be assigned to a branch.');
+            $plainTextToken = Str::random(64);
+            BranchSyncDevice::query()->create([
+                'device_uuid' => (string) Str::uuid(),
+                'tenant_id' => $user->tenant_id,
+                'branch_id' => $user->branch_id,
+                'name' => $validated['offline_device_name'],
+                'token_hash' => hash('sha256', $plainTextToken),
+            ]);
+
+            return response()->json([
+                'user' => $user->only(['id', 'name', 'email', 'email_verified_at', 'tenant_id', 'branch_id', 'is_owner', 'is_active']),
+                'tenant' => $user->tenant->only(['id', 'name', 'phone', 'is_active']),
+                'branch' => $user->branch->only(['id', 'tenant_id', 'name', 'phone', 'address', 'type']),
+                'role' => $user->role && (int) $user->role->tenant_id === (int) $user->tenant_id
+                    ? $user->role->only(['id', 'tenant_id', 'name', 'description']) : null,
+                'permissions' => $user->role && (int) $user->role->tenant_id === (int) $user->tenant_id
+                    ? $user->role->permissions()->get(['permissions.id', 'name', 'display_name', 'group']) : [],
+                'two_factor_required' => (bool) ($user->two_factor_secret && $user->two_factor_confirmed_at),
+                'branch_sync' => ['token' => $plainTextToken, 'tenant_id' => $user->tenant_id, 'branch_id' => $user->branch_id],
+            ]);
+        }
         $employee = Employee::query()->where('user_id', $user->id)
             ->where(function ($query) use ($user): void {
                 $query->where('tenant_id', $user->tenant_id)

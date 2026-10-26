@@ -4,7 +4,11 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "desktop:prepare": "node node_modules/electron/install.js && npm run build && node resources/desktop/prepare.cjs",
+        "desktop:dev": "electron resources/desktop/main.cjs",
+        "desktop:test": "php artisan test --compact tests/Unit/DesktopRuntimeTest.php tests/Unit/DesktopPackagedAppTest.php",
+        "desktop:build": "npm run desktop:prepare && electron-builder --config resources/desktop/builder.cjs --win nsis --x64 --publish never"
     },
     "dependencies": {
         "@laravel/passkeys": "^0.2.0",
@@ -19,5 +23,12 @@
         "@rollup/rollup-linux-x64-gnu": "4.9.5",
         "@tailwindcss/oxide-linux-x64-gnu": "^4.0.1",
         "lightningcss-linux-x64-gnu": "^1.29.1"
-    }
+    },
+    "devDependencies": {
+        "electron": "45.0.0",
+        "electron-builder": "26.18.0"
+    },
+    "name": "waslapos-desktop",
+    "version": "0.1.0",
+    "main": "resources/desktop/main.cjs"
 }

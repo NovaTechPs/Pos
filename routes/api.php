@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\BranchSyncCatalogController;
 use App\Http\Controllers\Api\BranchSyncOperationController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\EmployeeApiController;
@@ -74,6 +75,10 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::post('/employee/advances', [EmployeeApiController::class, 'requestAdvance']);
     Route::post('/employee/leaves', [EmployeeApiController::class, 'requestLeave']);
 });
+
+Route::middleware(['branch.sync', 'throttle:120,1'])
+    ->get('/branch-sync/catalog', [BranchSyncCatalogController::class, 'index'])
+    ->name('api.branch-sync.catalog');
 
 Route::middleware(['branch.sync', 'throttle:120,1'])
     ->post('/branch-sync/operations', [BranchSyncOperationController::class, 'store'])

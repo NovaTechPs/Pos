@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
             $table->string('name');
+            $table->string('code')->nullable(); // إضافة حقل الرمز
             $table->string('phone')->nullable();
             $table->string('email')->nullable();
             $table->string('tax_number')->nullable();
@@ -28,6 +29,7 @@ return new class extends Migration
             $table->softDeletes();
 
             $table->index(['tenant_id', 'type', 'is_active']);
+            $table->unique(['tenant_id', 'code']);
         });
     }
 

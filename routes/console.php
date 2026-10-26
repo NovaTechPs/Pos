@@ -9,6 +9,13 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('branch-sync:push')
-    ->everyMinute()
+    ->everyTenSeconds()
     ->withoutOverlapping()
+    ->runInBackground()
+    ->when(fn (): bool => config('branch-sync.mode') === 'edge');
+
+Schedule::command('branch-sync:pull')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground()
     ->when(fn (): bool => config('branch-sync.mode') === 'edge');
