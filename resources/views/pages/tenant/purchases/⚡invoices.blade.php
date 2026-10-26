@@ -1191,7 +1191,7 @@ new class extends Component {
             <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-500">
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">↑ ↓</kbd> تنقل</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">← →</kbd> الخانات</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> جديدة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> الأسعار</span><span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Shift+F2</kbd> جديدة</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F3</kbd> حفظ</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F6</kbd> حفظ وطباعة</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F7</kbd> استعلام</span>
@@ -1310,82 +1310,116 @@ new class extends Component {
         <div class="grid gap-3 xl:grid-cols-12">
 
             {{-- المواد --}}
-            <div class="min-w-0 xl:col-span-8">
+            <div class="min-w-0 xl:col-span-12">
                 <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
-                    <div class="border-b border-slate-200 bg-slate-50 p-3">
-                        <div class="relative">
-                            <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">🔎</div>
-                            <input
-                                id="product-search-input"
-                                x-ref="productSearch"
-                                type="text"
-                                wire:model.live.debounce.160ms="rowSearch"
-                                placeholder="ابحث عن مادة أو امسح الباركود ثم Enter..."
-                                autocomplete="off"
-                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-black text-slate-900 outline-none focus:border-indigo-400"
-                            />
+            <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-end">
 
-                            @if ($rowSearch !== '' && !$selectedProductId)
-                                <div class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                                    <div class="max-h-80 overflow-y-auto p-1.5" x-ref="productResults">
-                                        @forelse ($productResults as $product)
-                                            @php($branchProduct = $product->branchProducts->first())
-                                            <button type="button" data-product-result data-result-index="{{ $loop->index }}" wire:click="selectProduct({{ $product->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right hover:bg-slate-50">
+                <div class="min-w-0 flex-1">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
+
+                    <div class="relative">
+                        <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: null })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
+                        <input
+                            id="product-search-input"
+                            x-ref="productSearch"
+                            type="text"
+                            wire:model.live.debounce.120ms="rowSearch"
+                            autocomplete="off"
+                            placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..."
+                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
+                        />
+
+                        @if (count($productResults) > 0)
+                            <div class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                                <div class="max-h-80 overflow-y-auto p-1.5" x-ref="productResults">
+                                    @foreach ($productResults as $product)
+                                        @php
+                                            $bp = $product->branchProducts->first();
+                                            $salePrice = (float) $product->cost_price;
+                                            $stock = (float) ($bp?->stock_quantity ?? 0);
+                                        @endphp
+
+                                        <button
+                                            type="button"
+                                            data-product-result
+                                            data-result-index="{{ $loop->index }}"
+                                            wire:click="selectProduct({{ $product->id }})"
+                                            class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-indigo-50"
+                                        >
+                                            <div class="flex min-w-0 items-center gap-3">
+                                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-black text-slate-500">
+                                                    {{ $product->id }}
+                                                </div>
                                                 <div class="min-w-0">
                                                     <div class="truncate text-sm font-black text-slate-800">{{ $product->name }}</div>
-                                                    <div class="mt-1 flex flex-wrap gap-2 text-[10px] font-bold text-slate-400">
-                                                        <span>تكلفة: {{ number_format((float) $product->cost_price, 2) }}</span>
-                                                        <span>بيع: {{ number_format((float) ($branchProduct?->retail_price ?? 0), 2) }}</span>
+                                                    <div class="mt-0.5 text-[11px] font-semibold text-slate-400">
+                                                        المخزون: {{ number_format($stock, 2) }}
                                                     </div>
                                                 </div>
-                                                <div class="text-left">
-                                                    <div class="font-mono text-xs font-black text-indigo-700">{{ number_format((float) ($branchProduct?->stock_quantity ?? 0), 2) }}</div>
-                                                    <div class="text-[10px] font-bold text-slate-400">الرصيد الحالي</div>
-                                                </div>
-                                            </button>
-                                        @empty
-                                            <div class="px-3 py-6 text-center text-xs font-bold text-slate-400">لا توجد مادة مطابقة.</div>
-                                        @endforelse
-                                    </div>
-                                </div>
-                            @endif
-                        </div>
-                    </div>
+                                            </div>
 
-                    @if ($selectedProductId)
-                        <div class="border-b border-indigo-100 bg-indigo-50/50 p-3">
-                            <div class="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-12">
-                                <div class="lg:col-span-4">
-                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">المادة المحددة</label>
-                                    <div class="rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black text-slate-900">{{ $selectedProductName }}</div>
-                                </div>
-                                <div class="lg:col-span-2">
-                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">الكمية</label>
-                                    <input id="quantity-input" x-ref="quantity" type="number" min="0.01" step="0.01" wire:model.live="selectedQuantity" x-on:keydown.enter.prevent="$nextTick(() => $refs.purchasePriceInput?.focus())" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
-                                </div>
-                                <div class="lg:col-span-2">
-                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">سعر التكلفة</label>
-                                    <input x-ref="purchasePriceInput" type="number" min="0" step="0.01" wire:model.live="selectedPurchasePrice" wire:keydown.enter.prevent="commitRowToCart" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
-                                </div>
-                                <div class="lg:col-span-2">
-                                    <label class="mb-1 block text-[10px] font-black text-indigo-700">المخزون قبل</label>
-                                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black text-slate-700">{{ number_format($selectedStock, 2) }}</div>
-                                </div>
-                                <div class="lg:col-span-2">
-                                    <button type="button" wire:click="commitRowToCart" class="w-full rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-black text-white hover:bg-indigo-500">+ إضافة</button>
+                                            <div class="shrink-0 text-left">
+                                                <div class="font-mono text-sm font-black text-indigo-700">{{ number_format($salePrice, 2) }}</div>
+                                                <div class="mt-0.5 text-[10px] font-bold text-slate-400">سعر التكلفة</div>
+                                            </div>
+                                        </button>
+                                    @endforeach
                                 </div>
                             </div>
-                        </div>
-                    @endif
+                        @endif
+                    </div>
+                </div>
+
+                <div class="w-full lg:w-40">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">الكمية</label>
+                    <input
+                        x-ref="quantity"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        wire:model.live="selectedQuantity"
+                        x-on:keydown.enter.prevent="$nextTick(() => $refs.purchasePriceInput?.focus())"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
+                    />
+                </div>
+
+                <div class="w-full lg:w-40">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">سعر التكلفة</label>
+                    <input
+                        x-ref="purchasePriceInput"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        wire:model.live="selectedPurchasePrice"
+                        wire:keydown.enter.prevent="commitRowToCart"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
+                    />
+                </div>
+
+                <div class="w-full lg:w-40">
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">الإجمالي</label>
+                    <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900">
+                        {{ number_format(max(0, $selectedPurchasePrice * $selectedQuantity), 2) }}
+                    </div>
+                </div>
+
+                <button
+                    type="button"
+                    wire:click="commitRowToCart"
+                    class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                >
+                    + إضافة
+                </button>
+            </div>
 
                     {{-- جدول المواد --}}
                     <div class="hidden md:block">
                         <div class="max-h-[52vh] overflow-auto">
                             <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                             <table class="w-full min-w-[850px] text-right">
-                                <thead class="sticky top-0 z-20 border-b border-slate-200 bg-slate-50">
-                                    <tr class="text-[11px] font-black text-slate-500">
+                                <thead class="sticky top-0 z-20 border-b border-slate-200 bg-slate-900">
+                                    <tr class="text-[11px] font-black text-white">
                                         <th class="w-12 px-3 py-3">#</th>
                                         <th class="px-3 py-3">المادة</th>
                                         <th class="w-28 px-3 py-3">الكمية</th>
@@ -1405,7 +1439,7 @@ new class extends Component {
                                         >
                                             <td class="px-3 py-3 text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
                                             <td class="px-3 py-3">
-                                                <div class="text-sm font-black text-slate-800">{{ $item['name'] }}</div>
+                                                <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: null })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }}</div>
                                                 @if(isset($item['stock']))
                                                     <div class="mt-1 text-[10px] font-semibold text-slate-400">المخزون الحالي: {{ number_format((float) $item['stock'], 2) }}</div>
                                                 @endif
@@ -1480,7 +1514,7 @@ new class extends Component {
             </div>
 
             {{-- الملخص والدفع --}}
-            <div class="xl:col-span-4">
+            <div class="xl:col-span-12">
                 <div class="sticky top-3 space-y-3">
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div class="mb-3 flex items-center justify-between">
@@ -1608,6 +1642,7 @@ new class extends Component {
             </div>
         </div>
     </div>
+    <livewire:product-price-history-modal />
 </flux:main>
 
 @script
@@ -1655,7 +1690,11 @@ new class extends Component {
 
                 if (key === 'F2') {
                     event.preventDefault();
-                    this.$wire.startNewInvoice();
+                    if (event.shiftKey) {
+                        this.$wire.startNewInvoice();
+                    } else {
+                        this.$refs.priceHistoryTrigger?.click();
+                    }
                     return;
                 }
 

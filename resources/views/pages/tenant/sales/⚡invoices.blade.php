@@ -1075,7 +1075,7 @@ new class extends Component {
             <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-500">
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">↑ ↓</kbd> تنقل</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">← →</kbd> الخانات</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> جديدة</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> الأسعار</span><span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Shift+F2</kbd> جديدة</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F3</kbd> حفظ</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F6</kbd> حفظ وطباعة</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F7</kbd> استعلام</span>
@@ -1286,6 +1286,7 @@ new class extends Component {
                     <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
 
                     <div class="relative">
+                        <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                         <input
                             id="product-search-input"
                             x-ref="productSearch"
@@ -1293,7 +1294,7 @@ new class extends Component {
                             wire:model.live.debounce.120ms="rowSearch"
                             autocomplete="off"
                             placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..."
-                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
+                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
                         />
 
                         @if (count($productResults) > 0)
@@ -1428,7 +1429,7 @@ new class extends Component {
                                 </td>
 
                                 <td class="px-3 py-2.5">
-                                    <div class="text-sm font-black text-slate-800">{{ $item['name'] }}</div>
+                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }}</div>
                                     <div class="mt-0.5 text-[10px] font-semibold text-slate-400">
                                         تكلفة الوحدة: {{ number_format((float) $item['cost'], 2) }}
                                     </div>
@@ -1696,6 +1697,7 @@ new class extends Component {
 
         <div id="sales-print-template" class="hidden"></div>
     </div>
+    <livewire:product-price-history-modal />
 </flux:main>
 
 @script
@@ -1890,7 +1892,11 @@ new class extends Component {
 
             if (key === 'F2') {
                 event.preventDefault();
-                this.$wire.startNewInvoice();
+                if (event.shiftKey) {
+                    this.$wire.startNewInvoice();
+                } else {
+                    this.$refs.priceHistoryTrigger?.click();
+                }
                 return;
             }
 
