@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\PartyCodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -51,11 +52,9 @@ class Party extends Model
             Tenant::on($this->getConnectionName())->whereKey($this->tenant_id)->lockForUpdate()->firstOrFail();
 
             if (blank($this->code)) {
-                $lastCode = static::on($this->getConnectionName())->withTrashed()
-                    ->where('tenant_id', $this->tenant_id)
-                    ->max($this->getConnection()->raw('CAST(code AS DECIMAL(20, 0))'));
-
-                $this->code = (string) ((int) $lastCode + 1);
+                $this->code = app(PartyCodeGenerator::class)->nextCode(
+                    $this->getConnection()->table('parties')->where('tenant_id', $this->tenant_id),
+                );
             }
 
             return parent::save($options);
