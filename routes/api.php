@@ -80,6 +80,10 @@ Route::middleware(['branch.sync', 'throttle:120,1'])
     ->get('/branch-sync/catalog', [BranchSyncCatalogController::class, 'index'])
     ->name('api.branch-sync.catalog');
 
+Route::middleware(['branch.sync', 'throttle:240,1'])
+    ->get('/branch-sync/pos-catalog', [BranchSyncCatalogController::class, 'live'])
+    ->name('api.branch-sync.pos-catalog');
+
 Route::middleware(['branch.sync', 'throttle:120,1'])
     ->post('/branch-sync/operations', [BranchSyncOperationController::class, 'store'])
     ->name('api.branch-sync.operations.store');

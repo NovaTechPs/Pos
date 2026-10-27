@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
-#[Signature('branch-sync:push')]
+#[Signature('branch-sync:push {--tenant=} {--branch=}')]
 #[Description('Send pending local branch operations to the central server.')]
 class PushBranchSyncOperations extends Command
 {
@@ -29,6 +29,10 @@ class PushBranchSyncOperations extends Command
         }
         $result = self::SUCCESS;
         foreach ($connections as $connection) {
+            if (($this->option('tenant') !== null && $connection['tenant_id'] !== (int) $this->option('tenant'))
+                || ($this->option('branch') !== null && $connection['branch_id'] !== (int) $this->option('branch'))) {
+                continue;
+            }
             if ($this->pushForBranch($connection) !== self::SUCCESS) {
                 $result = self::FAILURE;
             }
@@ -74,8 +78,8 @@ class PushBranchSyncOperations extends Command
         try {
             $response = Http::acceptJson()
                 ->withToken($token)
-                ->connectTimeout(3)
-                ->timeout(20)
+                ->connectTimeout(config('app.desktop') ? 1 : 3)
+                ->timeout(config('app.desktop') ? 4 : 20)
                 ->post($serverUrl.'/api/branch-sync/operations', [
                     'operations' => $operations->map(fn (BranchSyncOperation $operation): array => [
                         'operation_uuid' => $operation->operation_uuid,

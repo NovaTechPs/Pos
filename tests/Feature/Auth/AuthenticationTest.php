@@ -24,6 +24,22 @@ test('users can authenticate using the login screen', function () {
     $this->assertAuthenticated();
 });
 
+test('desktop startup returns to point of sale after authentication', function (): void {
+    config(['app.desktop' => true]);
+    $user = User::factory()->create();
+
+    $this->get(route('tenant.pos'))
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('url.intended', route('tenant.pos'));
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertSessionHasNoErrors()->assertRedirect(route('tenant.pos'));
+
+    $this->assertAuthenticatedAs($user);
+});
+
 test('users can not authenticate with invalid password', function () {
     $user = User::factory()->create();
 

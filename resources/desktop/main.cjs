@@ -146,7 +146,7 @@ async function start() {
             pull.on('error', error => phpLog.write(error.message + '\n'));
         }
     }, 10000);
-    await window.loadURL(origin + '/login');
+    await window.loadURL(origin + '/dashboard/pos');
     await showMenu();
     if (smokeTest) {
         const details = await window.webContents.executeJavaScript(`({

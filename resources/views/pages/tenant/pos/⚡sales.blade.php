@@ -21,8 +21,44 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\TenantSetting;
+use App\Services\DesktopPosConnection;
 
 new class extends Component {
+    #[Locked]
+    public string $connectionState = 'offline';
+
+    /** @param array<string, mixed> $filters
+     * @return list<int>|null
+     */
+    private function refreshRemoteCatalog(string $entity = 'products', array $filters = []): ?array
+    {
+        $connection = app(DesktopPosConnection::class);
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+        if (!$connection->enabled() || !$tenantId || !$branchId) {
+            return null;
+        }
+        $ids = $connection->read((int) $tenantId, (int) $branchId, $entity, $filters);
+        $this->connectionState = $connection->state;
+        if ($ids !== null) {
+            $this->allowNegativeStock = TenantSetting::getBool((int) $tenantId, 'allow_negative_stock');
+            $this->unifiedStock = TenantSetting::getBool((int) $tenantId, 'unified_stock');
+            $this->mergeSimilarProducts = TenantSetting::getBool((int) $tenantId, 'merge_similar_products');
+            $this->categories = Category::query()->where('tenant_id', $tenantId)->orderBy('name')->get()->toArray();
+        }
+
+        return $ids;
+    }
+
+    public function refreshLiveData(): void
+    {
+        if (app(DesktopPosConnection::class)->enabled() && $this->tenantId() && $this->getActiveBranchId()) {
+            app(DesktopPosConnection::class)->retry((int) $this->tenantId(), (int) $this->getActiveBranchId());
+        }
+        $this->loadQuickProducts();
+        $this->refreshBranchSyncStatus();
+    }
+
     #[Locked]
     public ?string $draftContextKey = null;
     public array $receipt = [];
@@ -666,6 +702,7 @@ new class extends Component {
             $this->refreshBranchSyncStatus();
 
             if ($shift->wasRecentlyCreated) {
+                $this->refreshLiveData();
                 $this->dispatch('pos-sound', type: 'shift-open');
             }
         } catch (\Throwable $e) {
@@ -814,6 +851,7 @@ new class extends Component {
             $this->clearCartState(false);
             $this->errorMessage = null;
             $this->successMessage = 'تم إغلاق الشيفت وتسوية الصندوق بنجاح.';
+            $this->refreshLiveData();
             $this->dispatch('pos-sound', type: 'shift-close');
         } catch (\Throwable $e) {
             Log::error('POS shift closing failed', [
@@ -862,9 +900,11 @@ new class extends Component {
             return;
         }
 
+        $remoteIds = $this->refreshRemoteCatalog(filters: ['search' => $search]);
         $this->inlineSearchResults = Product::query()
             ->select(['id', 'tenant_id', 'name', 'product_number'])
             ->where('tenant_id', $tenantId)
+            ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
             ->where(function ($query) use ($keywords, $search, $tenantId): void {
                 $query
                     ->where(function ($nameQuery) use ($keywords): void {
@@ -961,9 +1001,13 @@ new class extends Component {
             return;
         }
 
+        $remoteIds = $this->refreshRemoteCatalog(filters: array_filter([
+            'search' => trim($this->productSearchQuery), 'category_id' => $this->selectedCategoryId,
+        ], fn ($value) => $value !== null && $value !== ''));
         $query = Product::query()
             ->select(['id', 'tenant_id', 'name', 'category_id', 'product_number'])
             ->where('tenant_id', $tenantId)
+            ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
             ->with([
                 'barcodes' => fn ($q) => $q->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
                 'branchProducts' => fn ($q) => $q->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity', 'offer_quantity', 'offer_price'])->where('branch_id', $branchId),
@@ -1053,8 +1097,10 @@ new class extends Component {
             return;
         }
 
+        $remoteIds = $this->refreshRemoteCatalog(filters: ['barcode' => $barcode]);
         $record = ProductBarcode::query()
             ->where('tenant_id', $this->tenantId())
+            ->when($remoteIds !== null, fn ($query) => $query->whereIn('product_id', $remoteIds))
             ->where('barcode', $barcode)
             ->first(['id', 'product_id']);
 
@@ -1149,6 +1195,12 @@ new class extends Component {
         if (!$tenantId || !$branchId) {
             $this->errorMessage = 'تعذر تحديد المتجر أو الفرع.';
             $this->dispatch('pos-sound', type: 'error');
+            return;
+        }
+
+        $remoteIds = $this->refreshRemoteCatalog(filters: ['ids' => [$productId]]);
+        if ($remoteIds !== null && !in_array($productId, $remoteIds, true)) {
+            $this->errorMessage = 'المنتج لم يعد متاحاً على السيرفر في الفرع الحالي.';
             return;
         }
 
@@ -1749,8 +1801,10 @@ new class extends Component {
             return collect();
         }
 
+        $remoteIds = $this->showCustomerModal ? $this->refreshRemoteCatalog('customers', ['search' => $search]) : null;
         return Party::query()
             ->where('tenant_id', $tenantId)
+            ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
             ->whereIn('type', ['customer', 'both'])
             ->where('is_active', true)
             ->when($search !== '', function ($query) use ($search): void {
@@ -1770,6 +1824,11 @@ new class extends Component {
         }
         $tenantId = $this->tenantId();
 
+        $remoteIds = $this->refreshRemoteCatalog('customers', ['ids' => [$customerId]]);
+        if ($remoteIds !== null && !in_array($customerId, $remoteIds, true)) {
+            $this->errorMessage = 'العميل لم يعد متاحاً على السيرفر في الفرع الحالي.';
+            return;
+        }
         $customer = Party::query()
             ->where('tenant_id', $tenantId)
             ->whereIn('type', ['customer', 'both'])
@@ -2162,6 +2221,47 @@ new class extends Component {
         }
     }
 
+    private function refreshCheckoutData(): bool
+    {
+        $ids = array_values(array_unique(array_map('intval', array_column($this->cart, 'id'))));
+        $remoteIds = [];
+        foreach (array_chunk($ids, 100) as $chunk) {
+            $result = $this->refreshRemoteCatalog(filters: ['ids' => $chunk]);
+            if ($result === null) {
+                return true;
+            }
+            $remoteIds = [...$remoteIds, ...$result];
+        }
+        if (array_diff($ids, $remoteIds) !== []) {
+            $this->errorMessage = 'أحد الأصناف لم يعد متاحاً على السيرفر. راجع الفاتورة قبل الحفظ.';
+            return false;
+        }
+        if ($this->selectedCustomerId) {
+            $customers = $this->refreshRemoteCatalog('customers', ['ids' => [$this->selectedCustomerId]]);
+            if ($customers !== null && !in_array($this->selectedCustomerId, $customers, true)) {
+                $this->errorMessage = 'العميل لم يعد متاحاً على السيرفر. اختر عميلاً آخر.';
+                return false;
+            }
+        }
+        $before = array_map(fn ($amount): float => $this->roundMoney((float) $amount), array_column($this->cart, 'subtotal'));
+        $prices = BranchProduct::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
+            ->whereIn('product_id', $ids)->get()->keyBy('product_id');
+        foreach ($this->cart as $key => $item) {
+            if (empty($item['is_gift']) && empty($item['price_manual']) && $prices->has($item['id'])) {
+                $this->cart[$key]['price'] = (float) $prices->get($item['id'])->retail_price;
+            }
+        }
+        $this->recalculatePrices();
+        $after = array_map(fn ($amount): float => $this->roundMoney((float) $amount), array_column($this->cart, 'subtotal'));
+        if ($before !== $after) {
+            $this->customerPaymentConfirmed = false;
+            $this->errorMessage = 'تغير سعر أو عرض على السيرفر. تم تحديث الفاتورة؛ راجع المبلغ ثم احفظ مجدداً.';
+            return false;
+        }
+
+        return true;
+    }
+
     private function processCheckout(): ?Order
     {
         $this->authorize('pos.sale.checkout');
@@ -2190,6 +2290,10 @@ new class extends Component {
 
         if (empty($this->cart)) {
             $this->errorMessage = 'الفاتورة فارغة.';
+            return null;
+        }
+
+        if (!$this->refreshCheckoutData()) {
             return null;
         }
 
@@ -2565,10 +2669,24 @@ new class extends Component {
             $this->activeShiftId = $shift->id;
 
             $this->clearCartState();
+            if (app(DesktopPosConnection::class)->enabled()) {
+                $this->refreshLiveData();
+            }
             $this->refreshBranchSyncStatus();
             $this->activeShiftId = $shift->id;
 
             $this->successMessage = $wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
+
+            if (app(DesktopPosConnection::class)->enabled()) {
+                $operation = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('operation_type', 'sale.upsert')->where('payload->order->sync_uuid', $order->sync_uuid)->first();
+                $this->successMessage = $operation?->status === 'synced'
+                    ? "تم حفظ الفاتورة {$savedInvoiceNumber} على السيرفر."
+                    : "تم حفظ الفاتورة {$savedInvoiceNumber} محلياً، وهي بانتظار تأكيد السيرفر. لا تعد إدخالها.";
+                if (in_array($operation?->status, ['conflict', 'failed'], true)) {
+                    $this->errorMessage = 'حُفظت الفاتورة محلياً، لكن السيرفر رفض مزامنتها. يلزم مراجعة تعارض المزامنة.';
+                }
+            }
 
             $this->dispatch('pos-sound', type: $wasEditing ? 'save-edit' : 'save');
 
@@ -2640,6 +2758,11 @@ new class extends Component {
             $available += max(0, (float) $branchProduct->stock_quantity);
         }
 
+        if (app(DesktopPosConnection::class)->enabled()) {
+            $shared = json_decode((string) TenantSetting::get($tenantId, 'desktop_shared_stock_'.$currentBranchId, '{}'), true) ?: [];
+            $available = (float) ($shared[$productId] ?? $available);
+        }
+
         if (!$this->allowNegativeStock && $available + 0.000001 < $quantity) {
             throw new \DomainException(
                 "المخزون الموحد غير كافٍ للمنتج {$productName}. المتوفر في جميع الفروع: {$available}."
@@ -2681,6 +2804,16 @@ new class extends Component {
             'payment_date' => $payment->payment_date->toISOString(),
             'notes' => $payment->notes,
         ] : null;
+
+        if (app(DesktopPosConnection::class)->enabled()) {
+            $shared = json_decode((string) TenantSetting::get((int) $order->tenant_id, 'desktop_shared_stock_'.$order->branch_id, '{}'), true) ?: [];
+            foreach ($items as $item) {
+                if (array_key_exists($item['product_id'], $shared)) {
+                    $shared[$item['product_id']] -= $item['quantity'];
+                }
+            }
+            TenantSetting::set((int) $order->tenant_id, 'desktop_shared_stock_'.$order->branch_id, json_encode($shared, JSON_THROW_ON_ERROR));
+        }
 
         BranchSyncOperation::query()->create([
             'tenant_id' => $order->tenant_id,
@@ -3425,18 +3558,27 @@ new class extends Component {
 ?>
 <div class="pos-page">
     @if (config('branch-sync.mode') === 'edge')
-        <div class="mx-auto mt-3 flex max-w-7xl flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
+        <div @if(config('app.desktop')) wire:poll.10s="refreshLiveData" @endif class="mx-auto mt-3 flex max-w-7xl flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
             <div>
-                <strong>نقطة البيع تعمل على قاعدة الفرع المحلية</strong>
-                <span class="mx-1 text-sky-500">/</span>
-                <strong>POS is using this branch's local database</strong>
+                @if(config('app.desktop'))
+                    <strong>{{ match($connectionState) {
+                        'online' => 'متصل بالسيرفر · بيانات مباشرة وحفظ فوري',
+                        'pending' => 'متصل · توجد عمليات محلية بانتظار التأكيد أو المراجعة',
+                        'update_required' => 'الوضع المحلي · يلزم تحديث الموقع لتفعيل البيانات المباشرة',
+                        'unauthorized' => 'الوضع المحلي · أعد تسجيل الدخول لتجديد الاتصال بالسيرفر',
+                        'unavailable' => 'الوضع المحلي · السيرفر غير متاح حالياً',
+                        default => 'غير متصل · العمل على آخر بيانات محفوظة محلياً',
+                    } }}</strong>
+                @else
+                    <strong>نقطة البيع تعمل على قاعدة الفرع المحلية</strong>
+                @endif
                 <span class="mx-2">·</span>
                 <span>{{ $pendingSyncOperations }} بانتظار المزامنة / pending</span>
                 @if ($conflictedSyncOperations > 0)
                     <span class="mx-2 font-bold text-rose-700">{{ $conflictedSyncOperations }} تعارض للمراجعة / conflicts to review</span>
                 @endif
             </div>
-            <button type="button" wire:click="refreshBranchSyncStatus" class="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold hover:bg-sky-100">
+            <button type="button" wire:click="refreshLiveData" class="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold hover:bg-sky-100">
                 تحديث الحالة / Refresh status
             </button>
         </div>
