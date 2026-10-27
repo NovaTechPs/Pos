@@ -30,11 +30,12 @@ test('responsive POS keeps a single editable cart and checkout with products bef
     $dom->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($dom);
     $styles = file_get_contents(resource_path('css/pos.css'));
-    preg_match('/\.pos-products \[data-pos-product-search-header\] > input\s*\{([^}]+)\}/', $styles, $searchRule);
+    preg_match('/\.pos-products \[data-pos-product-panel-search\]\s*\{([^}]+)\}/', $styles, $searchRule);
     expect($searchRule[1])->toContain('width: 100%')->not->toContain('width: 0', 'flex: 1');
+    expect($styles)->not->toContain('.pos-products > div > div:first-child');
     expect($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " pos-page ")]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-barcode-input]')->length)->toBe(1)
-        ->and($xpath->query('//*[@data-pos-product-search-header]/input[@data-pos-product-panel-search]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-product-search-header]/label[@data-pos-search-field]/input[@data-pos-product-panel-search]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-product-search-header]/*[@id="pos-search-help"]')->length)->toBe(1)
         ->and($xpath->query('//*[@id="pos-cart-panel"]')->length)->toBe(1)
         ->and($xpath->query('//*[@id="pos-products-panel"]')->length)->toBe(1)

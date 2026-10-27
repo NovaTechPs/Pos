@@ -3667,7 +3667,9 @@ new class extends Component {
                                         </button>
                                     </div>
 
-                                    <input data-pos-product-panel-search
+                                    <label data-pos-search-field class="block w-full min-w-0">
+                                        <span class="sr-only">بحث الأصناف</span>
+                                        <input data-pos-product-panel-search
                                         x-on:keydown.f2.window.prevent="$el.focus(); $el.select()"
                                         x-on:keydown.escape.prevent="$wire.set('productSearchQuery', ''); $el.focus()"
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
@@ -3676,6 +3678,7 @@ new class extends Component {
                                         wire:model.live.debounce.200ms="productSearchQuery" @disabled($this->invoiceIsLocked())
                                         type="search" maxlength="120" aria-describedby="pos-search-help" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="اسم الصنف، أي كلمات منه، رقمه أو باركوده…"
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                                    </label>
                                     <div id="pos-search-help" class="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[9px] font-semibold text-slate-500">
                                         <span>الكلمات بأي ترتيب · يدعم اختلافات الألف والياء والتشكيل</span>
                                         <span dir="ltr">F2 بحث · ↓ اختيار · Enter إضافة · Esc مسح</span>
