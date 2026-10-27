@@ -29,6 +29,10 @@ function cartStockValues(Testable $component, int $productId): array
     $dom = new DOMDocument;
     $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($dom);
+    expect($xpath->query('//tr[@data-pos-cart-line]/td[@data-pos-stock-remaining]/preceding-sibling::td[1]//input[@data-pos-field="price"]')->length)
+        ->toBe($xpath->query('//tr[@data-pos-cart-line]')->length)
+        ->and($xpath->query('//tr[@data-pos-cart-line]/td[@data-pos-stock-remaining]/following-sibling::td[1]//input[@data-pos-field="subtotal"]')->length)
+        ->toBe($xpath->query('//tr[@data-pos-cart-line]')->length);
     $values = [];
     foreach ($xpath->query('//*[@data-pos-stock-remaining="'.$productId.'"]') as $element) {
         $value = $element->getAttribute('data-remaining-quantity');

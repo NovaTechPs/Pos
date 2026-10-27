@@ -144,7 +144,7 @@
 
     .pos-cart [data-pos-cart-line] {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(8, minmax(0, 1fr));
         gap: 0.25rem;
         padding: 0.5rem;
         border-bottom: 1px solid #e2e8f0;
@@ -160,7 +160,7 @@
     }
 
     .pos-cart [data-pos-cart-line] > td:nth-child(3) {
-        grid-column: 1 / 6;
+        grid-column: 1 / 8;
         grid-row: 1;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -179,13 +179,18 @@
     }
 
     .pos-cart [data-pos-cart-line] > td:nth-child(7) {
-        grid-column: 6;
+        grid-column: 7 / 9;
+    }
+
+    .pos-cart [data-pos-cart-line] > td:nth-child(8) {
+        grid-column: 8;
         grid-row: 1;
     }
 
     .pos-cart [data-pos-cart-line] > td:nth-child(4)::before,
     .pos-cart [data-pos-cart-line] > td:nth-child(5)::before,
-    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before {
+    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before,
+    .pos-cart [data-pos-cart-line] > td:nth-child(7)::before {
         display: block;
         margin-bottom: 0.25rem;
         color: #64748b;
@@ -194,7 +199,8 @@
 
     .pos-cart [data-pos-cart-line] > td:nth-child(4)::before { content: 'الكمية'; }
     .pos-cart [data-pos-cart-line] > td:nth-child(5)::before { content: 'السعر'; }
-    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before { content: 'الإجمالي'; }
+    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before { content: 'المتبقي'; }
+    .pos-cart [data-pos-cart-line] > td:nth-child(7)::before { content: 'الإجمالي'; }
 
     .pos-cart [data-pos-cart-line] input {
         width: 100%;
@@ -202,7 +208,7 @@
         min-height: 2.75rem;
     }
 
-    .pos-cart [data-pos-cart-line] > td:nth-child(6) > div {
+    .pos-cart [data-pos-cart-line] > td:nth-child(7) > div {
         min-width: 0;
     }
 }

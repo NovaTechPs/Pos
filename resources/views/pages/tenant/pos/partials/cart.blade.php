@@ -111,6 +111,8 @@
                         السعر
                     </th>
 
+                    <th class="px-2 py-2 text-center">المتبقي</th>
+
                     {{-- الإجمالي --}}
                     <th class="px-2 py-2 text-center">
                         الإجمالي
@@ -163,16 +165,6 @@
                                 @endif
                             </div>
 
-                            @php $remainingQuantity = $remainingStock[(int) $item['id']] ?? null; @endphp
-                            <div class="mt-1 text-[10px] font-bold" data-pos-stock-remaining="{{ $item['id'] }}"
-                                data-remaining-quantity="{{ $remainingQuantity }}">
-                                <span class="inline-flex flex-wrap items-center gap-1 rounded-md px-1.5 py-0.5 {{ $remainingQuantity !== null && $remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">
-                                    {{ $invoiceLocked ? 'المخزون الحالي:' : 'المتبقي بعد الفاتورة:' }}
-                                    <span dir="ltr">{{ $remainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($remainingQuantity, 3, '.', ','), '0'), '.') }}</span>
-                                    @if ($unifiedStock)<span class="text-[9px]">(موحد)</span>@endif
-                                </span>
-                            </div>
-
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
                                 @if ($item['quantity'] < 0)
                                     <span class="text-rose-600">
@@ -223,6 +215,16 @@
                         </td>
 
                         {{-- Subtotal --}}
+                        @php $remainingQuantity = $remainingStock[(int) $item['id']] ?? null; @endphp
+                        <td class="px-2 py-2 text-center" data-pos-stock-remaining="{{ $item['id'] }}"
+                            data-remaining-quantity="{{ $remainingQuantity }}"
+                            title="{{ $invoiceLocked ? 'المخزون الحالي:' : 'المتبقي بعد الفاتورة:' }}">
+                            <span class="inline-flex items-center justify-center rounded-md px-2 py-1 font-mono text-[11px] font-bold {{ $remainingQuantity !== null && $remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}" dir="ltr">
+                                {{ $remainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($remainingQuantity, 3, '.', ','), '0'), '.') }}
+                            </span>
+                            @if ($unifiedStock)<span class="block text-[9px] text-slate-500">(موحد)</span>@endif
+                        </td>
+
                         <td class="px-2 py-2 text-center">
                             @php
                                 $lineSavings = (float) ($item['promotion_savings'] ?? 0);
@@ -285,7 +287,7 @@
 
                 @empty
                     <tr>
-                        <td colspan="7" class="py-24 text-center">
+                        <td colspan="8" class="py-24 text-center">
                             <div class="text-4xl opacity-30">🧾</div>
                             <div class="mt-2 text-sm font-black text-slate-400">الفاتورة فارغة</div>
                             <div class="mt-1 text-[11px] font-bold text-slate-300">
