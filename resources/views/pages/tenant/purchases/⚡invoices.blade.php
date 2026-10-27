@@ -229,7 +229,7 @@ new class extends Component {
             $this->successMessage = null;
         }
 
-        $this->dispatch('focus-product-search');
+        $this->dispatch('focus-supplier-search');
     }
 
     private function makeInvoiceNumber(): string
@@ -1100,7 +1100,7 @@ new class extends Component {
 
         $supplierResults = collect();
 
-        if ($tenantId && $this->selectedSupplierId === null) {
+        if ($tenantId && $this->selectedSupplierId === null && trim($this->supplierSearch) !== '') {
             $search = trim($this->supplierSearch);
 
             $supplierResults = Party::query()
@@ -1254,7 +1254,7 @@ new class extends Component {
                         </div>
                     @else
                         <input id="supplier-search-input" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم المورد أو الهاتف..." autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
-                        @if ($supplierSearch !== '' || count($supplierResults) > 0)
+                        @if (trim($supplierSearch) !== '')
                             <div class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5" x-ref="supplierResults">
                                     @forelse ($supplierResults as $supplier)
@@ -1653,6 +1653,8 @@ new class extends Component {
         rowIndex: 0,
 
         init() {
+            this.$nextTick(() => this.$refs.supplierSearch?.focus());
+
             this.registerKeyboard();
 
             Livewire.on('focus-product-search', () => {

@@ -224,7 +224,7 @@ new class extends Component {
             $this->successMessage = null;
         }
 
-        $this->dispatch('focus-product-search');
+        $this->dispatch('focus-customer-search');
     }
 
     private function makeInvoiceNumber(): string
@@ -942,7 +942,7 @@ new class extends Component {
 
         $customerResults = collect();
 
-        if ($tenantId && $this->selectedCustomerId === null) {
+        if ($tenantId && $this->selectedCustomerId === null && trim($this->customerSearch) !== '') {
             $search = trim($this->customerSearch);
 
             $customerResults = Party::query()
@@ -1202,7 +1202,7 @@ new class extends Component {
                             class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white"
                         />
 
-                        @if ($customerSearch !== '' || count($customerResults) > 0)
+                        @if (trim($customerSearch) !== '')
                             <div class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5">
                                     @forelse ($customerResults as $customer)
@@ -1707,6 +1707,8 @@ new class extends Component {
         customerIndex: 0,
 
         init() {
+            this.$nextTick(() => this.$refs.customerSearch?.focus());
+
             this.refreshResultClasses();
 
             Livewire.on('focus-product-search', () => {
