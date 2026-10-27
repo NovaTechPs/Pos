@@ -57,10 +57,9 @@
     .pos-content-grid { align-items: start; }
     .pos-products [data-pos-product-search-header] { position: static; }
     .pos-mobile-section-nav { display: flex; }
-    .pos-products [data-pos-product-search-header] { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; }
-    .pos-products [data-pos-product-search-header] > div { flex: none; }
-    .pos-products [data-pos-product-search-header] > div > div { display: none; }
-    .pos-products [data-pos-product-search-header] > input { flex: 1; min-width: 0; width: 0; margin-top: 0; }
+    .pos-products [data-pos-product-search-header] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; padding: 0.5rem; }
+    .pos-products [data-pos-product-search-header] > * { min-width: 0; }
+    .pos-products [data-pos-product-search-header] > input { width: 100%; margin-top: 0; }
     .pos-products [data-pos-products-panel] [data-pos-product] { min-height: 5rem; }
     .pos-cart-scroll { min-height: 16rem; max-height: 65dvh; }
     .pos-cart [data-pos-cart-line] > td:nth-child(3) > div:last-child:empty { display: none; }
