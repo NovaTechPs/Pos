@@ -93,7 +93,7 @@
                     </th>
                     {{-- رقم الصنف ID --}}
                     <th class="w-16 px-2 py-2 text-center">
-                        ID
+                        رقم المنتج
                     </th>
 
                     {{-- الصنف --}}
@@ -150,7 +150,7 @@
                                 class="inline-flex min-w-[42px] items-center justify-center
                                     rounded-lg border border-slate-200 bg-slate-50
                                     px-2 py-1.5 font-mono text-[11px] font-black text-slate-600">
-                                {{ $item['id'] }}
+                                {{ $item['product_number'] ?? '—' }}
                             </span>
                         </td>
 

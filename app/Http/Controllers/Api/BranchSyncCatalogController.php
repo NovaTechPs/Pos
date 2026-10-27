@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BranchSyncDevice;
+use App\Models\TenantSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,11 @@ class BranchSyncCatalogController extends Controller
         return response()->json([
             'tenant_id' => $device->tenant_id,
             'branch_id' => $device->branch_id,
+            'settings' => [
+                'allow_negative_stock' => TenantSetting::getBool($device->tenant_id, 'allow_negative_stock'),
+                'unified_stock' => TenantSetting::getBool($device->tenant_id, 'unified_stock'),
+                'merge_similar_products' => TenantSetting::getBool($device->tenant_id, 'merge_similar_products'),
+            ],
             'rows' => $rows,
             'next' => $rows->count() === 100 ? $rows->last()->id : null,
             'categories' => $validated['entity'] === 'products'

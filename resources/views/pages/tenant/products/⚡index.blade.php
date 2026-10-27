@@ -2056,6 +2056,10 @@ new class extends Component {
                             المنتج
                         </th>
 
+                        <th scope="col" class="px-5 py-4">
+                            رقم المنتج
+                        </th>
+
                         <th class="px-5 py-4">
                             التصنيف
                         </th>
@@ -2136,16 +2140,16 @@ new class extends Component {
                                             {{ $product->name }}
                                         </div>
 
-                                        <div class="mt-1 text-xs text-zinc-400">
-                                            {{ $product->product_number ?: '#' . $product->id }}
-                                        </div>
-
                                     </div>
 
                                 </div>
 
                             </td>
 
+
+                            <td data-product-number class="whitespace-nowrap px-5 py-4 font-mono text-zinc-600 dark:text-zinc-300">
+                                {{ filled($product->product_number) ? $product->product_number : '—' }}
+                            </td>
 
                             {{-- Category --}}
 
@@ -2370,7 +2374,7 @@ new class extends Component {
 
                         <tr>
 
-                            <td colspan="10" class="px-5 py-16 text-center">
+                            <td colspan="11" class="px-5 py-16 text-center">
 
                                 <div class="mx-auto flex max-w-sm flex-col items-center">
 

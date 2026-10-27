@@ -22,6 +22,22 @@ beforeEach(function (): void {
     BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'retail_price' => 10, 'stock_quantity' => 20]);
 });
 
+test('POS displays product numbers and supports searching by number', function (): void {
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->set('inlineSearchQuery', 'P01')
+        ->assertSet('inlineSearchResults.0.product_number', 'P01')
+        ->set('productSearchQuery', 'P01')
+        ->call('loadQuickProducts')
+        ->assertSet('quickProducts.0.product_number', 'P01')
+        ->set('showProductsModal', true)
+        ->assertSee('رقم المنتج: P01')
+        ->call('selectInlineProduct', $this->product->id)
+        ->assertSee('رقم المنتج')
+        ->assertSee('P01');
+
+    expect(collect($component->get('cart'))->first()['product_number'])->toBe('P01');
+});
+
 test('unknown barcode opens the choices without changing the current cart and cancel restores scanning', function (): void {
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
     $cart = $component->get('cart');

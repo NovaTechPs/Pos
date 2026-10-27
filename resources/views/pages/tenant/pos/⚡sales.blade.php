@@ -863,7 +863,7 @@ new class extends Component {
         }
 
         $this->inlineSearchResults = Product::query()
-            ->select(['id', 'tenant_id', 'name'])
+            ->select(['id', 'tenant_id', 'name', 'product_number'])
             ->where('tenant_id', $tenantId)
             ->where(function ($query) use ($keywords, $search, $tenantId): void {
                 $query
@@ -872,6 +872,7 @@ new class extends Component {
                             $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
                         }
                     })
+                    ->orWhere('product_number', 'like', "{$search}%")
                     ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
                     ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
                         $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
@@ -883,15 +884,11 @@ new class extends Component {
             ])
             ->limit(8)
             ->get()
-            ->map(function (Product $product) use ($activeOffers): array {
+            ->map(function (Product $product): array {
                 $branchProduct = $product->branchProducts->first();
-                $offer = $activeOffers->get($product->id);
-                $offerQuantity = (float) ($offer?->offer_quantity ?? $branchProduct?->offer_quantity ?? 0);
-                $offerPrice = $offer?->offer_price ?? $branchProduct?->offer_price;
-                $hasOffer = $offerQuantity > 0 && $offerPrice !== null && (float) $offerPrice >= 0
-                    && (float) $offerPrice < $offerQuantity * (float) ($branchProduct?->retail_price ?? 0);
                 return [
                     'id' => $product->id,
+                    'product_number' => $product->product_number,
                     'name' => $product->name,
                     'barcode' => $product->barcodes->first()?->barcode,
                     'price' => (float) ($branchProduct?->retail_price ?? 0),
@@ -965,7 +962,7 @@ new class extends Component {
         }
 
         $query = Product::query()
-            ->select(['id', 'tenant_id', 'name', 'category_id'])
+            ->select(['id', 'tenant_id', 'name', 'category_id', 'product_number'])
             ->where('tenant_id', $tenantId)
             ->with([
                 'barcodes' => fn ($q) => $q->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
@@ -991,6 +988,7 @@ new class extends Component {
                         $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
                     }
                 })
+                ->orWhere('product_number', 'like', "{$search}%")
                 ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
                 ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
                     $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
@@ -1019,6 +1017,7 @@ new class extends Component {
                     'id' => $product->id,
                     'name' => $product->name,
                     'category_id' => $product->category_id,
+                    'product_number' => $product->product_number,
                     'retail_price' => (float) ($branchProduct?->retail_price ?? 0),
                     'stock_quantity' => (float) ($branchProduct?->stock_quantity ?? 0),
                     'barcode_value' => $product->barcodes->first()?->barcode,
@@ -1203,6 +1202,7 @@ new class extends Component {
 
             $this->cart[$lineKey] = [
                 'id' => $productId,
+                'product_number' => $product->product_number,
                 'name' => $product->name,
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
                 'is_gift' => $isGift,
@@ -1569,6 +1569,7 @@ new class extends Component {
 
             $this->cart[$lineKey] = [
                 'id' => $item->product_id,
+                'product_number' => $item->product?->product_number,
                 'is_gift' => (bool) $item->is_gift,
                 'name' => $item->product?->name ?? 'منتج غير محدد',
                 'barcode' => '',
@@ -2572,6 +2573,10 @@ new class extends Component {
             $this->dispatch('pos-sound', type: $wasEditing ? 'save-edit' : 'save');
 
             return $order;
+        } catch (\DomainException $exception) {
+            $this->errorMessage = $exception->getMessage();
+
+            return null;
         } catch (\Throwable $e) {
             Log::error('POS checkout failed', [
                 'tenant_id' => $tenantId,
@@ -2610,13 +2615,13 @@ new class extends Component {
             );
 
             if (!$current) {
-                throw new \RuntimeException(
+                throw new \DomainException(
                     "المنتج {$productName} غير مرتبط بالفرع الحالي."
                 );
             }
 
             if (!$this->allowNegativeStock && (float) $current->stock_quantity < $quantity) {
-                throw new \RuntimeException(
+                throw new \DomainException(
                     "المخزون غير كافٍ للمنتج {$productName}. المتوفر: {$current->stock_quantity}."
                 );
             }
@@ -2625,7 +2630,7 @@ new class extends Component {
         }
 
         if ($branchProducts->isEmpty()) {
-            throw new \RuntimeException(
+            throw new \DomainException(
                 "المنتج {$productName} غير مرتبط بأي فرع في هذا المتجر."
             );
         }
@@ -2636,7 +2641,7 @@ new class extends Component {
         }
 
         if (!$this->allowNegativeStock && $available + 0.000001 < $quantity) {
-            throw new \RuntimeException(
+            throw new \DomainException(
                 "المخزون الموحد غير كافٍ للمنتج {$productName}. المتوفر في جميع الفروع: {$available}."
             );
         }

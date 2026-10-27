@@ -13,6 +13,7 @@ use App\Models\StockTransfer;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -27,7 +28,10 @@ beforeEach(function (): void {
 
 test('products default to product number order with blank numbers last and can search product numbers', function (): void {
     foreach ([['I00000010', 'Ten'], [null, 'No number'], ['I00000002', 'Two'], ['', 'Blank']] as [$number, $name]) {
-        Product::query()->create(['tenant_id' => $this->tenant->id, 'product_number' => $number, 'name' => $name]);
+        $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'product_number' => $number, 'name' => $name]);
+        if (blank($number)) {
+            DB::table('products')->where('id', $product->id)->update(['product_number' => $number]);
+        }
     }
     $otherTenant = Tenant::query()->create(['name' => 'Other products tenant']);
     Product::query()->withoutGlobalScopes()->create(['tenant_id' => $otherTenant->id, 'name' => 'Outside product', 'product_number' => 'I00000001']);

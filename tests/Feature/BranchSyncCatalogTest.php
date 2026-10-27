@@ -7,13 +7,55 @@ use App\Models\BranchSyncOperation;
 use App\Models\Party;
 use App\Models\Product;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+test('catalog synchronization applies central sales policy changes and preserves unrelated settings', function (): void {
+    $enabled = true;
+    Http::fake(function () use (&$enabled) {
+        $page = catalogPage($this->tenant->id, $this->branch->id);
+        $page['settings'] = ['allow_negative_stock' => $enabled, 'unified_stock' => $enabled, 'merge_similar_products' => false];
+
+        return Http::response($page);
+    });
+    TenantSetting::set($this->tenant->id, 'unrelated_setting', 'preserved');
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+    expect(TenantSetting::getBool($this->tenant->id, 'allow_negative_stock'))->toBeTrue()
+        ->and(TenantSetting::getBool($this->tenant->id, 'unified_stock'))->toBeTrue();
+    $enabled = false;
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+    expect(TenantSetting::getBool($this->tenant->id, 'allow_negative_stock'))->toBeFalse()
+        ->and(TenantSetting::get($this->tenant->id, 'unrelated_setting'))->toBe('preserved');
+});
+
+test('an older desktop database upgrades before importing customer codes without losing local customers', function (): void {
+    Schema::table('parties', function ($table): void {
+        $table->dropUnique(['tenant_id', 'code']);
+        $table->dropColumn('code');
+    });
+    DB::table('parties')->insert(['tenant_id' => $this->tenant->id, 'name' => 'Existing local customer', 'type' => 'customer']);
+    $upgrade = require database_path('migrations/2026_10_26_213937_add_code_to_existing_parties_table.php');
+    $upgrade->up();
+    $upgrade->up();
+    $backfill = require database_path('migrations/2026_10_26_213940_backfill_party_codes.php');
+    $backfill->up();
+    Http::fake(fn ($request) => Http::response(catalogPage($this->tenant->id, $this->branch->id,
+        $request['entity'] === 'customers' ? [[
+            'id' => 100, 'tenant_id' => $this->tenant->id, 'name' => 'Central customer', 'type' => 'customer', 'code' => 'C00000001',
+        ]] : [])));
+
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+    expect(Party::query()->count())->toBe(2)
+        ->and(Party::query()->where('name', 'Existing local customer')->value('code'))->toBe('1')
+        ->and(Party::query()->find(100)->code)->toBe('C00000001');
+});
 
 beforeEach(function (): void {
     $this->tenant = Tenant::query()->create(['name' => 'Offline shop']);
@@ -36,6 +78,9 @@ function catalogPage(int $tenantId, int $branchId, array $rows = []): array
 
 test('catalog endpoint authenticates devices and isolates tenants and branches', function (): void {
     config(['branch-sync.mode' => 'central']);
+    TenantSetting::setBool($this->tenant->id, 'allow_negative_stock', true);
+    TenantSetting::setBool($this->tenant->id, 'unified_stock', true);
+    TenantSetting::set($this->tenant->id, 'private_setting', 'not-for-catalog');
     BranchSyncDevice::query()->create([
         'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
         'device_uuid' => (string) Str::uuid(), 'name' => 'Branch',
@@ -51,7 +96,9 @@ test('catalog endpoint authenticates devices and isolates tenants and branches',
 
     $this->getJson('/api/branch-sync/catalog?entity=products')->assertUnauthorized();
     $this->withToken('secret')->getJson('/api/branch-sync/catalog?entity=products')
-        ->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.id', $product->id);
+        ->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.id', $product->id)
+        ->assertJsonPath('settings.allow_negative_stock', true)->assertJsonPath('settings.unified_stock', true)
+        ->assertJsonCount(3, 'settings')->assertJsonMissingPath('settings.private_setting');
     $this->withToken('secret')->getJson('/api/branch-sync/catalog?entity=customers')
         ->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.name', 'Customer');
     $this->withToken('secret')->getJson('/api/branch-sync/catalog?entity=users')->assertUnprocessable();

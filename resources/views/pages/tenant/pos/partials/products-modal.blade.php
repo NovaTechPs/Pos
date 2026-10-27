@@ -30,6 +30,7 @@
                                     <div class="text-[9px] font-bold text-slate-400">سعر البيع</div>
                                     <div class="font-mono text-base font-black text-indigo-700">{{ number_format((float) $product['retail_price'], 2) }}</div>
                                 </div>
+                                <div class="text-xs font-mono text-slate-500">رقم المنتج: {{ $product['product_number'] ?? '—' }}</div>
                                 <div class="text-left text-[9px] font-mono text-slate-400">{{ $product['barcode_value'] ?: 'بدون باركود' }}</div>
                             </div>
                         </button>

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\BelongsToTenant;
+use Brick\Math\BigInteger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,39 @@ class Product extends Model
         'show_in_website' => 'boolean',
         'images' => 'array',
     ];
+
+    /** @param array<string, mixed> $options */
+    public function save(array $options = []): bool
+    {
+        if ($this->exists || filled($this->product_number)) {
+            return parent::save($options);
+        }
+
+        $this->tenant_id ??= auth()->user()?->tenant_id;
+
+        return $this->getConnection()->transaction(function () use ($options): bool {
+            Tenant::on($this->getConnectionName())->whereKey($this->tenant_id)->lockForUpdate()->firstOrFail();
+
+            $highestNumber = BigInteger::zero();
+            $products = $this->getConnection()->table('products')
+                ->where('tenant_id', $this->tenant_id)->whereNotNull('product_number')->select('product_number')->cursor();
+
+            foreach ($products as $product) {
+                if (preg_match('/^i([0-9]+)$/i', $product->product_number, $matches) !== 1) {
+                    continue;
+                }
+
+                $number = BigInteger::of($matches[1]);
+                if ($number->isGreaterThan($highestNumber)) {
+                    $highestNumber = $number;
+                }
+            }
+
+            $this->product_number = 'i'.str_pad((string) $highestNumber->plus(1), 8, '0', STR_PAD_LEFT);
+
+            return parent::save($options);
+        });
+    }
 
     /**
      * @param  Builder<static>  $query

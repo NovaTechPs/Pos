@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Branch;
+use App\Models\TenantSetting;
 use App\Services\BranchSyncCredentials;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
@@ -73,8 +74,13 @@ class PullBranchSyncCatalog extends Command
                         'categories' => ['present', 'array'],
                         'barcodes' => ['present', 'array'],
                         'prices' => ['present', 'array'],
+                        'settings' => ['sometimes', 'array:allow_negative_stock,unified_stock,merge_similar_products'],
+                        'settings.*' => ['boolean'],
                     ])->validate();
                     DB::transaction(function () use ($page, $entity, $tenantId, $branchId): void {
+                        foreach ($page['settings'] ?? [] as $key => $value) {
+                            TenantSetting::setBool($tenantId, $key, (bool) $value);
+                        }
                         foreach ($page['categories'] as $category) {
                             $this->storeRow('categories', $category, $tenantId);
                         }

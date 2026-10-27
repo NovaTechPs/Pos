@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Shift;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportTesting\Testable;
@@ -33,6 +34,44 @@ function posShiftComponent(): Testable
 {
     return Livewire::test('pages::tenant.pos.sales');
 }
+
+test('local checkout honors negative stock and shared stock settings and queues the sale', function (): void {
+    config(['branch-sync.mode' => 'edge']);
+    TenantSetting::setBool($this->tenant->id, 'allow_negative_stock', true);
+    TenantSetting::setBool($this->tenant->id, 'unified_stock', true);
+    Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opening_cash' => 0, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $this->user->id]);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Negative stock product', 'cost_price' => 4]);
+    $stock = BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 0]);
+    posShiftComponent()->call('selectInlineProduct', $product->id)->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null);
+
+    expect(Order::query()->count())->toBe(1)
+        ->and((float) $stock->fresh()->stock_quantity)->toBe(-1.0)
+        ->and(BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->where('status', 'pending')->count())->toBe(1);
+});
+
+test('production checkout explains insufficient stock and retains the cart without saving a partial invoice', function (): void {
+    config(['app.env' => 'production', 'app.desktop' => true]);
+    Shift::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opening_cash' => 0, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $this->user->id,
+    ]);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Stock changed product', 'cost_price' => 4]);
+    $stock = BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 5,
+    ]);
+    $component = posShiftComponent()->call('selectInlineProduct', $product->id)->set('paid_amount', 10);
+    $stock->update(['stock_quantity' => 0]);
+    $component->call('checkout');
+
+    expect($component->get('errorMessage'))->toContain('المخزون غير كافٍ', $product->name, 'المتوفر: 0')
+        ->and($component->get('cart'))->not->toBeEmpty()
+        ->and(Order::query()->count())->toBe(0)
+        ->and(Payment::query()->count())->toBe(0)
+        ->and((float) $stock->fresh()->stock_quantity)->toBe(0.0);
+});
 
 test('product cards retain assigned branch prices and stock after subsequent requests', function (): void {
     $this->user->update(['is_owner' => false, 'name' => 'ياسمين']);
