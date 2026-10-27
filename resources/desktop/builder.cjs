@@ -2,7 +2,7 @@ module.exports = {
     appId: 'app.waslapos.desktop', productName: 'WaslaPOS',
     directories: { output: 'storage/app/desktop-build/release', buildResources: 'public' },
     files: ['resources/desktop/main.cjs', 'resources/desktop/runtime.cjs', 'resources/desktop/preload.cjs', '!node_modules/**'],
-    extraMetadata: { name: 'waslapos-desktop', version: '0.1.0', main: 'resources/desktop/main.cjs',
+    extraMetadata: { name: 'waslapos-desktop', version: require('../../package.json').version, main: 'resources/desktop/main.cjs',
         description: 'WaslaPOS offline desktop cashier', author: 'WaslaPOS' },
     extraResources: [
         { from: 'storage/app/desktop-build/stage/backend', to: 'backend' },

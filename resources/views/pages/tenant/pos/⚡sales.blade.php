@@ -22,6 +22,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\TenantSetting;
 use App\Services\DesktopPosConnection;
+use App\Services\PosProductSearch;
 
 new class extends Component {
     #[Locked]
@@ -876,9 +877,23 @@ new class extends Component {
         $this->loadQuickProducts();
     }
 
+    public function submitProductSearch(string $search): void
+    {
+        if ($this->invoiceIsLocked() || mb_strlen($search) > 120) {
+            return;
+        }
+        $this->productSearchQuery = $search;
+        $this->loadQuickProducts();
+        if (count($this->quickProducts) === 1) {
+            $this->selectInlineProduct((int) $this->quickProducts[0]['id']);
+        } elseif ($this->quickProducts !== []) {
+            $this->dispatch('pos-search-results-ready');
+        }
+    }
+
     public function updatedInlineSearchQuery(): void
     {
-        $search = trim($this->inlineSearchQuery);
+        $search = app(PosProductSearch::class)->normalize($this->inlineSearchQuery);
 
         if ($search === '') {
             $this->inlineSearchResults = [];
@@ -893,36 +908,24 @@ new class extends Component {
             return;
         }
 
-        $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
-
         if (mb_strlen($search) < 2 && !ctype_digit($search)) {
             $this->inlineSearchResults = [];
             return;
         }
 
         $remoteIds = $this->refreshRemoteCatalog(filters: ['search' => $search]);
-        $this->inlineSearchResults = Product::query()
+        $query = Product::query()
             ->select(['id', 'tenant_id', 'name', 'product_number'])
             ->where('tenant_id', $tenantId)
             ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
-            ->where(function ($query) use ($keywords, $search, $tenantId): void {
-                $query
-                    ->where(function ($nameQuery) use ($keywords): void {
-                        foreach ($keywords as $index => $keyword) {
-                            $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
-                        }
-                    })
-                    ->orWhere('product_number', 'like', "{$search}%")
-                    ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
-                    ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
-                        $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
-                    });
-            })
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branchId))
             ->with([
                 'barcodes' => fn ($query) => $query->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
                 'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
-            ])
-            ->limit(8)
+            ]);
+        app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
+        $this->inlineSearchResults = $query->orderBy('name')->orderBy('id')
+            ->limit(12)
             ->get()
             ->map(function (Product $product): array {
                 $branchProduct = $product->branchProducts->first();
@@ -1008,6 +1011,7 @@ new class extends Component {
             ->select(['id', 'tenant_id', 'name', 'category_id', 'product_number'])
             ->where('tenant_id', $tenantId)
             ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branchId))
             ->with([
                 'barcodes' => fn ($q) => $q->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
                 'branchProducts' => fn ($q) => $q->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity', 'offer_quantity', 'offer_price'])->where('branch_id', $branchId),
@@ -1017,28 +1021,12 @@ new class extends Component {
             $query->where('category_id', $this->selectedCategoryId);
         }
 
-        $search = trim($this->productSearchQuery);
-        if ($search !== '') {
-            if (mb_strlen($search) < 2 && !ctype_digit($search)) {
-                $this->quickProducts = [];
-                return;
-            }
-
-            $keywords = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY);
-
-            $query->where(function ($q) use ($keywords, $search, $tenantId): void {
-                $q->where(function ($nameQuery) use ($keywords): void {
-                    foreach ($keywords as $index => $keyword) {
-                        $nameQuery->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
-                    }
-                })
-                ->orWhere('product_number', 'like', "{$search}%")
-                ->when(ctype_digit($search), fn ($idQuery) => $idQuery->orWhere('id', '=', (int) $search))
-                ->orWhereHas('barcodes', function ($barcodeQuery) use ($search, $tenantId): void {
-                    $barcodeQuery->where('tenant_id', $tenantId)->where('barcode', 'like', "{$search}%");
-                });
-            });
+        $search = app(PosProductSearch::class)->normalize($this->productSearchQuery);
+        if ($search !== '' && mb_strlen($search) < 2 && !ctype_digit($search)) {
+            $this->quickProducts = [];
+            return;
         }
+        app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
 
         $activeOffers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
             ->where('is_active', true)->where('start_at', '<=', now())
@@ -1046,7 +1034,7 @@ new class extends Component {
             ->orderByDesc('start_at')->get()->unique('product_id')->keyBy('product_id');
 
         $this->quickProducts = $query
-            ->orderBy('name')
+            ->orderBy('name')->orderBy('id')
             ->limit(40)
             ->get()
             ->map(function (Product $product) use ($activeOffers): array {
@@ -3668,7 +3656,7 @@ new class extends Component {
                                         <div>
                                             <div class="text-sm font-black text-slate-800">الأصناف</div>
                                             <div class="text-[9px] font-bold text-slate-400">
-                                                {{ count($quickProducts) }} صنف
+                                                {{ count($quickProducts) }} {{ trim($productSearchQuery) !== '' ? 'نتيجة · الأقرب أولاً' : 'صنف' }}
                                             </div>
                                         </div>
 
@@ -3680,15 +3668,19 @@ new class extends Component {
                                     </div>
 
                                     <input data-pos-product-panel-search
+                                        x-on:keydown.f2.window.prevent="$el.focus(); $el.select()"
+                                        x-on:keydown.escape.prevent="$wire.set('productSearchQuery', ''); $el.focus()"
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
-                                        x-on:keydown.enter.prevent="
-                                            if ($wire.quickProducts.length === 1) {
-                                                $wire.selectInlineProduct($wire.quickProducts[0].id);
-                                            }
-                                        "
-                                        wire:model.live.debounce.100ms="productSearchQuery" @disabled($this->invoiceIsLocked())
-                                        type="search" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود..."
+                                        x-on:keydown.enter.prevent="$wire.submitProductSearch($el.value)"
+                                        x-on:pos-search-results-ready.window="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
+                                        wire:model.live.debounce.200ms="productSearchQuery" @disabled($this->invoiceIsLocked())
+                                        type="search" maxlength="120" aria-describedby="pos-search-help" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="اسم الصنف، أي كلمات منه، رقمه أو باركوده…"
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                                    <div id="pos-search-help" class="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[9px] font-semibold text-slate-500">
+                                        <span>الكلمات بأي ترتيب · يدعم اختلافات الألف والياء والتشكيل</span>
+                                        <span dir="ltr">F2 بحث · ↓ اختيار · Enter إضافة · Esc مسح</span>
+                                    </div>
+                                    <div wire:loading.delay wire:target="productSearchQuery,loadQuickProducts" role="status" class="mt-1 text-[10px] font-bold text-indigo-600">جارٍ البحث عن الأصناف…</div>
                                 </div>
 
                                 <div class="shrink-0 border-b border-slate-200 bg-white p-2">
@@ -3721,6 +3713,7 @@ new class extends Component {
                                             <button type="button" data-pos-product
                                                 data-product-index="{{ $loop->index }}"
                                                 wire:click="selectInlineProduct({{ $product['id'] }})"
+                                                wire:loading.attr="disabled" wire:target="productSearchQuery,loadQuickProducts,selectInlineProduct"
                                                 @disabled($this->invoiceIsLocked())
                                                 wire:key="pos-quick-product-{{ $product['id'] }}"
                                                 class="{{ !empty($product['has_offer']) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white' }} min-h-[78px] rounded-xl border p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
@@ -3731,6 +3724,11 @@ new class extends Component {
                                                             <span class="mt-1 block text-[10px] font-bold text-amber-700">عرض {{ $product['offer_quantity_value'] + 0 }} بـ {{ number_format($product['offer_price_value'], 2) }}</span>
                                                         @endif
                                                 </div>
+                                                @if (trim($productSearchQuery) !== '')
+                                                    <div class="mt-1 truncate font-mono text-[9px] text-slate-500" dir="ltr" title="رقم الصنف / الباركود">
+                                                        #{{ $product['product_number'] ?: $product['id'] }} · {{ $product['barcode_value'] ?: '—' }}
+                                                    </div>
+                                                @endif
 
                                                 <div class="mt-2 flex items-end justify-between gap-1">
                                                     <span class="font-mono text-sm font-black text-indigo-700">
@@ -3748,8 +3746,11 @@ new class extends Component {
                                                 class="col-span-full flex min-h-[220px] items-center justify-center text-center">
                                                 <div>
                                                     <div class="text-3xl opacity-30">📦</div>
-                                                    <div class="mt-2 text-xs font-black text-slate-400">لا توجد أصناف
+                                                    <div class="mt-2 text-xs font-black text-slate-400">{{ trim($productSearchQuery) !== '' ? 'لم نجد صنفاً مطابقاً' : 'لا توجد أصناف' }}
                                                     </div>
+                                                    @if (trim($productSearchQuery) !== '')
+                                                        <p class="mt-1 text-[10px] text-slate-500">جرّب كلمة من الاسم أو رقم الصنف أو الباركود، وتحقق من التصنيف المحدد.</p>
+                                                    @endif
                                                     @if ($selectedCategoryId || trim($productSearchQuery) !== '')
                                                         <button type="button" wire:click="selectCategory(null)"
                                                             class="mt-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-[9px] font-black text-indigo-700">

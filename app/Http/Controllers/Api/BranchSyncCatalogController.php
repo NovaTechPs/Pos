@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\BranchSyncDevice;
 use App\Models\TenantSetting;
+use App\Services\PosProductSearch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,21 +48,11 @@ class BranchSyncCatalogController extends Controller
         }
         $search = trim($validated['search'] ?? '');
         if ($search !== '') {
-            $query->where(function ($query) use ($search, $products, $device): void {
-                if (! $products) {
-                    $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
-
-                    return;
-                }
-                $query->where(function ($query) use ($search): void {
-                    foreach (preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $index => $keyword) {
-                        $query->where('name', 'like', $index === 0 ? "{$keyword}%" : "%{$keyword}%");
-                    }
-                })->orWhere('product_number', 'like', "{$search}%")
-                    ->when(ctype_digit($search), fn ($query) => $query->orWhere('id', (int) $search))
-                    ->orWhereIn('id', DB::table('product_barcodes')->where('tenant_id', $device->tenant_id)
-                        ->where('barcode', 'like', "{$search}%")->select('product_id'));
-            });
+            if ($products) {
+                app(PosProductSearch::class)->apply($query, $search, (int) $device->tenant_id);
+            } else {
+                $query->where(fn ($query) => $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%"));
+            }
         }
         $rows = $query->orderBy('name')->orderBy('id')->limit(isset($validated['ids']) ? 100 : 40)->get();
         $ids = $rows->pluck('id');

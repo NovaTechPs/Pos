@@ -13,13 +13,14 @@ test('adding products restores barcode focus without changing the mobile page sc
     let scrollY = 320;
     let focusCount = 0;
     let selectCount = 0;
+    let coarsePointer = false;
     let barcode = {
         focus(options) { focusCount++; if (!options?.preventScroll) scrollY = 900; },
         select() { selectCount++; }
     };
     const windowListeners = new Map();
     const context = {
-        window: {addEventListener(name, fn) {windowListeners.set(name, fn);}},
+        window: {addEventListener(name, fn) {windowListeners.set(name, fn);}, matchMedia() {return {matches: coarsePointer};}},
         document: {addEventListener() {}, querySelector() {return barcode;}},
         setTimeout(fn) {fn();}
     };
@@ -29,12 +30,16 @@ test('adding products restores barcode focus without changing the mobile page sc
     assert.equal(scrollY, 320, 'Adding a product scrolled the page to the barcode input');
     assert.equal(focusCount, 2);
     assert.equal(selectCount, 2);
+    coarsePointer = true;
+    windowListeners.get('pos-focus-barcode')();
+    assert.equal(focusCount, 2, 'Touchscreen focus must stay on the chosen product');
+    coarsePointer = false;
     barcode = null;
     windowListeners.get('pos-focus-barcode')();
     assert.equal(focusCount, 2, 'Focus attempted after leaving POS');
     barcode = {focus(options) {if (!options?.preventScroll) scrollY = 900;}, select() {}};
     const init = source.match(/x-init="(\$nextTick[^"\n]+)"/)[1];
-    vm.runInNewContext(init, {$nextTick: fn => fn(), $el: {querySelector() {return barcode;}}});
+    vm.runInNewContext(init, {window: context.window, $nextTick: fn => fn(), $el: {querySelector() {return barcode;}}});
     assert.equal(scrollY, 320, 'Mounting POS scrolled past the products');
     console.log('BARCODE_FOCUS_OK');
     JAVASCRIPT;
