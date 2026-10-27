@@ -163,6 +163,16 @@
                                 @endif
                             </div>
 
+                            @php $remainingQuantity = $remainingStock[(int) $item['id']] ?? null; @endphp
+                            <div class="mt-1 text-[10px] font-bold" data-pos-stock-remaining="{{ $item['id'] }}"
+                                data-remaining-quantity="{{ $remainingQuantity }}">
+                                <span class="inline-flex flex-wrap items-center gap-1 rounded-md px-1.5 py-0.5 {{ $remainingQuantity !== null && $remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">
+                                    {{ $invoiceLocked ? 'المخزون الحالي:' : 'المتبقي بعد الفاتورة:' }}
+                                    <span dir="ltr">{{ $remainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($remainingQuantity, 3, '.', ','), '0'), '.') }}</span>
+                                    @if ($unifiedStock)<span class="text-[9px]">(موحد)</span>@endif
+                                </span>
+                            </div>
+
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
                                 @if ($item['quantity'] < 0)
                                     <span class="text-rose-600">

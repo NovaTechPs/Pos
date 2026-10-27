@@ -3518,6 +3518,49 @@ new class extends Component {
         }, 'invoice-' . $order->invoice_number . '.pdf');
     }
 
+    /** @return array<int, float|null> */
+    private function cartRemainingStock(): array
+    {
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+        if (!$tenantId || !$branchId || $this->cart === []) {
+            return [];
+        }
+        $quantities = [];
+        foreach ($this->cart as $item) {
+            $productId = (int) $item['id'];
+            $quantities[$productId] = ($quantities[$productId] ?? 0) + (float) $item['quantity'];
+        }
+        $stock = BranchProduct::query()->where('tenant_id', $tenantId)
+            ->whereIn('product_id', array_keys($quantities))
+            ->when(!$this->unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
+            ->selectRaw('product_id, SUM(stock_quantity) as available_quantity')->groupBy('product_id')
+            ->pluck('available_quantity', 'product_id')->all();
+        if ($this->unifiedStock && app(DesktopPosConnection::class)->enabled()) {
+            $shared = json_decode((string) TenantSetting::get($tenantId, 'desktop_shared_stock_'.$branchId, '{}'), true) ?: [];
+            foreach (array_keys($quantities) as $productId) {
+                if (isset($shared[$productId]) && is_numeric($shared[$productId])) {
+                    $stock[$productId] = (float) $shared[$productId];
+                }
+            }
+        }
+        $original = [];
+        if ($this->editingInvoiceId && $this->invoiceEditMode && Order::query()->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)->whereKey($this->editingInvoiceId)->where('status', 'completed')->exists()) {
+            $original = OrderItem::query()->where('tenant_id', $tenantId)->where('order_id', $this->editingInvoiceId)
+                ->selectRaw('product_id, SUM(quantity) as original_quantity')->groupBy('product_id')
+                ->pluck('original_quantity', 'product_id')->all();
+        }
+        $remaining = [];
+        foreach ($quantities as $productId => $quantity) {
+            $remaining[$productId] = isset($stock[$productId])
+                ? round((float) $stock[$productId] + (float) ($original[$productId] ?? 0) - ($this->invoiceIsLocked() ? 0 : $quantity), 3)
+                : null;
+        }
+
+        return $remaining;
+    }
+
     public function render()
     {
         $tenantId = $this->tenantId();
@@ -3540,7 +3583,9 @@ new class extends Component {
                     })->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
             }
         }
-        return $this->view(['branches' => $branches, 'missingBarcodeProducts' => $missingBarcodeProducts])->layout('layouts::pos');
+        return $this->view(['branches' => $branches, 'missingBarcodeProducts' => $missingBarcodeProducts,
+            'remainingStock' => $this->cartRemainingStock(),
+        ])->layout('layouts::pos');
     }
 };
 ?>
