@@ -7,7 +7,7 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, workspaceUrl, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, workspaceUrl, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard/pos';
     assert.equal(workspaceUsesFullWidth(base), true);
     assert.equal(workspaceUsesFullWidth(base + '/?_workspace=frame'), true);
@@ -20,6 +20,26 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     const tabs = new WorkspaceTabState(base, 'نقطة البيع');
     const products = tabs.open('https://pos.example/dashboard/product', 'الأصناف');
     const customer = tabs.open('https://pos.example/dashboard/customer', 'الزبائن');
+    const focused = [];
+    const cycle = (extra = {}) => {
+        const event = {key: 'Tab', ctrlKey: true, prevented: false, stopped: false,
+            preventDefault() {this.prevented = true;}, stopImmediatePropagation() {this.stopped = true;}, ...extra};
+        const handled = cycleWorkspaceTab(event, tabs, id => focused.push(id));
+        return {handled, event};
+    };
+    assert.equal(cycle().handled, true);
+    assert.equal(tabs.active, 'initial', 'Ctrl+Tab must wrap from last to first');
+    assert.equal(cycle().event.prevented, true);
+    assert.equal(tabs.active, products.id);
+    assert.equal(cycle({shiftKey: true}).event.stopped, true);
+    assert.equal(tabs.active, 'initial');
+    cycle({shiftKey: true});
+    assert.equal(tabs.active, customer.id, 'Ctrl+Shift+Tab must wrap backwards');
+    assert.equal(cycle({ctrlKey: false}).handled, false, 'Plain Tab must retain form navigation');
+    assert.equal(cycle({altKey: true}).handled, false);
+    assert.equal(cycle({isComposing: true}).handled, false);
+    assert.equal(tabs.tabs.length, 3, 'Cycling must preserve loaded tabs and their data');
+    assert.equal(focused.length, 4);
     tabs.select('initial');
     assert.equal(tabs.tabs.length, 3);
     assert.equal(tabs.open(products.url, 'الأصناف'), products, 'Switching recreated the page');

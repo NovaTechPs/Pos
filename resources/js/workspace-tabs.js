@@ -71,6 +71,17 @@ export class WorkspaceTabState {
     }
 }
 
+export function cycleWorkspaceTab(event, state, onSelect) {
+    if (event.key !== 'Tab' || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || state.tabs.length < 2) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const current = Math.max(0, state.tabs.findIndex(tab => tab.id === state.active));
+    const next = (current + (event.shiftKey ? -1 : 1) + state.tabs.length) % state.tabs.length;
+    state.select(state.tabs[next].id);
+    onSelect(state.active);
+    return true;
+}
+
 export function loadWorkspaceFrame(frame) {
     if (!frame?.dataset.src || frame.dataset.started) return false;
     frame.dataset.started = 'true';
@@ -255,6 +266,7 @@ function mountWorkspace(root) {
                     }
                     const click = event => intercept(event, childUrl.href);
                     const press = event => {
+                        if (event.type === 'keydown' && cycleWorkspaceTab(event, state, id => { draw(); focusPage(id); })) return;
                         if (event.type !== 'keydown' || event.key === 'Enter') intercept(event, childUrl.href);
                     };
                     child.addEventListener('click', click, true);
@@ -294,6 +306,7 @@ function mountWorkspace(root) {
         if (event.type !== 'keydown' || event.key === 'Enter') intercept(event);
     };
     const key = event => {
+        if (cycleWorkspaceTab(event, state, id => { draw(); focusPage(id); })) return;
         if (state.active !== 'initial' && /^F\d+$/.test(event.key)) {
             event.preventDefault();
             event.stopImmediatePropagation();
