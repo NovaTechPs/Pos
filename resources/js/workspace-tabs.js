@@ -73,8 +73,9 @@ export class WorkspaceTabState {
 
 export function cycleWorkspaceTab(event, state, onSelect) {
     const ctrlTab = event.key === 'Tab' && event.ctrlKey && !event.altKey && !event.metaKey;
+    const ctrlSpace = (event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar') && event.ctrlKey && !event.altKey && !event.metaKey;
     const altPage = ['PageDown', 'PageUp'].includes(event.key) && event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
-    if ((!ctrlTab && !altPage) || event.isComposing || state.tabs.length < 2) return false;
+    if ((!ctrlTab && !ctrlSpace && !altPage) || event.isComposing || state.tabs.length < 2) return false;
     event.preventDefault();
     event.stopImmediatePropagation();
     const current = Math.max(0, state.tabs.findIndex(tab => tab.id === state.active));

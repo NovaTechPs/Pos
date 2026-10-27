@@ -46,6 +46,11 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     assert.equal(tabs.active, customer.id, 'Alt+PageUp must wrap backwards from a form field');
     assert.equal(cycle({key: 'PageDown', ctrlKey: false}).handled, false, 'Plain PageDown must retain scrolling');
     assert.equal(cycle({key: 'PageUp', ctrlKey: true}).handled, false, 'Browser shortcuts must be preserved');
+    assert.equal(cycle({key: ' ', code: 'Space', target: {tagName: 'INPUT'}}).handled, true);
+    assert.equal(tabs.active, 'initial', 'Ctrl+Space must wrap to the next tab while editing');
+    assert.equal(cycle({key: ' ', code: 'Space', shiftKey: true, target: {tagName: 'TEXTAREA'}}).handled, true);
+    assert.equal(tabs.active, customer.id, 'Ctrl+Shift+Space must wrap to the previous tab');
+    assert.equal(cycle({key: ' ', code: 'Space', ctrlKey: false}).handled, false, 'Typing spaces must not switch tabs');
     tabs.select('initial');
     assert.equal(tabs.tabs.length, 3);
     assert.equal(tabs.open(products.url, 'الأصناف'), products, 'Switching recreated the page');
