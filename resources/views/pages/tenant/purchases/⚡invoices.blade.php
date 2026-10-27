@@ -1085,6 +1085,7 @@ new class extends Component {
                 ])
                 ->where(function ($query) use ($search) {
                     $query->where('name', 'like', "%{$search}%")
+                        ->orWhere('product_number', 'like', "%{$search}%")
                         ->orWhereHas('barcodes', function ($barcodeQuery) use ($search) {
                             $barcodeQuery->where('barcode', 'like', "%{$search}%");
                         });
@@ -1326,7 +1327,7 @@ new class extends Component {
                             type="text"
                             wire:model.live.debounce.120ms="rowSearch"
                             autocomplete="off"
-                            placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..."
+                            placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..."
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
                         />
 

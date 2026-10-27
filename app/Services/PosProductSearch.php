@@ -37,7 +37,7 @@ class PosProductSearch
                 foreach (explode(' ', $pattern) as $keyword) {
                     $query->whereRaw("{$name} LIKE ? ESCAPE '!'", ['%'.$keyword.'%']);
                 }
-            })->orWhereRaw("{$number} LIKE ? ESCAPE '!'", [$pattern.'%'])
+            })->orWhereRaw("{$number} LIKE ? ESCAPE '!'", ['%'.$pattern.'%'])
                 ->orWhereRaw("{$barcode} LIKE ? ESCAPE '!')", [$tenantId, $pattern.'%']);
             if (ctype_digit($search) && strlen($search) <= 18) {
                 $query->orWhere('products.id', (int) $search);

@@ -55,6 +55,15 @@ test('exact barcode and product number outrank name matches', function (): void 
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$barcode->id, $number->id, $name->id]);
 });
 
+test('both pos search controls find full and partial product numbers', function (string $search): void {
+    $product = searchablePosProduct($this, 'صنف تجريبي', 'ITEM-12345');
+    searchablePosProduct($this, 'صنف آخر', 'OTHER-987');
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search);
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$product->id]);
+    $component->set('inlineSearchQuery', $search);
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$product->id]);
+})->with(['ITEM-12345', 'EM-123', '٢٣٤']);
+
 test('exact names outrank prefixes which outrank word matches', function (): void {
     $word = searchablePosProduct($this, 'علبة قهوة');
     $prefix = searchablePosProduct($this, 'قهوة عربية');

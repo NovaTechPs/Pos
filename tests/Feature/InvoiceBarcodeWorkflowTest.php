@@ -46,6 +46,21 @@ beforeEach(function (): void {
     ]);
 });
 
+test('invoice product search matches the full product number and its middle', function (string $page, string $search): void {
+    $otherTenant = Tenant::query()->create(['name' => 'متجر آخر']);
+    Product::query()->create(['tenant_id' => $otherTenant->id, 'name' => 'صنف مخفي', 'product_number' => 'ITEM-100']);
+    Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'صنف غير مطابق', 'product_number' => 'OTHER-200']);
+
+    Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set('rowSearch', $search)
+        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+})->with([
+    ['sales', 'ITEM-100'],
+    ['sales', 'EM-10'],
+    ['purchases', 'ITEM-100'],
+    ['purchases', 'EM-10'],
+]);
+
 test('purchase invoice scanner loads barcode details and Enter progression commits the row', function (): void {
     $component = Livewire::test('pages::tenant.purchases.invoices')
         ->call('selectProductByBarcode', '1234567890123')
