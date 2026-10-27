@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark" data-theme="{{ $appTheme }}">
+<html dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}" lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark" data-theme="{{ $appTheme }}">
     <head>
         @include('layouts.partials.head')
     </head>
@@ -11,14 +11,10 @@
                     <img src="{{ asset('wasla-logo.svg') }}" class="h-12 w-auto brightness-0 invert" alt="WaslaPOS">
                 </a>
 
-                @php
-                    [$message, $author] = str(Illuminate\Foundation\Inspiring::quotes()->random())->explode('-');
-                @endphp
-
                 <div class="relative z-20 mt-auto">
                     <blockquote class="space-y-2">
-                        <flux:heading size="lg">&ldquo;{{ trim($message) }}&rdquo;</flux:heading>
-                        <footer><flux:heading>{{ trim($author) }}</flux:heading></footer>
+                        <flux:heading size="lg">{{ __('Everything in one place') }}</flux:heading>
+                        <footer><flux:heading>{{ __('Use the navigation to manage your store, inventory, team, and reports.') }}</flux:heading></footer>
                     </blockquote>
                 </div>
             </div>

@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Observers\AuditObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -46,10 +45,6 @@ class AppServiceProvider extends ServiceProvider
         }
 
         view()->composer('*', function ($view): void {
-            if (Session::has('locale')) {
-                App::setLocale(Session::get('locale'));
-            }
-
             $theme = request()->attributes->get('app_theme');
 
             if (! is_string($theme)) {

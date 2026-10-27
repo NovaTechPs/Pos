@@ -20,7 +20,7 @@
                 <div class="relative overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-zinc-800 p-6 shadow-sm flex flex-col justify-between">
                     <div class="flex items-center justify-between">
                         <flux:subheading>إجمالي المتاجر</flux:subheading>
-                        <flux:badge color="indigo" size="sm">SaaS</flux:badge>
+                        <flux:badge color="indigo" size="sm">المنصة</flux:badge>
                     </div>
                     <div class="mt-4">
                         <flux:heading size="2xl" class="font-bold">{{ $stats['total_tenants'] }}</flux:heading>
@@ -32,7 +32,7 @@
                 <div class="relative overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-zinc-800 p-6 shadow-sm flex flex-col justify-between">
                     <div class="flex items-center justify-between">
                         <flux:subheading class="text-emerald-600 dark:text-emerald-400">الاشتراكات النشطة</flux:subheading>
-                        <flux:badge color="emerald" size="sm">Active</flux:badge>
+                        <flux:badge color="emerald" size="sm">{{ __('Active') }}</flux:badge>
                     </div>
                     <div class="mt-4">
                         <flux:heading size="2xl" class="font-bold text-emerald-600 dark:text-emerald-400">{{ $stats['active_tenants'] }}</flux:heading>
@@ -44,7 +44,7 @@
                 <div class="relative overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-zinc-800 p-6 shadow-sm flex flex-col justify-between">
                     <div class="flex items-center justify-between">
                         <flux:subheading class="text-amber-600 dark:text-amber-400">الفترة التجريبية</flux:subheading>
-                        <flux:badge color="amber" size="sm">Trial</flux:badge>
+                        <flux:badge color="amber" size="sm">{{ __('Trial') }}</flux:badge>
                     </div>
                     <div class="mt-4">
                         <flux:heading size="2xl" class="font-bold text-amber-600 dark:text-amber-400">{{ $stats['trial_tenants'] }}</flux:heading>
@@ -83,7 +83,7 @@
                                 <tr class="hover:bg-neutral-50/50 dark:hover:bg-zinc-700/30 transition">
                                     <td class="p-4 font-semibold text-neutral-800 dark:text-neutral-200">{{ $tenant->name }}</td>
                                     <td class="p-4">
-                                        <flux:badge color="indigo" size="sm">{{ ucfirst($tenant->plan ?? 'Basic') }}</flux:badge>
+                                        <flux:badge color="indigo" size="sm">{{ __(ucfirst($tenant->plan ?? 'Basic')) }}</flux:badge>
                                     </td>
                                     <td class="p-4">
                                         @if($tenant->status === 'active')

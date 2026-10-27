@@ -4,6 +4,7 @@ use App\Http\Middleware\AuthenticateBranchSyncDevice;
 use App\Http\Middleware\EnsureActiveAccount;
 use App\Http\Middleware\EnsureApiTenant;
 use App\Http\Middleware\IsAdmin;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,7 +18,7 @@ $application = Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [EnsureActiveAccount::class]);
+        $middleware->web(append: [SetLocale::class, EnsureActiveAccount::class]);
         $middleware->alias([
             'is_admin' => IsAdmin::class,
             'branch.sync' => AuthenticateBranchSyncDevice::class,
