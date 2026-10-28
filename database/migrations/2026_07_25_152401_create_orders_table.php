@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('orders', function (Blueprint $table) {
+        SchemaIntegrity::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained()->nullOnDelete();
@@ -21,6 +22,8 @@ return new class extends Migration
             $table->text('customer_address')->nullable();
             $table->string('invoice_number');
             $table->enum('type', ['pos', 'wholesale', 'online', 'return'])->default('pos');
+            $table->enum('source', ['pos', 'web', 'api', 'online', 'sync'])->default('web');
+            $table->enum('sale_kind', ['retail', 'wholesale'])->default('retail');
             $table->enum('status', ['pending', 'processing', 'completed', 'cancelled'])->default('completed');
             $table->decimal('subtotal', 12, 2);
             $table->decimal('tax_amount', 12, 2)->default(0);
@@ -40,7 +43,9 @@ return new class extends Migration
             $table->softDeletes();
 
             $table->unique(['tenant_id', 'invoice_number']);
+            $table->unique(['tenant_id', 'id']);
             $table->index(['tenant_id', 'branch_id', 'type']);
+            $table->index(['tenant_id', 'source', 'sale_kind', 'created_at'], 'orders_source_kind_date_index');
             $table->index(['tenant_id', 'created_at']);
             $table->index(['tenant_id', 'branch_id', 'created_at']);
             $table->index(['tenant_id', 'customer_id', 'type', 'created_at'], 'orders_party_return_lookup');

@@ -17,11 +17,6 @@ return new class extends Migration
         }
     }
 
-    public function down(): void
-    {
-        Schema::table('employee_payroll_items', function (Blueprint $table): void {
-            $table->dropConstrainedForeignId('employee_advance_id');
-            $table->dropConstrainedForeignId('employee_payroll_carryover_id');
-        });
-    }
+    /** Preserve payroll links that are also part of the original creation schema. */
+    public function down(): void {}
 };

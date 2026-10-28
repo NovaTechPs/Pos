@@ -3,7 +3,7 @@
 test('browser tab includes the page name and WaslaPOS brand in English', function (): void {
     app()->setLocale('en');
 
-    $this->get(route('login'))
+    $this->withSession(['locale' => 'en'])->get(route('login'))
         ->assertOk()
         ->assertSee('<title>Login - WaslaPOS</title>', false)
         ->assertSee('favicon.ico?v=waslapos-1', false)

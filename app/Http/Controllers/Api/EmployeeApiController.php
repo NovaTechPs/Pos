@@ -6,16 +6,29 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAttendance;
+use App\Models\EmployeeDeparture;
 use App\Models\EmployeeLeave;
 use App\Models\EmployeePayment;
 use App\Models\EmployeePayroll;
+use App\Services\EmployeeAttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class EmployeeApiController extends Controller
 {
+    public function requestDeparture(Request $request): JsonResponse
+    {
+        $employee = $this->currentEmployee($request);
+        abort_unless($employee, 404);
+        $data = $request->validate(['date' => 'required|date|after_or_equal:today', 'start_time' => 'required|date_format:H:i', 'end_time' => 'required|date_format:H:i', 'ends_next_day' => 'sometimes|boolean', 'reason' => 'required|string|max:1000']);
+        $departure = EmployeeDeparture::create($data + ['employee_id' => $employee->id, 'status' => 'pending', 'is_deductible' => true]);
+
+        return response()->json(['message' => 'تم إرسال طلب المغادرة للمراجعة.', 'departure' => $departure], 201);
+    }
+
     public function profile(Request $request): JsonResponse
     {
         $user = $request->user() ?? auth()->user();
@@ -29,7 +42,7 @@ class EmployeeApiController extends Controller
             return response()->json(['message' => 'Employee profile not found.'], 404);
         }
 
-        $todayAttendance = EmployeeAttendance::where('employee_id', $employee->id)
+        $todayAttendance = EmployeeAttendance::with('sessions')->where('employee_id', $employee->id)
             ->whereDate('date', today())
             ->first();
 
@@ -50,26 +63,8 @@ class EmployeeApiController extends Controller
         $employee = $this->currentEmployee($request);
         abort_unless($employee && (! isset($validated['employee_id']) || (int) $validated['employee_id'] === $employee->id), 404);
 
-        [$attendance, $message] = DB::transaction(function () use ($employee, $validated): array {
-            $attendance = EmployeeAttendance::query()->where('employee_id', $employee->id)
-                ->whereDate('date', today())->lockForUpdate()->first();
-            $attendance ??= new EmployeeAttendance(['employee_id' => $employee->id, 'date' => today()]);
-
-            if ($validated['type'] === 'check_in') {
-                abort_if($attendance->check_in !== null, 409, 'تم تسجيل الحضور مسبقاً لهذا اليوم.');
-                $attendance->check_in = now()->format('H:i:s');
-                $attendance->status = 'present';
-                $message = 'تم تسجيل الحضور بنجاح.';
-            } else {
-                abort_unless($attendance->check_in !== null, 422, 'يجب تسجيل الحضور قبل الانصراف.');
-                abort_if($attendance->check_out !== null, 409, 'تم تسجيل الانصراف مسبقاً لهذا اليوم.');
-                $attendance->check_out = now()->format('H:i:s');
-                $message = 'تم تسجيل الانصراف بنجاح.';
-            }
-            $attendance->save();
-
-            return [$attendance, $message];
-        }, 3);
+        $attendance = app(EmployeeAttendanceService::class)->clock($employee, $validated['type'], 'self');
+        $message = $validated['type'] === 'check_in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.';
 
         return response()->json([
             'message' => $message,
@@ -97,27 +92,9 @@ class EmployeeApiController extends Controller
             return response()->json(['message' => 'باركود الموظف غير صحيح أو أن الموظف غير نشط.'], 404);
         }
 
-        [$attendance, $message, $type] = DB::transaction(function () use ($employee): array {
-            $attendance = EmployeeAttendance::query()->where('employee_id', $employee->id)
-                ->whereDate('date', today())->lockForUpdate()->first();
-            $attendance ??= new EmployeeAttendance(['employee_id' => $employee->id, 'date' => today()]);
-
-            if (! $attendance->check_in) {
-                $attendance->check_in = now()->format('H:i:s');
-                $attendance->status = 'present';
-                $message = 'تم تسجيل الحضور بنجاح.';
-                $type = 'check_in';
-            } elseif (! $attendance->check_out) {
-                $attendance->check_out = now()->format('H:i:s');
-                $message = 'تم تسجيل الانصراف بنجاح.';
-                $type = 'check_out';
-            } else {
-                abort(409, 'تم تسجيل الحضور والانصراف لهذا اليوم.');
-            }
-            $attendance->save();
-
-            return [$attendance, $message, $type];
-        }, 3);
+        $type = $employee->attendanceSessions()->whereNull('checked_out_at')->exists() ? 'check_out' : 'check_in';
+        $attendance = app(EmployeeAttendanceService::class)->clock($employee, $type, 'barcode');
+        $message = $type === 'check_in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.';
 
         return response()->json([
             'message' => $message,
@@ -201,7 +178,7 @@ class EmployeeApiController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'employee_code' => ['required', 'string', 'max:100', 'unique:employees,employee_code'],
+            'employee_code' => ['required', 'string', 'max:100', Rule::unique('employees', 'employee_code')->where('tenant_id', $request->user()->tenant_id)],
             'first_name' => ['required', 'string', 'max:100'], 'last_name' => ['required', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'], 'employment_type' => ['required', 'in:full_time,part_time,contract,daily'],
             'salary_type' => ['required', 'in:monthly,hourly,daily,production'], 'basic_salary' => ['nullable', 'numeric', 'min:0'],
@@ -216,7 +193,7 @@ class EmployeeApiController extends Controller
     {
         $this->assertEmployeeTenant($request, $employee);
         $data = $request->validate([
-            'employee_code' => ['sometimes', 'required', 'string', 'max:100', 'unique:employees,employee_code,'.$employee->id],
+            'employee_code' => ['sometimes', 'required', 'string', 'max:100', Rule::unique('employees', 'employee_code')->where('tenant_id', $request->user()->tenant_id)->ignore($employee->id)],
             'first_name' => ['sometimes', 'required', 'string', 'max:100'], 'last_name' => ['sometimes', 'required', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'], 'employment_type' => ['sometimes', 'in:full_time,part_time,contract,daily'],
             'salary_type' => ['sometimes', 'in:monthly,hourly,daily,production'], 'basic_salary' => ['nullable', 'numeric', 'min:0'],

@@ -91,7 +91,10 @@ test('sales invoice retains customer search selection and original item entry wi
         ->assertSee('productId: '.$this->product->id.', customerId: '.$this->customer->id, false);
     expect($component->get('cart'))->toHaveCount(1);
     expect(array_values($component->get('cart'))[0])->toMatchArray(['quantity' => 2, 'price' => 25]);
-    $component->call('clearCustomer')->assertSet('selectedCustomerId', null)->assertSee('الزبون الثاني');
+    $component->call('clearCustomer')->assertSet('selectedCustomerId', null)
+        ->assertSet('customerSearch', '')
+        ->assertViewHas('customerResults', fn ($results): bool => $results->isEmpty())
+        ->set('customerSearch', 'الزبون الثاني')->assertSee('الزبون الثاني');
 });
 
 test('price modal displays customer names when invoice name snapshot is empty', function (): void {

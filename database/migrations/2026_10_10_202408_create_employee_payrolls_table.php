@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,10 +12,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('employee_payrolls', function (Blueprint $table) {
+        SchemaIntegrity::create('employee_payrolls', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('payroll_period_id')->constrained('payroll_periods')->cascadeOnDelete();
-            $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
+            $table->foreignId('payroll_period_id')->constrained('payroll_periods')->restrictOnDelete();
+            $table->foreignId('employee_id')->constrained('employees')->restrictOnDelete();
 
             $table->decimal('basic_salary', 10, 2)->default(0);
             $table->decimal('total_allowances', 10, 2)->default(0); // إجمالي المكافآت والبدلات
@@ -24,6 +25,7 @@ return new class extends Migration
             $table->decimal('paid_amount', 10, 2)->default(0); // ما تم دفعه فعلية
 
             $table->enum('payment_status', ['unpaid', 'partial', 'paid'])->default('unpaid');
+            $table->json('earnings_breakdown')->nullable();
             $table->timestamps();
 
             $table->unique(['payroll_period_id', 'employee_id']);

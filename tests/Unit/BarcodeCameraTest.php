@@ -40,7 +40,7 @@ test('camera lazily loads stops after one barcode and releases cancelled or fail
     assert.match(camera.error, /HTTPS/);
     console.log('CAMERA_OK');
     JS;
-    $process = new Process(['node', '--input-type=module', '-e', $script], base_path());
+    $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
     $process->run();
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('CAMERA_OK');

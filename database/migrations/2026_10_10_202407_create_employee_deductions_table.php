@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,9 +12,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('employee_deductions', function (Blueprint $table) {
+        SchemaIntegrity::create('employee_deductions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('employee_id')->constrained('employees')->cascadeOnDelete();
+            $table->foreignId('employee_id')->constrained('employees')->restrictOnDelete();
             $table->foreignId('payroll_period_id')->nullable()->constrained('payroll_periods')->nullOnDelete();
             $table->decimal('amount', 10, 2);
             $table->string('reason');

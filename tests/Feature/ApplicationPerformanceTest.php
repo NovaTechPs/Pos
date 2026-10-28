@@ -57,7 +57,7 @@ test('tenant settings are read once per request and invalidate immediately after
     expect(TenantSetting::get($other->id, 'currency', 'JOD'))->toBe('JOD');
 });
 
-test('repricing twenty separate cart lines uses bounded offer and branch-price queries', function (): void {
+test('repricing twenty separate cart lines uses bounded offer price and remaining stock queries', function (): void {
     $user = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'is_owner' => true]);
     $this->actingAs($user)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
     Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id, 'opening_cash' => 0]);
@@ -77,7 +77,7 @@ test('repricing twenty separate cart lines uses bounded offer and branch-price q
         }
     });
     $component->call('updateQuantity', 'line_0', 2);
-    expect(count($queries))->toBeLessThanOrEqual(2)
+    expect(count($queries))->toBeLessThanOrEqual(3)
         ->and(array_sum(array_column($component->get('cart'), 'subtotal')))->toBe(112.0);
 });
 

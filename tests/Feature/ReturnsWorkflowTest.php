@@ -43,8 +43,8 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertSee('اختر العميل أولاً')
         ->assertSee(route('tenant.sales-returns'))
         ->assertSee(route('tenant.purchase-returns'))
-        ->assertSee('Sales returns')
-        ->assertSee('Purchase returns')
+        ->assertSee(__('Sales Returns'))
+        ->assertSee(__('Purchase Returns'))
         ->assertDontSee('Return type');
 
     $this->get(route('tenant.purchase-returns'))

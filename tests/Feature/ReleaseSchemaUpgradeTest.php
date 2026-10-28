@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -48,11 +49,15 @@ test('release migration fills historical shift sync ids once', function (): void
 });
 
 test('release migration upgrades the legacy employees table with missing tenant and branch columns', function (): void {
+    SchemaIntegrity::dropTenantGuards();
     $tenant = Tenant::query()->create(['name' => 'Legacy tenant']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'Legacy branch']);
     $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id]);
 
     Schema::table('employees', function (Blueprint $table): void {
+        $table->dropUnique(['tenant_id', 'employee_code']);
+        $table->dropUnique(['tenant_id', 'national_id']);
+        $table->dropIndex('employees_tenant_active_salary_index');
         $table->dropConstrainedForeignId('tenant_id');
         $table->dropConstrainedForeignId('branch_id');
     });

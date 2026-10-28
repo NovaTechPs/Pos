@@ -61,7 +61,11 @@ test('POS refuses deleting invoices outside the current branch or tenant', funct
         $this->order->update(['branch_id' => $other->id]);
     } else {
         $other = Tenant::query()->create(['name' => 'Other tenant']);
-        $this->order->update(['tenant_id' => $other->id]);
+        $branch = Branch::query()->create(['tenant_id' => $other->id, 'name' => 'Other tenant branch']);
+        $this->order = Order::query()->create([
+            'tenant_id' => $other->id, 'branch_id' => $branch->id,
+            'invoice_number' => 'OTHER-TENANT-1', 'subtotal' => 10, 'total' => 10,
+        ]);
     }
     $this->pos->set('currentInvoiceId', $this->order->id)->call('deleteInvoice')
         ->assertSet('errorMessage', 'اختر فاتورة محفوظة وغير محذوفة أولاً.');
@@ -95,7 +99,8 @@ test('deleting held invoice does not increase stock', function (): void {
 });
 
 test('missing stock rolls back invoice and payment deletion', function (): void {
-    $this->stock->delete();
+    BranchProduct::addGlobalScope('missing-stock', fn ($query) => $query->whereKeyNot($this->stock->id));
+    $this->beforeApplicationDestroyed(fn () => BranchProduct::clearBootedModels());
     $this->pos->set('currentInvoiceId', $this->order->id)->call('deleteInvoice');
     expect($this->pos->get('errorMessage'))->not->toBeNull();
     $this->assertDatabaseHas('orders', ['id' => $this->order->id, 'deleted_at' => null]);

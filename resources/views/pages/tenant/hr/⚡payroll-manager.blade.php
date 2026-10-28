@@ -17,6 +17,7 @@
     use App\Models\EmployeePayrollCarryoverApplication;
     use Illuminate\Support\Facades\DB;
     use Illuminate\Validation\ValidationException;
+    use Illuminate\Validation\Rule;
     use App\Services\PayrollCalculatorService;
     use Carbon\Carbon;
 
@@ -35,16 +36,87 @@
         public $employee_code, $first_name, $last_name, $phone, $hire_date;
         public $basic_salary = 0, $hourly_rate = 0, $salary_type = 'monthly', $employment_type = 'full_time';
 
+        public bool $showTermsModal = false;
+        public ?int $termsEmployeeId = null;
+        public string $termsEffectiveFrom = '';
+        public string $termsSalaryType = 'monthly';
+        public float $termsBasicSalary = 0;
+        public float $termsHourlyRate = 0;
+        public string $termsShiftName = 'الدوام الأساسي';
+        public string $termsStartTime = '09:00';
+        public string $termsEndTime = '17:00';
+        public array $termsWorkDays = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu'];
+        public int $termsGrace = 15;
+        public string $terminationDate = '';
+        public string $terminationReason = '';
+        public int $editApprovedOvertime = 0;
+        public float $editProductionUnits = 0;
+
+        public function openEmployeeTerms(int $id): void
+        {
+            $this->authorize('payroll.edit');
+            $employee = Employee::findOrFail($id);
+            $this->termsEmployeeId = $id;
+            $this->termsEffectiveFrom = today()->toDateString();
+            $this->terminationDate = today()->toDateString();
+            $this->terminationReason = '';
+            $service = app(\App\Services\EmployeeTermsService::class);
+            $rates = $service->ratesOn($employee, today()->toDateString());
+            $this->termsSalaryType = $rates['salary_type'];
+            $this->termsBasicSalary = $rates['basic_salary'];
+            $this->termsHourlyRate = $rates['hourly_rate'];
+            if ($shift = $service->scheduleOn($employee, today()->toDateString())) {
+                $this->termsShiftName = $shift->shift_name;
+                $this->termsStartTime = substr($shift->start_time, 0, 5);
+                $this->termsEndTime = substr($shift->end_time, 0, 5);
+                $this->termsWorkDays = $shift->work_days;
+                $this->termsGrace = (int) $shift->grace_period_minutes;
+            }
+            $this->resetValidation();
+            $this->showTermsModal = true;
+        }
+
+        public function saveSalaryTerms(): void
+        {
+            $this->authorize('payroll.edit');
+            $this->validate(['termsEffectiveFrom' => 'required|date', 'termsBasicSalary' => 'required|numeric|min:0', 'termsHourlyRate' => 'required|numeric|min:0']);
+            app(\App\Services\EmployeeTermsService::class)->salary(Employee::findOrFail($this->termsEmployeeId), [
+                'salary_type' => $this->termsSalaryType, 'basic_salary' => $this->termsBasicSalary, 'hourly_rate' => $this->termsHourlyRate,
+            ], $this->termsEffectiveFrom, 'تعديل من ملف الموظف');
+            session()->flash('success', 'تم حفظ الراتب بتاريخ سريانه مع الاحتفاظ بالسجل السابق.');
+        }
+
+        public function saveScheduleTerms(): void
+        {
+            $this->authorize('payroll.edit');
+            $this->validate(['termsEffectiveFrom' => 'required|date']);
+            app(\App\Services\EmployeeTermsService::class)->schedule(Employee::findOrFail($this->termsEmployeeId), [
+                'shift_name' => $this->termsShiftName, 'start_time' => $this->termsStartTime, 'end_time' => $this->termsEndTime,
+                'work_days' => $this->termsWorkDays, 'grace_period_minutes' => $this->termsGrace,
+            ], $this->termsEffectiveFrom);
+            session()->flash('success', 'تم حفظ جدول الدوام بتاريخ سريانه.');
+        }
+
+        public function terminateEmployee(): void
+        {
+            $this->authorize('employees.edit');
+            app(\App\Services\EmployeeTermsService::class)->terminate(Employee::findOrFail($this->termsEmployeeId), $this->terminationDate, $this->terminationReason);
+            $this->showTermsModal = false;
+            session()->flash('success', 'تم إنهاء الخدمة وتعطيل الدخول مع الاحتفاظ بكامل السجل الوظيفي والمالي.');
+        }
+
         // Attendance Form Fields
         public $attendance_date, $employee_id, $check_in, $check_out, $attendance_status = 'present';
 
         // Attendance Edit Form Fields
         public bool $showEditAttendanceModal = false;
         public $editing_attendance_id;
+        public ?int $edit_session_id = null;
         public $edit_check_in, $edit_check_out, $edit_status, $edit_notes;
 
         // Departures Form Fields
         public bool $showDepartureModal = false;
+        public bool $departureEndsNextDay = false;
         public $departure_employee_id, $departure_date, $departure_start, $departure_end, $departure_minutes = 60, $is_deductible = true, $departure_reason;
 
         // Leaves Form Fields
@@ -129,7 +201,7 @@
         {
         $this->authorize('employees.create');
             $this->validate([
-                'employee_code' => 'required|unique:employees,employee_code',
+                'employee_code' => ['required', 'string', 'max:191', Rule::unique('employees', 'employee_code')->where('tenant_id', auth()->user()?->tenant_id)],
                 'first_name' => 'required|string|max:100',
                 'last_name' => 'required|string|max:100',
                 'salary_type' => 'required',
@@ -162,77 +234,64 @@
             $this->validate([
                 'employee_id' => 'required|exists:employees,id',
                 'attendance_date' => 'required|date',
-                'attendance_status' => 'required',
-                'check_out' => 'nullable|after:check_in',
+                'attendance_status' => 'required|in:present,late,absent,leave',
+                'check_in' => 'nullable|date_format:H:i,H:i:s',
+                'check_out' => 'nullable|date_format:H:i,H:i:s',
             ], [
                 'check_out.after' => 'يجب أن يكون وقت الانصراف بعد وقت الدخول.',
             ]);
 
-            $attendance = EmployeeAttendance::firstOrNew([
-                'employee_id' => $this->employee_id,
-                'date' => $this->attendance_date,
-            ]);
-
-            $this->saveAttendanceData($attendance, $this->attendance_status, $this->check_in, $this->check_out);
+            app(\App\Services\EmployeeAttendanceService::class)->manual(
+                Employee::findOrFail($this->employee_id), $this->attendance_date, $this->check_in ?: null,
+                $this->check_out ?: null, $this->attendance_status,
+            );
             $this->reset(['employee_id', 'check_in', 'check_out']);
         }
 
         public function editAttendance($id)
         {
+            $this->authorize('payroll.edit');
             $attendance = EmployeeAttendance::findOrFail($id);
+            $this->edit_session_id = $attendance->sessions()->oldest('checked_in_at')->value('id');
             $this->editing_attendance_id = $attendance->id;
             $this->edit_check_in = $attendance->check_in;
             $this->edit_check_out = $attendance->check_out;
             $this->edit_status = $attendance->status;
             $this->edit_notes = $attendance->notes;
+            $this->editApprovedOvertime = (int) $attendance->overtime_approved_minutes;
+            $this->editProductionUnits = (float) $attendance->production_units;
             $this->showEditAttendanceModal = true;
+        }
+
+        public function editAttendanceSession(int $id): void
+        {
+            $this->authorize('payroll.edit');
+            $session = \App\Models\EmployeeAttendanceSession::findOrFail($id);
+            $this->editAttendance($session->employee_attendance_id);
+            $this->edit_session_id = $session->id;
+            $this->edit_check_in = $session->checked_in_at->format('H:i');
+            $this->edit_check_out = $session->checked_out_at?->format('H:i');
         }
 
         public function updateAttendance()
         {
         $this->authorize('payroll.edit');
             $this->validate([
-                'edit_check_out' => 'nullable|after:edit_check_in',
+                'edit_check_out' => 'nullable|date_format:H:i,H:i:s',
             ], [
                 'edit_check_out.after' => 'يجب أن يكون وقت الانصراف بعد وقت الدخول.',
             ]);
 
             $attendance = EmployeeAttendance::findOrFail($this->editing_attendance_id);
-            $attendance->notes = $this->edit_notes;
-
-            $this->saveAttendanceData($attendance, $this->edit_status, $this->edit_check_in, $this->edit_check_out);
+            DB::transaction(function () use ($attendance): void {
+                app(\App\Services\EmployeeAttendanceService::class)->manual(
+                    Employee::findOrFail($attendance->employee_id), $attendance->date, $this->edit_check_in ?: null,
+                    $this->edit_check_out ?: null, $this->edit_status, $this->edit_session_id ?: null, $this->edit_notes,
+                );
+                $this->validate(['editApprovedOvertime' => 'required|integer|min:0|max:'.$attendance->fresh()->overtime_minutes, 'editProductionUnits' => 'required|numeric|min:0']);
+                $attendance->refresh()->update(['overtime_approved_minutes' => $this->editApprovedOvertime, 'production_units' => $this->editProductionUnits]);
+            });
             $this->showEditAttendanceModal = false;
-        }
-
-        private function saveAttendanceData($attendance, $status, $checkIn, $checkOut)
-        {
-            $attendance->status = $status;
-
-            if (!empty($checkIn)) {
-                $attendance->check_in = $checkIn;
-
-                $shift = EmployeeShift::where('employee_id', $attendance->employee_id)->first();
-                if ($shift && $shift->start_time) {
-                    $shiftStart = Carbon::parse($attendance->date . ' ' . $shift->start_time);
-                    $actualIn = Carbon::parse($attendance->date . ' ' . $checkIn);
-                    $graceStart = $shiftStart->copy()->addMinutes($shift->grace_period_minutes ?? 0);
-
-                    if ($actualIn->gt($graceStart)) {
-                        $attendance->late_minutes = $actualIn->diffInMinutes($shiftStart);
-                        if ($attendance->status === 'present') {
-                            $attendance->status = 'late';
-                        }
-                    } else {
-                        $attendance->late_minutes = 0;
-                    }
-                }
-            }
-
-            if (!empty($checkOut)) {
-                $attendance->check_out = $checkOut;
-            }
-
-            $attendance->save();
         }
 
         // --- Departures Actions ---
@@ -243,7 +302,7 @@
                 'departure_employee_id' => 'required|exists:employees,id',
                 'departure_date' => 'required|date',
                 'departure_start' => 'required',
-                'departure_end' => 'required|after:departure_start',
+                'departure_end' => 'required|date_format:H:i,H:i:s',
                 'departure_minutes' => 'required|numeric|gt:0',
             ], [
                 'departure_end.after' => 'يجب أن يكون وقت نهاية المغادرة بعد وقت البداية.',
@@ -254,6 +313,7 @@
                 'date' => $this->departure_date,
                 'start_time' => $this->departure_start,
                 'end_time' => $this->departure_end,
+                'ends_next_day' => $this->departureEndsNextDay,
                 'minutes' => $this->departure_minutes,
                 'is_deductible' => $this->is_deductible,
                 'status' => 'approved',
@@ -265,6 +325,15 @@
         }
 
         // --- Leaves Actions (التحقق من عدم وجود حضور يومي) ---
+        public function reviewEmployeeRequest(string $type, int $id, bool $approved): void
+        {
+            $this->authorize('payroll.edit');
+            abort_unless(in_array($type, ['leave', 'departure'], true), 404);
+            $request = $type === 'leave' ? EmployeeLeave::findOrFail($id) : EmployeeDeparture::findOrFail($id);
+            abort_unless($request->status === 'pending', 422, 'تمت مراجعة الطلب سابقًا.');
+            $request->update(['status' => $approved ? 'approved' : 'rejected', 'approved_by' => auth()->id()]);
+        }
+
         public function saveLeave()
         {
         $this->authorize('payroll.edit');
@@ -546,7 +615,7 @@
 
         public function with()
         {
-            $attendances = EmployeeAttendance::with('employee')
+            $attendances = EmployeeAttendance::with(['employee', 'sessions'])
                 ->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))
                 ->where('date', $this->attendance_date)
                 ->get();
@@ -560,13 +629,7 @@
                 ->pluck('total_minutes', 'employee_id');
 
             $attendances = $attendances->map(function ($att) use ($departuresMinutesByEmployee) {
-                    $workedHours = 0;
-                    if ($att->check_in && $att->check_out) {
-                        $in = Carbon::parse($att->date . ' ' . $att->check_in);
-                        $out = Carbon::parse($att->date . ' ' . $att->check_out);
-                        $workedHours = round($in->diffInMinutes($out) / 60, 2);
-                    }
-                    $att->worked_hours = $workedHours;
+                    $att->worked_hours = round((int) $att->worked_minutes / 60, 2);
 
                     $departuresMinutes = (int) ($departuresMinutesByEmployee[$att->employee_id] ?? 0);
 
@@ -587,142 +650,19 @@
                     $monthStart = Carbon::createFromFormat('Y-m-d', $selectedMonth . '-01')->startOfDay();
                     $monthEnd = $monthStart->copy()->endOfMonth();
                     $reportEnd = $monthEnd->greaterThan(today()) ? today() : $monthEnd;
-                    $hireDate = Carbon::parse($employee->hire_date)->startOfDay();
-                    $earningStart = $hireDate->greaterThan($monthStart) ? $hireDate : $monthStart;
-                    $eligibleDays = $earningStart->greaterThan($reportEnd)
-                        ? 0
-                        : $earningStart->diffInDays($reportEnd) + 1;
-                    $monthDays = $monthStart->daysInMonth;
                     $startOfMonth = $monthStart->toDateString();
                     $endOfMonth = $reportEnd->toDateString();
-
-                    // 1. حساب أجرة اليوم الواحد وأجرة الساعة
-                    $dailyRate = $employee->salary_type === 'hourly'
-                        ? ($employee->hourly_rate * 8)
-                        : ($employee->salary_type === 'daily'
-                            ? $employee->basic_salary
-                            : ($employee->salary_type === 'monthly'
-                                ? ($employee->basic_salary / $monthDays)
-                                : ($employee->basic_salary / 30)));
-
-                    $hourlyRate = $employee->salary_type === 'hourly'
-                        ? $employee->hourly_rate
-                        : ($employee->salary_type === 'daily'
-                            ? ($employee->basic_salary / 8)
-                            : ($employee->salary_type === 'monthly'
-                                ? ($employee->basic_salary / ($monthDays * 8))
-                                : ($employee->basic_salary / 240)));
-
-                    // 2. حساب عدد أيام الحضور الفعلية المسجلة (حاضر أو متأخر)
-                    $actualWorkedDays = EmployeeAttendance::where('employee_id', $employee->id)
-                        ->whereBetween('date', [$earningStart->toDateString(), $endOfMonth])
-                        ->whereIn('status', ['present', 'late'])
-                        ->count();
-
-                    // 3. حساب عدد أيام الإجازات والعطل المدفوعة (سنوية، مرضية، طارئة)
-                    $approvedLeaves = EmployeeLeave::where('employee_id', $employee->id)
-                        ->where('status', 'approved')
-                        ->where('start_date', '<=', $endOfMonth)
-                        ->where('end_date', '>=', $earningStart->toDateString())
-                        ->get();
-
-                    $countLeaveDaysInPeriod = function (EmployeeLeave $leave) use ($earningStart, $reportEnd): int {
-                        $leaveStart = Carbon::parse($leave->start_date)->startOfDay();
-                        $leaveEnd = Carbon::parse($leave->end_date)->startOfDay();
-                        $overlapStart = $leaveStart->greaterThan($earningStart) ? $leaveStart : $earningStart;
-                        $overlapEnd = $leaveEnd->lessThan($reportEnd) ? $leaveEnd : $reportEnd;
-
-                        return $overlapStart->greaterThan($overlapEnd)
-                            ? 0
-                            : (int) $overlapStart->diffInDays($overlapEnd) + 1;
-                    };
-
-                    $paidLeaveDays = $approvedLeaves
-                        ->whereIn('type', ['annual', 'sick', 'emergency'])
-                        ->sum($countLeaveDaysInPeriod);
-
-                    // 4. حساب عدد أيام الإجازات غير المدفوعة الصريحة
-                    $unpaidLeaveDays = $approvedLeaves
-                        ->where('type', 'unpaid')
-                        ->sum($countLeaveDaysInPeriod);
-
-                    // 5. الأيام التي لم يسجل فيها دوام تعتبر غياباً تلقائياً باستثناء العطل والإجازات المدفوعة
-                    $unrecordedAbsentDays = max(0, $eligibleDays - ($actualWorkedDays + $paidLeaveDays + $unpaidLeaveDays));
-                    $totalAbsentOrUnpaidDays = $unpaidLeaveDays + $unrecordedAbsentDays;
-
-                    // 6. قيمة الخصم المالي للغياب والإجازات غير المدفوعة
-                    $salaryCap = $employee->salary_type === 'monthly'
-                        ? ((float) $employee->basic_salary * ($eligibleDays / $monthDays))
-                        : ($dailyRate * $eligibleDays);
-                    $absenceDeductions = min($totalAbsentOrUnpaidDays * $dailyRate, $salaryCap);
-
-                    // 7. الخصومات المباشرة والمغادرات المخصومة
-                    $directDeductions = EmployeeDeduction::where('employee_id', $employee->id)
-                        ->whereBetween('date', [$startOfMonth, $endOfMonth])
-                        ->sum('amount');
-
-                    $deductibleDepartureMinutes = EmployeeDeparture::where('employee_id', $employee->id)
-                        ->where('is_deductible', true)
-                        ->where('status', 'approved')
-                        ->whereBetween('date', [$startOfMonth, $endOfMonth])
-                        ->sum('minutes');
-                    $departureDeductions = ($deductibleDepartureMinutes / 60) * $hourlyRate;
-
-                    // إجمالي الخصومات المعتمدة
-                    $totalDeductions = min(
-                        $salaryCap,
-                        $directDeductions + $absenceDeductions + $departureDeductions
-                    );
-
-                    // 8. المكافآت والبدلات للشهر الحالي
-                    $bonuses = EmployeeBonus::where('employee_id', $employee->id)
-                        ->whereBetween('date', [$startOfMonth, $endOfMonth])
-                        ->sum('amount');
-
-                    // 9. قسط السلفة القائم للشهر الحالي فقط
-                    $activeAdvance = EmployeeAdvance::where('employee_id', $employee->id)
-                        ->where('status', 'active')
-                        ->where('start_installment_date', '<=', $endOfMonth)
-                        ->first();
-
-                    $advanceDeduction = 0;
-                    if ($activeAdvance) {
-                        $remainingAdvance = $activeAdvance->amount - $activeAdvance->paid_amount;
-                        $advanceDeduction = min($activeAdvance->installment_amount, $remainingAdvance);
-                    }
-                    $advanceDeduction = min($advanceDeduction, max(0, $salaryCap - $totalDeductions));
-
-                    // 10. الدفعات المالية المسددة فعلياً
-                    $payments = EmployeePayment::where('employee_id', $employee->id)
-                        ->whereBetween('payment_date', [$startOfMonth, $endOfMonth])
-                        ->sum('amount');
-
-                    // احتساب الراتب المستحق حسب أيام الدوام والإجازات المدفوعة
-                    $earnedSalary = min(($actualWorkedDays + $paidLeaveDays) * $dailyRate, $salaryCap);
-                    $totalEntitlements = $earnedSalary + $bonuses;
-                    $netDue = max(0, $totalEntitlements - ($directDeductions + $departureDeductions) - $advanceDeduction);
-                    $remainingBalance = $netDue - $payments;
-
-                    $ledgerData = [
-                        'employee' => $employee,
-                        'month' => $selectedMonth,
-                        'basic_salary' => $employee->basic_salary,
-                        'daily_rate' => round($dailyRate, 2),
-                        'actual_worked_days' => $actualWorkedDays,
-                        'paid_leave_days' => $paidLeaveDays,
-                        'unpaid_absent_days' => $totalAbsentOrUnpaidDays,
-                        'earned_salary' => round($earnedSalary, 2),
-                        'bonuses' => round($bonuses, 2),
-                        'deductions' => round($totalDeductions, 2),
-                        'advances' => round($advanceDeduction, 2),
-                        'carryover_balance' => round((float) EmployeePayrollCarryover::where('employee_id', $employee->id)->where('status', 'pending')->sum('remaining_amount'), 2),
-                        'payments' => round($payments, 2),
-                        'net_due' => round($netDue, 2),
-                        'remaining' => round($remainingBalance, 2),
-                        'history' => EmployeePayment::where('employee_id', $employee->id)
-                            ->whereBetween('payment_date', [$startOfMonth, $endOfMonth])
-                            ->latest()
-                            ->get(),
+                    $period = PayrollPeriod::where('tenant_id', $employee->tenant_id)->whereDate('start_date', $startOfMonth)->whereDate('end_date', $endOfMonth)->first()
+                        ?? new PayrollPeriod(['tenant_id' => $employee->tenant_id, 'start_date' => $startOfMonth, 'end_date' => $endOfMonth, 'status' => 'draft']);
+                    $preview = app(PayrollCalculatorService::class)->preview($employee, $period);
+                    $history = EmployeePayment::where('employee_id', $employee->id)->where('payment_type', 'payroll')->whereBetween('payment_date', [$startOfMonth, $endOfMonth])->latest()->get();
+                    $payments = (float) $history->sum('amount');
+                    $ledgerData = $preview + [
+                        'employee' => $employee, 'month' => $selectedMonth,
+                        'earned_salary' => $preview['basic_salary'], 'payments' => $payments,
+                        'remaining' => round($preview['net_due'] - $payments, 2),
+                        'carryover_balance' => (float) EmployeePayrollCarryover::where('employee_id', $employee->id)->whereIn('status', ['pending', 'partially_applied'])->sum('remaining_amount'),
+                        'history' => $history,
                     ];
                 }
             }
@@ -744,6 +684,7 @@
                 'leaves' => EmployeeLeave::with('employee')->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))->latest()->paginate(10),
                 'advances' => EmployeeAdvance::with('employee')->when($this->employeeListFilter, fn ($query) => $query->where('employee_id', $this->employeeListFilter))->latest()->paginate(10),
                 'ledgerData' => $ledgerData,
+                'termsEmployee' => $this->showTermsModal && $this->termsEmployeeId ? Employee::with(['salaryHistories', 'shifts'])->find($this->termsEmployeeId) : null,
                 'periods' => PayrollPeriod::latest()->get(),
                 'payrolls' => $this->selectedPeriodId
                     ? EmployeePayroll::with(['employee', 'items'])->where('payroll_period_id', $this->selectedPeriodId)->get()
@@ -846,7 +787,7 @@
                                 <th class="p-3">الهاتف</th>
                                 <th class="p-3">نوع الراتب</th>
                                 <th class="p-3">الراتب / سعر الساعة</th>
-                                <th class="p-3">تاريخ التعيين</th>
+                                <th class="p-3">تاريخ التعيين</th><th class="p-3">إجراءات الموظف</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y dark:divide-gray-700">
@@ -855,7 +796,7 @@
                                     <td class="p-3 font-mono">{{ $emp->employee_code }}</td>
                                     <td class="p-3 font-medium">{{ $emp->first_name }} {{ $emp->last_name }}</td>
                                     <td class="p-3">{{ $emp->phone ?? '-' }}</td>
-                                    <td class="p-3"><flux:badge size="sm">{{ $emp->salary_type }}</flux:badge></td>
+                                    <td class="p-3"><flux:badge size="sm">{{ ['monthly' => 'شهري', 'hourly' => 'بالساعة', 'daily' => 'يومي', 'production' => 'بالإنتاج'][$emp->salary_type] ?? $emp->salary_type }}</flux:badge></td>
                                     <td class="p-3 font-bold">
                                         @if($emp->salary_type === 'hourly')
                                             {{ number_format($emp->hourly_rate, 2) }} / ساعة
@@ -864,9 +805,11 @@
                                         @endif
                                     </td>
                                     <td class="p-3">{{ $emp->hire_date }}</td>
+                                    <td class="p-3"><flux:button size="sm" wire:click="openEmployeeTerms({{ $emp->id }})">الراتب والدوام والخدمة</flux:button>
+                                    @if ($emp->terminated_at)<span class="text-xs text-rose-600">انتهت الخدمة {{ $emp->terminated_at }}</span>@endif</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="p-4 text-center text-gray-500">لا يوجد موظفين مسجلين حالياً.</td></tr>
+                                <tr><td colspan="7" class="p-4 text-center text-gray-500">لا يوجد موظفين مسجلين حالياً.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -926,7 +869,11 @@
                             @forelse($attendances as $att)
                                 <tr class="border-b dark:border-gray-800">
                                     <td class="p-2 font-medium">{{ $att->employee->first_name }} {{ $att->employee->last_name }}</td>
-                                    <td class="p-2">{{ $att->check_in ?? '-' }}</td>
+                                    <td class="p-2">{{ $att->check_in ?? '-' }}
+                                        @foreach ($att->sessions as $session)
+                                            <div class="mt-1 text-xs"><button type="button" wire:click="editAttendanceSession({{ $session->id }})" class="text-indigo-600 underline">{{ $session->checked_in_at->format('H:i') }} ← {{ $session->checked_out_at?->format('m-d H:i') ?? 'جلسة مفتوحة' }}</button></div>
+                                        @endforeach
+                                    </td>
                                     <td class="p-2">{{ $att->check_out ?? '-' }}</td>
                                     <td class="p-2 font-bold text-indigo-600">
                                         {{ $att->worked_hours > 0 ? $att->worked_hours . ' ساعة' : '-' }}
@@ -995,7 +942,7 @@
                                         </flux:badge>
                                     </td>
                                     <td class="p-2 text-gray-500">{{ $dep->reason ?? '-' }}</td>
-                                    <td class="p-2"><flux:badge size="sm" color="green">{{ $dep->status }}</flux:badge></td>
+                                    <td class="p-2"><flux:badge size="sm" color="green">{{ ['pending' => 'بانتظار المراجعة', 'approved' => 'معتمد', 'rejected' => 'مرفوض'][$dep->status] ?? $dep->status }}</flux:badge>@if ($dep->status === 'pending')<div class="mt-2 flex gap-2"><flux:button size="xs" wire:click="reviewEmployeeRequest('departure', {{ $dep->id }}, true)">اعتماد</flux:button><flux:button size="xs" variant="danger" wire:click="reviewEmployeeRequest('departure', {{ $dep->id }}, false)">رفض</flux:button></div>@endif</td>
                                 </tr>
                             @empty
                                 <tr><td colspan="7" class="p-4 text-center text-gray-500">لا توجد مغادرات مسجلة.</td></tr>
@@ -1034,11 +981,11 @@
                             @forelse($leaves as $leave)
                                 <tr class="border-b dark:border-gray-800">
                                     <td class="p-2 font-medium">{{ $leave->employee->first_name }} {{ $leave->employee->last_name }}</td>
-                                    <td class="p-2"><flux:badge size="sm">{{ $leave->type }}</flux:badge></td>
+                                    <td class="p-2"><flux:badge size="sm">{{ ['annual' => 'سنوية', 'sick' => 'مرضية', 'unpaid' => 'غير مدفوعة', 'emergency' => 'طارئة'][$leave->type] ?? $leave->type }}</flux:badge></td>
                                     <td class="p-2">{{ $leave->start_date }} إلى {{ $leave->end_date }}</td>
                                     <td class="p-2 font-bold text-indigo-600">{{ $leave->total_days }} يوم</td>
                                     <td class="p-2 text-gray-500">{{ $leave->reason ?? '-' }}</td>
-                                    <td class="p-2"><flux:badge size="sm" color="green">{{ $leave->status }}</flux:badge></td>
+                                    <td class="p-2"><flux:badge size="sm" color="green">{{ ['pending' => 'بانتظار المراجعة', 'approved' => 'معتمد', 'rejected' => 'مرفوض'][$leave->status] ?? $leave->status }}</flux:badge>@if ($leave->status === 'pending')<div class="mt-2 flex gap-2"><flux:button size="xs" wire:click="reviewEmployeeRequest('leave', {{ $leave->id }}, true)">اعتماد</flux:button><flux:button size="xs" variant="danger" wire:click="reviewEmployeeRequest('leave', {{ $leave->id }}, false)">رفض</flux:button></div>@endif</td>
                                 </tr>
                             @empty
                                 <tr><td colspan="6" class="p-4 text-center text-gray-500">لا توجد إجازات مسجلة.</td></tr>
@@ -1375,6 +1322,8 @@
 
                 <flux:input label="ملاحظات" wire:model="edit_notes" placeholder="سبب التعديل إن وجد" />
 
+                <flux:input type="number" min="0" label="دقائق الإضافي المعتمدة" wire:model="editApprovedOvertime" />
+                <flux:input type="number" min="0" step="0.001" label="وحدات الإنتاج المنجزة" wire:model="editProductionUnits" />
                 <div class="flex justify-end space-x-2 space-x-reverse">
                     <flux:button variant="ghost" wire:click="$set('showEditAttendanceModal', false)">إلغاء</flux:button>
                     <flux:button type="submit" variant="primary">تحديث</flux:button>
@@ -1397,7 +1346,7 @@
 
                 <div class="grid grid-cols-2 gap-3">
                     <flux:input type="time" label="من الساعة" wire:model="departure_start" />
-                    <flux:input type="time" label="إلى الساعة" wire:model="departure_end" />
+                    <flux:input type="time" label="إلى الساعة" wire:model="departure_end" /><label class="text-sm"><input type="checkbox" wire:model="departureEndsNextDay"> تنتهي في اليوم التالي</label>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
@@ -1529,5 +1478,39 @@
                     <flux:button type="submit" variant="primary">إنشاء</flux:button>
                 </div>
             </form>
+        </flux:modal>
+
+        <flux:modal wire:model="showTermsModal" class="w-full max-w-2xl">
+            <div class="space-y-4" dir="rtl">
+                <flux:heading size="lg">الراتب وجدول العمل وإنهاء الخدمة</flux:heading>
+                @if ($errors->any())<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
+                @if (session('success'))<p class="text-sm text-emerald-700">{{ session('success') }}</p>@endif
+                <flux:input type="date" label="يسري التعديل من" wire:model="termsEffectiveFrom" />
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <flux:select label="نوع الراتب" wire:model="termsSalaryType"><option value="monthly">شهري</option><option value="daily">يومي</option><option value="hourly">بالساعة</option><option value="production">بالإنتاج</option></flux:select>
+                    <flux:input type="number" min="0" step="0.01" label="الراتب / أجر اليوم / الوحدة" wire:model="termsBasicSalary" />
+                    <flux:input type="number" min="0" step="0.01" label="أجر الساعة" wire:model="termsHourlyRate" />
+                </div>
+                <flux:button variant="primary" wire:click="saveSalaryTerms">حفظ تعديل الراتب</flux:button>
+                <div class="grid grid-cols-2 gap-3">
+                    <flux:input label="اسم الدوام" wire:model="termsShiftName" /><flux:input type="number" min="0" label="فترة السماح بالدقائق" wire:model="termsGrace" />
+                    <flux:input type="time" label="بداية الدوام" wire:model="termsStartTime" /><flux:input type="time" label="نهاية الدوام" wire:model="termsEndTime" />
+                </div>
+                <p class="text-xs text-slate-500">وقت نهاية يسبق البداية يعني أن الدوام ينتهي في اليوم التالي.</p>
+                <div class="flex flex-wrap gap-3">@foreach (['sat' => 'السبت', 'sun' => 'الأحد', 'mon' => 'الإثنين', 'tue' => 'الثلاثاء', 'wed' => 'الأربعاء', 'thu' => 'الخميس', 'fri' => 'الجمعة'] as $key => $day)<label class="text-sm"><input type="checkbox" wire:model="termsWorkDays" value="{{ $key }}"> {{ $day }}</label>@endforeach</div>
+                <flux:button wire:click="saveScheduleTerms">حفظ جدول الدوام</flux:button>
+                @if ($termsEmployee)
+                    <div class="max-h-48 space-y-2 overflow-auto rounded-xl bg-slate-50 p-3 text-xs">
+                        <p class="font-bold">تاريخ الرواتب والجداول</p>
+                        @foreach ($termsEmployee->salaryHistories->sortByDesc('effective_from') as $history)<p>{{ $history->effective_from->format('Y-m-d') }} — {{ ['monthly' => 'شهري', 'daily' => 'يومي', 'hourly' => 'بالساعة', 'production' => 'بالإنتاج'][$history->salary_type] }}: {{ number_format($history->salary_type === 'hourly' ? $history->hourly_rate : $history->basic_salary, 2) }}</p>@endforeach
+                        @foreach ($termsEmployee->shifts->sortByDesc('effective_from') as $shift)<p>{{ $shift->effective_from }} — {{ $shift->shift_name }}: {{ $shift->start_time }} ← {{ $shift->end_time }}</p>@endforeach
+                    </div>
+                @endif
+                <div class="space-y-3 border-t border-rose-100 pt-4">
+                    <flux:input type="date" label="آخر يوم عمل" wire:model="terminationDate" />
+                    <flux:input label="سبب إنهاء الخدمة" wire:model="terminationReason" />
+                    <flux:button variant="danger" wire:click="terminateEmployee" wire:confirm="سيُعطّل حساب الدخول مع الاحتفاظ بالرواتب والدوام. هل تريد المتابعة؟">إنهاء الخدمة وحفظ السجل</flux:button>
+                </div>
+            </div>
         </flux:modal>
     </div>

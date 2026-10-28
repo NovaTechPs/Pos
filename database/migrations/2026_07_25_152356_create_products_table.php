@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('products', function (Blueprint $table) {
+        SchemaIntegrity::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('product_number')->nullable();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
@@ -23,6 +24,9 @@ return new class extends Migration
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
+
+            $table->unique(['tenant_id', 'product_number']);
+            $table->unique(['tenant_id', 'id']);
 
             $table->index(['tenant_id', 'category_id']);
             $table->index(['tenant_id', 'name'], 'products_tenant_name_index');

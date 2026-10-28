@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('order_items', function (Blueprint $table) {
+        SchemaIntegrity::create('order_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
@@ -28,6 +29,11 @@ return new class extends Migration
             $table->decimal('promotion_savings', 12, 2)->default(0);
 
             $table->timestamps();
+
+            $table->foreign(['tenant_id', 'order_id'], 'order_items_tenant_order_fk')
+                ->references(['tenant_id', 'id'])->on('orders')->cascadeOnDelete();
+            $table->foreign(['tenant_id', 'product_id'], 'order_items_tenant_product_fk')
+                ->references(['tenant_id', 'id'])->on('products')->restrictOnDelete();
 
             $table->index(['tenant_id', 'order_id']);
             $table->index(['tenant_id', 'product_id']);
