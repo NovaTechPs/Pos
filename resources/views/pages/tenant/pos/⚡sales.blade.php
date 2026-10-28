@@ -2494,7 +2494,8 @@ new class extends Component {
                 }
 
                 $requiredPayment = abs($total);
-                $paid = min($requiredPayment, $paidInput > 0 ? $paidInput : $requiredPayment);
+                $paid = min($requiredPayment, $customer ? $paidInput : ($paidInput > 0 ? $paidInput : $requiredPayment));
+                $storedInvoiceType = $customer ? 'wholesale' : $invoiceType;
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
 
@@ -2502,14 +2503,14 @@ new class extends Component {
                     $order = Order::create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $branchId,
-                        'shift_id' => $lockedShift->id,
+                        'shift_id' => $customer ? null : $lockedShift->id,
                         'created_by' => $user->id,
                         'customer_id' => $customer?->id,
                         'customer_name' => $customer?->name ?? 'زبون عام',
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
-                        'invoice_number' => $this->makeInvoiceNumber($invoiceType, $tenantId, $branchId),
-                        'type' => $invoiceType,
+                        'invoice_number' => $this->makeInvoiceNumber($storedInvoiceType, $tenantId, $branchId),
+                        'type' => $storedInvoiceType,
                         'status' => 'completed',
                         'subtotal' => $subtotal,
                         'tax_amount' => 0,
@@ -2526,11 +2527,12 @@ new class extends Component {
                     ]);
                 } else {
                     $updateData = [
+                        'shift_id' => $customer ? null : $lockedShift->id,
                         'customer_id' => $customer?->id,
                         'customer_name' => $customer?->name ?? 'زبون عام',
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
-                        'type' => $invoiceType,
+                        'type' => $storedInvoiceType,
                         'status' => 'completed',
                         'subtotal' => $subtotal,
                         'tax_amount' => 0,

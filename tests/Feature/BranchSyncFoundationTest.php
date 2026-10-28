@@ -5,6 +5,7 @@ use App\Models\BranchProduct;
 use App\Models\BranchSyncDevice;
 use App\Models\BranchSyncOperation;
 use App\Models\Order;
+use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Shift;
@@ -411,3 +412,36 @@ test('central branch sync preserves gift marker price and stock movement', funct
     expect($item->is_gift)->toBeTrue()->and((float) $item->unit_price)->toBe(0.0)
         ->and((float) BranchProduct::query()->sole()->stock_quantity)->toBe(8.0);
 });
+
+test('customer credit sales sync separately from shifts while payments retain the originating shift', function (float $paid, string $status): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    $payload = branchSyncSalePayload($tenant, $branch, 'CREDIT-100');
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل آجل', 'type' => 'customer', 'is_active' => true]);
+    $payload['order']['customer_id'] = $customer->id;
+    $payload['order']['customer_name'] = $customer->name;
+    $payload['order']['type'] = 'wholesale';
+    $payload['order']['paid_amount'] = $paid;
+    $payload['order']['payment_status'] = $status;
+    if ($paid > 0) {
+        $payload['payment']['amount'] = $paid;
+    } else {
+        $payload['payment'] = null;
+    }
+    $token = 'credit-sync-token';
+    BranchSyncDevice::query()->create(['device_uuid' => (string) Str::uuid(), 'tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'name' => 'فرع الآجل', 'token_hash' => hash('sha256', $token)]);
+    $uuid = (string) Str::uuid();
+    $this->withToken($token)->postJson('/api/branch-sync/operations', ['operations' => [[
+        'operation_uuid' => $uuid, 'operation_type' => 'sale.upsert', 'payload' => $payload,
+    ]]])->assertOk()->assertJsonPath("accepted.{$uuid}", 'synced');
+
+    $order = Order::query()->sole();
+    expect($order->type)->toBe('wholesale')
+        ->and($order->shift_id)->toBeNull()
+        ->and((float) $order->paid_amount)->toBe($paid)
+        ->and($order->payment_status)->toBe($status)
+        ->and(Payment::query()->count())->toBe($paid > 0 ? 1 : 0);
+    if ($paid > 0) {
+        expect((int) Payment::query()->sole()->shift_id)->toBe(Shift::query()->sole()->id)
+            ->and((float) Payment::query()->sole()->amount)->toBe($paid);
+    }
+})->with([[0.0, 'unpaid'], [10.0, 'partial'], [25.0, 'paid']]);

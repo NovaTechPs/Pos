@@ -21,6 +21,9 @@ new class extends Component {
 
     public ?int $currentOrderId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public float $savedPaidAmount = 0.0;
+
     public string $invoiceNumber = '';
 
     public string $invoiceDate = '';
@@ -193,6 +196,7 @@ new class extends Component {
 
     public function startNewInvoice(bool $showMessage = true): void
     {
+        $this->savedPaidAmount = 0.0;
         $this->currentOrderId = null;
         $this->invoiceNumber = $this->makeInvoiceNumber();
         $this->invoiceDate = now()->format('Y-m-d');
@@ -593,8 +597,8 @@ new class extends Component {
                         'total' => $totals['total'],
                         'total_cost' => $totals['total_cost'],
                         'total_profit' => $totals['profit'],
-                        'paid_amount' => $totals['total'],
-                        'payment_status' => 'paid',
+                        'paid_amount' => (float) $order->paid_amount,
+                        'payment_status' => (float) $order->paid_amount >= $totals['total'] ? 'paid' : ((float) $order->paid_amount > 0 ? 'partial' : 'unpaid'),
                         'notes' => $this->notes ?: null,
                     ]);
 
@@ -654,6 +658,7 @@ new class extends Component {
             });
 
             $this->currentOrderId = $order->id;
+            $this->savedPaidAmount = (float) $order->paid_amount;
             $this->invoiceNumber = $order->invoice_number;
 
             $this->successMessage = $this->currentOrderId
@@ -740,6 +745,7 @@ new class extends Component {
         $this->invoiceDate = $order->created_at?->format('Y-m-d') ?? now()->format('Y-m-d');
         $this->selectedBranchId = $order->branch_id;
         $this->selectedCustomerId = $order->customer_id;
+        $this->savedPaidAmount = (float) $order->paid_amount;
         $this->customerSearch = $order->customer_name ?: '';
         $this->discount = (float) ($order->discount ?? 0);
         $this->taxPercent = $order->subtotal > 0 && $order->tax_amount > 0
@@ -1645,6 +1651,13 @@ new class extends Component {
                 <div class="h-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 
                     <div class="mb-4 text-sm font-black text-slate-900">ملخص الفاتورة</div>
+
+                    @if ($currentOrderId)
+                        <div class="mb-4 space-y-2 rounded-xl bg-slate-50 p-3 text-sm font-bold">
+                            <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($savedPaidAmount, 2) }}</span></div>
+                            <div class="flex justify-between text-rose-600"><span>المتبقي على الزبون</span><span>{{ number_format(max(0, $grandTotal - $savedPaidAmount), 2) }}</span></div>
+                        </div>
+                    @endif
 
                     <div class="space-y-2">
                         <div class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">

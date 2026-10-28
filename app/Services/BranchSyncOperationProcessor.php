@@ -219,7 +219,7 @@ class BranchSyncOperationProcessor
         $orderAttributes = [
             'tenant_id' => $operation->tenant_id,
             'branch_id' => $operation->branch_id,
-            'shift_id' => $shift->id,
+            'shift_id' => $orderData['type'] === 'wholesale' ? null : $shift->id,
             'created_by' => $orderData['created_by'] ?? null,
             'customer_id' => $orderData['customer_id'] ?? null,
             'customer_name' => $orderData['customer_name'],
@@ -266,11 +266,11 @@ class BranchSyncOperationProcessor
             }
         }
 
-        $this->syncPayment($operation, $order, $payload['payment'] ?? null);
+        $this->syncPayment($operation, $order, $shift, $payload['payment'] ?? null);
     }
 
     /** @param array<string, mixed>|null $payment */
-    private function syncPayment(BranchSyncOperation $operation, Order $order, ?array $payment): void
+    private function syncPayment(BranchSyncOperation $operation, Order $order, Shift $shift, ?array $payment): void
     {
         $existing = Payment::withTrashed()
             ->where('tenant_id', $operation->tenant_id)
@@ -286,7 +286,7 @@ class BranchSyncOperationProcessor
         $attributes = [
             'tenant_id' => $operation->tenant_id,
             'branch_id' => $operation->branch_id,
-            'shift_id' => $order->shift_id,
+            'shift_id' => $shift->id,
             'created_by' => $order->created_by,
             'party_id' => $order->customer_id,
             'type' => $payment['type'],
@@ -321,11 +321,11 @@ class BranchSyncOperationProcessor
             'order.invoice_number' => ['required', 'string', 'max:255'],
             'order.created_at' => ['required', 'date'],
             'order.created_by' => ['nullable', 'integer'],
-            'order.customer_id' => ['nullable', 'integer'],
+            'order.customer_id' => ['required_if:order.type,wholesale', 'nullable', 'integer'],
             'order.customer_name' => ['required', 'string', 'max:255'],
             'order.customer_phone' => ['nullable', 'string', 'max:255'],
             'order.customer_address' => ['nullable', 'string'],
-            'order.type' => ['required', 'in:pos,return'],
+            'order.type' => ['required', 'in:pos,return,wholesale'],
             'order.subtotal' => ['required', 'numeric'],
             'order.tax_amount' => ['required', 'numeric'],
             'order.discount_type' => ['required', 'in:fixed,percentage'],
