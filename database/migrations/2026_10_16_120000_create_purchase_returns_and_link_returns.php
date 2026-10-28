@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('purchase_returns', function (Blueprint $table): void {
+        SchemaIntegrity::create('purchase_returns', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('branch_id')->constrained()->cascadeOnDelete();
@@ -23,7 +24,7 @@ return new class extends Migration
             $table->index(['tenant_id', 'purchase_id', 'created_at']);
         });
 
-        Schema::create('purchase_return_items', function (Blueprint $table): void {
+        SchemaIntegrity::create('purchase_return_items', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('purchase_return_id')->constrained()->cascadeOnDelete();

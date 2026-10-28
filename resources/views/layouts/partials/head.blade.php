@@ -41,6 +41,7 @@
         'tenant.sale-invoices' => ['ar' => 'فواتير المبيعات', 'en' => 'Sales Invoices'],
         'tenant.store' => ['ar' => 'المتجر', 'en' => 'Store'],
         'tenant.tenant.stock-transfers' => ['ar' => 'تحويلات المخزون', 'en' => 'Stock Transfers'],
+        'tenant.stock-movements' => ['ar' => 'حركات المخزون', 'en' => 'Stock Movements'],
         'tenant.wholesale-invoices' => ['ar' => 'فواتير الجملة', 'en' => 'Wholesale Invoices'],
         'tenant.wholesale-sales' => ['ar' => 'مبيعات الجملة', 'en' => 'Wholesale Sales'],
     ];

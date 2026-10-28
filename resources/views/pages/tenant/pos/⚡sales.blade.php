@@ -1692,7 +1692,7 @@ new class extends Component {
                         if (! $stock) {
                             throw new \RuntimeException('تعذر إعادة مخزون أحد أصناف الفاتورة.');
                         }
-                        $stock->increment('stock_quantity', (float) $item->quantity);
+                        \App\Services\StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', (float) $item->quantity), 'sale_reversal');
                     }
                 }
 
@@ -2379,9 +2379,9 @@ new class extends Component {
                         }
 
                         if ($oldQuantity > 0) {
-                            $oldBranchProduct->increment('stock_quantity', $oldQuantity);
+                            \App\Services\StockMovementContext::forDocument($order, fn () => $oldBranchProduct->increment('stock_quantity', $oldQuantity), 'sale_reversal');
                         } else {
-                            $oldBranchProduct->decrement('stock_quantity', abs($oldQuantity));
+                            \App\Services\StockMovementContext::forDocument($order, fn () => $oldBranchProduct->decrement('stock_quantity', abs($oldQuantity)), 'sale_reversal');
                         }
                     }
 
@@ -2511,6 +2511,8 @@ new class extends Component {
                         'customer_address' => $customer?->address,
                         'invoice_number' => $this->makeInvoiceNumber($storedInvoiceType, $tenantId, $branchId),
                         'type' => $storedInvoiceType,
+                        'source' => 'pos',
+                        'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $subtotal,
                         'tax_amount' => 0,
@@ -2533,6 +2535,8 @@ new class extends Component {
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
                         'type' => $storedInvoiceType,
+                        'source' => 'pos',
+                        'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $subtotal,
                         'tax_amount' => 0,
@@ -2602,9 +2606,9 @@ new class extends Component {
                     $itemQuantity = (float) $item['quantity'];
 
                     if ($itemQuantity > 0) {
-                        $branchProduct->decrement('stock_quantity', $itemQuantity);
+                        \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $itemQuantity));
                     } elseif ($itemQuantity < 0) {
-                        $branchProduct->increment('stock_quantity', abs($itemQuantity));
+                        \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($itemQuantity)));
                     }
                 }
 
@@ -2822,6 +2826,8 @@ new class extends Component {
                     'customer_phone' => $order->customer_phone,
                     'customer_address' => $order->customer_address,
                     'type' => $order->type,
+                    'source' => $order->source,
+                    'sale_kind' => $order->sale_kind,
                     'subtotal' => (float) $order->subtotal,
                     'tax_amount' => (float) $order->tax_amount,
                     'discount_type' => $order->discount_type,

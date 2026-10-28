@@ -661,9 +661,9 @@ return new class extends Component {
 
                         ->firstOrFail();
 
-                    $source->decrement('stock_quantity', $quantity);
+                    \App\Services\StockMovementContext::forDocument($transfer, fn () => $source->decrement('stock_quantity', $quantity));
 
-                    $destination->increment('stock_quantity', $quantity);
+                    \App\Services\StockMovementContext::forDocument($transfer, fn () => $destination->increment('stock_quantity', $quantity));
 
                 }
 
@@ -838,9 +838,9 @@ return new class extends Component {
 
                         ->firstOrFail();
 
-                    $destination->decrement('stock_quantity', $quantity);
+                    \App\Services\StockMovementContext::forDocument($transfer, fn () => $destination->decrement('stock_quantity', $quantity), 'transfer_reversal');
 
-                    $source->increment('stock_quantity', $quantity);
+                    \App\Services\StockMovementContext::forDocument($transfer, fn () => $source->increment('stock_quantity', $quantity), 'transfer_reversal');
 
                 }
 

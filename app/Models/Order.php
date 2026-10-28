@@ -17,6 +17,15 @@ class Order extends Model
     {
         static::creating(function (self $order): void {
             $order->sync_uuid ??= (string) Str::uuid();
+            if ($order->type === 'return' && $order->original_order_id) {
+                $original = self::query()->find($order->original_order_id);
+                $order->source ??= $original?->source;
+                $order->sale_kind ??= $original?->sale_kind;
+            }
+            $order->source ??= match ($order->type) {
+                'pos' => 'pos', 'online' => 'online', default => request()->is('api/*') ? 'api' : 'web',
+            };
+            $order->sale_kind ??= $order->type === 'wholesale' ? 'wholesale' : 'retail';
         });
     }
 

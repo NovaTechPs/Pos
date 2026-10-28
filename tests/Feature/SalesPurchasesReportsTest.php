@@ -225,3 +225,22 @@ test('editing purchase invoice cannot erase stock already consumed', function ()
         ->and((float) DB::table('purchases')->where('id', $purchaseId)->value('total'))->toBe(50.0)
         ->and(DB::table('purchase_items')->where('purchase_id', $purchaseId)->count())->toBe(1);
 });
+
+test('invoice source and sale kind remain independent and reports filter both', function (): void {
+    $tenant = Tenant::create(['name' => 'تقارير المصادر']);
+    $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'فرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+    foreach ([['SRC-POS', 'pos', 'retail'], ['SRC-WEB', 'web', 'wholesale']] as [$number, $source, $kind]) {
+        Order::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'invoice_number' => $number,
+            'type' => 'wholesale', 'source' => $source, 'sale_kind' => $kind, 'status' => 'completed',
+            'subtotal' => 100, 'total' => 100, 'paid_amount' => 0, 'payment_status' => 'unpaid']);
+    }
+    Livewire::test('pages::tenant.reports.analytics')->set('invoiceSource', 'pos')->set('saleKind', 'retail')
+        ->assertSee('SRC-POS')->assertDontSee('SRC-WEB');
+    $original = Order::where('invoice_number', 'SRC-WEB')->firstOrFail();
+    $return = Order::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
+        'invoice_number' => 'SRC-RETURN', 'type' => 'return', 'original_order_id' => $original->id,
+        'subtotal' => -10, 'total' => -10]);
+    expect($return->source)->toBe('web')->and($return->sale_kind)->toBe('wholesale');
+});

@@ -588,6 +588,7 @@ new class extends Component {
                         'customer_address' => $customer?->address,
                         'invoice_number' => $this->invoiceNumber,
                         'type' => 'wholesale',
+                        'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $totals['subtotal'],
                         'tax_amount' => $totals['tax'],
@@ -615,6 +616,8 @@ new class extends Component {
                         'customer_address' => $customer?->address,
                         'invoice_number' => $this->invoiceNumber,
                         'type' => 'wholesale',
+                        'source' => 'web',
+                        'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $totals['subtotal'],
                         'tax_amount' => $totals['tax'],
@@ -1698,7 +1701,7 @@ new class extends Component {
                     <div class="mt-4 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
                         <div class="text-[10px] font-black text-indigo-500">طريقة الحفظ الحالية</div>
                         <div class="mt-1 text-xs font-bold leading-5 text-indigo-900">
-                            يتم تسجيل فاتورة المبيعات الحالية كفاتورة مكتملة ومدفوعة بالكامل، مع حفظ تفاصيل الأصناف والتكلفة والربح في <span class="font-mono">orders / order_items</span>.
+                            تُحفظ الفاتورة مع الأصناف والمبالغ المسددة والمتبقية، وتظهر حالة الدفع حسب المبلغ المدفوع فعليًا.
                         </div>
                     </div>
                 </div>

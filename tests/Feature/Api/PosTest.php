@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -65,9 +66,12 @@ test('permissions from another tenant do not grant api access', function () {
     $user = User::factory()->create([
         'tenant_id' => 1,
         'type' => 'tenant_user',
-        'role_id' => $foreignRole->id,
+        'role_id' => null,
         'is_active' => true,
     ]);
+
+    expect(fn () => $user->update(['role_id' => $foreignRole->id]))->toThrow(QueryException::class);
+    $user->setAttribute('role_id', $foreignRole->id)->unsetRelation('role');
 
     $this->actingAs($user)->getJson('/api/pos/products')->assertForbidden();
 });

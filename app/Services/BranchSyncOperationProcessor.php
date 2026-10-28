@@ -227,6 +227,8 @@ class BranchSyncOperationProcessor
             'customer_address' => $orderData['customer_address'] ?? null,
             'invoice_number' => $orderData['invoice_number'],
             'type' => $orderData['type'],
+            'source' => $orderData['source'] ?? 'pos',
+            'sale_kind' => $orderData['sale_kind'] ?? 'retail',
             'status' => 'completed',
             'subtotal' => $orderData['subtotal'],
             'tax_amount' => $orderData['tax_amount'],
@@ -260,9 +262,9 @@ class BranchSyncOperationProcessor
             ]);
 
             if ($quantity > 0) {
-                $branchProduct->decrement('stock_quantity', $quantity);
+                StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $quantity));
             } elseif ($quantity < 0) {
-                $branchProduct->increment('stock_quantity', abs($quantity));
+                StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($quantity)));
             }
         }
 
@@ -326,6 +328,8 @@ class BranchSyncOperationProcessor
             'order.customer_phone' => ['nullable', 'string', 'max:255'],
             'order.customer_address' => ['nullable', 'string'],
             'order.type' => ['required', 'in:pos,return,wholesale'],
+            'order.source' => ['sometimes', 'in:pos,web,api,online,sync'],
+            'order.sale_kind' => ['sometimes', 'in:retail,wholesale'],
             'order.subtotal' => ['required', 'numeric'],
             'order.tax_amount' => ['required', 'numeric'],
             'order.discount_type' => ['required', 'in:fixed,percentage'],

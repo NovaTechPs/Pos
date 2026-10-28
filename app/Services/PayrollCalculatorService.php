@@ -10,12 +10,13 @@ use App\Models\EmployeePayroll;
 use App\Models\EmployeePayrollCarryover;
 use App\Models\EmployeePayrollItem;
 use App\Models\PayrollPeriod;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PayrollCalculatorService
 {
+    public function __construct(private EmployeeEarningsService $earnings) {}
+
     /**
      * Calculate draft payrolls. Approved/paid periods and payrolls with actual
      * payments are deliberately immutable through this method.
@@ -39,7 +40,7 @@ class PayrollCalculatorService
 
             $employees = Employee::query()
                 ->where('tenant_id', $period->tenant_id)
-                ->where('is_active', true)
+                ->where(fn ($q) => $q->where('is_active', true)->orWhereDate('terminated_at', '>=', $period->start_date))
                 ->whereDate('hire_date', '<=', $period->end_date)
                 ->orderBy('id')
                 ->get();
@@ -57,7 +58,11 @@ class PayrollCalculatorService
                     ]);
                 }
 
-                $basicSalary = $this->calculateBasicSalaryForPeriod($employee, $period);
+                $earnings = $this->earnings->calculate($employee, $period);
+                if ($earnings['open_sessions'] > 0) {
+                    throw ValidationException::withMessages(['selectedPeriodId' => 'توجد جلسات دوام مفتوحة للموظف '.$employee->first_name.'. أغلقها قبل احتساب المسير.']);
+                }
+                $basicSalary = $earnings['basic_salary'];
 
                 // SQL OR returns each matching row once; period-linked rows are not duplicated.
                 $bonuses = (float) EmployeeBonus::query()
@@ -68,7 +73,7 @@ class PayrollCalculatorService
                                 $fallback->whereNull('payroll_period_id')
                                     ->whereBetween('date', [$period->start_date, $period->end_date]);
                             });
-                    })->sum('amount');
+                    })->sum('amount') + $earnings['overtime_pay'];
 
                 $directDeductions = (float) EmployeeDeduction::query()
                     ->where('employee_id', $employee->id)
@@ -78,7 +83,7 @@ class PayrollCalculatorService
                                 $fallback->whereNull('payroll_period_id')
                                     ->whereBetween('date', [$period->start_date, $period->end_date]);
                             });
-                    })->sum('amount');
+                    })->sum('amount') + $earnings['attendance_deductions'];
 
                 // All eligible active advances, not only the first one.
                 $advanceRows = EmployeeAdvance::query()
@@ -106,7 +111,7 @@ class PayrollCalculatorService
                 // Reserve pending payroll-overpayment carryovers for this period.
                 $carryovers = EmployeePayrollCarryover::query()
                     ->where('employee_id', $employee->id)
-                    ->where('status', 'pending')
+                    ->whereIn('status', ['pending', 'partially_applied'])
                     ->where('remaining_amount', '>', 0)
                     ->whereHas('sourcePayroll.payrollPeriod', function ($query) use ($period) {
                         $query->whereDate('end_date', '<', $period->start_date);
@@ -156,6 +161,7 @@ class PayrollCalculatorService
                 $payroll->total_deductions = $totalDeductions;
                 $payroll->advance_deduction = round($advanceDeduction, 2);
                 $payroll->net_salary = $netSalary;
+                $payroll->earnings_breakdown = $earnings + ['bonuses' => round($bonuses, 2), 'deductions' => round($directDeductions, 2), 'advances' => round($advanceDeduction, 2), 'carryovers' => round($carryoverDeduction, 2)];
                 $payroll->save();
 
                 $payroll->items()->delete();
@@ -173,7 +179,7 @@ class PayrollCalculatorService
                     EmployeePayrollItem::create([
                         'employee_payroll_id' => $payroll->id,
                         'type' => 'deduction',
-                        'title' => 'الخصومات المباشرة للفترة',
+                        'title' => 'الخصومات المباشرة وخصومات الدوام للفترة',
                         'amount' => round($directDeductions, 2),
                     ]);
                 }
@@ -206,43 +212,42 @@ class PayrollCalculatorService
         });
     }
 
-    private function calculateBasicSalaryForPeriod(Employee $employee, PayrollPeriod $period): float
+    /** @return array<string, mixed> */
+    public function preview(Employee $employee, PayrollPeriod $period): array
     {
-        $monthlySalary = round((float) $employee->basic_salary, 2);
-
-        if ($employee->salary_type !== 'monthly') {
-            return $monthlySalary;
+        $saved = $period->exists ? EmployeePayroll::query()->where('employee_id', $employee->id)->where('payroll_period_id', $period->id)->first() : null;
+        if ($saved && (in_array($period->status, ['approved', 'paid'], true) || (float) $saved->paid_amount > 0)) {
+            return ($saved->earnings_breakdown ?? []) + [
+                'basic_salary' => (float) $saved->basic_salary, 'bonuses' => (float) $saved->total_allowances,
+                'deductions' => (float) $saved->total_deductions, 'advances' => (float) $saved->advance_deduction,
+                'net_due' => (float) $saved->net_salary, 'actual_worked_days' => 0, 'paid_leave_days' => 0, 'unpaid_absent_days' => 0, 'daily_rate' => 0,
+            ];
         }
-
-        $periodStart = Carbon::parse($period->start_date)->startOfDay();
-        $periodEnd = Carbon::parse($period->end_date)->startOfDay();
-        $hireDate = Carbon::parse($employee->hire_date)->startOfDay();
-
-        if ($hireDate->greaterThan($periodEnd)) {
-            return 0.0;
-        }
-
-        $proratedSalary = 0.0;
-        $monthStart = $periodStart->copy()->startOfMonth();
-
-        while ($monthStart->lessThanOrEqualTo($periodEnd)) {
-            $monthEnd = $monthStart->copy()->endOfMonth();
-            $earningStart = $periodStart->greaterThan($monthStart) ? $periodStart : $monthStart;
-
-            if ($hireDate->greaterThan($earningStart)) {
-                $earningStart = $hireDate;
+        $earnings = $this->earnings->calculate($employee, $period);
+        $bonuses = (float) EmployeeBonus::query()->where('employee_id', $employee->id)->where(function ($q) use ($period): void {
+            if ($period->exists) {
+                $q->where('payroll_period_id', $period->id)->orWhere(fn ($d) => $d->whereNull('payroll_period_id')->whereBetween('date', [$period->start_date, $period->end_date]));
+            } else {
+                $q->whereBetween('date', [$period->start_date, $period->end_date]);
             }
-
-            $earningEnd = $periodEnd->lessThan($monthEnd) ? $periodEnd : $monthEnd;
-
-            if ($earningStart->lessThanOrEqualTo($earningEnd)) {
-                $eligibleDays = $earningStart->diffInDays($earningEnd) + 1;
-                $proratedSalary += $monthlySalary * ($eligibleDays / $monthStart->daysInMonth);
+        })->sum('amount') + $earnings['overtime_pay'];
+        $deductions = (float) EmployeeDeduction::query()->where('employee_id', $employee->id)->where(function ($q) use ($period): void {
+            if ($period->exists) {
+                $q->where('payroll_period_id', $period->id)->orWhere(fn ($d) => $d->whereNull('payroll_period_id')->whereBetween('date', [$period->start_date, $period->end_date]));
+            } else {
+                $q->whereBetween('date', [$period->start_date, $period->end_date]);
             }
+        })->sum('amount') + $earnings['attendance_deductions'];
+        $advances = $employee->advances()->where('status', 'active')->whereDate('start_installment_date', '<=', $period->end_date)->get()
+            ->sum(fn ($a): float => min((float) $a->installment_amount, max(0, (float) $a->amount - (float) $a->paid_amount)));
+        $beforeCarryover = max(0, $earnings['basic_salary'] + $bonuses - $deductions - $advances);
+        $carryover = ! $employee->payrolls()->exists() ? 0 : (float) EmployeePayrollCarryover::query()->where('employee_id', $employee->id)
+            ->whereIn('status', ['pending', 'partially_applied'])->where('remaining_amount', '>', 0)
+            ->whereHas('sourcePayroll.payrollPeriod', fn ($q) => $q->whereDate('end_date', '<', $period->start_date))
+            ->where(fn ($q) => $q->whereNull('target_period_id')->when($period->exists, fn ($q) => $q->orWhere('target_period_id', $period->id)))->sum('remaining_amount');
+        $carryover = min($beforeCarryover, $carryover);
 
-            $monthStart->addMonth()->startOfMonth();
-        }
-
-        return round($proratedSalary, 2);
+        return $earnings + ['bonuses' => round($bonuses, 2), 'deductions' => round($deductions + $carryover, 2),
+            'advances' => round($advances, 2), 'carryovers' => round($carryover, 2), 'net_due' => round($beforeCarryover - $carryover, 2)];
     }
 }

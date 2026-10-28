@@ -631,7 +631,7 @@ new class extends Component {
                             ->update([
                                 'stock_quantity' => $newStock,
                                 'updated_at' => now(),
-                            ]);
+                            ] + \App\Services\StockMovementContext::referenceAttributes('purchase', $purchase->id));
                     }
 
                     DB::table('purchase_items')
@@ -733,7 +733,7 @@ new class extends Component {
                         ->update([
                             'stock_quantity' => (float) $branchProduct->stock_quantity + $quantity,
                             'updated_at' => now(),
-                        ]);
+                        ] + \App\Services\StockMovementContext::referenceAttributes('purchase', $purchaseId));
                 }
 
                 /*

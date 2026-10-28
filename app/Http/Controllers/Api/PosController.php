@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
+use App\Services\StockMovementContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -128,7 +129,7 @@ class PosController extends Controller
             $order->fill([
                 'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id,
                 'customer_id' => $customer?->id, 'invoice_number' => $held->invoice_number ?? 'HOLD-'.str()->uuid(),
-                'type' => 'pos', 'status' => 'pending', 'subtotal' => $subtotal,
+                'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail', 'status' => 'pending', 'subtotal' => $subtotal,
                 'tax_amount' => $tax, 'discount' => $discount,
                 'total' => $total, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'notes' => $validated['notes'] ?? null,
             ]);
@@ -331,7 +332,7 @@ class PosController extends Controller
                 'customer_id' => $customer?->id, 'customer_name' => $customer->name ?? 'زبون جملة عابر',
                 'customer_phone' => $customer?->phone,
                 'invoice_number' => 'W-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
-                'type' => 'wholesale', 'status' => 'completed', 'subtotal' => round($subtotal, 2),
+                'type' => 'wholesale', 'source' => 'api', 'sale_kind' => 'wholesale', 'status' => 'completed', 'subtotal' => round($subtotal, 2),
                 'discount_type' => $discountType, 'discount_rate' => $discountRate, 'discount' => $discount,
                 'total' => $total, 'total_cost' => round($totalCost, 2),
                 'total_profit' => round($total - $totalCost, 2), 'paid_amount' => $paid,
@@ -354,12 +355,12 @@ class PosController extends Controller
                     }
                     $take = min(max(0, (float) $stockRow->stock_quantity), $remaining);
                     if ($take > 0) {
-                        $stockRow->decrement('stock_quantity', $take);
+                        StockMovementContext::forDocument($order, fn () => $stockRow->decrement('stock_quantity', $take));
                         $remaining -= $take;
                     }
                 }
                 if ($remaining > 0 && $allowNegativeStock) {
-                    ($stockRows->firstWhere('branch_id', $branchId) ?? $stockRows->first())->decrement('stock_quantity', $remaining);
+                    StockMovementContext::forDocument($order, fn () => ($stockRows->firstWhere('branch_id', $branchId) ?? $stockRows->first())->decrement('stock_quantity', $remaining));
                 }
             }
 
@@ -488,7 +489,7 @@ class PosController extends Controller
                 'customer_name' => $customer?->name,
                 'customer_phone' => $customer?->phone,
                 'invoice_number' => 'INV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
-                'type' => 'pos',
+                'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail',
                 'status' => 'completed',
                 'subtotal' => $subtotal,
                 'tax_amount' => $tax,
@@ -524,12 +525,12 @@ class PosController extends Controller
                     }
                     $take = min(max(0, (float) $stockRow->stock_quantity), $remaining);
                     if ($take > 0) {
-                        $stockRow->decrement('stock_quantity', $take);
+                        StockMovementContext::forDocument($order, fn () => $stockRow->decrement('stock_quantity', $take));
                         $remaining -= $take;
                     }
                 }
                 if ($remaining > 0 && $allowNegativeStock) {
-                    ($stockRows->firstWhere('branch_id', $branchId) ?? $stockRows->first())->decrement('stock_quantity', $remaining);
+                    StockMovementContext::forDocument($order, fn () => ($stockRows->firstWhere('branch_id', $branchId) ?? $stockRows->first())->decrement('stock_quantity', $remaining));
                 }
             }
 

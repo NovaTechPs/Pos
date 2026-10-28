@@ -22,6 +22,8 @@ new class extends Component {
     public string $date_from = '';
     public string $date_to = '';
     public string $payment_status = '';
+    public string $invoiceSource = '';
+    public string $saleKind = '';
     public ?int $selectedBranchId = null;
 
     // ============================================================
@@ -72,6 +74,16 @@ new class extends Component {
     }
 
     public function updatedPaymentStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedInvoiceSource(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedSaleKind(): void
     {
         $this->resetPage();
     }
@@ -149,6 +161,8 @@ new class extends Component {
         $this->date_from = $today;
         $this->date_to = $today;
         $this->payment_status = '';
+        $this->invoiceSource = '';
+        $this->saleKind = '';
         $this->selectedBranchId = $user?->branch_id
             ?? session('active_branch_id')
             ?? null;
@@ -205,7 +219,7 @@ new class extends Component {
     // Query helpers
     // ============================================================
 
-    private function applyOrderFilters($query, array $types = ['pos'])
+    private function applyOrderFilters($query, array $types = ['pos', 'wholesale', 'online'])
     {
         $tenantId = $this->tenantId();
 
@@ -236,6 +250,13 @@ new class extends Component {
             $query->where('orders.payment_status', $this->payment_status);
         }
 
+        if (in_array($this->invoiceSource, ['pos', 'web', 'api', 'online', 'sync'], true)) {
+            $query->where('orders.source', $this->invoiceSource);
+        }
+        if (in_array($this->saleKind, ['retail', 'wholesale'], true)) {
+            $query->where('orders.sale_kind', $this->saleKind);
+        }
+
         $search = trim($this->search);
 
         if ($search !== '') {
@@ -253,7 +274,7 @@ new class extends Component {
     {
         return $this->applyOrderFilters(
             Order::query(),
-            ['pos']
+            ['pos', 'wholesale', 'online']
         );
     }
 
@@ -442,7 +463,7 @@ new class extends Component {
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->whereNull('orders.deleted_at');
 
-        $this->applyOrderFilters($quantityQuery, ['pos']);
+        $this->applyOrderFilters($quantityQuery, ['pos', 'wholesale', 'online']);
 
         $totalUnits = (float) $quantityQuery->sum('order_items.quantity');
 
@@ -517,7 +538,7 @@ new class extends Component {
             ->whereNull('orders.deleted_at')
             ->leftJoin('products', 'products.id', '=', 'order_items.product_id');
 
-        $this->applyOrderFilters($topProductsQuery, ['pos']);
+        $this->applyOrderFilters($topProductsQuery, ['pos', 'wholesale', 'online']);
 
         $topProducts = $topProductsQuery
             ->groupBy('order_items.product_id', 'products.name')
@@ -852,7 +873,17 @@ new class extends Component {
             </div>
 
             <div>
-                <label class="mb-1.5 block text-[11px] font-black text-slate-600">حالة الدفع</label>
+                <label class="mb-1.5 block text-[11px] font-black text-slate-600">مصدر الفاتورة</label>
+                <select wire:model.live="invoiceSource" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                    <option value="">كل المصادر</option>
+                    <option value="pos">نقطة البيع</option><option value="web">الموقع</option>
+                    <option value="api">التطبيق</option><option value="online">المتجر الإلكتروني</option><option value="sync">المزامنة</option>
+                </select>
+                <label class="mb-1.5 mt-2 block text-[11px] font-black text-slate-600">نوع البيع</label>
+                <select wire:model.live="saleKind" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                    <option value="">كل الأنواع</option><option value="retail">مفرق</option><option value="wholesale">جملة</option>
+                </select>
+                <label class="mb-1.5 mt-2 block text-[11px] font-black text-slate-600">حالة الدفع</label>
                 <select wire:model.live="payment_status" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white">
                     <option value="">الكل</option>
                     <option value="paid">مدفوع</option>

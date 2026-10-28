@@ -74,6 +74,7 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/employee/finances', [EmployeeApiController::class, 'finances']);
     Route::post('/employee/advances', [EmployeeApiController::class, 'requestAdvance']);
     Route::post('/employee/leaves', [EmployeeApiController::class, 'requestLeave']);
+    Route::post('/employee/departures', [EmployeeApiController::class, 'requestDeparture']);
 });
 
 Route::middleware(['branch.sync', 'throttle:120,1'])

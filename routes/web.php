@@ -48,6 +48,8 @@ Route::middleware(['auth', 'verified'])
             ->name('customer');
 
         // Categories / Products
+        Route::livewire('/stock-movements', 'pages::tenant.stock-movements.index')
+            ->middleware('can:products.view')->name('stock-movements');
         Route::livewire('/category', 'pages::tenant.categories.index')
             ->middleware('can:categories.view')
             ->name('category');

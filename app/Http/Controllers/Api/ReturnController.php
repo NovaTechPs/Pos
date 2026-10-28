@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Services\ApiShiftLedger;
+use App\Services\StockMovementContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -187,7 +188,7 @@ class ReturnController extends Controller
                     'cost_price' => $line['originalItem']->cost_price,
                     'total_cost' => -(float) $line['originalItem']->cost_price * $line['quantity'],
                 ]);
-                $line['stock']->increment('stock_quantity', $line['quantity']);
+                StockMovementContext::forDocument($returnOrder, fn () => $line['stock']->increment('stock_quantity', $line['quantity']));
             }
 
             if ($cashRefund > 0) {

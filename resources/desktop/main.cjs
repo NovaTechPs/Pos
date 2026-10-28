@@ -4,6 +4,7 @@ const { createWriteStream } = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation } = require('./runtime.cjs');
+const { pageKey, printerMenu, printSnapshot } = require('./printing.cjs');
 
 const smokeTest = process.argv.includes('--smoke-test');
 if (smokeTest && process.env.WASLA_DESKTOP_TEST_DATA) app.setPath('userData', process.env.WASLA_DESKTOP_TEST_DATA);
@@ -29,6 +30,16 @@ function stopChildren() {
 
 async function showMenu() {
     const printers = await window.webContents.getPrintersAsync();
+    const changePrinter = async (key, printer) => {
+        if (key === null) preferences.printer = printer;
+        else {
+            preferences.pagePrinters ||= {};
+            if (printer === undefined) delete preferences.pagePrinters[key];
+            else preferences.pagePrinters[key] = printer;
+        }
+        await savePreferences();
+        await showMenu();
+    };
     Menu.setApplicationMenu(Menu.buildFromTemplate([
         { label: 'WaslaPOS', submenu: [
             { label: 'مزامنة الآن', click: async () => { await synchronizeNow(); if (!closing) window.webContents.reload(); } },
@@ -36,11 +47,17 @@ async function showMenu() {
             { type: 'separator' }, { role: 'quit', label: 'خروج' },
         ] },
         { label: 'الطابعة', submenu: [
-            { label: 'طابعة Windows الافتراضية', type: 'radio', checked: !preferences.printer,
-                click: async () => { preferences.printer = ''; await savePreferences(); } },
-            ...printers.map(printer => ({ label: printer.displayName || printer.name, type: 'radio',
-                checked: preferences.printer === printer.name,
-                click: async () => { preferences.printer = printer.name; await savePreferences(); } })),
+            { label: 'اختيار طابعة للصفحة المفتوحة…', click: async () => {
+                const url = await window.webContents.executeJavaScript(`(() => {
+                    const frame = document.querySelector('iframe.workspace-frame:not([hidden])');
+                    return frame?.contentWindow?.location.href || location.href;
+                })()`);
+                if (!isLocalNavigation(url, origin)) return;
+                const menu = printerMenu(await window.webContents.getPrintersAsync(), preferences, changePrinter, [[pageKey(url), 'هذه الصفحة']]);
+                Menu.buildFromTemplate(menu.at(-1).submenu).popup({ window });
+            } },
+            { type: 'separator' },
+            ...printerMenu(printers, preferences, changePrinter),
             { type: 'separator' }, { label: 'تحديث قائمة الطابعات', click: showMenu },
         ] },
         { label: 'عرض', submenu: [{ role: 'reload', label: 'إعادة تحميل' },
@@ -104,24 +121,25 @@ async function start() {
         if (!isLocalNavigation(target, origin)) event.preventDefault();
     });
     window.webContents.setWindowOpenHandler(({ url }) => {
+        if (url === 'about:blank') return { action: 'allow', overrideBrowserWindowOptions: {
+            webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+        } };
         if (url.startsWith('https://')) shell.openExternal(url);
         return { action: 'deny' };
     });
-    window.webContents.on('dom-ready', () => {
-        window.webContents.executeJavaScript(`window.print = async () => {
-            try { await window.waslaDesktop.print(); }
-            finally { window.dispatchEvent(new Event('afterprint')); }
-        };`).catch(() => {});
-    });
-    ipcMain.handle('wasla:print', async event => {
-        if (event.sender !== window.webContents || !isLocalNavigation(event.senderFrame.url, origin)) throw new Error('Printing is unavailable.');
-        return new Promise((resolve, reject) => {
-            window.webContents.print({ silent: true, printBackground: true, usePrinterDefaultPageSize: true,
-                deviceName: preferences.printer || '', margins: { marginType: 'none' } }, (success, reason) => {
-                if (success) resolve(true);
-                else { dialog.showErrorBox('تعذر الطباعة', reason); reject(new Error(reason)); }
-            });
+    window.webContents.on('did-create-window', child => {
+        child.webContents.on('will-navigate', (event, target) => {
+            if (!isLocalNavigation(target, origin) && target !== 'about:blank') event.preventDefault();
         });
+        child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    });
+    const printBridge = await fs.readFile(path.join(__dirname, 'print-bridge.js'), 'utf8');
+    window.webContents.on('dom-ready', () => {
+        window.webContents.executeJavaScript(printBridge).catch(() => {});
+    });
+    ipcMain.handle('wasla:print', async (event, request) => {
+        if (event.sender !== window.webContents || !isLocalNavigation(event.senderFrame.url, origin)) throw new Error('Printing is unavailable.');
+        return printSnapshot({ BrowserWindow, owner: window, origin, preferences, request });
     });
     const synchronize = async () => {
         if (synchronizing || closing) return;

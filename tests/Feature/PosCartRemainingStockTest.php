@@ -116,7 +116,8 @@ test('return quantities increase the projected stock', function (): void {
 
 test('a missing branch stock record is reported as unavailable', function (): void {
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
-    $this->stock->delete();
+    BranchProduct::addGlobalScope('missing-stock', fn ($query) => $query->whereKeyNot($this->stock->id));
+    $this->beforeApplicationDestroyed(fn () => BranchProduct::clearBootedModels());
     $component->call('refreshBranchSyncStatus')->assertSee('غير متاح');
     expect(cartStockValues($component, $this->product->id))->toBe([null]);
 });

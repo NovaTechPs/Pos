@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\PartyCodeGenerator;
+use App\Services\SchemaIntegrity;
 use Brick\Math\BigInteger;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ return new class extends Migration
                     });
             });
         });
+        SchemaIntegrity::finalize();
     }
 
     /**

@@ -957,7 +957,7 @@ new class extends Component {
                         'total_cost' => $lineCost,
                     ];
 
-                    $stockRow->decrement('stock_quantity', $quantity);
+                    \App\Services\StockMovementContext::forDocument($order, fn () => $stockRow->decrement('stock_quantity', $quantity));
                 }
 
                 $discount = $this->discountType === 'percentage'
@@ -1628,7 +1628,7 @@ new class extends Component {
 
                         $take = min($rowStock, $remainingQuantity);
 
-                        $stockRow->decrement('stock_quantity', $take);
+                        \App\Services\StockMovementContext::forDocument($order, fn () => $stockRow->decrement('stock_quantity', $take));
 
                         $remainingQuantity -= $take;
                     }
@@ -1644,7 +1644,7 @@ new class extends Component {
                             throw new \RuntimeException("تعذر تحديد فرع لتسجيل المخزون السالب للمنتج {$item['name']}.");
                         }
 
-                        $negativeTarget->decrement('stock_quantity', $remainingQuantity);
+                        \App\Services\StockMovementContext::forDocument($order, fn () => $negativeTarget->decrement('stock_quantity', $remainingQuantity));
                     }
                 }
 

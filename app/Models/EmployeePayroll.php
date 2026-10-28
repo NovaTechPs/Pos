@@ -20,6 +20,7 @@ class EmployeePayroll extends Model
         'advance_deduction' => 'decimal:2',
         'net_salary' => 'decimal:2',
         'paid_amount' => 'decimal:2',
+        'earnings_breakdown' => 'array',
     ];
 
     /** @return BelongsTo<PayrollPeriod, $this> */

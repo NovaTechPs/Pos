@@ -426,7 +426,7 @@ new class extends Component {
                             'total_cost' => -(float) $line['product']->cost_price * $line['quantity'],
                             'created_at' => now(), 'updated_at' => now(),
                         ]);
-                        $line['stock']->increment('stock_quantity', $line['quantity']);
+                        \App\Services\StockMovementContext::forDocument($return, fn () => $line['stock']->increment('stock_quantity', $line['quantity']));
                     }
                 } else {
                     $returnId = DB::table('purchase_returns')->insertGetId([
@@ -443,7 +443,7 @@ new class extends Component {
                             'unit_cost' => $line['price'], 'subtotal' => $line['total'],
                             'created_at' => now(), 'updated_at' => now(),
                         ]);
-                        $line['stock']->decrement('stock_quantity', $line['quantity']);
+                        \App\Services\StockMovementContext::reference('purchase_return', $returnId, fn () => $line['stock']->decrement('stock_quantity', $line['quantity']));
                     }
 
                     $lockedParty->current_balance = (float) $lockedParty->current_balance - $total;

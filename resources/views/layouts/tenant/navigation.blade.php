@@ -7,6 +7,7 @@
             ['permission' => 'employees.view', 'route' => 'tenant.employees', 'label' => 'Employees', 'icon' => 'user-group'],
             ['permission' => 'customers.view', 'route' => 'tenant.customer', 'label' => 'Customers', 'icon' => 'users'],
             ['permission' => 'categories.view', 'route' => 'tenant.category', 'label' => 'Categories', 'icon' => 'tag'],
+            ['permission' => 'products.view', 'route' => 'tenant.stock-movements', 'label' => 'Stock Movements', 'icon' => 'arrows-right-left'],
             ['permission' => 'products.view', 'route' => 'tenant.product', 'label' => 'Products', 'icon' => 'cube'],
             ['permission' => 'products.barcode.manage', 'route' => 'tenant.barcode.printer', 'label' => 'Barcode Printer', 'icon' => 'printer'],
             ['permission' => 'pos.view', 'route' => 'tenant.pos', 'label' => 'POS', 'icon' => 'calculator'],

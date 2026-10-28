@@ -5,6 +5,7 @@ use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\ClientSetupSeeder;
+use Illuminate\Database\QueryException;
 
 beforeEach(function (): void {
     config(['client-setup.password' => 'Client-Initial-Password42!']);
@@ -50,6 +51,7 @@ test('permissions assigned to a role in another tenant cannot authorize a dashbo
     $otherTenant = Tenant::query()->create(['name' => 'Other tenant']);
     $role = Role::query()->create(['tenant_id' => $otherTenant->id, 'name' => 'Other role']);
     $role->permissions()->attach(Permission::query()->where('name', 'wholesale_sales.view')->value('id'));
-    $this->employee->update(['role_id' => $role->id]);
+    expect(fn () => $this->employee->update(['role_id' => $role->id]))->toThrow(QueryException::class);
+    $this->employee->setAttribute('role_id', $role->id)->unsetRelation('role');
     $this->actingAs($this->employee)->get('/dashboard')->assertForbidden();
 });

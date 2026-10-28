@@ -237,5 +237,6 @@
     "Verify Email Address": "التحقق من البريد الإلكتروني",
     "Please click the button below to verify your email address.": "اضغط على الزر أدناه للتحقق من بريدك الإلكتروني.",
     "If you did not create an account, no further action is required.": "إذا لم تنشئ حسابًا، فلا يلزمك اتخاذ أي إجراء.",
-    "If you're having trouble clicking the \":actionText\" button, copy and paste the URL below\ninto your web browser:": "إذا تعذر الضغط على زر «:actionText»، انسخ الرابط أدناه والصقه في متصفحك:"
+    "If you're having trouble clicking the \":actionText\" button, copy and paste the URL below\ninto your web browser:": "إذا تعذر الضغط على زر «:actionText»، انسخ الرابط أدناه والصقه في متصفحك:",
+    "Stock Movements": "حركات المخزون"
 }
