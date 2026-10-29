@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\TenantDashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -14,6 +15,8 @@ Route::middleware(['auth', 'verified', 'is_admin'])
     ->name('admin.')
     ->group(function () {
         Route::view('/dashboard', 'pages.admin.dashboard')->name('dashboard');
+        Route::get('/system-errors', SystemErrorLogController::class)
+            ->middleware('throttle:30,1')->name('system-errors');
         Route::livewire('/plan', 'pages::admin.plans')->name('plan');
         Route::livewire('/user', 'pages::admin.users')->name('user');
     });

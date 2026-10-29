@@ -35,4 +35,11 @@
         {{ __('Users') }}
     </flux:sidebar.item>
 
+    <flux:sidebar.item
+        :href="route('admin.system-errors')"
+        :current="request()->routeIs('admin.system-errors')"
+        wire:navigate
+    >
+        أخطاء النظام
+    </flux:sidebar.item>
 </flux:sidebar.group>

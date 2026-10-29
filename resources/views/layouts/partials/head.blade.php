@@ -8,6 +8,7 @@
         'admin.dashboard' => ['ar' => 'لوحة الإدارة', 'en' => 'Admin Dashboard'],
         'admin.plan' => ['ar' => 'الخطط', 'en' => 'Plans'],
         'admin.user' => ['ar' => 'المستخدمون', 'en' => 'Users'],
+        'admin.system-errors' => ['ar' => 'أخطاء النظام', 'en' => 'System Errors'],
         'appearance.edit' => ['ar' => 'المظهر', 'en' => 'Appearance'],
         'login' => ['ar' => 'تسجيل الدخول', 'en' => 'Login'],
         'password.request' => ['ar' => 'استعادة كلمة المرور', 'en' => 'Reset Password'],
