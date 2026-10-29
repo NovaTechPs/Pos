@@ -28,11 +28,19 @@ test('tenant pages expose one accessible workspace without duplicating the livew
     } else {
         expect($xpath->query('//*[@data-workspace-tabs and @data-flux-main]')->length)->toBe(0);
     }
-})->with(['/dashboard', '/dashboard/pos', '/dashboard/product']);
+})->with(['/dashboard', '/dashboard/pos', '/dashboard/product', '/dashboard/reports']);
 
 test('framed pages keep their normal permissions and omit nested workspace controls', function (): void {
     $this->get('/dashboard/product?_workspace=frame')->assertSuccessful()
         ->assertDontSee('data-workspace-tabs', false)->assertSee('workspace-frame-body')->assertDontSee('data-flux-sidebar', false);
     auth()->user()->update(['is_owner' => false]);
     $this->get('/dashboard/product?_workspace=frame')->assertForbidden();
+});
+
+test('reports retain frame detection when a request has no fetch destination header', function (): void {
+    $this->get('/dashboard/reports')->assertSuccessful()
+        ->assertSee('data-workspace-frame-bootstrap', false)
+        ->assertSee('window.self !== window.top', false);
+    $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/reports')->assertSuccessful()
+        ->assertDontSee('data-workspace-tabs', false)->assertDontSee('data-flux-sidebar', false);
 });

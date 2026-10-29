@@ -1,4 +1,10 @@
 {
+  "../../../node_modules/@zxing/browser/esm/index.js": {
+    "file": "assets/esm-f6zhdq2g.js",
+    "name": "esm",
+    "src": "../../../node_modules/@zxing/browser/esm/index.js",
+    "isDynamicEntry": true
+  },
   "_fonts-C9MNnjVw.css": {
     "file": "assets/fonts-C9MNnjVw.css",
     "src": "_fonts-C9MNnjVw.css"
@@ -27,14 +33,8 @@
     "file": "assets/instrument-sans-600-normal-B9e8oLYv.woff",
     "src": "_instrument-sans-600-normal-B9e8oLYv.woff"
   },
-  "node_modules/@zxing/browser/esm/index.js": {
-    "file": "assets/esm-f6zhdq2g.js",
-    "name": "esm",
-    "src": "node_modules/@zxing/browser/esm/index.js",
-    "isDynamicEntry": true
-  },
   "resources/css/app.css": {
-    "file": "assets/app-CDzMXl6H.css",
+    "file": "assets/app-DD6uhY8i.css",
     "name": "app",
     "names": [
       "app.css"
@@ -43,12 +43,12 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-GunoUF2E.js",
+    "file": "assets/app-DhDCOGg5.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "dynamicImports": [
-      "node_modules/@zxing/browser/esm/index.js"
+      "../../../node_modules/@zxing/browser/esm/index.js"
     ]
   },
   "resources/js/passkeys.js": {

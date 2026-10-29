@@ -7,8 +7,32 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, workspaceUrl, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, workspaceUrl, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard/pos';
+    const pageContent = { livewireId: 'same-component', value: 'unsaved invoice' };
+    let frameMarked = false, frameClass = false, replacements = 0;
+    const shell = {
+        querySelector() { return {childNodes: [pageContent]}; },
+        replaceWith(...children) { assert.equal(children[0], pageContent); replacements++; },
+    };
+    const frameDocument = {
+        documentElement: {setAttribute(name, value) { assert.equal(name, 'data-workspace-frame'); frameMarked = value === 'true'; }},
+        body: {classList: {add(name) { assert.equal(name, 'workspace-frame-body'); frameClass = true; }}},
+        querySelectorAll() { return replacements ? [] : [shell]; },
+    };
+    const embeddedView = {self: {}, top: {}, document: frameDocument};
+    assert.equal(normalizeWorkspaceFrame(embeddedView), true);
+    assert.equal(frameMarked, true);
+    assert.equal(frameClass, true);
+    assert.equal(replacements, 1, 'Nested tab shell was not removed');
+    assert.equal(pageContent.value, 'unsaved invoice', 'Existing component state was replaced');
+    normalizeWorkspaceFrame(embeddedView);
+    assert.equal(replacements, 1, 'Repeated initialization changed the component again');
+    const topView = {self: {}, document: {querySelectorAll() {throw new Error('Top level navigation was touched');}}};
+    topView.top = topView.self;
+    assert.equal(normalizeWorkspaceFrame(topView), false);
+
+
     assert.equal(workspaceUsesFullWidth(base), true);
     assert.equal(workspaceUsesFullWidth(base + '/?_workspace=frame'), true);
     assert.equal(workspaceUsesFullWidth('https://pos.example/dashboard/product'), false);
@@ -138,8 +162,14 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     assert.equal(background.dataset.started, undefined, 'Background tab loaded prematurely');
     console.log('WORKSPACE_OK');
     JAVASCRIPT;
-    $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
-    $process->run();
+    $scriptFile = sys_get_temp_dir().'/wasla-workspace-'.bin2hex(random_bytes(8)).'.mjs';
+    file_put_contents($scriptFile, $script);
+    $process = new Process(['node', $scriptFile], dirname(__DIR__, 2));
+    try {
+        $process->run();
+    } finally {
+        unlink($scriptFile);
+    }
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('WORKSPACE_OK');
 });

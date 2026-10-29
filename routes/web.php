@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ReportPrintController;
 use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\TenantDashboardController;
 use Illuminate\Support\Facades\Route;
@@ -114,6 +115,10 @@ Route::middleware(['auth', 'verified'])
             ->name('online-orders');
 
         // Reports
+        Route::livewire('/reports', 'pages::tenant.reports.center')
+            ->middleware('can:reports.analytics')->name('reports');
+        Route::get('/reports/print', ReportPrintController::class)
+            ->middleware('can:reports.analytics')->name('reports.print');
         Route::livewire('/analytics', 'pages::tenant.reports.analytics')
             ->middleware('can:reports.analytics')
             ->name('analytics');

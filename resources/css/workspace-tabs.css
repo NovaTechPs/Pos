@@ -54,3 +54,17 @@
     @media (prefers-reduced-motion: reduce) { .workspace-spinner { animation: none; } }
 }
 @media print { .workspace-loading { display: none !important; } }
+
+/* Detect the real browsing context before the page paints, even without headers. */
+@media screen {
+    html[data-workspace-frame] body { display: block !important; padding: 0 !important; }
+    html[data-workspace-frame] body > [data-flux-sidebar],
+    html[data-workspace-frame] body > [data-flux-sidebar-backdrop],
+    html[data-workspace-frame] body > [data-flux-header],
+    html[data-workspace-frame] body > .pos-mobile-header,
+    html[data-workspace-frame] .workspace-toolbar { display: none !important; }
+    html[data-workspace-frame] .workspace-shell,
+    html[data-workspace-frame] .workspace-panels,
+    html[data-workspace-frame] .workspace-initial { height: auto !important; overflow: visible !important; margin: 0 !important; }
+    html[data-workspace-frame] body.pos-shell { display: flex !important; flex-direction: column; height: 100dvh; }
+}

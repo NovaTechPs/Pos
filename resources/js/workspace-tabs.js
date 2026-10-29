@@ -8,6 +8,21 @@ export function workspaceUrl(value, base) {
     return url.href;
 }
 
+export function normalizeWorkspaceFrame(view) {
+    if (view.self === view.top) return false;
+    const page = view.document;
+    page.documentElement.setAttribute('data-workspace-frame', 'true');
+    if (!page.body) return true;
+    page.body.classList.add('workspace-frame-body');
+    // Some proxies and embedded browsers omit Sec-Fetch-Dest. Keep the same
+    // Livewire content nodes, but remove the shell rendered around them.
+    for (const shell of page.querySelectorAll('[data-workspace-tabs]')) {
+        const initial = shell.querySelector('[data-workspace-initial]');
+        if (initial) shell.replaceWith(...initial.childNodes);
+    }
+    return true;
+}
+
 export function interceptWorkspaceNavigation(event, base, openPage) {
     const link = event.target.closest?.('a[href]');
     const plainActivation = event.type === 'keydown' ? event.key === 'Enter' : event.button === 0;
@@ -264,6 +279,7 @@ function mountWorkspace(root) {
                         return;
                     }
                     if (childUrl.origin !== window.location.origin) return;
+                    normalizeWorkspaceFrame(frame.contentWindow);
                     if (/^\/(login|register)(\/|$)/.test(childUrl.pathname)) {
                         window.location.assign(childUrl.href);
                         return;
@@ -358,11 +374,12 @@ function mountWorkspace(root) {
 }
 
 if (typeof document !== 'undefined') {
+    normalizeWorkspaceFrame(window);
     const lifecycle = workspaceLifecycle(
         () => window.self === window.top ? document.querySelector('[data-workspace-tabs]') : null,
         mountWorkspace,
     );
-    document.addEventListener('DOMContentLoaded', () => lifecycle.init(), { once: true });
-    document.addEventListener('livewire:navigated', () => lifecycle.init());
+    document.addEventListener('DOMContentLoaded', () => { normalizeWorkspaceFrame(window); lifecycle.init(); }, { once: true });
+    document.addEventListener('livewire:navigated', () => { normalizeWorkspaceFrame(window); lifecycle.init(); });
     document.addEventListener('livewire:navigating', () => lifecycle.dispose());
 }

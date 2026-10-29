@@ -20,7 +20,7 @@
             ['permission' => 'returns.view', 'route' => 'tenant.purchase-returns', 'label' => 'Purchase Returns', 'icon' => 'arrow-uturn-left'],
             ['permission' => 'store.view', 'route' => 'tenant.store', 'label' => 'Store', 'icon' => 'building-storefront'],
             ['permission' => 'store.orders.view', 'route' => 'tenant.online-orders', 'label' => 'Online Orders', 'icon' => 'shopping-cart'],
-            ['permission' => 'reports.analytics', 'route' => 'tenant.analytics', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],
+            ['permission' => 'reports.analytics', 'route' => 'tenant.reports', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],
             ['permission' => 'reports.daily_settlement', 'route' => 'tenant.daily-settlement', 'label' => 'Daily Settlement', 'icon' => 'scale'],
             ['permission' => 'accounting.voucher.view', 'route' => 'tenant.payment', 'label' => 'Vouchers', 'icon' => 'banknotes'],
             ['permission' => 'currency_rates.manage', 'route' => 'tenant.currency-rates', 'label' => 'أسعار الصرف / Exchange Rates', 'icon' => 'currency-dollar'],

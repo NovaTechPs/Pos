@@ -16,6 +16,8 @@
         'register' => ['ar' => 'إنشاء حساب', 'en' => 'Register'],
         'security.edit' => ['ar' => 'الأمان', 'en' => 'Security'],
         'store.settings' => ['ar' => 'إعدادات المتجر', 'en' => 'Store Settings'],
+        'tenant.reports' => ['ar' => 'مركز التقارير', 'en' => 'Reports'],
+        'tenant.reports.print' => ['ar' => 'طباعة التقرير', 'en' => 'Print Report'],
         'tenant.analytics' => ['ar' => 'التحليلات', 'en' => 'Analytics'],
         'tenant.backup' => ['ar' => 'النسخ الاحتياطي', 'en' => 'Backups'],
         'tenant.barcode.printer' => ['ar' => 'طباعة الباركود', 'en' => 'Barcode Printing'],
@@ -54,6 +56,9 @@
 @endphp
 
 <title>{{ $pageTitle === $appName ? $appName : $pageTitle.' - '.$appName }}</title>
+<script data-workspace-frame-bootstrap>
+    if (window.self !== window.top) document.documentElement.setAttribute('data-workspace-frame', 'true');
+</script>
 
 <link rel="icon" href="{{ asset('favicon.ico') }}?v=waslapos-1" sizes="any">
 <link rel="icon" href="{{ asset('favicon.svg') }}?v=waslapos-1" type="image/svg+xml">
