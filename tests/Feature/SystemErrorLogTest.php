@@ -76,6 +76,9 @@ test('diagnostic reporting excludes arbitrary messages and retains code location
     $this->logs->record(new RuntimeException('private-password customer@example.com'));
     expect($this->logs->safeDetails('password=SecretException token=HiddenError'))
         ->not->toContain('SecretException', 'HiddenError');
+    $safe = $this->logs->safeDetails('SQLSTATE[23514]: new row violates check constraint "payments_amount_check" DETAIL: Failing row contains (private-password)');
+    expect($safe)->toContain('constraint=payments_amount_check')->not->toContain('private-password');
+    expect($this->logs->safeDetails($safe))->toContain('constraint=payments_amount_check');
     expect($this->logs->safeDetails('TypeError at C:\\app\\Services\\Example.php:42'))
         ->toContain('app/Services/Example.php:42');
 });

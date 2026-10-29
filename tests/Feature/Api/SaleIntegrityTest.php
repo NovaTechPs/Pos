@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -32,6 +33,24 @@ test('replayed checkout returns the original invoice without duplicating stock o
     $this->getJson('/api/sale-operations/'.$this->payload['operation_uuid'])->assertOk()
         ->assertJsonPath('result.order.id', $first->json('order.id'));
 });
+
+test('zero total checkout completes without inserting a zero value payment', function (bool $freeProduct): void {
+    DB::statement("CREATE TRIGGER reject_zero_payment BEFORE INSERT ON payments WHEN NEW.amount <= 0 BEGIN SELECT RAISE(ABORT, 'payments_amount_check'); END");
+    $payload = $this->payload;
+    if ($freeProduct) {
+        $this->stock->update(['retail_price' => 0]);
+        $payload['items'][0]['price'] = 0;
+        $payload['subtotal'] = 0;
+    } else {
+        $payload['discount'] = 20;
+    }
+    $payload['total_amount'] = 0;
+    $first = $this->postJson('/api/pos/orders', $payload)->assertCreated();
+    $this->postJson('/api/pos/orders', $payload)->assertCreated()
+        ->assertJsonPath('order.id', $first->json('order.id'));
+    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(0)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(18.0);
+})->with([true, false]);
 
 test('an operation key cannot be reused with another payload or by another user', function (): void {
     $this->postJson('/api/pos/orders', $this->payload)->assertCreated();

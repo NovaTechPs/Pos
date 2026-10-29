@@ -68,7 +68,10 @@ class SystemErrorLog
         // Omit request bodies, identities, SQL, bindings and arbitrary exception messages.
         $details = $this->safeDetails($exception::class.': '.$exception->getMessage()
             .' at '.$exception->getFile().':'.$exception->getLine());
-        foreach (array_slice($exception->getTrace(), 0, 12) as $frame) {
+        $trace = $exception->getTrace();
+        usort($trace, fn (array $a, array $b): int => (int) ! str_contains(str_replace('\\', '/', $a['file'] ?? ''), '/app/')
+            <=> (int) ! str_contains(str_replace('\\', '/', $b['file'] ?? ''), '/app/'));
+        foreach (array_slice($trace, 0, 16) as $frame) {
             if (isset($frame['file'], $frame['line'])) {
                 $details .= "\n".$this->safeDetails('at '.$frame['file'].':'.$frame['line']);
             }
@@ -89,6 +92,9 @@ class SystemErrorLog
         }
         if (preg_match('/SQLSTATE\[([A-Z0-9]{5})\]/', $text, $state)) {
             $details[] = 'SQLSTATE['.$state[1].']';
+        }
+        if (preg_match('/(?:violates check constraint |constraint=)"?([a-z][a-z0-9_]{0,62})\b/', $text, $constraint)) {
+            $details[] = 'constraint='.$constraint[1];
         }
         // Keep only static source locations. Never expose absolute server paths.
         if (preg_match_all('~(?:^|/)((?:app|routes|vendor|bootstrap)/[A-Za-z0-9_./-]+\.php)(?::|\()([0-9]+)~m', str_replace('\\', '/', $text), $locations, PREG_SET_ORDER)) {

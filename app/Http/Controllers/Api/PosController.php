@@ -534,18 +534,20 @@ class PosController extends Controller
                 }
             }
 
-            Payment::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $branchId,
-                'shift_id' => $shift?->id,
-                'created_by' => $user->id,
-                'type' => 'receipt',
-                'voucher_number' => 'VCH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
-                'amount' => $total,
-                'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque']) ? $paymentMethod : 'cash',
-                'payment_date' => now(),
-                'order_id' => $order->id,
-            ]);
+            if ($total > 0) {
+                Payment::create([
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $branchId,
+                    'shift_id' => $shift?->id,
+                    'created_by' => $user->id,
+                    'type' => 'receipt',
+                    'voucher_number' => 'VCH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
+                    'amount' => $total,
+                    'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque']) ? $paymentMethod : 'cash',
+                    'payment_date' => now(),
+                    'order_id' => $order->id,
+                ]);
+            }
 
             return $order->load('items.product', 'branch', 'party');
         });
