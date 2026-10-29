@@ -99,6 +99,24 @@ test('point of sale keeps notes outside payment and offers one copy action for a
         ->and($xpath->query('//*[@data-pos-customer-notes]//*[@data-pos-notes-input]')->length)->toBe(0);
 });
 
+test('framed point of sale keeps the full cart inside its mobile scroll container', function (): void {
+    $html = $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/pos')
+        ->assertSuccessful()->assertSee('workspace-frame-body')->assertDontSee('data-workspace-tabs', false)
+        ->getContent();
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+
+    expect($xpath->query('//body/main/*[@data-pos-page]//*[@id="pos-cart-panel"]')->length)->toBe(1);
+
+    $css = file_get_contents(resource_path('css/pos.css'));
+    preg_match('/@media screen and \(max-width: 1023px\) \{(.*?)\n\}/s', $css, $mobileStyles);
+
+    expect($mobileStyles[1])->toContain('.pos-shell > main { overflow-y: auto; }')
+        ->toContain('.pos-shell > main > .pos-page { flex-shrink: 0; height: auto; }')
+        ->toMatch('/\[data-pos-products-panel\] \{[^}]*overscroll-behavior: auto;/');
+});
+
 test('administrator pages render responsive layouts', function (string $path, string $key): void {
     $this->user->update(['type' => 'saas_admin']);
     $response = $this->get($path)->assertSuccessful()->assertSee('app-responsive');
