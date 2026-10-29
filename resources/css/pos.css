@@ -75,6 +75,13 @@
 }
 
 @media screen {
+    .pos-notice-strip:has(> .bg-emerald-50:only-child) {
+        position: fixed;
+        inset-inline-end: 1rem;
+        bottom: 1rem;
+        z-index: 60;
+        max-width: calc(100vw - 2rem);
+    }
     .pos-notice { max-width: 100%; padding: 0.25rem 0.5rem; border: 0; border-radius: 0.5rem; font-size: 0.6875rem; font-weight: 500; line-height: 1.5; box-shadow: none; }
     .pos-notice button { flex-shrink: 0; min-width: 1.25rem; min-height: 1.25rem; }
     .pos-notice summary { list-style: none; }
