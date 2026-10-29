@@ -3636,11 +3636,6 @@ new class extends Component {
             class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
-            <nav data-pos-mobile-section-nav aria-label="التنقل بين الأصناف والسلة" class="pos-mobile-section-nav gap-2" dir="rtl">
-                <button type="button" x-on:click="$el.closest('.pos-layout').querySelector('#pos-products-panel').scrollIntoView({ block: 'start' })" class="min-h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">الأصناف</button>
-                <button type="button" x-on:click="$el.closest('.pos-layout').querySelector('#pos-cart-panel').scrollIntoView({ block: 'start' })" class="min-h-10 flex-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700">السلة ({{ count($cart) }}) ↓</button>
-            </nav>
-
             @if ($errorMessage || $successMessage || $this->has_below_cost_item)
                 <div data-pos-notice-strip class="pos-notice-strip flex shrink-0 flex-wrap items-start gap-1.5" dir="rtl">
                     @if ($errorMessage)

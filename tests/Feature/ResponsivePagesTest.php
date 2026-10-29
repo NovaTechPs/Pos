@@ -84,7 +84,7 @@ test('point of sale keeps notes outside payment and offers one copy action for a
     captureResponsivePreview('pos-filled', $this->get('/dashboard/pos')->assertOk()->getContent());
     $component->set('paid_amount', 50)->call('checkoutAndPrint');
     $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة العميل')
-        ->assertSee('data-pos-mobile-section-nav', false)
+        ->assertDontSee('data-pos-mobile-section-nav', false)
         ->assertSet('successMessage', null)
         ->assertSee('عرض فاتورة محفوظة — للقراءة فقط')
         ->assertDontSee('data-pos-notice-strip', false);
@@ -92,6 +92,7 @@ test('point of sale keeps notes outside payment and offers one copy action for a
     $dom = new DOMDocument;
     $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($dom);
+    expect($xpath->query('//*[@id="pos-products-panel"]/following-sibling::*[@id="pos-cart-panel"]')->length)->toBe(1);
     expect($xpath->query('//*[@*[name()="wire:click"]="copyLoadedInvoice"]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-notes-input]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-notice-strip]')->length)->toBe(0)
