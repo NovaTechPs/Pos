@@ -3598,32 +3598,6 @@ new class extends Component {
 };
 ?>
 <div class="pos-page">
-    @if (config('branch-sync.mode') === 'edge')
-        <div @if(config('app.desktop')) wire:poll.10s="refreshLiveData" @endif class="mx-auto mt-3 flex max-w-7xl flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
-            <div>
-                @if(config('app.desktop'))
-                    <strong>{{ match($connectionState) {
-                        'online' => 'متصل بالسيرفر · بيانات مباشرة وحفظ فوري',
-                        'pending' => 'متصل · توجد عمليات محلية بانتظار التأكيد أو المراجعة',
-                        'update_required' => 'الوضع المحلي · يلزم تحديث الموقع لتفعيل البيانات المباشرة',
-                        'unauthorized' => 'الوضع المحلي · أعد تسجيل الدخول لتجديد الاتصال بالسيرفر',
-                        'unavailable' => 'الوضع المحلي · السيرفر غير متاح حالياً',
-                        default => 'غير متصل · العمل على آخر بيانات محفوظة محلياً',
-                    } }}</strong>
-                @else
-                    <strong>نقطة البيع تعمل على قاعدة الفرع المحلية</strong>
-                @endif
-                <span class="mx-2">·</span>
-                <span>{{ $pendingSyncOperations }} بانتظار المزامنة / pending</span>
-                @if ($conflictedSyncOperations > 0)
-                    <span class="mx-2 font-bold text-rose-700">{{ $conflictedSyncOperations }} تعارض للمراجعة / conflicts to review</span>
-                @endif
-            </div>
-            <button type="button" wire:click="refreshLiveData" class="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold hover:bg-sky-100">
-                تحديث الحالة / Refresh status
-            </button>
-        </div>
-    @endif
     <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
 
         <div x-data="{
