@@ -130,13 +130,18 @@
 
                 @php
                     $productOccurrences = [];
+                    $cartProductIds = array_values(array_unique(array_column($cart, 'id')));
+                    $productColors = [];
+                    foreach ($cartProductIds as $colorIndex => $cartProductId) {
+                        $productColors[(int) $cartProductId] = ($colorIndex * 360) / max(1, count($cartProductIds));
+                    }
                 @endphp
                 @forelse ($cart as $lineKey => $item)
                     @php
                         $productIdentity = (int) $item['id'];
                         $productOccurrences[$productIdentity] = ($productOccurrences[$productIdentity] ?? 0) + 1;
                         $productOccurrence = $productOccurrences[$productIdentity];
-                        $productHue = ($loop->index * 360) / max(1, count($cart));
+                        $productHue = $productColors[$productIdentity];
                         $belowCost =
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
