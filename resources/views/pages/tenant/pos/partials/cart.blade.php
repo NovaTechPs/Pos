@@ -136,7 +136,7 @@
                         $productIdentity = (int) $item['id'];
                         $productOccurrences[$productIdentity] = ($productOccurrences[$productIdentity] ?? 0) + 1;
                         $productOccurrence = $productOccurrences[$productIdentity];
-                        $productHue = (($productIdentity % 360) * 137) % 360;
+                        $productHue = ($loop->index * 360) / max(1, count($cart));
                         $belowCost =
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp

@@ -21,7 +21,7 @@ beforeEach(function (): void {
     }
 });
 
-test('separate lines share their product color and count each product occurrence independently', function (): void {
+test('every separate row has a unique color including repeated products and keeps occurrence numbering', function (): void {
     [$first, $second] = $this->products;
     $component = Livewire::test('pages::tenant.pos.sales')->set('mergeSimilarProducts', false)
         ->call('selectInlineProduct', $first->id)->call('selectInlineProduct', $second->id)->call('selectInlineProduct', $first->id);
@@ -30,8 +30,13 @@ test('separate lines share their product color and count each product occurrence
     $xpath = new DOMXPath($dom);
     $rows = $xpath->query('//tr[@data-pos-cart-line]');
     expect($rows->length)->toBe(3)
-        ->and($rows->item(0)->getAttribute('style'))->toBe($rows->item(2)->getAttribute('style'))
+        ->and($rows->item(0)->getAttribute('style'))->not->toBe($rows->item(2)->getAttribute('style'))
         ->and($rows->item(0)->getAttribute('style'))->not->toBe($rows->item(1)->getAttribute('style'));
+    $colors = [];
+    foreach ($rows as $row) {
+        $colors[] = $row->getAttribute('style');
+    }
+    expect(array_unique($colors))->toHaveCount(3);
     $occurrences = [];
     foreach ($xpath->query('//*[@data-pos-product-occurrence]') as $badge) {
         $occurrences[] = $badge->getAttribute('data-pos-product-occurrence');
