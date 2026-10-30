@@ -128,14 +128,22 @@
 
             <tbody class="divide-y divide-slate-300">
 
+                @php
+                    $productOccurrences = [];
+                @endphp
                 @forelse ($cart as $lineKey => $item)
                     @php
+                        $productIdentity = (int) $item['id'];
+                        $productOccurrences[$productIdentity] = ($productOccurrences[$productIdentity] ?? 0) + 1;
+                        $productOccurrence = $productOccurrences[$productIdentity];
+                        $productHue = (($productIdentity % 360) * 137) % 360;
                         $belowCost =
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
 
                     <tr data-pos-cart-line wire:key="pos-cart-{{ $lineKey }}"
-                        class="{{ empty($item['is_gift']) && ($item['offer_quantity'] ?? 0) > 0 && isset($item['offer_price']) && $item['offer_price'] < $item['offer_quantity'] * $item['price'] ? 'bg-amber-50' : ($loop->odd ? 'bg-white' : 'bg-slate-50') }} hover:bg-indigo-50">
+                        @if (! $mergeSimilarProducts) data-pos-product-color="{{ $productIdentity }}" style="--pos-cart-hue: {{ $productHue }}" @endif
+                        class="{{ ! $mergeSimilarProducts ? 'pos-cart-product-row' : (empty($item['is_gift']) && ($item['offer_quantity'] ?? 0) > 0 && isset($item['offer_price']) && $item['offer_price'] < $item['offer_quantity'] * $item['price'] ? 'bg-amber-50' : ($loop->odd ? 'bg-white' : 'bg-slate-50')) }} hover:bg-indigo-50">
                         {{-- Row Number --}}
                         <td class="px-2 py-2 text-center">
                             <span
@@ -158,8 +166,12 @@
 
                         {{-- Product --}}
                         <td class="px-3 py-2">
-                            <div class="font-black text-slate-900">
+                            <div class="font-black text-slate-900 {{ ! $mergeSimilarProducts ? 'dark:text-slate-100' : '' }}">
                                 {{ $item['name'] }}
+                                @if (! $mergeSimilarProducts)
+                                    <span data-pos-product-occurrence="{{ $productOccurrence }}" class="pos-cart-occurrence"
+                                        aria-label="تكرار الصنف في السلة: {{ $productOccurrence }}">{{ $productOccurrence }}</span>
+                                @endif
                                 @if (! empty($item['is_gift']))
                                     <span class="rounded bg-fuchsia-100 px-2 py-0.5 text-xs text-fuchsia-700">هدية</span>
                                 @endif
