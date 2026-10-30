@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -148,3 +149,42 @@ test('report dates are validated and filter sales consistently', function (): vo
     $this->getJson($prefix.'&from=2026-02-01&to=2026-01-01')->assertUnprocessable();
     $this->getJson($prefix.'&from=not-a-date')->assertUnprocessable();
 });
+
+test('retail checkout batches product and stock reads without changing the ledger', function (bool $customerPricing): void {
+    $pricingBranch = $customerPricing ? Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'Customer prices']) : $this->branch;
+    $payload = $this->payload;
+    $payload['items'] = [];
+    if ($customerPricing) {
+        $customer = Party::create(['tenant_id' => $this->tenant->id, 'branch_id' => $pricingBranch->id,
+            'name' => 'Pricing customer', 'type' => 'customer', 'is_active' => true]);
+        $payload['customer_id'] = $customer->id;
+    }
+    $stocks = [];
+    for ($i = 0; $i < 12; $i++) {
+        $product = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'Batch '.$i, 'cost_price' => 4]);
+        $stocks[] = BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+            'product_id' => $product->id, 'stock_quantity' => 20, 'retail_price' => 10]);
+        if ($customerPricing) {
+            BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $pricingBranch->id,
+                'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 12]);
+        }
+        $payload['items'][] = ['product_id' => $product->id, 'quantity' => 2, 'price' => $customerPricing ? 12 : 10];
+    }
+    $payload['subtotal'] = $payload['total_amount'] = $customerPricing ? 288 : 240;
+    $reads = ['products' => 0, 'branch_products' => 0];
+    DB::listen(function (QueryExecuted $query) use (&$reads): void {
+        foreach (array_keys($reads) as $table) {
+            if (preg_match('/^select .*from ["`]'.$table.'["`]/i', $query->sql)) {
+                $reads[$table]++;
+            }
+        }
+    });
+    $sale = $this->postJson('/api/pos/orders', $payload)->assertCreated()
+        ->assertJsonCount(12, 'order.items')->assertJsonPath('order.total', $payload['total_amount']);
+    expect($reads['products'])->toBeLessThanOrEqual(2)
+        ->and($reads['branch_products'])->toBeLessThanOrEqual($customerPricing ? 2 : 1);
+    foreach ($stocks as $stock) {
+        expect((float) $stock->fresh()->stock_quantity)->toBe(18.0);
+    }
+    expect((float) Payment::where('order_id', $sale->json('order.id'))->sum('amount'))->toBe((float) $payload['total_amount']);
+})->with([false, true]);

@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
 use App\Services\StockMovementContext;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -422,28 +423,38 @@ class PosController extends Controller
             $lines = [];
             $subtotal = 0.0;
             $totalCost = 0.0;
+            $reservedQuantities = [];
+            $productIds = array_values(array_unique(array_column($validated['items'], 'product_id')));
+            $products = Product::query()->where('tenant_id', $tenantId)->whereIn('id', $productIds)->get()->keyBy('id');
+            $stockByProduct = BranchProduct::query()->where('tenant_id', $tenantId)
+                ->whereIn('product_id', $productIds)
+                ->when(! $unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
+                ->orderBy('product_id')->orderBy('branch_id')->lockForUpdate()->get()->groupBy('product_id');
+            $priceBranchId = $customer?->branch_id ?: $branchId;
+            $customerPrices = $priceBranchId === $branchId ? null : BranchProduct::query()
+                ->where('tenant_id', $tenantId)->where('branch_id', $priceBranchId)
+                ->whereIn('product_id', $productIds)->get()->keyBy('product_id');
             foreach ($validated['items'] as $item) {
-                $product = Product::query()->where('tenant_id', $tenantId)->whereKey((int) $item['product_id'])->firstOrFail();
-                $stockRows = BranchProduct::query()->where('tenant_id', $tenantId)
-                    ->where('product_id', $product->id)
-                    ->when(! $unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
-                    ->lockForUpdate()->get();
+                $product = $products->get((int) $item['product_id']);
+                if (! $product) {
+                    throw (new ModelNotFoundException)->setModel(Product::class, [$item['product_id']]);
+                }
+                $stockRows = $stockByProduct->get($product->id, collect());
                 $branchProduct = $stockRows->firstWhere('branch_id', $branchId);
                 if (! $branchProduct) {
                     throw ValidationException::withMessages(['items' => "المنتج {$product->name} غير مرتبط بالفرع."]);
                 }
 
                 $quantity = (float) $item['quantity'];
-                $available = (float) $stockRows->sum('stock_quantity');
+                $reservedQuantities[$product->id] = ($reservedQuantities[$product->id] ?? 0) + $quantity;
+                $available = (float) $stockRows->sum('stock_quantity') - ($reservedQuantities[$product->id] - $quantity);
                 if (! $allowNegativeStock && $quantity > $available) {
                     throw ValidationException::withMessages(['items' => "الكمية المتوفرة من {$product->name} هي {$available}."]);
                 }
 
-                $priceBranchId = $customer?->branch_id ?: $branchId;
                 $customerBranchProduct = $priceBranchId === $branchId
                     ? $branchProduct
-                    : BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $priceBranchId)
-                        ->where('product_id', $product->id)->first();
+                    : $customerPrices->get($product->id);
                 if (! $customerBranchProduct) {
                     throw ValidationException::withMessages(['items' => "المنتج {$product->name} غير مسعّر في فرع العميل."]);
                 }
