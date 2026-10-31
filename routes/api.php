@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\EmployeeApiController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\PartyStatementController;
 use App\Http\Controllers\Api\PosController;
+use App\Http\Controllers\Api\PosProductController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\SaleOperationController;
@@ -27,6 +28,8 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/branches', [BranchController::class, 'index'])->middleware('can:branches.view');
 
     Route::get('/pos/products', [PosController::class, 'index'])->middleware('can:pos.view');
+    Route::post('/pos/products', [PosProductController::class, 'store'])->middleware(['can:pos.view', 'can:products.view', 'can:products.create']);
+    Route::post('/pos/product-barcodes', [PosProductController::class, 'attach'])->middleware(['can:pos.view', 'can:products.barcode.manage']);
     Route::get('/wholesale/products', [PosController::class, 'wholesaleProducts'])->middleware('can:wholesale_sales.view');
     Route::post('/wholesale/orders', [PosController::class, 'storeWholesaleOrder'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
     Route::get('/wholesale/orders', [PosController::class, 'wholesaleOrders'])->middleware('can:wholesale_sales.view');
