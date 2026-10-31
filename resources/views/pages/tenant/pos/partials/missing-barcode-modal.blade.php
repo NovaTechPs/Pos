@@ -1,6 +1,6 @@
 @if ($showMissingBarcodeModal)
-    <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3" x-data x-trap.inert.noscroll="true" x-on:keydown.escape.prevent.stop="$wire.cancelMissingBarcode()">
-        <section data-pos-missing-barcode-dialog x-on:keydown.stop role="dialog" aria-modal="true" aria-labelledby="missing-barcode-title" class="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-amber-200 bg-white p-4 shadow-2xl sm:p-6" dir="rtl">
+    <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3" x-data x-trap.inert.noscroll.noautofocus="true" x-on:keydown.escape.prevent.stop="$wire.cancelMissingBarcode()">
+        <section data-pos-missing-barcode-dialog tabindex="-1" x-init="$nextTick(() => $el.focus({ preventScroll: true }))" x-on:keydown.enter.self.prevent.stop x-on:keydown.stop role="dialog" aria-modal="true" aria-labelledby="missing-barcode-title" class="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-amber-200 bg-white p-4 shadow-2xl sm:p-6" dir="rtl">
             <h2 id="missing-barcode-title" class="text-lg font-black text-amber-800">⚠ الباركود غير موجود</h2>
             <p class="mt-3 break-all text-center font-mono text-base font-bold">{{ $missingBarcode }}</p>
             <div class="mt-3 space-y-2 text-sm leading-7 text-slate-700">
