@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\ThemeController;
 use App\Http\Controllers\Api\VoucherController;
+use App\Http\Controllers\Api\WholesaleWorkspaceController;
 use App\Http\Middleware\EnsureSaleIdempotency;
 use Illuminate\Support\Facades\Route;
 
@@ -30,9 +31,13 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/pos/products', [PosController::class, 'index'])->middleware('can:pos.view');
     Route::post('/pos/products', [PosProductController::class, 'store'])->middleware(['can:pos.view', 'can:products.view', 'can:products.create']);
     Route::post('/pos/product-barcodes', [PosProductController::class, 'attach'])->middleware(['can:pos.view', 'can:products.barcode.manage']);
-    Route::get('/wholesale/products', [PosController::class, 'wholesaleProducts'])->middleware('can:wholesale_sales.view');
-    Route::post('/wholesale/orders', [PosController::class, 'storeWholesaleOrder'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
+    Route::get('/wholesale/products', [WholesaleWorkspaceController::class, 'products'])->middleware('can:wholesale_sales.view');
+    Route::post('/wholesale/orders', [WholesaleWorkspaceController::class, 'store'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
     Route::get('/wholesale/orders', [PosController::class, 'wholesaleOrders'])->middleware('can:wholesale_sales.view');
+    Route::get('/wholesale/invoice', [WholesaleWorkspaceController::class, 'invoice'])->middleware('can:wholesale_sales.view');
+    Route::get('/wholesale/price-history', [WholesaleWorkspaceController::class, 'priceHistory'])->middleware('can:wholesale_sales.view');
+    Route::get('/wholesale/receipts', [WholesaleWorkspaceController::class, 'receipts'])->middleware('can:accounting.receipt.view');
+    Route::post('/wholesale/receipts', [WholesaleWorkspaceController::class, 'storeReceipt'])->middleware(['can:accounting.receipt.create', EnsureSaleIdempotency::class]);
     Route::get('/sales/orders', [PosController::class, 'salesOrders'])->middleware('can:sales_invoices.view');
     Route::post('/pos/orders', [PosController::class, 'storeOrder'])->middleware(['can:pos.sale.checkout', EnsureSaleIdempotency::class]);
     Route::get('/sale-operations/{operationUuid}', [SaleOperationController::class, 'show'])->whereUuid('operationUuid');
