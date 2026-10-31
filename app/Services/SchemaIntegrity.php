@@ -186,7 +186,7 @@ class SchemaIntegrity extends Schema
             if ($driver === 'sqlite') {
                 self::executeTrigger('CREATE TRIGGER '.$name.' BEFORE '.strtoupper($event).' ON '.$table.' FOR EACH ROW WHEN '.$condition." BEGIN SELECT RAISE(ABORT, 'Cross-tenant or employee relationship'); END");
             } elseif ($driver === 'pgsql') {
-                self::executeTrigger('CREATE FUNCTION '.$name.'_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF '.$condition." THEN RAISE EXCEPTION 'Cross-tenant or employee relationship'; END IF; RETURN NEW; END; $$");
+                self::executeTrigger('CREATE OR REPLACE FUNCTION '.$name.'_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF '.$condition." THEN RAISE EXCEPTION 'Cross-tenant or employee relationship'; END IF; RETURN NEW; END; $$");
                 self::executeTrigger('CREATE TRIGGER '.$name.' BEFORE '.strtoupper($event).' ON '.$table.' FOR EACH ROW EXECUTE FUNCTION '.$name.'_fn()');
             } else {
                 self::executeTrigger('CREATE TRIGGER '.$name.' BEFORE '.strtoupper($event).' ON '.$table.' FOR EACH ROW BEGIN IF '.$condition." THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cross-tenant or employee relationship'; END IF; END");
@@ -198,14 +198,17 @@ class SchemaIntegrity extends Schema
     {
         $connection = DB::connection();
         $driver = $connection->getDriverName();
-        $changed = "COALESCE(NEW.stock_operation_uuid, '') <> COALESCE(OLD.stock_operation_uuid, '')";
+        $changed = $driver === 'pgsql'
+            ? 'NEW.stock_operation_uuid IS DISTINCT FROM OLD.stock_operation_uuid'
+            : "COALESCE(NEW.stock_operation_uuid, '') <> COALESCE(OLD.stock_operation_uuid, '')";
         $fields = 'tenant_id, branch_id, product_id, branch_product_id, quantity_before, quantity_after, quantity, source_type, source_id, source_reference, operation_uuid, recorded_by, created_at';
         $insert = "INSERT INTO stock_movements ({$fields}) SELECT NEW.tenant_id, NEW.branch_id, NEW.product_id, NEW.id, 0, NEW.stock_quantity, NEW.stock_quantity, COALESCE(NEW.stock_source_type, 'opening'), COALESCE(NEW.stock_source_id, NEW.id), NEW.stock_source_reference, NEW.stock_operation_uuid, NEW.stock_actor_id, CURRENT_TIMESTAMP WHERE NEW.stock_quantity <> 0";
         $update = "INSERT INTO stock_movements ({$fields}) SELECT NEW.tenant_id, NEW.branch_id, NEW.product_id, NEW.id, OLD.stock_quantity, NEW.stock_quantity, NEW.stock_quantity - OLD.stock_quantity, CASE WHEN {$changed} THEN COALESCE(NEW.stock_source_type, 'manual') ELSE 'manual' END, CASE WHEN {$changed} THEN NEW.stock_source_id ELSE NULL END, CASE WHEN {$changed} THEN NEW.stock_source_reference ELSE NULL END, CASE WHEN {$changed} THEN NEW.stock_operation_uuid ELSE NULL END, CASE WHEN {$changed} THEN NEW.stock_actor_id ELSE NULL END, CURRENT_TIMESTAMP WHERE NEW.stock_quantity <> OLD.stock_quantity";
         foreach (['insert' => $insert, 'update' => $update] as $event => $body) {
             $name = 'stock_ledger_'.$event;
             if ($driver === 'pgsql') {
-                self::executeTrigger('CREATE FUNCTION '.$name.'_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '.$body.'; RETURN NEW; END; $$');
+                self::executeTrigger('CREATE OR REPLACE FUNCTION '.$name.'_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN '.$body.'; RETURN NEW; END; $$');
+                self::executeTrigger('DROP TRIGGER IF EXISTS '.$name.' ON branch_products');
                 self::executeTrigger('CREATE TRIGGER '.$name.' AFTER '.strtoupper($event).' ON branch_products FOR EACH ROW EXECUTE FUNCTION '.$name.'_fn()');
             } elseif ($driver === 'sqlite') {
                 self::executeTrigger('CREATE TRIGGER '.$name.' AFTER '.strtoupper($event).' ON branch_products FOR EACH ROW BEGIN '.$body.'; END');
@@ -216,7 +219,8 @@ class SchemaIntegrity extends Schema
         foreach (['update', 'delete'] as $event) {
             $name = 'stock_ledger_no_'.$event;
             if ($driver === 'pgsql') {
-                self::executeTrigger("CREATE FUNCTION {$name}_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Stock movements are immutable'; END; $$");
+                self::executeTrigger("CREATE OR REPLACE FUNCTION {$name}_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Stock movements are immutable'; END; $$");
+                self::executeTrigger('DROP TRIGGER IF EXISTS '.$name.' ON stock_movements');
                 self::executeTrigger('CREATE TRIGGER '.$name.' BEFORE '.strtoupper($event).' ON stock_movements FOR EACH ROW EXECUTE FUNCTION '.$name.'_fn()');
             } elseif ($driver === 'sqlite') {
                 self::executeTrigger('CREATE TRIGGER '.$name.' BEFORE '.strtoupper($event)." ON stock_movements BEGIN SELECT RAISE(ABORT, 'Stock movements are immutable'); END");
