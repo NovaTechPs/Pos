@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Branch;
-use App\Models\Permission;
 use App\Models\Plan;
 use App\Models\PlanFeature;
 use App\Models\Role;
@@ -58,14 +57,8 @@ class ClientSetupSeeder extends Seeder
                 }
             }
 
-            $roleModels = [];
-            foreach ($this->rolePermissions() as $name => $permissions) {
-                $role = Role::query()->firstOrCreate(['tenant_id' => $tenant->id, 'name' => $name], ['description' => $name]);
-                if ($role->wasRecentlyCreated) {
-                    $role->permissions()->sync(Permission::query()->when($permissions !== null, fn ($query) => $query->whereIn('name', $permissions))->pluck('id'));
-                }
-                $roleModels[$name] = $role;
-            }
+            $this->call(TenantRoleSeeder::class, false, ['tenantId' => $tenant->id]);
+            $roleModels = Role::query()->where('tenant_id', $tenant->id)->whereIn('name', ['admin', 'cashier', 'wholesale_employee'])->get()->keyBy('name');
 
             foreach ($data['users'] as $account) {
                 $isSystemAdmin = $account['role'] === 'system_admin';
@@ -93,20 +86,5 @@ class ClientSetupSeeder extends Seeder
                 }
             }
         });
-    }
-
-    /** @return array<string, list<string>|null> */
-    private function rolePermissions(): array
-    {
-        return [
-            'admin' => null,
-            'cashier' => ['dashboard.view', 'pos.view', 'pos.product.search', 'pos.product.add', 'pos.product.remove',
-                'pos.product.quantity', 'pos.sale.create', 'pos.sale.checkout', 'pos.sale.print', 'pos.shift.open',
-                'pos.shift.close', 'pos.invoice.search', 'pos.invoice.hold', 'products.view', 'customers.view',
-                'customers.create', 'returns.view', 'returns.create'],
-            'wholesale_employee' => ['dashboard.view', 'wholesale_sales.view', 'wholesale_sales.create',
-                'wholesale_sales.edit', 'wholesale_sales.print', 'van_sales.view', 'van_sales.create', 'van_sales.edit',
-                'van_sales.print', 'products.view', 'customers.view', 'returns.view', 'returns.create'],
-        ];
     }
 }
