@@ -98,6 +98,9 @@ new class extends Component {
     public bool $invoiceEditMode = false;
     public array $heldInvoices = [];
     public bool $showHeldModal = false;
+    public bool $showClearInvoiceModal = false;
+    public bool $showHoldNotesModal = false;
+    public string $holdNotes = '';
     public bool $showCostModal = false;
     public bool $showBelowCostModal = false;
 
@@ -1414,9 +1417,29 @@ new class extends Component {
 
     public function clearCart(): void
     {
-        $this->clearCartState();
-        $this->errorMessage = null;
-        $this->successMessage = 'تم تجهيز فاتورة جديدة.';
+        if ($this->showHoldNotesModal) {
+            return;
+        }
+        $this->showClearInvoiceModal = true;
+    }
+
+    public function confirmClearCart(): void
+    {
+        if (!$this->showClearInvoiceModal) {
+            return;
+        }
+        $this->showClearInvoiceModal = false;
+        $this->startNewInvoice();
+        $this->dispatch('pos-focus-barcode');
+    }
+
+    public function cancelInvoiceDialogs(): void
+    {
+        $this->showClearInvoiceModal = false;
+        $this->showHoldNotesModal = false;
+        $this->holdNotes = '';
+        $this->resetValidation('holdNotes');
+        $this->dispatch('pos-focus-barcode');
     }
 
     private function clearCartState(bool $reloadProducts = true): void
@@ -1469,6 +1492,34 @@ new class extends Component {
             return;
         }
 
+        if ($this->showClearInvoiceModal) {
+            return;
+        }
+        $this->holdNotes = $this->notes;
+        $this->showHoldNotesModal = true;
+    }
+
+    public function confirmHoldInvoice(): void
+    {
+        $this->authorize('pos.invoice.hold');
+        if (!$this->ensureInvoiceEditable()) {
+            return;
+        }
+        if (empty($this->cart)) {
+            $this->errorMessage = 'لا يمكن تعليق فاتورة فارغة.';
+            return;
+        }
+
+        if ($this->currentInvoiceId) {
+            $this->errorMessage = 'الفاتورة المعروضة محفوظة بالفعل. أنشئ فاتورة جديدة قبل التعليق.';
+            return;
+        }
+
+        if (!$this->showHoldNotesModal) {
+            return;
+        }
+        $this->validate(['holdNotes' => ['nullable', 'string', 'max:500']]);
+        $this->notes = trim($this->holdNotes);
         $this->heldInvoices[] = [
             'id' => (string) str()->uuid(),
             'cart' => $this->cart,
@@ -1486,6 +1537,8 @@ new class extends Component {
         ];
 
         $this->saveHeldInvoices();
+        $this->showHoldNotesModal = false;
+        $this->holdNotes = '';
         $this->clearCartState();
         $this->successMessage = 'تم تعليق الفاتورة. يمكنك استرجاعها لاحقاً.';
     }
@@ -3604,7 +3657,7 @@ new class extends Component {
                 printInProgress: false,
                 notesOpen: false,
                 async saveAndPrint() {
-                    if (this.printInProgress || this.$wire.showNewProductModal) return;
+                    if (this.printInProgress || this.$wire.showNewProductModal || this.$wire.showHoldNotesModal || this.$wire.showClearInvoiceModal) return;
                     this.printInProgress = true;
                     try {
                         const field = document.activeElement?.closest?.('[data-pos-field]');
@@ -3617,12 +3670,12 @@ new class extends Component {
                     }
                 }
             }" x-cloak x-init="$nextTick(() => { if (window.matchMedia('(pointer: coarse)').matches) return; const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
-            x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false);"
-            x-on:keydown.window.f1.prevent="if (!$wire.showNewProductModal) $wire.set('showHeldModal', !$wire.showHeldModal)"
-            x-on:keydown.window.f2.prevent="if (!$wire.showNewProductModal) $wire.holdInvoice()"
+            x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false); $wire.cancelInvoiceDialogs();"
+            x-on:keydown.window.f1.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.set('showHeldModal', !$wire.showHeldModal)"
+            x-on:keydown.window.f2.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.holdInvoice()"
             x-on:keydown.window.f3.prevent="
                 (async () => {
-                    if ($wire.showNewProductModal) return;
+                    if ($wire.showNewProductModal || $wire.showHoldNotesModal || $wire.showClearInvoiceModal) return;
                     const field = document.activeElement?.closest?.('[data-pos-field]');
                     if (field && !field.disabled && field.dataset.lineKey && field.dataset.posField) {
                         await $wire.updateCartField(field.dataset.lineKey, field.dataset.posField, field.value);
@@ -3630,9 +3683,9 @@ new class extends Component {
                     await $wire.saveOrEditInvoice();
                 })()
             "
-            x-on:keydown.window.f4.prevent="if (!$wire.showNewProductModal) $wire.clearCart()"
+            x-on:keydown.window.f4.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.clearCart()"
             x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
-            x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal) $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
+            x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
             class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
@@ -4267,6 +4320,7 @@ new class extends Component {
             @include('pages.tenant.pos.partials.shift-open-modal')
             @include('pages.tenant.pos.partials.shift-close-modal')
             @include('pages.tenant.pos.partials.held-invoices-modal')
+            @include('pages.tenant.pos.partials.invoice-confirmation-modals')
             @include('pages.tenant.pos.partials.cost-modal')
             @include('pages.tenant.pos.partials.below-cost-modal')
             @include('pages.tenant.pos.partials.missing-barcode-modal')

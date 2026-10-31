@@ -37,6 +37,9 @@ test('refresh restores separate cart rows and checkout fields without creating a
 test('clearing or saving an invoice prevents its draft from returning on refresh', function (string $action): void {
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)->set('paid_amount', 12);
     $component->call($action);
+    if ($action === 'clearCart') {
+        $component->assertSet('showClearInvoiceModal', true)->call('confirmClearCart');
+    }
     Livewire::test('pages::tenant.pos.sales')->assertSet('cart', [])->assertSet('notes', '');
     expect(Order::query()->count())->toBe($action === 'checkoutAndPrint' ? 1 : 0);
 })->with(['clearCart', 'checkoutAndPrint']);

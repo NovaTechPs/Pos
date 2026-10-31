@@ -10,6 +10,7 @@
                     <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                         <div class="min-w-0">
                             <div class="truncate text-xs font-black text-slate-900">فاتورة معلقة #{{ $index + 1 }}</div>
+                            <div class="mt-1 break-words text-xs text-slate-700" style="white-space: pre-wrap">ملاحظة: {{ trim((string) ($held['notes'] ?? '')) !== '' ? $held['notes'] : '—' }}</div>
                             <div class="mt-1 text-[10px] font-mono text-slate-400">{{ $held['time'] }}</div>
                             <div class="mt-1 font-mono text-sm font-black text-indigo-700">{{ number_format((float) $held['total'], 2) }}</div>
                         </div>

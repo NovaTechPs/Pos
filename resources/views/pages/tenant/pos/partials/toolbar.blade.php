@@ -124,7 +124,7 @@
              فاتورة جديدة
         ====================================================== --}}
         <button
-            wire:click="startNewInvoice"
+            wire:click="clearCart"
             class="flex h-[42px] items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white shadow-[0_4px_12px_rgba(16,185,129,0.18)] transition hover:bg-emerald-700 hover:shadow-md active:scale-[0.98]"
         >
             <span class="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-base">
