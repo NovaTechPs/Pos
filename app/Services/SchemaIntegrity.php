@@ -23,7 +23,7 @@ class SchemaIntegrity extends Schema
         'employee_shifts' => ['grace' => 'grace_period_minutes >= 0', 'dates' => 'effective_until IS NULL OR effective_until >= effective_from'],
         'employee_attendances' => ['minutes' => 'late_minutes >= 0 AND overtime_minutes >= 0 AND worked_minutes >= 0 AND overtime_approved_minutes >= 0 AND overtime_approved_minutes <= overtime_minutes AND production_units >= 0'],
         'employee_attendance_sessions' => ['dates' => 'checked_out_at IS NULL OR checked_out_at > checked_in_at'],
-        'employee_departures' => ['minutes' => 'minutes > 0 AND minutes <= 1440', 'times' => 'end_time > start_time OR ends_next_day = 1'],
+        'employee_departures' => ['minutes' => 'minutes > 0 AND minutes <= 1440', 'times' => 'end_time > start_time OR ends_next_day = TRUE'],
         'employee_leaves' => ['dates' => 'end_date >= start_date AND total_days > 0'],
         'payroll_periods' => ['dates' => 'end_date >= start_date'],
         'employee_advances' => ['amounts' => 'amount > 0 AND installment_amount > 0 AND paid_amount >= 0 AND paid_amount <= amount'],
