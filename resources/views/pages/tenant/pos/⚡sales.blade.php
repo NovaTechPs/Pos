@@ -28,6 +28,9 @@ new class extends Component {
     #[Locked]
     public string $connectionState = 'offline';
 
+    /** @var list<int> Products already checked against the server during this request. */
+    private array $verifiedRemoteProductIds = [];
+
     /** @param array<string, mixed> $filters
      * @return list<int>|null
      */
@@ -42,6 +45,9 @@ new class extends Component {
         $ids = $connection->read((int) $tenantId, (int) $branchId, $entity, $filters);
         $this->connectionState = $connection->state;
         if ($ids !== null) {
+            if ($entity === 'products') {
+                $this->verifiedRemoteProductIds = array_values(array_unique([...$this->verifiedRemoteProductIds, ...$ids]));
+            }
             $this->allowNegativeStock = TenantSetting::getBool((int) $tenantId, 'allow_negative_stock');
             $this->unifiedStock = TenantSetting::getBool((int) $tenantId, 'unified_stock');
             $this->mergeSimilarProducts = TenantSetting::getBool((int) $tenantId, 'merge_similar_products');
@@ -55,6 +61,7 @@ new class extends Component {
     {
         if (app(DesktopPosConnection::class)->enabled() && $this->tenantId() && $this->getActiveBranchId()) {
             app(DesktopPosConnection::class)->retry((int) $this->tenantId(), (int) $this->getActiveBranchId());
+            app(DesktopPosConnection::class)->flush((int) $this->tenantId(), (int) $this->getActiveBranchId());
         }
         $this->loadQuickProducts();
         $this->refreshBranchSyncStatus();
@@ -1189,7 +1196,9 @@ new class extends Component {
             return;
         }
 
-        $remoteIds = $this->refreshRemoteCatalog(filters: ['ids' => [$productId]]);
+        $remoteIds = in_array($productId, $this->verifiedRemoteProductIds, true)
+            ? [$productId]
+            : $this->refreshRemoteCatalog(filters: ['ids' => [$productId]]);
         if ($remoteIds !== null && !in_array($productId, $remoteIds, true)) {
             $this->errorMessage = 'المنتج لم يعد متاحاً على السيرفر في الفرع الحالي.';
             return;
@@ -2716,8 +2725,13 @@ new class extends Component {
             $this->activeShiftId = $shift->id;
 
             $this->clearCartState();
+            $operation = null;
             if (app(DesktopPosConnection::class)->enabled()) {
-                $this->refreshLiveData();
+                $operation = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('operation_type', 'sale.upsert')->where('payload->order->sync_uuid', $order->sync_uuid)->first();
+                if ($operation) {
+                    app(DesktopPosConnection::class)->flush((int) $tenantId, (int) $branchId, $operation->operation_uuid);
+                }
             }
             $this->refreshBranchSyncStatus();
             $this->activeShiftId = $shift->id;
@@ -2725,8 +2739,7 @@ new class extends Component {
             $this->successMessage = $wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
 
             if (app(DesktopPosConnection::class)->enabled()) {
-                $operation = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
-                    ->where('operation_type', 'sale.upsert')->where('payload->order->sync_uuid', $order->sync_uuid)->first();
+                $operation?->refresh();
                 $this->successMessage = $operation?->status === 'synced'
                     ? "تم حفظ الفاتورة {$savedInvoiceNumber} على السيرفر."
                     : "تم حفظ الفاتورة {$savedInvoiceNumber} محلياً، وهي بانتظار تأكيد السيرفر. لا تعد إدخالها.";
@@ -3650,7 +3663,15 @@ new class extends Component {
     }
 };
 ?>
-<div class="pos-page">
+<div class="pos-page" data-pos-page>
+    <div wire:ignore data-pos-save-overlay style="display: none" class="fixed inset-0 z-[9999] items-center justify-center bg-slate-950/50 p-6 backdrop-blur-sm" role="status" aria-live="polite" aria-label="جارٍ حفظ الفاتورة">
+        <div class="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl" dir="rtl">
+            <img src="{{ asset('wasla-logo.svg') }}" alt="وصلة" class="mx-auto mb-6 h-20 max-w-full object-contain">
+            <span aria-hidden="true" class="mx-auto mb-5 block size-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600 motion-reduce:animate-none"></span>
+            <p class="text-lg font-bold text-slate-900">جارٍ حفظ الفاتورة…</p>
+            <p class="mt-3 text-sm leading-7 text-slate-500">يرجى الانتظار حتى تظهر نتيجة الحفظ. لا حاجة للضغط مرة أخرى.</p>
+        </div>
+    </div>
     <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
 
         <div x-data="{

@@ -182,6 +182,16 @@ test('the web login uses the central employee branch automatically', function ()
     expect(auth()->user()->branch_id)->toBe(50);
 });
 
+test('desktop login does not download the catalog on the interface server', function (): void {
+    config(['app.desktop' => true]);
+    $this->withoutDefer();
+    Http::fake(['waslapos.app/api/login' => Http::response(employeeSyncProfile())]);
+    $this->post('/login', ['email' => 'cashier100@example.test', 'password' => 'password123'])
+        ->assertSessionHasNoErrors()->assertRedirect();
+    $this->assertAuthenticatedAs(User::query()->findOrFail(100));
+    Http::assertSentCount(1);
+});
+
 test('a POS employee needs checkout permission before obtaining an upload credential', function (): void {
     config(['branch-sync.mode' => 'central']);
     $tenant = Tenant::query()->create(['name' => 'Shop']);

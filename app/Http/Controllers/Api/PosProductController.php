@@ -44,7 +44,7 @@ class PosProductController extends Controller
                     'stock_quantity' => (int) $branchId === (int) $data['branch_id'] ? $data['stock_quantity'] : 0]);
             }
 
-            return $product->load('barcodes', 'branches');
+            return $product->load(['barcodes', 'branches']);
         });
 
         return response()->json(['product' => $product, 'message' => 'تمت إضافة الصنف. امسح الباركود لإضافته للفاتورة.'], 201);
@@ -58,7 +58,7 @@ class PosProductController extends Controller
         $barcode = trim($data['barcode']);
         $product = DB::transaction(function () use ($data, $barcode, $tenantId): Product {
             Tenant::query()->whereKey($tenantId)->lockForUpdate()->firstOrFail();
-            $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($data['product_id']);
+            $product = Product::query()->where('tenant_id', $tenantId)->whereKey($data['product_id'])->firstOrFail();
             $existing = $this->barcode($tenantId, $barcode);
             if ($existing && (int) $existing->product_id !== (int) $product->id) {
                 throw ValidationException::withMessages(['barcode' => 'تم تسجيل هذا الباركود لصنف آخر. حدّث الأصناف وأعد مسحه.']);
@@ -67,7 +67,7 @@ class PosProductController extends Controller
                 ProductBarcode::create(['tenant_id' => $tenantId, 'product_id' => $product->id, 'barcode' => $barcode]);
             }
 
-            return $product->load('barcodes', 'branches');
+            return $product->load(['barcodes', 'branches']);
         });
 
         return response()->json(['product' => $product, 'message' => 'تم ربط الباركود. امسحه مرة أخرى لإضافته للفاتورة.']);

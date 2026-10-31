@@ -9,7 +9,7 @@
             <x-passkey-verify />
         @endif
 
-        <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6">
+        <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6" data-login-progress>
             @csrf
 
             <!-- Email Address -->
@@ -52,9 +52,11 @@
 
             <div class="flex items-center justify-end">
                 <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">
-                    {{ __('Log in') }}
+                    <span data-login-label>{{ __('Log in') }}</span>
+                    <span data-login-pending hidden>جارٍ إرسال طلب الدخول…</span>
                 </flux:button>
             </div>
+            <p data-login-status hidden role="status" aria-live="polite" class="text-center text-sm text-blue-700 dark:text-blue-300"></p>
         </form>
 
         @if (Route::has('register'))

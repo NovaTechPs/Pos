@@ -45,8 +45,10 @@ class ReturnController extends Controller
                 ? (int) $line->original_order_item_id === (int) $item->id
                 : (int) $line->product_id === (int) $item->product_id)->sum(fn ($line) => abs((float) $line->quantity));
             $item->setAttribute('remaining_quantity', max(0, abs((float) $item->quantity) - $used));
-            $ratio = (float) $order->subtotal > 0 ? (float) $order->total / (float) $order->subtotal : 0;
-            $item->setAttribute('refund_unit_price', (float) $item->unit_price * $ratio);
+            $ratio = (float) $order->subtotal > 0 ? max(0, (float) $order->total - (float) $order->delivery_fee) / (float) $order->subtotal : 0;
+            $effectivePrice = (float) $item->quantity > 0 ? (float) $item->total_price / (float) $item->quantity : 0;
+            $item->setAttribute('unit_price', $effectivePrice);
+            $item->setAttribute('refund_unit_price', $effectivePrice * $ratio);
         }
 
         return response()->json([
@@ -114,7 +116,7 @@ class ReturnController extends Controller
                     throw ValidationException::withMessages(['items' => "الكمية المرتجعة من {$originalItem->product_id} تتجاوز المتبقي من الفاتورة."]);
                 }
 
-                $price = (float) $originalItem->unit_price;
+                $price = (float) $originalItem->quantity > 0 ? (float) $originalItem->total_price / (float) $originalItem->quantity : 0;
                 if (isset($item['price']) && abs((float) $item['price'] - $price) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
                     throw ValidationException::withMessages(['items' => 'لا يمكن تغيير سعر صنف في المرتجع دون صلاحية تعديل السعر.']);
                 }

@@ -31,10 +31,15 @@ test('tenant pages expose one accessible workspace without duplicating the livew
 })->with(['/dashboard', '/dashboard/pos', '/dashboard/product', '/dashboard/reports']);
 
 test('framed pages keep their normal permissions and omit nested workspace controls', function (): void {
-    $this->get('/dashboard/product?_workspace=frame')->assertSuccessful()
+    $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/product')->assertSuccessful()
         ->assertDontSee('data-workspace-tabs', false)->assertSee('workspace-frame-body')->assertDontSee('data-flux-sidebar', false);
     auth()->user()->update(['is_owner' => false]);
-    $this->get('/dashboard/product?_workspace=frame')->assertForbidden();
+    $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/product')->assertForbidden();
+});
+
+test('a legacy frame marker in a normal page address no longer removes its navigation', function (): void {
+    $this->withHeader('Sec-Fetch-Dest', 'document')->get('/dashboard/product?_workspace=frame')
+        ->assertSuccessful()->assertSee('data-workspace-tabs', false)->assertSee('data-flux-sidebar', false);
 });
 
 test('reports retain frame detection when a request has no fetch destination header', function (): void {

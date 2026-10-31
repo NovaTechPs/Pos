@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const { createWriteStream } = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation } = require('./runtime.cjs');
+const { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation, createSyncRunner, ensureMigrations } = require('./runtime.cjs');
 const { pageKey, printerMenu, printSnapshot } = require('./printing.cjs');
 
 const smokeTest = process.argv.includes('--smoke-test');
@@ -12,7 +12,6 @@ app.setAppUserModelId('app.waslapos.desktop');
 const singleInstance = app.requestSingleInstanceLock();
 let window;
 let server;
-let synchronizing = false;
 let syncTimer;
 let closing = false;
 let origin;
@@ -71,10 +70,22 @@ async function savePreferences() {
 }
 
 async function start() {
+    const startupAt = Date.now();
     const bundleRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../../storage/app/desktop-build/stage');
     const backend = path.join(bundleRoot, 'backend');
     const php = path.join(bundleRoot, 'php/php.exe');
     const ini = path.join(bundleRoot, 'php/php.ini');
+    window = new BrowserWindow({ width: 1440, height: 960, minWidth: 1024, minHeight: 700, show: !smokeTest,
+        backgroundColor: '#f3f6fc', title: 'WaslaPOS', icon: path.join(backend, 'public/app-icon-512.png'),
+        webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    window.setMenu(null);
+    if (!smokeTest) window.maximize();
+    await window.loadFile(path.join(__dirname, 'startup.html'));
+    const startupScreen = await window.webContents.executeJavaScript('!!document.querySelector("[data-startup-status]")');
+    const loadingScreenMs = Date.now() - startupAt;
+    const setStartupStatus = text => window.webContents.executeJavaScript(
+        `document.querySelector('[data-startup-status]').textContent = ${JSON.stringify(text)}`);
+    await setStartupStatus('جارٍ تجهيز بيانات التطبيق…');
     const state = await initializeData(dataRoot);
     const port = await reservePort();
     origin = `http://127.0.0.1:${port}`;
@@ -95,9 +106,13 @@ async function start() {
 
     const backupPath = path.join(dataRoot, 'backups', `before-${app.getVersion()}.sqlite`);
     if ((await fs.stat(state.database)).size > 0 && !(await fs.stat(backupPath).catch(() => null))) {
+        await setStartupStatus('جارٍ حفظ نسخة احتياطية لبياناتك…');
         await runPhp(php, ini, [path.join(backend, 'resources/desktop/backup.php'), state.database, backupPath], phpOptions);
     }
-    await runPhp(php, ini, ['artisan', 'migrate', '--force', '--no-interaction'], phpOptions);
+    await setStartupStatus('جارٍ تجهيز قاعدة البيانات…');
+    const migrationsExecuted = await ensureMigrations(dataRoot, state.database, app.getVersion(),
+        () => runPhp(php, ini, ['artisan', 'migrate', '--force', '--no-interaction'], phpOptions));
+    await setStartupStatus('جارٍ تشغيل التطبيق…');
     server = startChild(['-S', `127.0.0.1:${port}`, '-t', path.join(backend, 'public'), path.join(backend, 'resources/desktop/router.php')]);
     server.on('error', error => { if (!closing) dialog.showErrorBox('WaslaPOS', error.message); });
     let ready = false;
@@ -112,9 +127,6 @@ async function start() {
     if (!ready) throw new Error('The local server did not start. Check logs/backend.log.');
 
     try { preferences = JSON.parse(await fs.readFile(path.join(dataRoot, 'preferences.json'), 'utf8')); } catch { preferences = {}; }
-    window = new BrowserWindow({ width: 1440, height: 960, minWidth: 1024, minHeight: 700, show: false,
-        title: 'WaslaPOS', icon: path.join(backend, 'public/app-icon-512.png'),
-        webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     const consoleErrors = [];
     if (smokeTest) window.webContents.on('console-message', details => { if (details.level === 'error') consoleErrors.push(details.message); });
     window.webContents.on('will-navigate', (event, target) => {
@@ -141,45 +153,51 @@ async function start() {
         if (event.sender !== window.webContents || !isLocalNavigation(event.senderFrame.url, origin)) throw new Error('Printing is unavailable.');
         return printSnapshot({ BrowserWindow, owner: window, origin, preferences, request });
     });
-    const synchronize = async () => {
-        if (synchronizing || closing) return;
-        synchronizing = true;
-        try {
-            await runPhp(php, ini, ['artisan', 'branch-sync:push', '--no-interaction'], phpOptions);
-        } catch (error) { phpLog.write(error.message + '\n'); }
-        finally { synchronizing = false; }
-    };
+    const synchronize = createSyncRunner(
+        () => closing ? undefined : runPhp(php, ini, ['artisan', 'branch-sync:push', '--no-interaction'], phpOptions),
+        () => closing ? undefined : runPhp(php, ini, ['artisan', 'branch-sync:pull', '--no-interaction'], phpOptions),
+        error => phpLog.write(error.message + '\n'),
+    );
     synchronizeNow = async () => {
-        await synchronize();
-        if (!closing) {
-            try { await runPhp(php, ini, ['artisan', 'branch-sync:pull', '--no-interaction'], phpOptions); }
-            catch (error) { phpLog.write(error.message + '\n'); }
-        }
+        if (!closing) await synchronize(true);
     };
+    let downloadAfterLogin = true;
+    window.webContents.on('did-finish-load', () => {
+        const target = window.webContents.getURL();
+        if (!isLocalNavigation(target, origin)) return;
+        const pathname = new URL(target).pathname;
+        if (pathname === '/login') downloadAfterLogin = true;
+        else if (downloadAfterLogin && /^\/dashboard(\/|$)/.test(pathname)) {
+            downloadAfterLogin = false;
+            void synchronizeNow();
+        }
+    });
     let ticks = 0;
     syncTimer = setInterval(async () => {
-        await synchronize();
-        if (++ticks % 30 === 0 && !closing) {
-            const pull = startChild(['artisan', 'branch-sync:pull', '--no-interaction']);
-            pull.on('error', error => phpLog.write(error.message + '\n'));
-        }
+        if (!closing) await synchronize(++ticks % 30 === 0);
     }, 10000);
+    await setStartupStatus('جارٍ فتح نقطة البيع…');
     await window.loadURL(origin + '/dashboard/pos');
-    await showMenu();
+    const applicationReadyMs = Date.now() - startupAt;
     if (smokeTest) {
+        await showMenu();
         const details = await window.webContents.executeJavaScript(`({
             title: document.title, loginForm: !!document.querySelector('input[name="email"]'),
             action: document.querySelector('form')?.action,
             styles: [...document.querySelectorAll('link[rel="stylesheet"]')].map(link => link.href),
+            loginProgress: !!document.querySelector('[data-login-progress][data-login-bound="true"]'),
             text: document.body.innerText.slice(0, 500)
         })`);
         if (!details.loginForm || !details.action?.startsWith(origin)) throw new Error('The packaged login form did not load correctly.');
-        await fs.writeFile(path.join(dataRoot, 'smoke-result.json'), JSON.stringify({ ...details, consoleErrors, database: state.database }, null, 2));
+        const printerSettings = Menu.getApplicationMenu().items.find(item => item.label === 'الطابعة')
+            ?.submenu.items.map(item => item.label).filter(Boolean) || [];
+        await fs.writeFile(path.join(dataRoot, 'smoke-result.json'), JSON.stringify({ ...details, consoleErrors,
+            appVersion: app.getVersion(), printerSettings, database: state.database,
+            startupScreen, loadingScreenMs, applicationReadyMs, migrationsExecuted }, null, 2));
         await fs.writeFile(path.join(dataRoot, 'smoke-login.png'), (await window.webContents.capturePage()).toPNG());
         app.quit();
     } else {
-        window.maximize();
-        window.show();
+        void showMenu().catch(error => phpLog.write(error.message + '\n'));
     }
 }
 

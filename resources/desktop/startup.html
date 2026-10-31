@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <title>WaslaPOS — جارٍ التشغيل</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f3f6fc; color: #142443; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        main { width: min(440px, 90vw); padding: 48px 30px; text-align: center; }
+        .logo { display: inline-grid; place-items: center; width: 76px; height: 76px; border-radius: 23px; color: white; background: #2563eb; font-size: 28px; font-weight: 700; box-shadow: 0 12px 35px #2563eb26; }
+        h1 { margin: 24px 0 12px; font-size: 27px; }
+        p { line-height: 1.9; }
+        .spinner { display: inline-block; width: 30px; height: 30px; margin-top: 20px; border: 3px solid #d7e3fa; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; }
+        .hint { color: #66758d; font-size: 14px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+</head>
+<body>
+    <main aria-busy="true">
+        <div class="logo" aria-hidden="true">وصلة</div>
+        <h1>WaslaPOS</h1>
+        <p data-startup-status role="status" aria-live="polite">جارٍ فتح التطبيق…</p>
+        <span class="spinner" aria-hidden="true"></span>
+        <p class="hint">يرجى الانتظار، لا حاجة لفتح التطبيق مرة أخرى.</p>
+    </main>
+</body>
+</html>

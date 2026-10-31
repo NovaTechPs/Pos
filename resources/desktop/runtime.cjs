@@ -6,7 +6,7 @@ const { spawn } = require('node:child_process');
 
 async function initializeData(dataRoot) {
     for (const directory of ['logs', 'backups', 'storage/app/private', 'storage/app/public',
-        'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs']) {
+        'storage/framework/cache/data', 'storage/framework/cache/php', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs']) {
         await fs.mkdir(path.join(dataRoot, directory), { recursive: true });
     }
     const keyFile = path.join(dataRoot, 'application-key');
@@ -76,4 +76,38 @@ function isLocalNavigation(target, origin) {
     try { return new URL(target).origin === origin; } catch { return false; }
 }
 
-module.exports = { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation };
+function createSyncRunner(push, pull, onError) {
+    let active;
+    let catalogRequested = false;
+    return (includeCatalog = false) => {
+        catalogRequested ||= includeCatalog;
+        if (active) return active;
+        active = (async () => {
+            do {
+                const download = catalogRequested;
+                catalogRequested = false;
+                try { await push(); } catch (error) { onError(error); }
+                if (download) {
+                    try { await pull(); } catch (error) { onError(error); }
+                }
+            } while (catalogRequested);
+        })().finally(() => { active = null; });
+        return active;
+    };
+}
+
+async function ensureMigrations(dataRoot, database, version, migrate) {
+    const marker = path.join(dataRoot, 'migration-state.json');
+    const before = await fs.stat(database);
+    try {
+        const previous = JSON.parse(await fs.readFile(marker, 'utf8'));
+        if (before.size > 0 && previous.version === version && previous.databaseBirthtimeMs === before.birthtimeMs
+            && previous.databaseFileId === before.ino) return false;
+    } catch { /* Missing or incomplete markers require a normal migration check. */ }
+    await migrate();
+    const after = await fs.stat(database);
+    await fs.writeFile(marker, JSON.stringify({ version, databaseBirthtimeMs: after.birthtimeMs, databaseFileId: after.ino }), { mode: 0o600 });
+    return true;
+}
+
+module.exports = { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation, createSyncRunner, ensureMigrations };

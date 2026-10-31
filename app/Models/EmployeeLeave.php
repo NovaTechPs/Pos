@@ -36,7 +36,8 @@ class EmployeeLeave extends Model
             }
             $leave->total_days = (int) $start->diffInDays($end, true) + 1;
             if ($leave->status === 'approved' && ! $leave->approved_by) {
-                $leave->approved_by = auth()->id();
+                $approverId = auth()->user()?->id;
+                $leave->approved_by = $approverId !== null && $approverId > 0 ? $approverId : null;
             }
         });
     }

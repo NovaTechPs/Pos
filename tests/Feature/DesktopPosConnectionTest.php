@@ -13,6 +13,7 @@ use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
 use App\Services\DesktopPosConnection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -60,6 +61,49 @@ test('desktop reads central prices stock and names into its offline cache', func
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer device-secret'));
 });
 
+test('barcode addition checks the server once and checkout avoids reloading the entire catalog', function (): void {
+    Http::fake(function ($request) {
+        if ($request->method() === 'POST') {
+            return Http::response(['accepted' => collect($request['operations'])->pluck('operation_uuid')
+                ->mapWithKeys(fn (string $uuid): array => [$uuid => 'synced'])->all()]);
+        }
+
+        return Http::response(desktopCatalogPage($this, 10));
+    });
+    $component = Livewire::test('pages::tenant.pos.sales');
+    $beforeScan = count(Http::recorded());
+    $component->set('barcode', '123456')->call('scanBarcode');
+    expect(count(Http::recorded()) - $beforeScan)->toBe(1)
+        ->and($component->get('cart'))->toHaveCount(1);
+    $beforeCheckout = count(Http::recorded());
+    $component->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null);
+    expect(count(Http::recorded()) - $beforeCheckout)->toBe(2)
+        ->and(BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->first()->status)->toBe('synced');
+});
+
+test('catalog schema inspection is bounded by tables instead of product count', function (): void {
+    $page = desktopCatalogPage($this);
+    foreach (range(1, 30) as $index) {
+        $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Coffee '.$index]);
+        $stock = BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+            'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 5]);
+        $page['rows'][] = ['id' => $product->id, 'tenant_id' => $this->tenant->id, 'name' => $product->name];
+        $page['prices'][] = ['id' => $stock->id, 'tenant_id' => $this->tenant->id,
+            'branch_id' => $this->branch->id, 'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 5];
+    }
+    Http::fake(fn () => Http::response($page));
+    DB::enableQueryLog();
+    try {
+        expect(app(DesktopPosConnection::class)->read($this->tenant->id, $this->branch->id))->toHaveCount(31);
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        expect($queries->filter(fn (string $sql): bool => str_contains($sql, 'pragma_table_xinfo'))->count())->toBeLessThanOrEqual(3)
+            ->and($queries->filter(fn (string $sql): bool => str_starts_with($sql, 'update "branch_products"'))->count())->toBe(1);
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
+});
+
 test('desktop switches to cached products without losing the current cart and reconnects automatically', function (): void {
     $online = true;
     Http::fake(function () use (&$online) {
@@ -73,6 +117,19 @@ test('desktop switches to cached products without losing the current cart and re
     expect(data_get($component->get('quickProducts'), '0.retail_price'))->toBe(12.0);
     $online = true;
     $component->call('refreshLiveData')->assertSet('connectionState', 'online')->assertSet('cart', $cart);
+});
+
+test('pending uploads do not add a blocking upload request to every catalog lookup', function (): void {
+    BranchSyncOperation::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'sale.upsert', 'status' => 'pending', 'payload' => []]);
+    Http::fake(fn () => Http::response(desktopCatalogPage($this)));
+
+    $connection = app(DesktopPosConnection::class);
+    expect($connection->read($this->tenant->id, $this->branch->id, filters: ['ids' => [$this->product->id]]))
+        ->toBe([$this->product->id])->and($connection->state)->toBe('pending');
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn ($request): bool => $request->method() === 'POST');
+    expect((float) $this->stock->fresh()->stock_quantity)->toBe(5.0);
 });
 
 test('desktop sends sales immediately and records their server acknowledgment', function (): void {
@@ -95,6 +152,30 @@ test('desktop sends sales immediately and records their server acknowledgment', 
         ->and(BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->first()->status)->toBe('synced')
         ->and($accepted)->toHaveCount(1);
 });
+
+test('checkout prioritizes the current sale while preserving earlier stock returns', function (bool $hasEarlierReturn): void {
+    $old = BranchSyncOperation::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'sale.upsert', 'status' => 'pending',
+        'payload' => $hasEarlierReturn ? ['order' => ['type' => 'return']] : []]);
+    $sent = [];
+    Http::fake(function ($request) use (&$sent) {
+        if ($request->method() === 'POST') {
+            $sent = collect($request['operations'])->pluck('operation_uuid')->all();
+
+            return Http::response(['accepted' => array_fill_keys($sent, 'synced')]);
+        }
+
+        return Http::response(desktopCatalogPage($this, 10));
+    });
+    Livewire::test('pages::tenant.pos.sales')->assertSee('data-pos-save-overlay', false)
+        ->call('selectInlineProduct', $this->product->id)->set('paid_amount', 10)
+        ->call('checkout')->assertSet('errorMessage', null);
+    $current = BranchSyncOperation::query()->whereKeyNot($old->id)->where('operation_type', 'sale.upsert')->firstOrFail();
+    expect($sent)->toBe($hasEarlierReturn ? [$old->operation_uuid, $current->operation_uuid] : [$current->operation_uuid])
+        ->and($current->status)->toBe('synced')
+        ->and($old->fresh()->status)->toBe($hasEarlierReturn ? 'synced' : 'pending')
+        ->and($old->fresh()->attempts)->toBe($hasEarlierReturn ? 1 : 0);
+})->with([false, true]);
 
 test('lost sale responses retain the same operation uuid and never create a second local sale', function (): void {
     $online = false;

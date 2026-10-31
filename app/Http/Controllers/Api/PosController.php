@@ -11,6 +11,8 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Shift;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
 use App\Services\StockMovementContext;
@@ -23,6 +25,108 @@ use Illuminate\Validation\ValidationException;
 
 class PosController extends Controller
 {
+    public function invoice(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'branch_id' => ['required', 'integer'],
+            'before' => ['nullable', 'integer'],
+            'after' => ['nullable', 'integer'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+        $user = $request->user();
+        $query = Order::query()->where('tenant_id', $user->tenant_id)
+            ->where('branch_id', $validated['branch_id'])->where('type', 'pos')->where('status', 'completed')
+            ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id));
+        if (! empty($validated['search'])) {
+            $search = $validated['search'];
+            $query->where(fn ($query) => $query->where('invoice_number', $search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
+        }
+        if (! empty($validated['before'])) {
+            $query->where('id', '<', $validated['before']);
+        }
+        if (! empty($validated['after'])) {
+            $query->where('id', '>', $validated['after'])->orderBy('id');
+        } else {
+            $query->orderByDesc('id');
+        }
+
+        return response()->json(['order' => $query->with(['items.product', 'party', 'branch'])->firstOrFail()]);
+    }
+
+    private function reverseInvoice(Order $order): void
+    {
+        if ($order->shift_id) {
+            $shift = Shift::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $order->branch_id)
+                ->lockForUpdate()->find($order->shift_id);
+            if (! $shift || $shift->status !== 'open') {
+                throw ValidationException::withMessages(['invoice' => 'لا يمكن تعديل أو حذف فاتورة من وردية مغلقة.']);
+            }
+        }
+        if ($order->returns()->withTrashed()->exists()) {
+            throw ValidationException::withMessages(['invoice' => 'الفاتورة مرتبطة بمرتجعات؛ لا يمكن تعديلها أو حذفها.']);
+        }
+        $expected = $order->items()->get()->groupBy('product_id')->map(fn ($items) => (float) $items->sum('quantity'));
+        $movements = DB::table('stock_movements')->where('tenant_id', $order->tenant_id)->where('source_id', $order->id)
+            ->whereIn('source_type', ['order', 'sale_reversal'])->selectRaw('product_id, branch_id, SUM(quantity) as effect')
+            ->groupBy('product_id', 'branch_id')->orderBy('product_id')->orderBy('branch_id')->get();
+        $effects = $movements->groupBy('product_id')->map(fn ($rows) => -(float) $rows->sum('effect'));
+        foreach ($expected as $productId => $quantity) {
+            if (abs($quantity - $effects->get($productId, 0)) > 0.0001) {
+                throw ValidationException::withMessages(['invoice' => 'سجل مخزون الفاتورة غير مكتمل؛ لا يمكن عكسها تلقائياً.']);
+            }
+        }
+        foreach ($movements as $movement) {
+            if (abs((float) $movement->effect) < 0.0001) {
+                continue;
+            }
+            if ((float) $movement->effect > 0 || ! $expected->has($movement->product_id)) {
+                throw ValidationException::withMessages(['invoice' => 'تعذر مطابقة حركات مخزون الفاتورة.']);
+            }
+            $stock = BranchProduct::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $movement->branch_id)
+                ->where('product_id', $movement->product_id)->lockForUpdate()->firstOrFail();
+            StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', -(float) $movement->effect), 'sale_reversal');
+        }
+        foreach (Payment::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $order->branch_id)
+            ->where('order_id', $order->id)->lockForUpdate()->get() as $payment) {
+            $payment->delete();
+        }
+    }
+
+    public function deleteInvoice(Request $request, Order $order): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($order->tenant_id === $user->tenant_id && $order->type === 'pos' && $order->status === 'completed', 404);
+        abort_unless(! $user->branch_id || $user->isTenantOwner() || $order->branch_id === $user->branch_id, 404);
+        abort_if(config('branch-sync.mode') === 'edge', 422, 'الحذف متاح من النظام المركزي فقط.');
+        DB::transaction(function () use ($order, $user): void {
+            ApiShiftLedger::activeForWrite($user->tenant_id, $order->branch_id, $user->id);
+            $locked = Order::query()->where('tenant_id', $user->tenant_id)->lockForUpdate()->findOrFail($order->id);
+            $this->reverseInvoice($locked);
+            $locked->delete();
+        });
+
+        return response()->json(['message' => 'تم حذف الفاتورة وإعادة مخزونها.']);
+    }
+
+    /** @return array{total: float, quantity: float|null, price: float|null} */
+    private function offerLineTotal(int $tenantId, int $branchId, int $productId, float $quantity, float $price): array
+    {
+        $offer = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->where('product_id', $productId)->where('is_active', true)->where('start_at', '<=', now())
+            ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))->latest('start_at')->first();
+        $settings = $offer ?? BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->where('product_id', $productId)->first();
+        $offerQuantity = (float) ($settings->offer_quantity ?? 0);
+        $offerPrice = $settings?->offer_price;
+        if ($offerQuantity <= 0 || $offerPrice === null || (float) $offerPrice < 0 || (float) $offerPrice >= $offerQuantity * $price) {
+            return ['total' => round($quantity * $price, 2), 'quantity' => null, 'price' => null];
+        }
+        $bundles = (int) floor($quantity / $offerQuantity);
+        $remainder = round($quantity - $bundles * $offerQuantity, 6);
+
+        return ['total' => round($bundles * (float) $offerPrice + $remainder * $price, 2), 'quantity' => $offerQuantity, 'price' => (float) $offerPrice];
+    }
+
     public function held(Request $request): JsonResponse
     {
         $user = $request->user() ?? auth()->user();
@@ -74,10 +178,13 @@ class PosController extends Controller
         $validated = $request->validate([
             'held_order_id' => ['nullable', 'integer'],
             'branch_id' => ['required', 'integer'], 'customer_id' => ['nullable', 'integer'],
-            'items' => ['required', 'array', 'min:1'], 'items.*.product_id' => ['required', 'integer', 'distinct'],
+            'items' => ['required', 'array', 'min:1'], 'items.*.product_id' => ['required', 'integer'],
+            'items.*.is_gift' => ['sometimes', 'boolean'],
+            'items.*.use_offer' => ['sometimes', 'boolean'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.01'], 'items.*.price' => ['required', 'numeric', 'min:0'],
             'subtotal' => ['required', 'numeric', 'min:0'], 'tax_amount' => ['nullable', 'numeric', 'in:0'],
-            'discount' => ['nullable', 'numeric', 'min:0'], 'total_amount' => ['required', 'numeric', 'min:0'],
+            'discount' => ['nullable', 'numeric', 'min:0'],
+            'delivery_fee' => ['nullable', 'numeric', 'min:0'], 'total_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
         $user = $request->user() ?? auth()->user();
@@ -101,16 +208,22 @@ class PosController extends Controller
                 $product = Product::query()->where('tenant_id', $tenantId)->whereKey((int) $item['product_id'])->firstOrFail();
                 $branchProduct = BranchProduct::query()->where('tenant_id', $tenantId)
                     ->where('branch_id', $branchId)->where('product_id', $product->id)->lockForUpdate()->firstOrFail();
-                $price = (float) $item['price'];
+                $isGift = (bool) ($item['is_gift'] ?? false);
+                abort_if($isGift && ! $user->hasPermission('pos.sale.checkout'), 403);
+                $price = $isGift ? 0.0 : (float) $item['price'];
                 $pricingBranchId = $customer?->branch_id ?: $branchId;
                 $pricing = $pricingBranchId === $branchId ? $branchProduct
                     : BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $pricingBranchId)
                         ->where('product_id', $product->id)->firstOrFail();
-                if (abs($price - (float) $pricing->retail_price) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
+                if (! $isGift && abs($price - (float) $pricing->retail_price) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
                     throw ValidationException::withMessages(['items' => "ليس لديك صلاحية تغيير سعر {$product->name}."]);
                 }
-                $subtotal += round((float) $item['quantity'] * $price, 2);
-                $items[] = [$item, $product, $price];
+                $offer = ! $isGift && ! empty($item['use_offer'])
+                    ? $this->offerLineTotal($tenantId, $branchId, $product->id, (float) $item['quantity'], $price)
+                    : null;
+                $lineTotal = $offer['total'] ?? round((float) $item['quantity'] * $price, 2);
+                $subtotal += $lineTotal;
+                $items[] = [$item, $product, $price, $isGift, $lineTotal, $offer];
             }
             $subtotal = round($subtotal, 2);
             if (abs($subtotal - (float) $validated['subtotal']) > 0.02) {
@@ -121,7 +234,8 @@ class PosController extends Controller
             if ($discount > 0 && ! $user->hasPermission('pos.discount.use')) {
                 throw ValidationException::withMessages(['discount' => 'ليس لديك صلاحية تطبيق خصم.']);
             }
-            $total = round($subtotal + $tax - $discount, 2);
+            $deliveryFee = round((float) ($validated['delivery_fee'] ?? 0), 2);
+            $total = round($subtotal + $tax - $discount + $deliveryFee, 2);
             if (abs($total - (float) $validated['total_amount']) > 0.02) {
                 throw ValidationException::withMessages(['total_amount' => 'إجمالي الفاتورة لا يطابق تفاصيل الأصناف.']);
             }
@@ -132,16 +246,17 @@ class PosController extends Controller
                 'customer_id' => $customer?->id, 'invoice_number' => $held->invoice_number ?? 'HOLD-'.str()->uuid(),
                 'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail', 'status' => 'pending', 'subtotal' => $subtotal,
                 'tax_amount' => $tax, 'discount' => $discount,
-                'total' => $total, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'notes' => $validated['notes'] ?? null,
+                'delivery_fee' => $deliveryFee, 'total' => $total, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'notes' => $validated['notes'] ?? null,
             ]);
             $order->save();
             if ($held) {
                 $order->items()->delete();
             }
-            foreach ($items as [$item, $product, $price]) {
+            foreach ($items as [$item, $product, $price, $isGift, $lineTotal, $offer]) {
                 $cost = (float) $product->cost_price;
                 OrderItem::create(['tenant_id' => $tenantId, 'order_id' => $order->id, 'product_id' => $product->id,
-                    'quantity' => $item['quantity'], 'unit_price' => $price, 'total_price' => $item['quantity'] * $price,
+                    'is_gift' => $isGift, 'quantity' => $item['quantity'], 'unit_price' => $price, 'total_price' => $lineTotal,
+                    'offer_quantity' => $offer['quantity'] ?? null, 'offer_price' => $offer['price'] ?? null,
                     'cost_price' => $cost, 'total_cost' => $cost * $item['quantity']]);
             }
 
@@ -167,6 +282,7 @@ class PosController extends Controller
         $tenantId = $user->tenant_id;
 
         $branchId = $request->integer('branch_id') ?: $user->branch_id;
+        $sellingBranchId = $branchId;
         if ($request->filled('customer_id')) {
             $customer = Party::query()->where('tenant_id', $tenantId)
                 ->whereIn('type', ['customer', 'both'])->findOrFail($request->integer('customer_id'));
@@ -198,9 +314,19 @@ class PosController extends Controller
             ];
         }
 
+        $productIds = collect($categories)->pluck('products')->flatten(1)->pluck('id');
+        $stock = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $sellingBranchId)
+            ->whereIn('product_id', $productIds)->get()->keyBy('product_id');
+        $offers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $sellingBranchId)
+            ->whereIn('product_id', $productIds)->where('is_active', true)->where('start_at', '<=', now())
+            ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))->latest('start_at')->get()->unique('product_id')->keyBy('product_id');
         foreach ($categories as &$category) {
             foreach ($category['products'] as &$product) {
                 $product['pricing_branch_id'] = $branchId;
+                $settings = $offers->get($product['id']) ?? $stock->get($product['id']);
+                $product['offer_quantity'] = $settings?->offer_quantity;
+                $product['offer_price'] = $settings?->offer_price;
+                $product['stock_quantity'] = $stock->get($product['id'])?->stock_quantity;
             }
             unset($product);
         }
@@ -208,6 +334,8 @@ class PosController extends Controller
 
         return response()->json([
             'categories' => $categories,
+            'offline_contract_version' => 1,
+            'pos_line_contract_version' => 2,
         ]);
     }
 
@@ -387,18 +515,24 @@ class PosController extends Controller
     public function storeOrder(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'offline_shift_id' => ['nullable', 'integer', 'min:1'],
             'held_order_id' => ['nullable', 'integer'],
+            'invoice_id' => ['nullable', 'integer', 'prohibits:held_order_id,offline_shift_id'],
             'branch_id' => ['required', 'integer'],
             'customer_id' => ['nullable', 'integer'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'distinct'],
+            'items.*.product_id' => ['required', 'integer'],
+            'items.*.is_gift' => ['sometimes', 'boolean'],
+            'items.*.use_offer' => ['sometimes', 'boolean'],
             'items.*.quantity' => ['required', 'numeric', 'min:0.01'],
             'items.*.price' => ['nullable', 'numeric', 'min:0'],
             'subtotal' => ['nullable', 'numeric', 'min:0'],
             'tax_amount' => ['nullable', 'numeric', 'in:0'],
             'discount' => ['nullable', 'numeric', 'min:0'],
+            'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'total_amount' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['nullable', 'in:cash,card,bank_transfer,cheque'],
+            'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
         $user = $request->user() ?? auth()->user();
@@ -409,6 +543,17 @@ class PosController extends Controller
 
         $order = DB::transaction(function () use ($validated, $user, $tenantId, $branchId, $allowNegativeStock, $unifiedStock): Order {
             $shift = ApiShiftLedger::activeForWrite($tenantId, $branchId, $user->id);
+            if (isset($validated['offline_shift_id']) && $shift?->id !== (int) $validated['offline_shift_id']) {
+                throw ValidationException::withMessages(['offline_shift_id' => 'الوردية الأصلية للفواتير المحلية مغلقة أو تغيرت. راجع المزامنة قبل الحفظ.']);
+            }
+            $editing = null;
+            if (! empty($validated['invoice_id'])) {
+                abort_unless($user->hasPermission('sales_invoices.edit'), 403);
+                abort_if(config('branch-sync.mode') === 'edge', 422, 'التعديل متاح من النظام المركزي فقط.');
+                $editing = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('type', 'pos')->where('status', 'completed')->whereKey($validated['invoice_id'])->lockForUpdate()->firstOrFail();
+                $this->reverseInvoice($editing);
+            }
             $held = ! empty($validated['held_order_id'])
                 ? Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
                     ->where('status', 'pending')->where('type', 'pos')->lockForUpdate()
@@ -459,16 +604,20 @@ class PosController extends Controller
                     throw ValidationException::withMessages(['items' => "المنتج {$product->name} غير مسعّر في فرع العميل."]);
                 }
                 $standardPrice = (float) $customerBranchProduct->retail_price;
-                $price = (float) ($item['price'] ?? $standardPrice);
-                if (abs($price - $standardPrice) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
+                $isGift = (bool) ($item['is_gift'] ?? false);
+                $price = $isGift ? 0.0 : (float) ($item['price'] ?? $standardPrice);
+                if (! $isGift && abs($price - $standardPrice) > 0.005 && ! $user->hasPermission('pos.price.edit')) {
                     throw ValidationException::withMessages(['items' => "ليس لديك صلاحية تغيير سعر {$product->name}."]);
                 }
 
-                $lineTotal = round($quantity * $price, 2);
+                $offer = ! $isGift && ! empty($item['use_offer'])
+                    ? $this->offerLineTotal($tenantId, $branchId, $product->id, $quantity, $price)
+                    : null;
+                $lineTotal = $offer['total'] ?? round($quantity * $price, 2);
                 $subtotal += $lineTotal;
                 $cost = (float) $product->cost_price;
                 $totalCost += $cost * $quantity;
-                $lines[] = compact('product', 'quantity', 'price', 'lineTotal', 'cost', 'stockRows');
+                $lines[] = compact('product', 'quantity', 'price', 'lineTotal', 'cost', 'stockRows', 'isGift', 'offer');
             }
 
             $subtotal = round($subtotal, 2);
@@ -480,7 +629,8 @@ class PosController extends Controller
             if ($discount > $subtotal) {
                 throw ValidationException::withMessages(['discount' => 'قيمة الخصم تتجاوز قيمة الأصناف.']);
             }
-            $total = round($subtotal + $tax - $discount, 2);
+            $deliveryFee = round((float) ($validated['delivery_fee'] ?? 0), 2);
+            $total = round($subtotal + $tax - $discount + $deliveryFee, 2);
 
             foreach (['subtotal' => $subtotal, 'total_amount' => $total] as $field => $computed) {
                 if (isset($validated[$field]) && abs((float) $validated[$field] - $computed) > 0.02) {
@@ -490,7 +640,7 @@ class PosController extends Controller
 
             $paymentMethod = $validated['payment_method'] ?? 'cash';
 
-            $order = $held ?? new Order;
+            $order = $editing ?? $held ?? new Order;
             $order->fill([
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
@@ -499,20 +649,21 @@ class PosController extends Controller
                 'customer_id' => $customer?->id,
                 'customer_name' => $customer?->name,
                 'customer_phone' => $customer?->phone,
-                'invoice_number' => 'INV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
+                'invoice_number' => $editing->invoice_number ?? 'INV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
                 'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail',
                 'status' => 'completed',
                 'subtotal' => $subtotal,
                 'tax_amount' => $tax,
                 'discount' => $discount,
-                'total' => $total,
+                'delivery_fee' => $deliveryFee, 'total' => $total,
                 'paid_amount' => $total,
                 'payment_status' => 'paid',
                 'total_cost' => round($totalCost, 2),
-                'total_profit' => round($total - $totalCost, 2),
+                'total_profit' => round($total - $deliveryFee - $totalCost, 2),
+                'notes' => $validated['notes'] ?? null,
             ]);
             $order->save();
-            if ($held) {
+            if ($held || $editing) {
                 $order->items()->delete();
             }
 
@@ -523,6 +674,8 @@ class PosController extends Controller
                     'product_id' => $line['product']->id,
                     'quantity' => $line['quantity'],
                     'unit_price' => $line['price'],
+                    'is_gift' => $line['isGift'],
+                    'offer_quantity' => $line['offer']['quantity'] ?? null, 'offer_price' => $line['offer']['price'] ?? null,
                     'total_price' => $line['lineTotal'],
                     'cost_price' => $line['cost'],
                     'total_cost' => $line['cost'] * $line['quantity'],
@@ -560,7 +713,7 @@ class PosController extends Controller
                 ]);
             }
 
-            return $order->load('items.product', 'branch', 'party');
+            return $order->load(['items.product', 'branch', 'party']);
         });
 
         return response()->json([

@@ -45,7 +45,8 @@ class EmployeeDeparture extends Model
                 throw ValidationException::withMessages(['departure_start' => 'توجد مغادرة متداخلة في الفترة نفسها.']);
             }
             if ($departure->status === 'approved' && ! $departure->approved_at) {
-                $departure->approved_by = auth()->id();
+                $approverId = auth()->user()?->id;
+                $departure->approved_by = $approverId !== null && $approverId > 0 ? $approverId : null;
                 $departure->approved_at = now();
             }
         });

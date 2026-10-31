@@ -17,16 +17,24 @@ test('bundled desktop opens the local login and retains its database across rest
     expect($process->getExitCode(), $startupError.$process->getErrorOutput())->toBe(0);
     $result = json_decode(file_get_contents($dataRoot.'/smoke-result.json'), true, flags: JSON_THROW_ON_ERROR);
     expect($result['loginForm'])->toBeTrue()
+        ->and($result['startupScreen'])->toBeTrue()
+        ->and($result['loadingScreenMs'])->toBeLessThan($result['applicationReadyMs'])
+        ->and($result['migrationsExecuted'])->toBeTrue()
+        ->and($result['loginProgress'])->toBeTrue()
         ->and($result['action'])->toStartWith('http://127.0.0.1:')
         ->and($result['styles'])->not->toBeEmpty()
         ->and($result['consoleErrors'])->toBe([])
+        ->and($result['printerSettings'])->toContain('نقطة البيع — الفواتير الحرارية', 'ملصقات الباركود', 'اختيار طابعة للصفحة المفتوحة…')
         ->and($result['text'])->toContain('تسجيل دخول الموظف')->not->toContain('Sign up', 'Sign in with a passkey')
         ->and(is_file($dataRoot.'/database.sqlite'))->toBeTrue()
         ->and(is_file($dataRoot.'/smoke-login.png'))->toBeTrue();
     $key = file_get_contents($dataRoot.'/application-key');
     $databaseSize = filesize($dataRoot.'/database.sqlite');
     $process->run();
+    $restarted = json_decode(file_get_contents($dataRoot.'/smoke-result.json'), true, flags: JSON_THROW_ON_ERROR);
     expect($process->getExitCode(), $process->getErrorOutput())->toBe(0)
+        ->and($restarted['migrationsExecuted'])->toBeFalse()
+        ->and($restarted['startupScreen'])->toBeTrue()
         ->and(file_get_contents($dataRoot.'/application-key'))->toBe($key)
         ->and(filesize($dataRoot.'/database.sqlite'))->toBeGreaterThanOrEqual($databaseSize);
 })->skip(PHP_OS_FAMILY !== 'Windows' || ! is_file(dirname(__DIR__, 2).'/storage/app/desktop-build/stage/php/php.exe'), 'Build desktop resources on Windows before running this integration test.');

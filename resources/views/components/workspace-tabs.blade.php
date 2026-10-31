@@ -1,6 +1,6 @@
 @props(['title' => null, 'shellMain' => false])
 
-@if ((request()->query('_workspace') === 'frame' || request()->header('Sec-Fetch-Dest') === 'iframe'))
+@if ((request()->header('Sec-Fetch-Dest') === 'iframe'))
     {{ $slot }}
 @else
     <div data-workspace-tabs @if ($shellMain) data-flux-main @endif class="workspace-shell app-shell-main" data-home-url="{{ route(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'admin.dashboard' : 'tenant.dashboard') }}" data-persistence-key="workspace-tabs:{{ auth()->id() }}:{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" data-initial-title="{{ $title ?? $pageTitle ?? config('app.name') }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">

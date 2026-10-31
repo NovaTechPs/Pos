@@ -42,8 +42,14 @@ class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::authenticateUsing(function (Request $request): ?User {
             if (config('branch-sync.mode') === 'edge') {
+                if ($request->attributes->has('branch_sync_login_result')) {
+                    $cachedUser = $request->attributes->get('branch_sync_login_result');
+
+                    return $cachedUser instanceof User ? $cachedUser : null;
+                }
                 $user = app(EmployeeBranchSyncLogin::class)->authenticate($request);
-                if ($user) {
+                $request->attributes->set('branch_sync_login_result', $user);
+                if ($user && ! config('app.desktop')) {
                     defer(fn () => Artisan::call('branch-sync:pull'), 'branch-sync.pull');
                 }
 

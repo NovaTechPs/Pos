@@ -8,6 +8,13 @@ export function workspaceUrl(value, base) {
     return url.href;
 }
 
+export function cleanWorkspaceAddress(view) {
+    const url = new URL(view.location.href);
+    if (!url.searchParams.has('_workspace')) return;
+    url.searchParams.delete('_workspace');
+    view.history.replaceState(view.history.state, '', url.href);
+}
+
 export function normalizeWorkspaceFrame(view) {
     if (view.self === view.top) return false;
     const page = view.document;
@@ -56,7 +63,9 @@ export function readWorkspaceSnapshot(raw, base) {
             try { url = workspaceUrl(item.url, base); } catch { continue; }
             if (url && !tabs.some(tab => tab.url === url)) tabs.push({url, title: item.title.slice(0, 160)});
         }
-        return tabs.length ? {tabs, activeUrl: tabs.some(tab => tab.url === data.activeUrl) ? data.activeUrl : tabs[0].url} : null;
+        let activeUrl = null;
+        try { if (typeof data.activeUrl === 'string') activeUrl = workspaceUrl(data.activeUrl, base); } catch {}
+        return tabs.length ? {tabs, activeUrl: tabs.some(tab => tab.url === activeUrl) ? activeUrl : tabs[0].url} : null;
     } catch { return null; }
 }
 
@@ -103,8 +112,10 @@ export function cycleWorkspaceTab(event, state, onSelect) {
 
 export function loadWorkspaceFrame(frame) {
     if (!frame?.dataset.src || frame.dataset.started) return false;
+    const url = workspaceUrl(frame.dataset.src, frame.dataset.src);
+    if (!url) return false;
     frame.dataset.started = 'true';
-    frame.src = frame.dataset.src;
+    frame.src = url;
     frame.setAttribute('aria-busy', 'true');
     return true;
 }
@@ -260,9 +271,7 @@ function mountWorkspace(root) {
             frame.title = tab.title;
             frame.setAttribute('role', 'tabpanel');
             frame.setAttribute('aria-labelledby', `workspace-tab-${tab.id}`);
-            const src = new URL(url);
-            src.searchParams.set('_workspace', 'frame');
-            frame.dataset.src = src.href;
+            frame.dataset.src = url;
             frame.addEventListener('load', () => {
                 if (!frame.dataset.started) return;
                 try { if (frame.contentWindow.location.href === 'about:blank') return; } catch {}
@@ -375,11 +384,12 @@ function mountWorkspace(root) {
 
 if (typeof document !== 'undefined') {
     normalizeWorkspaceFrame(window);
+    cleanWorkspaceAddress(window);
     const lifecycle = workspaceLifecycle(
         () => window.self === window.top ? document.querySelector('[data-workspace-tabs]') : null,
         mountWorkspace,
     );
     document.addEventListener('DOMContentLoaded', () => { normalizeWorkspaceFrame(window); lifecycle.init(); }, { once: true });
-    document.addEventListener('livewire:navigated', () => { normalizeWorkspaceFrame(window); lifecycle.init(); });
+    document.addEventListener('livewire:navigated', () => { normalizeWorkspaceFrame(window); cleanWorkspaceAddress(window); lifecycle.init(); });
     document.addEventListener('livewire:navigating', () => lifecycle.dispose());
 }

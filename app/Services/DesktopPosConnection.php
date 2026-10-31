@@ -45,15 +45,18 @@ class DesktopPosConnection
             ->where('status', '!=', 'synced')->exists();
     }
 
-    public function flush(int $tenantId, int $branchId): void
+    public function flush(int $tenantId, int $branchId, ?string $operationUuid = null): void
     {
         $connection = $this->connection($tenantId, $branchId);
         if (! $connection || ! BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->when($operationUuid !== null, fn ($query) => $query->where('operation_uuid', $operationUuid))
             ->where('status', 'pending')->exists()) {
             return;
         }
         try {
-            Artisan::call('branch-sync:push', ['--tenant' => $tenantId, '--branch' => $branchId, '--no-interaction' => true]);
+            Artisan::call('branch-sync:push', array_filter([
+                '--tenant' => $tenantId, '--branch' => $branchId, '--operation' => $operationUuid, '--no-interaction' => true,
+            ], fn (mixed $value): bool => $value !== null));
         } catch (\Throwable $exception) {
             report($exception);
         }
@@ -79,7 +82,6 @@ class DesktopPosConnection
 
             return null;
         }
-        $this->flush($tenantId, $branchId);
         $hadUnsettled = $this->hasUnsettledOperations($tenantId, $branchId);
         $lastOperationId = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)->max('id');
         try {
@@ -189,9 +191,18 @@ class DesktopPosConnection
             || (isset($row['product_id']) && (int) $row['product_id'] !== (int) $existing->product_id))) {
             throw new RuntimeException('Live catalog identifier conflict.');
         }
-        $row = Arr::only(Arr::except($row, ['created_by', 'updated_by']), Schema::getColumnListing($table));
+        $columnsKey = 'desktop_catalog_columns:'.DB::getDefaultConnection().':'.$table;
+        if (! request()->attributes->has($columnsKey)) {
+            request()->attributes->set($columnsKey, Schema::getColumnListing($table));
+        }
+        $row = Arr::only(Arr::except($row, ['created_by', 'updated_by']), request()->attributes->get($columnsKey));
         if ($existing) {
-            DB::table($table)->where('id', $row['id'])->update(Arr::except($row, $preserved));
+            $changes = array_filter(Arr::except($row, $preserved),
+                fn (mixed $value, string $column): bool => ($value === null) !== ($existing->{$column} === null)
+                    || $value != $existing->{$column}, ARRAY_FILTER_USE_BOTH);
+            if ($changes !== []) {
+                DB::table($table)->where('id', $row['id'])->update($changes);
+            }
         } else {
             DB::table($table)->insert($row);
         }

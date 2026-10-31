@@ -87,7 +87,10 @@ async function prepare() {
         'curl.cainfo="../php/cacert.pem"', 'openssl.cafile="../php/cacert.pem"',
         'memory_limit=512M', 'max_execution_time=120', 'date.timezone=Asia/Hebron',
         'expose_php=Off', 'display_errors=stderr', 'log_errors=On', 'variables_order=EGPCS',
-        'opcache.enable=0', 'opcache.enable_cli=0', 'opcache.jit=disable',
+        'opcache.enable=1', 'opcache.enable_cli=1', 'opcache.jit=disable',
+        'opcache.memory_consumption=128', 'opcache.max_accelerated_files=20000',
+        'opcache.validate_timestamps=1', 'opcache.revalidate_freq=0',
+        'opcache.file_cache="${APP_STORAGE_PATH}/framework/cache/php"', 'opcache.file_cache_fallback=1',
         'upload_max_filesize=20M', 'post_max_size=24M',
     ].join('\n'));
     const temporaryData = path.join(buildRoot, 'build-validation');

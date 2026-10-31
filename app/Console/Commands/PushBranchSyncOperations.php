@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
-#[Signature('branch-sync:push {--tenant=} {--branch=}')]
+#[Signature('branch-sync:push {--tenant=} {--branch=} {--operation=}')]
 #[Description('Send pending local branch operations to the central server.')]
 class PushBranchSyncOperations extends Command
 {
@@ -59,10 +59,24 @@ class PushBranchSyncOperations extends Command
             return self::FAILURE;
         }
 
-        $operations = BranchSyncOperation::query()
+        $pending = BranchSyncOperation::query()
             ->when($connection['tenant_id'] > 0, fn ($query) => $query->where('tenant_id', $connection['tenant_id']))
             ->when($connection['branch_id'] > 0, fn ($query) => $query->where('branch_id', $connection['branch_id']))
-            ->where('status', 'pending')
+            ->where('status', 'pending');
+        if ($this->option('operation') !== null) {
+            $target = (clone $pending)->where('operation_uuid', $this->option('operation'))->first();
+            if (! $target) {
+                return self::SUCCESS;
+            }
+            $hasEarlierReturn = (clone $pending)->where('id', '<', $target->id)
+                ->where('operation_type', 'sale.upsert')->where('payload->order->type', 'return')->exists();
+            if ($hasEarlierReturn) {
+                $pending->where('id', '<=', $target->id);
+            } else {
+                $pending->whereKey($target->id);
+            }
+        }
+        $operations = $pending
             ->orderBy('id')
             ->limit(100)
             ->get();

@@ -22,7 +22,7 @@ class EmployeeApiController extends Controller
     public function requestDeparture(Request $request): JsonResponse
     {
         $employee = $this->currentEmployee($request);
-        abort_unless($employee, 404);
+        abort_unless($employee !== null, 404);
         $data = $request->validate(['date' => 'required|date|after_or_equal:today', 'start_time' => 'required|date_format:H:i', 'end_time' => 'required|date_format:H:i', 'ends_next_day' => 'sometimes|boolean', 'reason' => 'required|string|max:1000']);
         $departure = EmployeeDeparture::create($data + ['employee_id' => $employee->id, 'status' => 'pending', 'is_deductible' => true]);
 

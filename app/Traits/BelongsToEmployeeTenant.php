@@ -18,8 +18,8 @@ trait BelongsToEmployeeTenant
         });
         static::saving(function (Model $model): void {
             $tenantId = auth()->user()?->tenant_id;
-            $employee = Employee::withoutGlobalScopes()->find($model->getAttribute('employee_id'));
-            abort_unless($employee, 404);
+            $employee = Employee::withoutGlobalScopes()->whereKey($model->getAttribute('employee_id'))->first();
+            abort_unless($employee !== null, 404);
             if ($tenantId) {
                 abort_unless((int) $employee->tenant_id === (int) $tenantId, 404);
             }

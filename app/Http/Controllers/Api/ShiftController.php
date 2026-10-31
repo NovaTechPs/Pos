@@ -23,7 +23,7 @@ class ShiftController extends Controller
             $shift->setAttribute('cash_summary', ApiShiftLedger::summary($shift));
         }
 
-        return response()->json(['active_shift' => $shift]);
+        return response()->json(['active_shift' => $shift, 'offline_contract_version' => 1]);
     }
 
     public function open(Request $request): JsonResponse

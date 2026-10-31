@@ -7,7 +7,7 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, workspaceUrl, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, workspaceUrl, cleanWorkspaceAddress, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard/pos';
     const pageContent = { livewireId: 'same-component', value: 'unsaved invoice' };
     let frameMarked = false, frameClass = false, replacements = 0;
@@ -32,7 +32,6 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     topView.top = topView.self;
     assert.equal(normalizeWorkspaceFrame(topView), false);
 
-
     assert.equal(workspaceUsesFullWidth(base), true);
     assert.equal(workspaceUsesFullWidth(base + '/?_workspace=frame'), true);
     assert.equal(workspaceUsesFullWidth('https://pos.example/dashboard/product'), false);
@@ -41,6 +40,14 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     assert.equal(workspaceUrl('https://evil.example/dashboard', base), null);
     assert.equal(workspaceUrl('javascript:alert(1)', base), null);
     assert.equal(workspaceUrl('/logout', base), null);
+    let replacement;
+    const historyState = { preserve: true };
+    cleanWorkspaceAddress({ location: { href: base + '?_workspace=frame&search=44#cart' }, history: { state: historyState,
+        replaceState(state, title, url) { assert.equal(state, historyState); replacement = url; } } });
+    assert.equal(replacement, base + '?search=44#cart');
+    const oldSnapshot = readWorkspaceSnapshot(JSON.stringify({ tabs: [{url: base, title: 'POS'},
+        {url: '/dashboard/product?_workspace=frame', title: 'Products'}], activeUrl: '/dashboard/product?_workspace=frame' }), base);
+    assert.equal(oldSnapshot.activeUrl, 'https://pos.example/dashboard/product');
     const tabs = new WorkspaceTabState(base, 'نقطة البيع');
     const products = tabs.open('https://pos.example/dashboard/product', 'الأصناف');
     const customer = tabs.open('https://pos.example/dashboard/customer', 'الزبائن');
@@ -152,11 +159,13 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     assert.equal(restored.tabs.length, 2);
     assert.equal(restored.active, 'initial');
     let requests = 0;
-    const deferred = {dataset: {src: 'https://pos.example/dashboard/product?_workspace=frame'}, setAttribute() {}, set src(value) { requests++; }};
+    let requestedUrl;
+    const deferred = {dataset: {src: 'https://pos.example/dashboard/product?_workspace=frame'}, setAttribute() {}, set src(value) { requestedUrl = value; requests++; }};
     const background = {dataset: {src: 'https://pos.example/dashboard/customer?_workspace=frame'}};
     assert.equal(requests, 0);
     assert.equal(loadWorkspaceFrame(deferred), true);
     assert.equal(requests, 1);
+    assert.equal(requestedUrl, 'https://pos.example/dashboard/product');
     assert.equal(loadWorkspaceFrame(deferred), false);
     assert.equal(requests, 1, 'Switching back loaded the same page again');
     assert.equal(background.dataset.started, undefined, 'Background tab loaded prematurely');
