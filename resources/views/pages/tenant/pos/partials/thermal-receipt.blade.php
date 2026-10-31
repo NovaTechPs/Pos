@@ -2,6 +2,7 @@
     $receiptTotal = (float) str_replace(',', '', (string) ($receipt['total_amount'] ?? 0));
     $receiptPaid = (float) str_replace(',', '', (string) ($receipt['paid'] ?? 0));
     $receiptChange = (float) str_replace(',', '', (string) ($receipt['change'] ?? 0));
+    $receiptDelivery = (float) str_replace(',', '', (string) ($receipt['delivery_fee'] ?? 0));
     $receiptDue = max(0, $receiptTotal - $receiptPaid);
     $showPaid = isset($receipt['paid']) && abs($receiptPaid - $receiptTotal) > 0.001;
     $showChange = isset($receipt['change']) && $receiptChange > 0.001;
@@ -141,6 +142,12 @@
         <div class="info-box">
             <span>الخصم :</span>
             <strong>{{ $receipt['discount'] }}</strong>
+        </div>
+    @endif
+    @if ($receiptDelivery > 0)
+        <div class="info-box">
+            <span>التوصيل :</span>
+            <strong>{{ number_format($receiptDelivery, 2) }}</strong>
         </div>
     @endif
     @if (isset($receipt['total_promotion_savings']) && (float) str_replace(',', '', $receipt['total_promotion_savings']) > 0)

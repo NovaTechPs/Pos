@@ -42,6 +42,20 @@ test('thermal receipt keeps equal payment details off the compact summary', func
         ->not->toContain('الباقي :');
 });
 
+test('thermal receipt itemizes delivery before the final payable total', function (mixed $delivery, string $formatted): void {
+    $html = posReceiptPrintView([
+        'items' => [['id' => 1, 'name' => 'طلب', 'qty' => 1, 'price' => '55.00', 'total' => '55.00']],
+        'subtotal' => '55.00', 'delivery_fee' => $delivery,
+        'total_amount' => number_format(55 + (float) str_replace(',', '', (string) $delivery), 2),
+    ]);
+    expect($html)->toContain('التوصيل :', $formatted, '55.00')
+        ->and(strpos($html, 'التوصيل :'))->toBeLessThan(strpos($html, 'الصافي للدفع'));
+})->with([[23, '23.00'], ['23.00', '23.00'], ['1,250.50', '1,250.50']]);
+
+test('thermal receipt omits delivery when no fee was charged', function (mixed $delivery): void {
+    expect(posReceiptPrintView(['delivery_fee' => $delivery]))->not->toContain('التوصيل :');
+})->with([null, 0, '0.00']);
+
 test('thermal receipt shows partial payment and remaining balance', function () {
     $html = posReceiptPrintView([
         'paid' => '50.00',
