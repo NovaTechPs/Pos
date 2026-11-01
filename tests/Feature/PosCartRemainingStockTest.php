@@ -76,8 +76,8 @@ test('unified stock preview uses the tenant total', function (): void {
     $other = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Other']);
     BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $other->id,
         'product_id' => $this->product->id, 'stock_quantity' => 5]);
-    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)->assertSee('(موحد)');
-    expect(cartStockValues($component, $this->product->id))->toBe([24.0]);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)->assertSee('كل الفروع');
+    expect(cartStockValues($component, $this->product->id))->toBe([19.0]);
 });
 
 test('offline shared stock uses the synchronized quantity', function (): void {
@@ -86,7 +86,7 @@ test('offline shared stock uses the synchronized quantity', function (): void {
     TenantSetting::set($this->tenant->id, 'desktop_shared_stock_'.$this->branch->id,
         json_encode([$this->product->id => 80], JSON_THROW_ON_ERROR));
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
-    expect(cartStockValues($component, $this->product->id))->toBe([79.0]);
+    expect(cartStockValues($component, $this->product->id))->toBe([19.0]);
 });
 
 test('saved invoice stock is not deducted again and edits add back the original quantities', function (): void {
@@ -120,4 +120,37 @@ test('a missing branch stock record is reported as unavailable', function (): vo
     $this->beforeApplicationDestroyed(fn () => BranchProduct::clearBootedModels());
     $component->call('refreshBranchSyncStatus')->assertSee('غير متاح');
     expect(cartStockValues($component, $this->product->id))->toBe([null]);
+});
+
+test('shared stock shows local and total amounts in cart and product selection', function (): void {
+    TenantSetting::setBool($this->tenant->id, 'unified_stock', true);
+    $other = Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'Warehouse']);
+    BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $other->id,
+        'product_id' => $this->product->id, 'stock_quantity' => 5]);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('loadQuickProducts')
+        ->call('selectInlineProduct', $this->product->id);
+    $product = collect($component->get('quickProducts'))->firstWhere('id', $this->product->id);
+    expect((float) $product['stock_quantity'])->toBe(20.0)->and((float) $product['shared_stock_quantity'])->toBe(25.0);
+    expect(cartStockValues($component, $this->product->id))->toBe([19.0]);
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    $totals = $xpath->query('//*[@data-pos-shared-remaining="'.$this->product->id.'"]');
+    expect($totals->length)->toBe(1)->and((float) $totals->item(0)->getAttribute('data-shared-quantity'))->toBe(24.0);
+});
+
+test('exhausting local stock shows zero locally and the remaining shared quantity', function (): void {
+    $this->stock->update(['stock_quantity' => 1]);
+    TenantSetting::setBool($this->tenant->id, 'unified_stock', true);
+    $other = Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'Warehouse']);
+    BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $other->id,
+        'product_id' => $this->product->id, 'stock_quantity' => 10]);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
+    $key = array_key_first($component->get('cart'));
+    $component->call('updateCartField', $key, 'quantity', 3);
+    expect(cartStockValues($component, $this->product->id))->toBe([0.0]);
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    expect((float) $xpath->query('//*[@data-pos-shared-remaining]')->item(0)->getAttribute('data-shared-quantity'))->toBe(8.0);
 });

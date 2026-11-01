@@ -232,14 +232,22 @@
                         </td>
 
                         {{-- Subtotal --}}
-                        @php $remainingQuantity = $remainingStock[(int) $item['id']] ?? null; @endphp
+                        @php
+                            $sharedRemainingQuantity = $remainingStock[(int) $item['id']] ?? null;
+                            $remainingQuantity = $unifiedStock ? ($localRemainingStock[(int) $item['id']] ?? null) : $sharedRemainingQuantity;
+                        @endphp
                         <td class="px-2 py-2 text-center" data-pos-stock-remaining="{{ $item['id'] }}"
                             data-remaining-quantity="{{ $remainingQuantity }}"
                             title="{{ $invoiceLocked ? 'المخزون الحالي:' : 'المتبقي بعد الفاتورة:' }}">
                             <span class="inline-flex items-center justify-center rounded-md px-2 py-1 font-mono text-[11px] font-bold {{ $remainingQuantity !== null && $remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}" dir="ltr">
                                 {{ $remainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($remainingQuantity, 3, '.', ','), '0'), '.') }}
                             </span>
-                            @if ($unifiedStock)<span class="block text-[9px] text-slate-500">(موحد)</span>@endif
+                            @if ($unifiedStock)
+                                <span class="inline-block text-[9px] text-blue-700" data-pos-shared-remaining="{{ $item['id'] }}" data-shared-quantity="{{ $sharedRemainingQuantity }}">
+                                    / {{ $sharedRemainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($sharedRemainingQuantity, 3, '.', ','), '0'), '.') }}
+                                    <span class="block">كل الفروع</span>
+                                </span>
+                            @endif
                         </td>
 
                         <td class="px-2 py-2 text-center">

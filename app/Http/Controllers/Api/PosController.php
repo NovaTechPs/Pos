@@ -317,6 +317,10 @@ class PosController extends Controller
         $productIds = collect($categories)->pluck('products')->flatten(1)->pluck('id');
         $stock = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $sellingBranchId)
             ->whereIn('product_id', $productIds)->get()->keyBy('product_id');
+        $sharedStock = TenantSetting::getBool($tenantId, 'unified_stock', false)
+            ? BranchProduct::query()->where('tenant_id', $tenantId)->whereIn('product_id', $productIds)
+                ->selectRaw('product_id, SUM(stock_quantity) AS quantity')->groupBy('product_id')->pluck('quantity', 'product_id')
+            : collect();
         $offers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $sellingBranchId)
             ->whereIn('product_id', $productIds)->where('is_active', true)->where('start_at', '<=', now())
             ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))->latest('start_at')->get()->unique('product_id')->keyBy('product_id');
@@ -327,6 +331,7 @@ class PosController extends Controller
                 $product['offer_quantity'] = $settings?->offer_quantity;
                 $product['offer_price'] = $settings?->offer_price;
                 $product['stock_quantity'] = $stock->get($product['id'])?->stock_quantity;
+                $product['shared_stock_quantity'] = $sharedStock->has($product['id']) ? (float) $sharedStock->get($product['id']) : null;
             }
             unset($product);
         }

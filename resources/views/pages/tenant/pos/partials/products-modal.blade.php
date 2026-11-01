@@ -23,7 +23,7 @@
                         <button wire:click="selectInlineProduct({{ $product['id'] }})" class="{{ !empty($product['has_offer']) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white' }} rounded-2xl border p-3 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
                             <div class="flex items-start justify-between gap-2">
                                 <div class="font-black text-slate-900">{{ $product['name'] }} @if (!empty($product['has_offer'])) <span class="block text-xs text-amber-700">عرض {{ $product['offer_quantity_value'] + 0 }} بـ {{ number_format($product['offer_price_value'], 2) }}</span> @endif</div>
-                                <span class="rounded-lg px-2 py-1 text-[9px] font-black {{ $product['stock_quantity'] > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}">{{ number_format((float) $product['stock_quantity'], 0) }}</span>
+                                @include('pages.tenant.pos.partials.stock-badge')
                             </div>
                             <div class="mt-3 flex items-end justify-between">
                                 <div>

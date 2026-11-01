@@ -325,3 +325,14 @@ test('unified stock invoice edits and deletion reverse quantities into their ori
     $this->deleteJson('/api/pos/invoices/'.$original['id'])->assertOk();
     expect((float) $this->stock->fresh()->stock_quantity)->toBe(1.0)->and((float) $otherStock->fresh()->stock_quantity)->toBe(10.0);
 });
+
+test('catalog exposes separate local and shared stock only when sharing is enabled', function (bool $enabled): void {
+    TenantSetting::setBool($this->tenant->id, 'unified_stock', $enabled);
+    $other = Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'Shared warehouse']);
+    BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $other->id,
+        'product_id' => $this->product->id, 'stock_quantity' => 5, 'retail_price' => 10]);
+    $data = $this->getJson('/api/pos/products?branch_id='.$this->branch->id)->assertOk()->json('categories');
+    $product = collect($data)->pluck('products')->flatten(1)->firstWhere('id', $this->product->id);
+    expect((float) $product['stock_quantity'])->toBe(20.0)
+        ->and($product['shared_stock_quantity'])->toBe($enabled ? 25 : null);
+})->with([true, false]);
