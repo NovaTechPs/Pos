@@ -27,6 +27,7 @@ new class extends Component {
     public string $source = '';
     public string $saleKind = '';
     public string $partySearch = '';
+    public string $statementPartyType = 'customer';
     public string $productSearch = '';
 
     public function mount(): void
@@ -57,6 +58,22 @@ new class extends Component {
         $this->resetPage();
     }
 
+    public function selectStatementParty(int $partyId): void
+    {
+        $this->partyId = $partyId;
+        $this->resetPage();
+    }
+
+    public function updatedStatementPartySearch(): void
+    {
+        $this->resetPage('statementPartiesPage');
+    }
+
+    public function updatedStatementPartyType(): void
+    {
+        $this->resetPage('statementPartiesPage');
+    }
+
     public function updatedReport(): void
     {
         $this->resetPage();
@@ -64,6 +81,7 @@ new class extends Component {
         $this->search = '';
         $this->partyType = 'all';
         $this->balanceSide = 'all';
+        $this->statementPartyType = 'customer';
         $this->partyId = null;
         $this->productId = null;
     }
@@ -115,6 +133,7 @@ new class extends Component {
         }
         $branches = Branch::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->when(auth()->user()->branch_id, fn ($q) => $q->whereKey(auth()->user()->branch_id))->orderBy('name')->get(['id', 'name']);
         $parties = collect();
+        $statementParties = null;
         $products = collect();
         if (in_array($this->report, ['statement', 'balances'], true)) {
             $parties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
@@ -122,13 +141,21 @@ new class extends Component {
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->limit(100)->get(['id', 'name', 'type']);
         }
+        if ($this->report === 'statement') {
+            $statementPartyTypes = $this->statementPartyType === 'supplier' ? ['supplier', 'both'] : ($this->statementPartyType === 'all' ? ['customer', 'supplier', 'both'] : ['customer', 'both']);
+            $statementParties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
+                ->when($service->branchId, fn ($q) => $q->where(fn ($q) => $q->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
+                ->whereIn('type', $statementPartyTypes)
+                ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
+                ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
+        }
         if (in_array($this->report, ['product-sales', 'movements', 'movement-summary', 'inventory'], true)) {
             $products = Product::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when(trim($this->productSearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->productSearch.'%')->orWhere('product_number', 'like', '%'.$this->productSearch.'%')->orWhereHas('barcodes', fn ($codes) => $codes->where('tenant_id', $service->tenantId)->where('barcode', 'like', '%'.$this->productSearch.'%'))))
                 ->orderBy('name')->limit(100)->get(['id', 'name', 'product_number']);
         }
         $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId] + $this->filters()) : null;
-        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'branches' => $branches, 'parties' => $parties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'branches' => $branches, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -156,7 +183,7 @@ new class extends Component {
         </div>
         @if (in_array($report, ['statement', 'balances']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <flux:input label="ابحث عن الطرف للاختيار" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الرمز؛ أول 100 نتيجة" />
+                <flux:input label="ابحث عن الطرف للاختيار" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الرمز أو الهاتف" />
                 <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الطرف' : 'كل الأطراف' }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
                 @if ($report === 'balances')<flux:select label="نوع الطرف" wire:model="partyType"><option value="all">الجميع</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></flux:select>@endif
                 @if ($report === 'balances')<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
@@ -182,6 +209,34 @@ new class extends Component {
         @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     </form>
     <div wire:loading role="status" class="text-sm text-blue-700 dark:text-blue-300">جارٍ تجهيز التقرير…</div>
+    @if ($report === 'statement' && $statementParties)
+        <div class="grid gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]" wire:loading.class="opacity-60" wire:target="selectStatementParty,partySearch,statementPartyType,applyFilters,setPeriod">
+            <aside class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                <div class="border-b border-slate-200 p-4 dark:border-slate-700">
+                    <div class="flex items-center justify-between gap-2"><div><h2 class="font-bold">دليل الحسابات</h2><p class="text-xs text-slate-500">اختر طرفاً لعرض كشفه بالتاريخ المحدد.</p></div><span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{{ $statementParties->count() }}</span></div>
+                    <div class="mt-3 grid grid-cols-3 gap-1">
+                        @foreach (['customer' => 'الزبائن', 'supplier' => 'الموردون', 'all' => 'الكل'] as $type => $label)
+                            <button type="button" wire:click="$set('statementPartyType', '{{ $type }}')" class="rounded-lg px-2 py-2 text-xs font-bold {{ $statementPartyType === $type ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }}">{{ $label }}</button>
+                        @endforeach
+                    </div>
+                </div>
+                <div class="max-h-[580px] overflow-y-auto p-2">
+                    @forelse ($statementParties as $party)
+                        <button type="button" wire:click="selectStatementParty({{ $party->id }})" wire:key="statement-party-{{ $party->id }}" class="mb-1 w-full rounded-lg p-3 text-right transition {{ (int) $partyId === (int) $party->id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-800' }}">
+                            <div class="flex items-center justify-between gap-3"><span class="truncate font-bold">{{ $party->name }}</span><span class="shrink-0 text-xs tabular-nums {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}">{{ number_format((float) $party->current_balance, 2) }}</span></div>
+                            <div class="mt-1 flex gap-2 text-xs {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}"><span>{{ $party->code ?: 'بدون رمز' }}</span><span>{{ $party->phone ?: '' }}</span></div>
+                        </button>
+                    @empty
+                        <p class="p-6 text-center text-sm text-slate-500">لا توجد حسابات مطابقة.</p>
+                    @endforelse
+                </div>
+                @if ($statementParties->hasPages())<div class="border-t border-slate-200 px-3 py-2 dark:border-slate-700">{{ $statementParties->links() }}</div>@endif
+            </aside>
+            <section class="min-w-0 space-y-4">
+                @include('pages.tenant.reports.partials.statement-result', ['definition' => $definition, 'rows' => $rows, 'from' => $from, 'to' => $to])
+            </section>
+        </div>
+    @else
     @if ($definition['summary'])<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">@foreach ($definition['summary'] as $label => $value)<div wire:key="summary-{{ $loop->index }}" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p class="text-sm text-slate-500">{{ $label }}</p><p class="mt-2 text-2xl font-bold tabular-nums" dir="ltr">{{ number_format((float) $value, 2) }}</p></div>@endforeach</div>@endif
     @if ($definition['notes'])<div class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div>@endif
     <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
@@ -191,4 +246,5 @@ new class extends Component {
         </table>
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
+    @endif
 </flux:main>

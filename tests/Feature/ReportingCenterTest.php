@@ -146,6 +146,25 @@ test('report dates reject invalid and reversed ranges and recover after correcti
         ->assertHasErrors(['to'])->set('to', '2026-10-31')->call('applyFilters')->assertHasNoErrors();
 });
 
+test('statement directory lists customers and selecting one uses the selected date range', function (): void {
+    $this->customer->update(['code' => 'C-LEDGER', 'phone' => '0599000000']);
+    $supplier = $this->supplier;
+    ($this->makeOrder)(['total' => 75, 'invoice_number' => 'LEDGER-CUSTOMER']);
+    Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $supplier->id, 'reference_number' => 'LEDGER-SUPPLIER', 'total' => 25, 'paid_amount' => 0, 'created_at' => '2026-10-15']);
+
+    Livewire::test('pages::tenant.reports.center')
+        ->set('report', 'statement')
+        ->set('from', '2026-10-10')
+        ->set('to', '2026-10-20')
+        ->assertSee('دليل الحسابات')
+        ->assertSee($this->customer->name)
+        ->call('selectStatementParty', $this->customer->id)
+        ->assertSet('partyId', $this->customer->id)
+        ->assertSee('LEDGER-CUSTOMER')
+        ->set('statementPartyType', 'supplier')
+        ->assertSee($supplier->name);
+});
+
 test('print streams the complete report rather than just the visible page and safely escapes names', function (): void {
     $this->customer->update(['name' => '<script>unsafe</script>']);
     for ($i = 0; $i < 36; $i++) {
