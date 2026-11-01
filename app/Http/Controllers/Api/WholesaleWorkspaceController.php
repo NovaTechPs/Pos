@@ -22,6 +22,18 @@ use Illuminate\Validation\ValidationException;
 
 class WholesaleWorkspaceController extends Controller
 {
+    public function parties(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $parties = Party::query()->where('tenant_id', $user->tenant_id)
+            ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
+            ->when($user->branch_id && ! $user->isTenantOwner(), function ($query) use ($user): void {
+                $query->where(fn ($branch) => $branch->where('branch_id', $user->branch_id)->orWhereNull('branch_id'));
+            })->orderBy('name')->get();
+
+        return response()->json(['parties' => $parties]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -60,7 +72,7 @@ class WholesaleWorkspaceController extends Controller
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
-                    ->whereIn('type', ['customer', 'both'])->where('is_active', true)
+                    ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
             if ($customer?->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
@@ -169,7 +181,7 @@ class WholesaleWorkspaceController extends Controller
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', round($total - $paid, 2));
+                $customer->increment('current_balance', ($customer->type === 'supplier' ? -1 : 1) * round($total - $paid, 2));
             }
 
             return $order->load(['items.product', 'party', 'branch'])->setAttribute('payment_method', $validated['payment_method'])->setAttribute('previous_balance', $previousBalance)->setAttribute('current_balance', $customer?->fresh()->current_balance ?? 0);
@@ -241,7 +253,7 @@ class WholesaleWorkspaceController extends Controller
         $data = $request->validate(['branch_id' => ['required', 'integer'], 'product_id' => ['required', 'integer'], 'customer_id' => ['required', 'integer']]);
         $tenantId = $request->user()->tenant_id;
         Product::where('tenant_id', $tenantId)->whereKey($data['product_id'])->firstOrFail();
-        $customer = Party::where('tenant_id', $tenantId)->whereIn('type', ['customer', 'both'])->whereKey($data['customer_id'])->firstOrFail();
+        $customer = Party::where('tenant_id', $tenantId)->whereIn('type', ['customer', 'supplier', 'both'])->whereKey($data['customer_id'])->firstOrFail();
         abort_unless(! $request->user()->branch_id || $request->user()->isTenantOwner() || ! $customer->branch_id || $customer->branch_id === $request->user()->branch_id, 404);
         $items = OrderItem::where('tenant_id', $tenantId)->where('product_id', $data['product_id'])
             ->whereHas('order', fn ($q) => $q->where('tenant_id', $tenantId)->where('branch_id', $data['branch_id'])->where('customer_id', $customer->id)->where('type', 'wholesale')->where('status', 'completed'))
@@ -275,8 +287,8 @@ class WholesaleWorkspaceController extends Controller
             StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', -(float) $movement->effect), 'sale_reversal');
         }
         if ($order->customer_id) {
-            Party::where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail()
-                ->decrement('current_balance', round((float) $order->total - (float) $order->paid_amount, 2));
+            $party = Party::where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
+            $party->decrement('current_balance', ($party->type === 'supplier' ? -1 : 1) * round((float) $order->total - (float) $order->paid_amount, 2));
         }
         foreach (Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->lockForUpdate()->get() as $payment) {
             $payment->delete();
@@ -321,10 +333,11 @@ class WholesaleWorkspaceController extends Controller
                 abort_unless($user->hasPermission('accounting.receipt.edit'), 403);
                 $payment = Payment::where('tenant_id', $user->tenant_id)->where('branch_id', $data['branch_id'])->where('type', 'receipt')->whereNull('order_id')->lockForUpdate()->whereKey($data['receipt_id'])->firstOrFail();
                 if ($payment->party_id) {
-                    Party::where('tenant_id', $user->tenant_id)->whereKey($payment->party_id)->lockForUpdate()->firstOrFail()->increment('current_balance', (float) $payment->amount);
+                    $previousParty = Party::where('tenant_id', $user->tenant_id)->whereKey($payment->party_id)->lockForUpdate()->firstOrFail();
+                    $previousParty->increment('current_balance', ($previousParty->type === 'supplier' ? -1 : 1) * (float) $payment->amount);
                 }
             }
-            $party = Party::where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'both'])->where('is_active', true)->lockForUpdate()->whereKey($data['customer_id'])->firstOrFail();
+            $party = Party::where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)->lockForUpdate()->whereKey($data['customer_id'])->firstOrFail();
             abort_unless(! $user->branch_id || $user->isTenantOwner() || ! $party->branch_id || $party->branch_id === $user->branch_id, 404);
             $previous = (float) $party->current_balance;
             $number = $data['voucher_number'] ?? $payment->voucher_number ?? 'RCP-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5));
@@ -336,7 +349,7 @@ class WholesaleWorkspaceController extends Controller
                 'shift_id' => $payment->shift_id ?? $shift?->id, 'party_id' => $party->id, 'type' => 'receipt', 'voucher_number' => $number,
                 'amount' => $data['amount'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'], 'notes' => $data['notes'] ?? null]);
             $payment->save();
-            $party->decrement('current_balance', (float) $data['amount']);
+            $party->decrement('current_balance', ($party->type === 'supplier' ? -1 : 1) * (float) $data['amount']);
 
             return $payment->load('party')->setAttribute('previous_balance', $previous)->setAttribute('current_balance', $party->fresh()->current_balance);
         });

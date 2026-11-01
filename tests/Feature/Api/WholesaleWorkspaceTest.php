@@ -114,3 +114,35 @@ test('staff with view permission cannot write wholesale sales or receipts', func
     $this->getJson('/api/wholesale/receipts?branch_id='.$this->branch->id)->assertForbidden();
     $this->postJson('/api/wholesale/receipts', [])->assertForbidden();
 });
+
+test('wholesale parties include suppliers and exclude inactive foreign and other branch parties', function () {
+    $this->user->update(['is_owner' => false, 'branch_id' => $this->branch->id]);
+    $permission = Permission::firstOrCreate(['name' => 'wholesale_sales.view'], ['display_name' => 'Wholesale', 'group' => 'Wholesale']);
+    $role = Role::create(['tenant_id' => 1, 'name' => 'Wholesale reader']);
+    $role->permissions()->attach($permission);
+    $this->user->update(['role_id' => $role->id]);
+    $supplier = Party::create(['tenant_id' => 1, 'name' => 'Supplier', 'code' => 'S00000001', 'type' => 'supplier', 'is_active' => true]);
+    Party::create(['tenant_id' => 1, 'name' => 'Inactive', 'type' => 'supplier', 'is_active' => false]);
+    $otherBranch = Branch::create(['tenant_id' => 1, 'name' => 'Other']);
+    Party::create(['tenant_id' => 1, 'branch_id' => $otherBranch->id, 'name' => 'Other branch', 'type' => 'supplier', 'is_active' => true]);
+    Tenant::create(['id' => 2, 'name' => 'Other tenant', 'is_active' => true]);
+    Party::create(['tenant_id' => 2, 'name' => 'Foreign', 'type' => 'supplier', 'is_active' => true]);
+    $this->actingAs($this->user->fresh())->getJson('/api/wholesale/parties')->assertOk()->assertJsonCount(2, 'parties')->assertJsonFragment(['code' => $supplier->code]);
+});
+
+test('supplier wholesale sales and edits reduce payable while receipts increase it', function () {
+    $this->party->update(['type' => 'supplier']);
+    $id = $this->postJson('/api/wholesale/orders', $this->payload)->assertCreated()->json('order.id');
+    expect((float) $this->party->fresh()->current_balance)->toBe(89.6);
+    $edit = array_replace($this->payload, ['invoice_id' => $id, 'paid_amount' => 0, 'operation_uuid' => (string) Str::uuid()]);
+    $this->postJson('/api/wholesale/orders', $edit)->assertCreated();
+    expect((float) $this->party->fresh()->current_balance)->toBe(85.6);
+    $this->getJson('/api/wholesale/price-history?branch_id='.$this->branch->id.'&customer_id='.$this->party->id.'&product_id='.$this->product->id)->assertOk();
+    $payload = ['branch_id' => $this->branch->id, 'customer_id' => $this->party->id, 'amount' => 20, 'payment_method' => 'cash', 'payment_date' => '2026-11-01'];
+    $receipt = $this->postJson('/api/wholesale/receipts', $payload)->assertCreated()->json('voucher.id');
+    expect((float) $this->party->fresh()->current_balance)->toBe(105.6);
+    $payload['receipt_id'] = $receipt;
+    $payload['customer_id'] = Party::create(['tenant_id' => 1, 'name' => 'New customer', 'type' => 'customer', 'is_active' => true, 'current_balance' => 50])->id;
+    $this->postJson('/api/wholesale/receipts', $payload)->assertCreated();
+    expect((float) $this->party->fresh()->current_balance)->toBe(85.6);
+});

@@ -33,6 +33,7 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/pos/products', [PosController::class, 'index'])->middleware('can:pos.view');
     Route::post('/pos/products', [PosProductController::class, 'store'])->middleware(['can:pos.view', 'can:products.view', 'can:products.create']);
     Route::post('/pos/product-barcodes', [PosProductController::class, 'attach'])->middleware(['can:pos.view', 'can:products.barcode.manage']);
+    Route::get('/wholesale/parties', [WholesaleWorkspaceController::class, 'parties'])->middleware('can:wholesale_sales.view');
     Route::get('/wholesale/products', [WholesaleWorkspaceController::class, 'products'])->middleware('can:wholesale_sales.view');
     Route::post('/wholesale/orders', [WholesaleWorkspaceController::class, 'store'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
     Route::get('/wholesale/orders', [PosController::class, 'wholesaleOrders'])->middleware('can:wholesale_sales.view');
