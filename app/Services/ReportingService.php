@@ -113,7 +113,7 @@ class ReportingService
             'approved' => 'معتمد', 'paid' => 'مدفوع', 'draft' => 'مسودة', 'processing' => 'قيد المعالجة',
             'cash' => 'نقدي', 'card' => 'بطاقة', 'bank_transfer' => 'تحويل', 'cheque', 'check' => 'شيك',
             'opening' => 'افتتاحي', 'manual' => 'تصحيح', 'order' => 'بيع', 'purchase' => 'شراء',
-            'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_transfer' => 'تحويل مخزون',
+            'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'stock_transfer' => 'تحويل مخزون',
             'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس بيع', 'sync' => 'مزامنة',
             default => (string) $value,
         };

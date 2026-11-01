@@ -55,6 +55,8 @@ Route::middleware(['auth', 'verified'])
         // Categories / Products
         Route::livewire('/stock-movements', 'pages::tenant.stock-movements.index')
             ->middleware('can:products.view')->name('stock-movements');
+        Route::livewire('/stock-vouchers', 'pages::tenant.stock-vouchers.index')
+            ->middleware('can:products.stock.adjust')->name('stock-vouchers');
         Route::livewire('/category', 'pages::tenant.categories.index')
             ->middleware('can:categories.view')
             ->name('category');

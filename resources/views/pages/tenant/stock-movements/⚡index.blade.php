@@ -53,7 +53,7 @@ new class extends Component
         <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع المسموحة</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
         <flux:input type="date" label="من" wire:model.live="dateFrom" />
         <flux:input type="date" label="إلى" wire:model.live="dateTo" />
-        <flux:select label="مصدر الحركة" wire:model.live="sourceType"><option value="">الكل</option>@foreach (['opening' => 'رصيد افتتاحي', 'manual' => 'تعديل مخزون', 'order' => 'فاتورة مبيعات', 'purchase' => 'فاتورة مشتريات', 'sales_return' => 'مردود مبيعات', 'purchase_return' => 'مردود مشتريات', 'stock_transfer' => 'تحويل مخزون', 'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس فاتورة', 'sync' => 'مزامنة'] as $key => $label)<option value="{{ $key }}">{{ $label }}</option>@endforeach</flux:select>
+        <flux:select label="مصدر الحركة" wire:model.live="sourceType"><option value="">الكل</option>@foreach (['opening' => 'رصيد افتتاحي', 'manual' => 'تعديل مخزون', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'order' => 'فاتورة مبيعات', 'purchase' => 'فاتورة مشتريات', 'sales_return' => 'مردود مبيعات', 'purchase_return' => 'مردود مشتريات', 'stock_transfer' => 'تحويل مخزون', 'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس فاتورة', 'sync' => 'مزامنة'] as $key => $label)<option value="{{ $key }}">{{ $label }}</option>@endforeach</flux:select>
     </div>
     <div class="overflow-x-auto rounded-xl border border-slate-200">
         <table class="w-full text-right text-sm">
@@ -61,7 +61,7 @@ new class extends Component
             <tbody>@forelse ($movements as $movement)<tr class="border-t border-slate-100">
                 <td class="p-3">{{ $movement->created_at->format('Y-m-d H:i') }}</td><td class="p-3">{{ $movement->branch?->name }}</td>
                 <td class="p-3">{{ $movement->product?->product_number }}</td><td class="p-3">{{ $movement->product?->name }}</td>
-                <td class="p-3">{{ ['opening' => 'رصيد افتتاحي', 'manual' => 'تعديل', 'order' => 'بيع', 'purchase' => 'شراء', 'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_transfer' => 'تحويل', 'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس بيع', 'sync' => 'مزامنة'][$movement->source_type] ?? 'حركة' }} {{ $movement->source_reference ?: ($movement->source_id ? '#'.$movement->source_id : '') }}</td>
+                <td class="p-3">{{ ['opening' => 'رصيد افتتاحي', 'manual' => 'تعديل', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'order' => 'بيع', 'purchase' => 'شراء', 'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_transfer' => 'تحويل', 'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس بيع', 'sync' => 'مزامنة'][$movement->source_type] ?? 'حركة' }} {{ $movement->source_reference ?: ($movement->source_id ? '#'.$movement->source_id : '') }}</td>
                 <td class="p-3">{{ number_format($movement->quantity_before, 3) }}</td><td class="p-3 {{ $movement->quantity > 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($movement->quantity, 3) }}</td><td class="p-3">{{ number_format($movement->quantity_after, 3) }}</td>
             </tr>@empty<tr><td colspan="8" class="p-5 text-center">لا توجد حركات ضمن البحث الحالي.</td></tr>@endforelse</tbody>
         </table>

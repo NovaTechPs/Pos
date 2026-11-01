@@ -20,6 +20,17 @@ class StockMovementContext
         }
     }
 
+    /** Record a manual stock voucher without pretending it is another persisted document. */
+    public static function voucher(string $type, string $reference, callable $callback): mixed
+    {
+        self::$stack[] = ['stock_source_type' => $type, 'stock_source_id' => null, 'stock_source_reference' => $reference];
+        try {
+            return $callback();
+        } finally {
+            array_pop(self::$stack);
+        }
+    }
+
     /** @return array<string, mixed> */
     public static function referenceAttributes(string $type, int $id, ?string $reference = null): array
     {
