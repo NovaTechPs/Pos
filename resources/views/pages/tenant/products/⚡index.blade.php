@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Flux\Flux;
 
 new class extends Component {
     use WithPagination;
@@ -156,16 +157,11 @@ new class extends Component {
                 'max:255',
             ],
 
-            'barcodes' => [
-                'required',
-                'array',
-                'min:1',
-            ],
+            'barcodes' => ['nullable', 'array'],
 
             'barcodes.*' => [
-                'required',
+                'nullable',
                 'string',
-                'distinct',
                 'max:100',
             ],
 
@@ -802,15 +798,6 @@ new class extends Component {
             )
         );
 
-        if (empty($cleanBarcodes)) {
-            $this->addError(
-                'barcodes',
-                'يجب إضافة باركود واحد على الأقل.'
-            );
-
-            return;
-        }
-
         /*
         |--------------------------------------------------------------------------
         | Check duplicate barcodes against other products
@@ -1082,6 +1069,7 @@ new class extends Component {
                 'message',
                 $message
             );
+            Flux::toast(variant: 'success', text: $message);
 
             $this->closeModal();
 
@@ -1121,6 +1109,7 @@ new class extends Component {
                 'error',
                 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.'
             );
+            Flux::toast(variant: 'danger', text: 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.');
         }
     }
 
@@ -1762,7 +1751,7 @@ new class extends Component {
     ================================================================= --}}
 
     @if (session()->has('message'))
-        <div
+        <div data-flash-notice data-flash-variant="success"
             class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300"
         >
             <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
@@ -1779,7 +1768,7 @@ new class extends Component {
     @endif
 
     @if (session()->has('error'))
-        <div
+        <div data-flash-notice data-flash-variant="error"
             class="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
         >
             <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/40">

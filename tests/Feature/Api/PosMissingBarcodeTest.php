@@ -64,8 +64,9 @@ test('cashiers without maintenance permissions cannot create or attach barcodes'
     expect(ProductBarcode::count())->toBe(0);
 });
 
-test('invalid prices and empty barcodes cannot create partial product or stock records', function (): void {
+test('invalid prices cannot create partial product or stock records, while a barcode is optional', function (): void {
     $this->postJson('/api/pos/products', array_replace($this->payload, ['retail_price' => -1]))->assertUnprocessable();
-    $this->postJson('/api/pos/products', array_replace($this->payload, ['barcode' => '  ']))->assertUnprocessable();
-    expect(Product::count())->toBe(1)->and(BranchProduct::count())->toBe(1)->and(ProductBarcode::count())->toBe(0);
+    $this->postJson('/api/pos/products', array_replace($this->payload, ['barcode' => '  ']))->assertCreated()
+        ->assertJsonCount(0, 'product.barcodes');
+    expect(Product::count())->toBe(2)->and(BranchProduct::count())->toBe(2)->and(ProductBarcode::count())->toBe(0);
 });

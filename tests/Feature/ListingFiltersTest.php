@@ -54,6 +54,27 @@ test('products default to product number order with blank numbers last and can s
         });
 });
 
+test('a product can be saved without a barcode', function (): void {
+    Livewire::test('pages::tenant.products.index')
+        ->call('openCreateModal')
+        ->set('name', 'Product without barcode')
+        ->set('barcodes', [''])
+        ->set('cost_price', '5')
+        ->set('retail_price', '10')
+        ->set('wholesale_price', '8')
+        ->set('min_wholesale_quantity', 1)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $product = Product::query()
+        ->where('tenant_id', $this->tenant->id)
+        ->where('name', 'Product without barcode')
+        ->firstOrFail();
+
+    expect($product->barcodes)->toHaveCount(0)
+        ->and(BranchProduct::query()->where('product_id', $product->id)->count())->toBe(2);
+});
+
 test('product stock category and website filters combine within the active branch and reset pagination', function (): void {
     $category = Category::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Matching category', 'is_active' => true]);
     foreach (['Matching' => 2, 'No stock' => 0, 'Other category' => 5] as $name => $quantity) {

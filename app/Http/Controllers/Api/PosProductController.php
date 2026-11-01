@@ -21,7 +21,7 @@ class PosProductController extends Controller
         $tenantId = $request->user()->tenant_id;
         $data = $request->validate([
             'branch_id' => ['required', 'integer'],
-            'barcode' => ['required', 'string', 'max:100'],
+            'barcode' => ['nullable', 'string', 'max:100'],
             'name' => ['required', 'string', 'max:255'],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('tenant_id', $tenantId)],
             'cost_price' => ['required', 'numeric', 'min:0', 'max:999999999'],
@@ -29,15 +29,17 @@ class PosProductController extends Controller
             'wholesale_price' => ['required', 'numeric', 'min:0', 'max:999999999'],
             'stock_quantity' => ['required', 'numeric', 'min:0', 'max:999999999'],
         ]);
-        $barcode = trim($data['barcode']);
+        $barcode = trim((string) ($data['barcode'] ?? ''));
         $product = DB::transaction(function () use ($data, $barcode, $tenantId): Product {
             Tenant::query()->whereKey($tenantId)->lockForUpdate()->firstOrFail();
-            if ($this->barcode($tenantId, $barcode)) {
+            if ($barcode !== '' && $this->barcode($tenantId, $barcode)) {
                 throw ValidationException::withMessages(['barcode' => 'الباركود مسجل بالفعل. حدّث الأصناف وأعد مسحه.']);
             }
             $product = Product::create(['tenant_id' => $tenantId, 'name' => trim($data['name']),
                 'category_id' => $data['category_id'] ?? null, 'cost_price' => $data['cost_price']]);
-            ProductBarcode::create(['tenant_id' => $tenantId, 'product_id' => $product->id, 'barcode' => $barcode]);
+            if ($barcode !== '') {
+                ProductBarcode::create(['tenant_id' => $tenantId, 'product_id' => $product->id, 'barcode' => $barcode]);
+            }
             foreach (Branch::query()->where('tenant_id', $tenantId)->pluck('id') as $branchId) {
                 BranchProduct::create(['tenant_id' => $tenantId, 'branch_id' => $branchId, 'product_id' => $product->id,
                     'retail_price' => $data['retail_price'], 'wholesale_price' => $data['wholesale_price'],
@@ -47,7 +49,7 @@ class PosProductController extends Controller
             return $product->load(['barcodes', 'branches']);
         });
 
-        return response()->json(['product' => $product, 'message' => 'تمت إضافة الصنف. امسح الباركود لإضافته للفاتورة.'], 201);
+        return response()->json(['product' => $product, 'message' => $barcode === '' ? 'تمت إضافة الصنف دون باركود.' : 'تمت إضافة الصنف. امسح الباركود لإضافته للفاتورة.'], 201);
     }
 
     public function attach(Request $request): JsonResponse
