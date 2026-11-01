@@ -38,6 +38,16 @@ test('POS displays product numbers and supports searching by number', function (
     expect(collect($component->get('cart'))->first()['product_number'])->toBe('P01');
 });
 
+test('the reported scanner barcode adds its exact product and confirms field handling', function (): void {
+    ProductBarcode::create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '6958326545504']);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('scanBarcode', '6958326545504')
+        ->assertSet('showMissingBarcodeModal', false)->assertSet('barcode', '')
+        ->assertDispatched('pos-barcode-handled', barcode: '6958326545504')
+        ->assertSee('wire:keydown.enter.prevent.stop="scanBarcode($event.target.value)"', false)
+        ->assertSee('إضافة');
+    expect(array_column($component->get('cart'), 'id'))->toBe([$this->product->id]);
+});
+
 test('unknown barcode opens the choices without changing the current cart and cancel restores scanning', function (): void {
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
     $cart = $component->get('cart');

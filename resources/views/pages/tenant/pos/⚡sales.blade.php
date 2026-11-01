@@ -1130,6 +1130,8 @@ new class extends Component {
             return;
         }
 
+        $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $barcode);
+
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً قبل البيع أو الإرجاع.';
             $this->dispatch('pos-sound', type: 'error');

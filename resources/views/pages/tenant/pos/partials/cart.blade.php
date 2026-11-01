@@ -7,7 +7,7 @@
     <div class="shrink-0 border-b border-slate-100 bg-slate-50 p-2.5">
 
         {{-- Barcode --}}
-        <div class="relative flex items-center gap-2" x-data="posBarcodeCamera()">
+        <div class="relative flex items-center gap-2" x-data="posBarcodeCamera()" data-pos-barcode-entry>
 
             <button data-pos-camera-button type="button" @disabled($invoiceLocked) x-on:click="start()" aria-label="قراءة الباركود بالكاميرا" title="قراءة الباركود بالكاميرا" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50 disabled:opacity-50">
                 <flux:icon.camera class="size-5" />
@@ -29,22 +29,28 @@
                 </div>
             </template>
 
-            <input data-pos-barcode-input data-pos-component-id="{{ $this->getId() }}" @disabled($invoiceLocked) type="text"
+            <input x-ref="barcode" wire:keydown.enter.prevent.stop="scanBarcode($event.target.value)"
+                x-on:pos-barcode-handled.window="if ($event.detail.componentId === $wire.$id &amp;&amp; $el.value.trim() === $event.detail.barcode) $el.value = ''"
+                data-pos-barcode-input data-pos-component-id="{{ $this->getId() }}" @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
                 placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
-                class="w-full rounded-xl border-2
+                class="min-w-0 flex-1 rounded-xl border-2
                     {{ $isReturnMode ? 'border-rose-300 focus:border-rose-500' : 'border-indigo-200 focus:border-indigo-500' }}
                     bg-white px-4 py-2.5 text-sm font-black text-slate-900
                     outline-none placeholder:text-slate-400">
 
+            <button type="button" @disabled($invoiceLocked) x-on:click="$wire.scanBarcode($refs.barcode.value)"
+                wire:loading.attr="disabled" wire:target="scanBarcode" class="h-11 shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-50">إضافة</button>
+
             @if ($barcode)
                 <button type="button" wire:click="$set('barcode', '')"
-                    class="absolute left-3 top-2.5 text-slate-400 hover:text-rose-600">
+                    class="shrink-0 text-slate-400 hover:text-rose-600">
                     ✕
                 </button>
             @endif
 
         </div>
+        <div wire:loading.delay wire:target="scanBarcode" role="status" class="mt-1 text-xs text-indigo-600">جارٍ قراءة الباركود…</div>
 
     </div>
 
@@ -363,284 +369,5 @@
     </style>
 
 
-  <script>
-(function() {
-    if (window.__posCartKeyboardNavigation) {
-        return;
-    }
-    window.__posCartKeyboardNavigation = true;
 
-    const FIELD_SELECTOR = '[data-pos-field]';
-    const BARCODE_SELECTOR = '[data-pos-barcode-input]';
-    const barcodeQueue = [];
-    let isProcessingBarcodeQueue = false;
-    let externalBarcodeBuffer = '';
-    let externalBarcodeLastKeyAt = 0;
-    let externalBarcodeCaptured = false;
-    let externalBarcodeTarget = null;
-    let externalBarcodeOriginalValue = null;
-
-    function rows() {
-        const grouped = new Map();
-        document.querySelectorAll(FIELD_SELECTOR).forEach(function(field) {
-            const row = Number(field.dataset.rowIndex);
-            if (!Number.isFinite(row)) return;
-            if (!grouped.has(row)) grouped.set(row, {});
-            grouped.get(row)[field.dataset.posField] = field;
-        });
-
-        return Array.from(grouped.entries())
-            .sort((a, b) => a[0] - b[0])
-            .map(entry => ({
-                index: entry[0],
-                quantity: entry[1].quantity || null,
-                price: entry[1].price || null,
-                subtotal: entry[1].subtotal || null
-            }));
-    }
-
-    function focusInput(input) {
-        if (!input || !document.contains(input)) return;
-        input.focus({ preventScroll: true });
-        if (typeof input.select === 'function') input.select();
-
-        const cart = input.closest('[data-pos-cart-scroll]');
-        const row = input.closest('tr');
-        if (!cart || !row) return;
-
-        const cartBounds = cart.getBoundingClientRect();
-        const rowBounds = row.getBoundingClientRect();
-        const scrollMargin = 32;
-
-        if (rowBounds.top < cartBounds.top) {
-            cart.scrollBy({ top: rowBounds.top - cartBounds.top - scrollMargin, behavior: 'smooth' });
-        } else if (rowBounds.bottom > cartBounds.bottom) {
-            cart.scrollBy({ top: rowBounds.bottom - cartBounds.bottom + scrollMargin, behavior: 'smooth' });
-        }
-    }
-
-    function focusBarcode() {
-        const input = document.querySelector(BARCODE_SELECTOR);
-        if (!input) return;
-        input.focus({ preventScroll: true });
-        if (typeof input.select === 'function') input.select();
-    }
-
-    function enqueueBarcode(barcode) {
-        const barcodeInput = document.querySelector(BARCODE_SELECTOR);
-        const componentId = barcodeInput?.dataset.posComponentId;
-        if (!barcodeInput || barcodeInput.disabled) return;
-        if (!componentId || !barcode) return;
-
-        barcodeQueue.push({ barcode, componentId });
-        processBarcodeQueue();
-    }
-
-    function resetExternalBarcodeCapture(restoreTarget = false) {
-        if (restoreTarget && externalBarcodeCaptured && externalBarcodeTarget && document.contains(externalBarcodeTarget)) {
-            externalBarcodeTarget.value = externalBarcodeOriginalValue ?? '';
-            externalBarcodeTarget.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        externalBarcodeBuffer = '';
-        externalBarcodeLastKeyAt = 0;
-        externalBarcodeCaptured = false;
-        externalBarcodeTarget = null;
-        externalBarcodeOriginalValue = null;
-    }
-
-    async function processBarcodeQueue() {
-        if (isProcessingBarcodeQueue || barcodeQueue.length === 0) return;
-
-        isProcessingBarcodeQueue = true;
-
-        try {
-            while (barcodeQueue.length > 0) {
-                const { barcode, componentId } = barcodeQueue.shift();
-                const barcodeInput = document.querySelector(BARCODE_SELECTOR);
-                if (!barcodeInput || barcodeInput.disabled || barcodeInput.dataset.posComponentId !== componentId) continue;
-                const component = window.Livewire?.find(componentId);
-
-                if (!component || !barcode) continue;
-
-                await component.$call('scanBarcode', barcode);
-            }
-        } catch (error) {
-            console.error('تعذر تسجيل أحد الباركودات في نقطة البيع.', error);
-        } finally {
-            isProcessingBarcodeQueue = false;
-            focusBarcode();
-        }
-    }
-
-    document.addEventListener('keydown', function(event) {
-        if (document.querySelector('[data-pos-missing-barcode-dialog]')) {
-            resetExternalBarcodeCapture();
-            return;
-        }
-
-        const barcodeInput = document.querySelector(BARCODE_SELECTOR);
-        if (!barcodeInput || barcodeInput.disabled) {
-            resetExternalBarcodeCapture();
-            return;
-        }
-        const input = event.target?.closest?.(BARCODE_SELECTOR);
-        if (input) {
-            if (event.key !== 'Enter') return;
-
-            event.preventDefault();
-            event.stopImmediatePropagation();
-
-            const barcode = input.value.trim();
-            input.value = '';
-            enqueueBarcode(barcode);
-            return;
-        }
-
-        if (event.target?.closest?.('[data-pos-invoice-search]')) {
-            resetExternalBarcodeCapture();
-            return;
-        }
-
-        if (event.key === 'Enter') {
-            if (externalBarcodeCaptured && externalBarcodeBuffer.length >= 4) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                const barcode = externalBarcodeBuffer;
-                resetExternalBarcodeCapture(true);
-                enqueueBarcode(barcode);
-            } else {
-                resetExternalBarcodeCapture();
-            }
-            return;
-        }
-
-        if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) {
-            return;
-        }
-
-        const now = Date.now();
-        if (!externalBarcodeLastKeyAt || now - externalBarcodeLastKeyAt > 90) {
-            resetExternalBarcodeCapture();
-            externalBarcodeBuffer = event.key;
-            externalBarcodeTarget = event.target;
-            externalBarcodeOriginalValue = typeof event.target?.value === 'string' ? event.target.value : null;
-            externalBarcodeLastKeyAt = now;
-            return;
-        }
-
-        externalBarcodeBuffer += event.key;
-        externalBarcodeLastKeyAt = now;
-
-        if (externalBarcodeBuffer.length >= 2) {
-            externalBarcodeCaptured = true;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (externalBarcodeTarget && externalBarcodeOriginalValue !== null) {
-                externalBarcodeTarget.value = externalBarcodeOriginalValue;
-            }
-        }
-    }, true);
-
-    document.addEventListener('livewire:navigating', function() {
-        barcodeQueue.length = 0;
-        resetExternalBarcodeCapture();
-    });
-
-    window.addEventListener('pos-scroll-cart-bottom', function() {
-        requestAnimationFrame(function() {
-            requestAnimationFrame(function() {
-                const cart = document.querySelector('[data-pos-cart-scroll]');
-                if (cart) cart.scrollTop = cart.scrollHeight;
-            });
-        });
-    });
-
-    document.addEventListener('keydown', function(event) {
-        if (document.querySelector('[data-pos-missing-barcode-dialog]')) {
-            resetExternalBarcodeCapture();
-            return;
-        }
-
-        const current = event.target?.closest?.(FIELD_SELECTOR);
-        const key = event.key;
-
-        // الضغط على سهم الأعلى خارج السلة يأخذك مباشرة إلى كمية آخر منتج
-        if (!current && key === 'ArrowUp') {
-            const allRows = rows();
-            if (!allRows.length) return;
-
-            event.preventDefault();
-            focusInput(
-                allRows[allRows.length - 1].quantity ||
-                allRows[allRows.length - 1].price ||
-                allRows[allRows.length - 1].subtotal
-            );
-            return;
-        }
-
-        if (!current) return;
-
-        // الضغط على Enter داخل حقول السلة للعودة إلى الباركود
-        if (key === 'Enter') {
-            event.preventDefault();
-            event.stopPropagation();
-            focusBarcode();
-            return;
-        }
-
-        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) {
-            return;
-        }
-
-        const allRows = rows();
-        if (!allRows.length) return;
-
-        const rowIndex = Number(current.dataset.rowIndex);
-        const type = current.dataset.posField;
-        const pos = allRows.findIndex(r => r.index === rowIndex);
-
-        if (pos < 0) return;
-
-        let target = null;
-
-        // التنقل بالأسهم داخل السلة (اتجاه RTL)
-        if (key === 'ArrowLeft') {
-            if (type === 'quantity') {
-                target = allRows[pos].price;
-            } else if (type === 'price') {
-                target = allRows[pos].subtotal;
-            } else if (type === 'subtotal') {
-                const nextPos = pos >= allRows.length - 1 ? 0 : pos + 1;
-                target = allRows[nextPos].quantity;
-            }
-        } else if (key === 'ArrowRight') {
-            if (type === 'subtotal') {
-                target = allRows[pos].price;
-            } else if (type === 'price') {
-                target = allRows[pos].quantity;
-            } else if (type === 'quantity') {
-                const previousPos = pos <= 0 ? allRows.length - 1 : pos - 1;
-                target = allRows[previousPos].subtotal;
-            }
-        } else if (key === 'ArrowUp') {
-            const targetPos = pos <= 0 ? allRows.length - 1 : pos - 1;
-            target = allRows[targetPos][type];
-        } else if (key === 'ArrowDown') {
-            const targetPos = pos >= allRows.length - 1 ? 0 : pos + 1;
-            target = allRows[targetPos][type];
-        } else if (key === 'Home') {
-            target = allRows[0][type];
-        } else if (key === 'End') {
-            target = allRows[allRows.length - 1][type];
-        }
-
-        if (target) {
-            event.preventDefault();
-            event.stopPropagation();
-            focusInput(target);
-        }
-    }, true);
-})();
-</script>
 </div>

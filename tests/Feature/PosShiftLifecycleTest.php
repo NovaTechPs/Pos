@@ -135,13 +135,11 @@ test('the POS displays a live online or offline connectivity status without a si
 
     $component->assertSee('أونلاين / Online')
         ->assertSee('أوفلاين / Offline')
-        ->assertSee("component.\$call('scanBarcode', barcode)", false)
+        ->assertSee('wire:keydown.enter.prevent.stop="scanBarcode($event.target.value)"', false)
         ->assertDontSee('component.$wire.call', false)
         ->assertSee('data-pos-invoice-search', false)
         ->assertSee('data-pos-barcode-input', false)
-        ->assertSee('const scrollMargin = 32', false)
-        ->assertSee('rowBounds.bottom - cartBounds.bottom + scrollMargin', false)
-        ->assertSee('pos-scroll-cart-bottom', false)
+        ->assertSee('data-pos-barcode-entry', false)
         ->assertDontSee('Simulate offline');
 });
 

@@ -8,7 +8,9 @@ test('barcode keyboard listener targets the POS component and ignores other page
     const vm = require('node:vm');
     const assert = require('node:assert/strict');
     const template = fs.readFileSync('resources/views/pages/tenant/pos/partials/cart.blade.php', 'utf8');
-    const script = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].find(match => match[1].includes('barcodeQueue'))[1];
+    const script = fs.readFileSync('resources/js/pos-cart-keyboard.js', 'utf8');
+    assert.ok(template.includes('wire:keydown.enter.prevent.stop="scanBarcode($event.target.value)"'));
+    assert.ok(fs.readFileSync('resources/js/app.js', 'utf8').includes("import './pos-cart-keyboard.js'"));
     const listeners = new Map();
     const calls = [];
     const lookups = [];
@@ -31,10 +33,20 @@ test('barcode keyboard listener targets the POS component and ignores other page
         }},
     };
     vm.runInNewContext(script, {window, document, Date, Map, Number, Array, console, Event: class {}});
+    const listenerCount = listeners.get('keydown').length;
+    vm.runInNewContext(script, {window, document, Date, Map, Number, Array, console, Event: class {}});
+    assert.equal(listeners.get('keydown').length, listenerCount, 'Navigation installed duplicate barcode handlers');
     let prevented = 0;
     function key(key, target = unrelatedField) {
-        const event = {key, target, preventDefault() {prevented++}, stopImmediatePropagation() {}, stopPropagation() {}};
-        for (const callback of listeners.get('keydown')) callback(event);
+        let stopped = false;
+        const event = {key, target, preventDefault() {prevented++}, stopImmediatePropagation() {stopped = true}, stopPropagation() {}};
+        for (const callback of listeners.get('keydown')) {
+            if (stopped) break;
+            callback(event);
+        }
+        if (!stopped && key === 'Enter' && target === input) {
+            window.Livewire.find(input.dataset.posComponentId).$call('scanBarcode', input.value);
+        }
     }
     function scan(code) {for (const character of code) key(character); key('Enter');}
     (async () => {
@@ -45,11 +57,18 @@ test('barcode keyboard listener targets the POS component and ignores other page
         key('Enter', input);
         await new Promise(setImmediate);
         assert.equal(calls[1][2], 'DIRECT-123');
+        input.value = '6958326545504';
+        key('Tab', input);
+        await new Promise(setImmediate);
+        assert.equal(calls[2][2], '6958326545504');
+        const beforeEmptyTab = prevented;
+        key('Tab', input);
+        assert.equal(prevented, beforeEmptyTab, 'Empty Tab should retain normal focus navigation');
         missingBarcodeModalOpen = true;
         const beforeModalTyping = prevented;
         scan('SEARCH');
         await new Promise(setImmediate);
-        assert.equal(calls.length, 2, 'Modal typing was treated as a barcode');
+        assert.equal(calls.length, 3, 'Modal typing was treated as a barcode');
         assert.equal(prevented, beforeModalTyping, 'Modal search typing was intercepted');
         missingBarcodeModalOpen = false;
         for (const callback of listeners.get('livewire:navigating')) callback();
@@ -57,12 +76,12 @@ test('barcode keyboard listener targets the POS component and ignores other page
         prevented = 0;
         scan('654321');
         await new Promise(setImmediate);
-        assert.equal(calls.length, 2);
+        assert.equal(calls.length, 3);
         assert.equal(prevented, 0, 'Typing on another page was intercepted');
         input = {dataset: {posComponentId: 'pos-next'}, disabled: false, value: '', focus() {}, select() {}};
         scan('NEXT123');
         await new Promise(setImmediate);
-        assert.deepEqual(calls[2], ['pos-next', 'scanBarcode', 'NEXT123']);
+        assert.deepEqual(calls[3], ['pos-next', 'scanBarcode', 'NEXT123']);
         console.log('BARCODE_ROUTING_OK');
     })().catch(error => {console.error(error); process.exitCode = 1});
     JAVASCRIPT;
