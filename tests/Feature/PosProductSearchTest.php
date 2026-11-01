@@ -9,6 +9,7 @@ use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\PosProductSearch;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 
@@ -126,4 +127,43 @@ test('Enter with multiple matches focuses results without choosing a product aut
     searchablePosProduct($this, 'Coffee large');
     Livewire::test('pages::tenant.pos.sales')->call('submitProductSearch', 'coffee')
         ->assertSet('cart', [])->assertDispatched('pos-search-results-ready');
+});
+
+test('selecting a searched product clears both search controls and restores the catalog', function (): void {
+    $coffee = searchablePosProduct($this, 'Coffee');
+    $tea = searchablePosProduct($this, 'Tea');
+    Shift::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opened_by' => $this->user->id, 'opened_at' => now(), 'status' => 'open', 'opening_cash' => 0]);
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'coffee');
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$coffee->id]);
+    $component->call('selectInlineProduct', $coffee->id)
+        ->assertSet('productSearchQuery', '')->assertSet('inlineSearchQuery', '')
+        ->assertDispatched('pos-search-cleared')->assertDispatched('pos-focus-barcode');
+    expect(array_column($component->get('quickProducts'), 'id'))->toContain($coffee->id, $tea->id)
+        ->and(array_column($component->get('cart'), 'id'))->toBe([$coffee->id]);
+});
+
+test('failed addition preserves search and does not dispatch a successful selection', function (): void {
+    $coffee = searchablePosProduct($this, 'Coffee');
+    Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'coffee')
+        ->call('selectInlineProduct', $coffee->id)->assertSet('productSearchQuery', 'coffee')
+        ->assertSet('cart', [])->assertNotDispatched('pos-search-cleared');
+});
+
+test('repeated search in one request reuses results while explicit refresh reads again', function (): void {
+    searchablePosProduct($this, 'Coffee small');
+    searchablePosProduct($this, 'Coffee large');
+    $instance = Livewire::test('pages::tenant.pos.sales')->instance();
+    $instance->productSearchQuery = 'coffee';
+    $reads = 0;
+    DB::listen(function ($query) use (&$reads): void {
+        if (preg_match('/^select .*from ["`]products["`]/i', $query->sql)) {
+            $reads++;
+        }
+    });
+    $instance->updatedProductSearchQuery();
+    $instance->submitProductSearch('coffee');
+    expect($reads)->toBe(1);
+    $instance->loadQuickProducts(true);
+    expect($reads)->toBe(2);
 });

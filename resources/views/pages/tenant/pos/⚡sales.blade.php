@@ -31,6 +31,8 @@ new class extends Component {
     /** @var list<int> Products already checked against the server during this request. */
     private array $verifiedRemoteProductIds = [];
 
+    private ?string $quickProductsRequestKey = null;
+
     /** @param array<string, mixed> $filters
      * @return list<int>|null
      */
@@ -988,12 +990,17 @@ new class extends Component {
 
     public function selectInlineProduct(int $productId): void
     {
-        $this->addToCart($productId);
+        if (!$this->addToCart($productId)) {
+            return;
+        }
 
         $this->inlineSearchQuery = '';
         $this->productSearchQuery = '';
         $this->inlineSearchResults = [];
+        $this->selectedCategoryId = null;
+        $this->loadQuickProducts();
 
+        $this->dispatch('pos-search-cleared', componentId: $this->getId());
         $this->dispatch('pos-focus-barcode');
     }
 
@@ -1027,13 +1034,19 @@ new class extends Component {
         $this->errorMessage = 'سجّل المرتجعات من صفحة مردودات المبيعات، لربطها بفاتورتها وضبط الكميات والمخزون.';
     }
 
-    public function loadQuickProducts(): void
+    public function loadQuickProducts(bool $force = false): void
     {
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
 
         if (!$tenantId || !$branchId) {
             $this->quickProducts = [];
+            return;
+        }
+
+        $requestKey = json_encode([$tenantId, $branchId, $this->selectedCustomerId, $this->selectedCategoryId,
+            app(PosProductSearch::class)->normalize($this->productSearchQuery)], JSON_THROW_ON_ERROR);
+        if (!$force && $this->quickProductsRequestKey === $requestKey) {
             return;
         }
 
@@ -1061,15 +1074,20 @@ new class extends Component {
         }
         app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
 
+        $matchedProducts = $query->orderBy('name')->orderBy('id')->limit(40)->get();
+        if ($matchedProducts->isEmpty()) {
+            $this->quickProducts = [];
+            $this->quickProductsRequestKey = $requestKey;
+            return;
+        }
+
         $activeOffers = ProductOffer::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->whereIn('product_id', $matchedProducts->modelKeys())
             ->where('is_active', true)->where('start_at', '<=', now())
             ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))
             ->orderByDesc('start_at')->get()->unique('product_id')->keyBy('product_id');
 
-        $this->quickProducts = $query
-            ->orderBy('name')->orderBy('id')
-            ->limit(40)
-            ->get()
+        $this->quickProducts = $matchedProducts
             ->map(function (Product $product) use ($activeOffers): array {
                 $branchProduct = $product->branchProducts->first();
                 $offer = $activeOffers->get($product->id);
@@ -1093,6 +1111,7 @@ new class extends Component {
             })
             ->all();
         $this->quickProducts = $this->withSharedStock($this->quickProducts);
+        $this->quickProductsRequestKey = $requestKey;
     }
 
     public function scanBarcode(string $scannedBarcode = ''): void
@@ -1200,15 +1219,15 @@ new class extends Component {
         $this->successMessage = 'تم ربط الباركود بالصنف. امسحه مرة أخرى لإضافته إلى الفاتورة.';
     }
 
-    public function addToCart(int $productId, string $scannedBarcode = ''): void
+    public function addToCart(int $productId, string $scannedBarcode = ''): bool
     {
         if (!$this->ensureInvoiceEditable()) {
-            return;
+            return false;
         }
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً لإضافة المنتجات.';
             $this->showOpenShiftModal = true;
-            return;
+            return false;
         }
 
         $tenantId = $this->tenantId();
@@ -1217,7 +1236,7 @@ new class extends Component {
         if (!$tenantId || !$branchId) {
             $this->errorMessage = 'تعذر تحديد المتجر أو الفرع.';
             $this->dispatch('pos-sound', type: 'error');
-            return;
+            return false;
         }
 
         $remoteIds = in_array($productId, $this->verifiedRemoteProductIds, true)
@@ -1225,7 +1244,7 @@ new class extends Component {
             : $this->refreshRemoteCatalog(filters: ['ids' => [$productId]]);
         if ($remoteIds !== null && !in_array($productId, $remoteIds, true)) {
             $this->errorMessage = 'المنتج لم يعد متاحاً على السيرفر في الفرع الحالي.';
-            return;
+            return false;
         }
 
         $product = Product::query()
@@ -1237,7 +1256,7 @@ new class extends Component {
         if (!$product || !$branchProduct) {
             $this->errorMessage = 'المنتج غير مرتبط بالفرع الحالي أو لم يعد متاحاً.';
             $this->dispatch('pos-sound', type: 'error');
-            return;
+            return false;
         }
 
         $isGift = $this->selectingGift && $this->showProductsModal;
@@ -1294,13 +1313,15 @@ new class extends Component {
 
         if (empty($this->cart)) {
             $this->clearCartState();
-            return;
+            return true;
         }
 
         $this->recalculatePrices();
 
         $this->dispatch('pos-sound', type: 'add');
         $this->dispatch('pos-scroll-cart-bottom');
+
+        return true;
     }
 
     public function updateQuantity(string $lineKey, $qty): void
@@ -3754,7 +3775,7 @@ new class extends Component {
                                             </div>
                                         </div>
 
-                                        <button type="button" wire:click="loadQuickProducts"
+                                        <button type="button" wire:click="loadQuickProducts(true)"
                                             @disabled($this->invoiceIsLocked())
                                             class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:bg-slate-100">
                                             ↻ تحديث
@@ -3764,6 +3785,7 @@ new class extends Component {
                                     <label data-pos-search-field class="block w-full min-w-0">
                                         <span class="sr-only">بحث الأصناف</span>
                                         <input data-pos-product-panel-search
+                                        x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''"
                                         x-on:keydown.f2.window.prevent="$el.focus(); $el.select()"
                                         x-on:keydown.escape.prevent="$wire.set('productSearchQuery', ''); $el.focus()"
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
