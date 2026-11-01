@@ -31,11 +31,14 @@ test('customer checkout saves a sales invoice and only its actual payment enters
         ->assertSet('showCustomerPaymentModal', true)
         ->set('customerPaymentAmount', $paid)
         ->call('confirmCustomerPayment')
-        ->assertSet('errorMessage', null);
+        ->assertSet('errorMessage', null)
+        ->assertSet('invoiceEditMode', false);
 
     $order = Order::query()->sole();
-    expect($order->type)->toBe('wholesale')
-        ->and($order->shift_id)->toBeNull()
+    $component->assertSet('currentInvoiceId', $order->id);
+
+    expect($order->type)->toBe('pos')
+        ->and((int) $order->shift_id)->toBe($shift->id)
         ->and((float) $order->paid_amount)->toBe($paid)
         ->and($order->payment_status)->toBe($status)
         ->and((float) $stock->fresh()->stock_quantity)->toBe(4.0)
@@ -49,29 +52,30 @@ test('customer checkout saves a sales invoice and only its actual payment enters
     }
 
     $cashPaid = $paymentMethod === 'cash' ? $paid : 0.0;
-    $component->call('prepareCloseShift')
-        ->assertSet('shift_total_sales', 0.0)
+    Livewire::test('pages::tenant.pos.sales')
+        ->set('cart', [])
+        ->set('currentInvoiceId', null)
+        ->set('editingInvoiceId', null)
+        ->set('invoiceEditMode', false)
+        ->set('selectedCustomerId', null)
+        ->call('prepareCloseShift')
+        ->assertSet('shift_total_sales', 10.0)
         ->assertSet('shift_cash_receipts', $cashPaid)
-        ->assertSet('shift_expected_cash', 50 + $cashPaid)
-        ->set('searchInvoiceQuery', $order->invoice_number)->call('searchInvoice')
-        ->assertSet('currentInvoiceId', null);
+        ->assertSet('shift_expected_cash', 50 + $cashPaid);
+
+    $component
+        ->call('editLoadedInvoice')
+        ->assertSet('invoiceEditMode', true);
 
     Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $customer->id)
         ->assertSee('فاتورة مبيعات #'.$order->invoice_number);
-
-    Livewire::test('pages::tenant.sales.invoices')
-        ->set('searchInvoiceQuery', $order->invoice_number)->call('searchInvoice')
-        ->assertSet('currentOrderId', $order->id)
-        ->assertSet('savedPaidAmount', $paid)
-        ->assertSee('المتبقي على الزبون')
-        ->call('saveInvoice')->assertSet('errorMessage', null);
 
     expect((float) $order->fresh()->paid_amount)->toBe($paid)
         ->and($order->fresh()->payment_status)->toBe($status);
 
     if ($mode === 'edge') {
         $operation = BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->sole();
-        expect($operation->payload['order']['type'])->toBe('wholesale')
+        expect($operation->payload['order']['type'])->toBe('pos')
             ->and((float) $operation->payload['order']['paid_amount'])->toBe($paid);
         if ($paid === 0.0) {
             expect($operation->payload['payment'])->toBeNull();

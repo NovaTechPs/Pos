@@ -2681,7 +2681,10 @@ new class extends Component {
 
                 $requiredPayment = abs($total);
                 $paid = min($requiredPayment, $customer ? $paidInput : ($paidInput > 0 ? $paidInput : $requiredPayment));
-                $storedInvoiceType = $customer ? 'wholesale' : $invoiceType;
+                // A POS sale remains a POS sale even when it is assigned to a customer.
+                // The customer only changes the outstanding balance; cash movement is based
+                // exclusively on the actual paid amount recorded below.
+                $storedInvoiceType = $invoiceType;
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
 
@@ -2689,7 +2692,7 @@ new class extends Component {
                     $order = Order::create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $branchId,
-                        'shift_id' => $customer ? null : $lockedShift->id,
+                        'shift_id' => $lockedShift->id,
                         'created_by' => $user->id,
                         'customer_id' => $customer?->id,
                         'customer_name' => $customer?->name ?? 'زبون عام',
@@ -2715,7 +2718,7 @@ new class extends Component {
                     ]);
                 } else {
                     $updateData = [
-                        'shift_id' => $customer ? null : $lockedShift->id,
+                        'shift_id' => $lockedShift->id,
                         'customer_id' => $customer?->id,
                         'customer_name' => $customer?->name ?? 'زبون عام',
                         'customer_phone' => $customer?->phone,
@@ -2849,7 +2852,16 @@ new class extends Component {
             $this->invalidateActiveShiftCache();
             $this->activeShiftId = $shift->id;
 
-            $this->clearCartState();
+            if ($customer) {
+                // Keep customer invoices in POS so the cashier can review or edit them.
+                // The invoice is loaded in read-only mode until the cashier chooses "تعديل".
+                $this->loadInvoice($order->id);
+                $this->currentInvoiceId = $order->id;
+                $this->editingInvoiceId = $order->id;
+                $this->invoiceEditMode = false;
+            } else {
+                $this->clearCartState();
+            }
             $operation = null;
             if (app(DesktopPosConnection::class)->enabled()) {
                 $operation = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
@@ -2861,7 +2873,9 @@ new class extends Component {
             $this->refreshBranchSyncStatus();
             $this->activeShiftId = $shift->id;
 
-            $this->successMessage = $wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة.");
+            $this->successMessage = $customer
+                ? "تم حفظ فاتورة الزبون {$savedInvoiceNumber}. يمكنك الضغط على «تعديل» لتغييرها."
+                : ($wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة."));
 
             if (app(DesktopPosConnection::class)->enabled()) {
                 $operation?->refresh();
