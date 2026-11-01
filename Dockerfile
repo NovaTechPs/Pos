@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client postgresql-client \
     && docker-php-ext-install pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd calendar zip \
     && rm -rf /var/lib/apt/lists/*
+RUN printf 'upload_max_filesize=100M\npost_max_size=110M\nmax_execution_time=600\nmemory_limit=512M\n' > /usr/local/etc/php/conf.d/tenant-backups.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 COPY . .

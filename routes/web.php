@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ReportPrintController;
 use App\Http\Controllers\SystemErrorLogController;
+use App\Http\Controllers\TenantBackupController;
 use App\Http\Controllers\TenantDashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -142,6 +143,12 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/excel', 'pages::tenant.system.excel')
             ->middleware('can:excel.manage')
             ->name('excel');
+
+        Route::get('/tenant-backups', [TenantBackupController::class, 'index'])->middleware('can:backup.view')->name('tenant-backups');
+        Route::post('/tenant-backups/{tenant}/create', [TenantBackupController::class, 'create'])->middleware('throttle:5,1')->name('tenant-backups.create');
+        Route::get('/tenant-backups/{tenant}/download/{backup}', [TenantBackupController::class, 'download'])->whereUuid('backup')->name('tenant-backups.download');
+        Route::post('/tenant-backups/{tenant}/preview', [TenantBackupController::class, 'preview'])->middleware('throttle:5,1')->name('tenant-backups.preview');
+        Route::post('/tenant-backups/{tenant}/restore', [TenantBackupController::class, 'restore'])->middleware('throttle:2,1')->name('tenant-backups.restore');
 
         Route::livewire('/backup', 'pages::tenant.system.backup')
             ->middleware(['is_admin', 'can:backup.view'])

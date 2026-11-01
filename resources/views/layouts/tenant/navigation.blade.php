@@ -26,6 +26,7 @@
             ['permission' => 'currency_rates.manage', 'route' => 'tenant.currency-rates', 'label' => 'أسعار الصرف / Exchange Rates', 'icon' => 'currency-dollar'],
             ['permission' => 'accounting.receipt.view', 'route' => 'tenant.receipts', 'label' => 'Receipts', 'icon' => 'receipt-percent'],
             ['permission' => 'excel.manage', 'route' => 'tenant.excel', 'label' => 'Excel Import Export', 'icon' => 'document-arrow-up'],
+            ['permission' => 'backup.view', 'route' => 'tenant.tenant-backups', 'label' => 'نسخ المتجر واستعادته', 'icon' => 'server-stack'],
             ['permission' => 'backup.view', 'route' => 'tenant.backup', 'label' => 'Backup', 'icon' => 'server-stack'],
             ['permission' => 'logs.view', 'route' => 'tenant.logs', 'label' => 'Activity Log', 'icon' => 'clipboard-document-list'],
             ['permission' => 'payroll.view', 'route' => 'tenant.payroll-manager', 'label' => 'Payroll', 'icon' => 'banknotes'],
@@ -33,6 +34,7 @@
     @endphp
 
     @foreach ($navigationItems as $item)
+        @continue($item['route'] === 'tenant.tenant-backups' && ! (auth()->user()?->isSaaSAdmin() || auth()->user()?->isTenantOwner()))
         @continue($item['route'] === 'tenant.backup' && ! auth()->user()?->isSaaSAdmin())
         @can($item['permission'])
             @if ($item['route'] === 'tenant.store')
