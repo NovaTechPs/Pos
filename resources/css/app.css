@@ -131,6 +131,13 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
+/* Keep data rows easy to follow everywhere without changing printed receipts. */
+@media screen {
+    body.app-responsive table:not(.items):not(.items-table):not(.summary):not(.info) > tbody > tr:nth-child(even) {
+        @apply bg-slate-50/70 dark:bg-zinc-800/35;
+    }
+}
+
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */

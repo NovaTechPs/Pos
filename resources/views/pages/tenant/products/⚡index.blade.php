@@ -2099,7 +2099,10 @@ new class extends Component {
                             $priceData = $branchPrices[$product->id] ?? null;
                         @endphp
 
-                        <tr class="transition hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
+                        <tr
+                            wire:click="edit({{ $product->id }})"
+                            class="cursor-pointer transition hover:bg-indigo-50/70 dark:hover:bg-indigo-950/20"
+                        >
 
                             {{-- Product --}}
 
@@ -2286,7 +2289,7 @@ new class extends Component {
 
                                 <button
                                     type="button"
-                                    wire:click="toggleWebsiteStatus({{ $product->id }})"
+                                    wire:click.stop="toggleWebsiteStatus({{ $product->id }})"
                                     wire:loading.attr="disabled"
                                     wire:target="toggleWebsiteStatus({{ $product->id }})"
                                     class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition"
@@ -2329,14 +2332,14 @@ new class extends Component {
                                         variant="ghost"
                                         icon="tag"
                                         class="text-amber-600 hover:text-amber-700"
-                                        wire:click="openOfferModal({{ $product->id }})"
+                                        wire:click.stop="openOfferModal({{ $product->id }})"
                                         title="إضافة عرض"
                                     />
 
                                     <flux:button
                                         variant="ghost"
                                         icon="pencil-square"
-                                        wire:click="edit({{ $product->id }})"
+                                        wire:click.stop="edit({{ $product->id }})"
                                         title="تعديل المنتج"
                                     />
 
@@ -2344,7 +2347,7 @@ new class extends Component {
                                         variant="ghost"
                                         icon="trash"
                                         class="text-red-600 hover:text-red-700"
-                                        wire:click="delete({{ $product->id }})"
+                                        wire:click.stop="delete({{ $product->id }})"
                                         wire:confirm="هل أنت متأكد من نقل هذا المنتج إلى سلة المهملات؟"
                                         title="حذف المنتج"
                                     />
@@ -2431,7 +2434,10 @@ new class extends Component {
                 $priceData = $branchPrices[$product->id] ?? null;
             @endphp
 
-            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div
+                wire:click="edit({{ $product->id }})"
+                class="cursor-pointer rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-900 dark:hover:bg-indigo-950/20"
+            >
 
                 <div class="flex gap-3">
 
@@ -2598,7 +2604,7 @@ new class extends Component {
                             variant="subtle"
                             icon="tag"
                             class="text-amber-600"
-                            wire:click="openOfferModal({{ $product->id }})"
+                            wire:click.stop="openOfferModal({{ $product->id }})"
                         >
                             عرض
                         </flux:button>
@@ -2607,7 +2613,7 @@ new class extends Component {
                             size="sm"
                             variant="subtle"
                             icon="pencil-square"
-                            wire:click="edit({{ $product->id }})"
+                            wire:click.stop="edit({{ $product->id }})"
                         >
                             تعديل
                         </flux:button>
@@ -2617,7 +2623,7 @@ new class extends Component {
                             variant="ghost"
                             icon="trash"
                             class="text-red-600"
-                            wire:click="delete({{ $product->id }})"
+                            wire:click.stop="delete({{ $product->id }})"
                             wire:confirm="هل أنت متأكد من نقل هذا المنتج إلى سلة المهملات؟"
                         />
 
