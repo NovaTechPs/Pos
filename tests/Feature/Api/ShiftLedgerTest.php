@@ -23,7 +23,9 @@ test('shift cash includes cash receipts and expenses but excludes card sales', f
     $this->postJson('/api/vouchers/receipts', ['branch_id' => $branch->id, 'amount' => 5])->assertCreated();
     $this->getJson('/api/shifts/active?branch_id='.$branch->id)->assertOk()
         ->assertJsonPath('active_shift.cash_summary.expected_cash', 112)
-        ->assertJsonPath('active_shift.cash_summary.sales', 20);
+        ->assertJsonPath('active_shift.cash_summary.sales', 20)
+        ->assertJsonPath('active_shift.cash_summary.card_receipts', 10)
+        ->assertJsonPath('active_shift.cash_summary.bank_receipts', 10);
     $this->postJson('/api/shifts/close', ['shift_id' => $shift, 'actual_cash' => 112, 'expected_cash' => 100])->assertConflict();
     $this->postJson('/api/shifts/close', ['shift_id' => $shift, 'actual_cash' => 112, 'expected_cash' => 112])->assertOk()
         ->assertJsonPath('shift.expected_cash', '112.00')->assertJsonPath('shift.difference', '0.00');

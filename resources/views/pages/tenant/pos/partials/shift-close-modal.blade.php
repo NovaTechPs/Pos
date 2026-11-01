@@ -15,6 +15,7 @@
                     <div class="rounded-xl bg-emerald-50 p-3"><div class="text-[9px] font-bold text-emerald-600">قبض نقدي</div><div class="mt-1 font-mono font-black text-emerald-700">{{ number_format($shift_cash_receipts, 2) }}</div></div>
                     <div class="rounded-xl bg-rose-50 p-3"><div class="text-[9px] font-bold text-rose-600">صرف نقدي</div><div class="mt-1 font-mono font-black text-rose-700">{{ number_format($shift_cash_payments, 2) }}</div></div>
                     <div class="rounded-xl bg-indigo-50 p-3"><div class="text-[9px] font-bold text-indigo-600">مبيعات / مرتجعات</div><div class="mt-1 font-mono text-[11px] font-black text-indigo-700">{{ number_format($shift_total_sales, 2) }} / {{ number_format($shift_total_returns, 2) }}</div></div>
+                    <div class="rounded-xl bg-sky-50 p-3"><div class="text-[9px] font-bold text-sky-700">البنك — بطاقات وتحويل</div><div class="mt-1 font-mono font-black text-sky-800">{{ number_format($shift_bank_receipts, 2) }}</div><div class="mt-0.5 text-[9px] font-bold text-sky-600">بطاقات {{ number_format($shift_card_receipts, 2) }} · تحويل {{ number_format($shift_bank_transfer_receipts, 2) }}</div></div>
                 </div>
                 <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
                     <div class="text-[10px] font-black text-amber-700">المتوقع في الدرج</div>

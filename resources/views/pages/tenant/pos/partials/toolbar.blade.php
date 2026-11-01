@@ -142,6 +142,13 @@
         ====================================================== --}}
         @if ($this->activeShift())
 
+            @can('accounting.voucher.create')
+                <button wire:click="openExpenseModal" type="button" class="flex h-[42px] items-center gap-2 rounded-xl bg-rose-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-rose-700">
+                    <span class="text-sm">−</span>
+                    <span>مصروف من الصندوق</span>
+                </button>
+            @endcan
+
             <button
                 wire:click="prepareCloseShift"
                 class="flex h-[42px] items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 hover:shadow-md active:scale-[0.98]"

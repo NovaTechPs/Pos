@@ -128,6 +128,7 @@ new class extends Component {
     public bool $showOpenShiftModal = false;
     #[Locked]
     public bool $showCloseShiftModal = false;
+    public bool $showExpenseModal = false;
     public float $opening_cash = 0;
     public float $actual_cash = 0;
     public string $shift_notes = '';
@@ -140,6 +141,15 @@ new class extends Component {
     public float $shift_cash_receipts = 0;
     #[Locked]
     public float $shift_cash_payments = 0;
+    #[Locked]
+    public float $shift_card_receipts = 0;
+    #[Locked]
+    public float $shift_bank_transfer_receipts = 0;
+    #[Locked]
+    public float $shift_bank_receipts = 0;
+    public float $expense_amount = 0;
+    public string $expense_category = 'كهرباء';
+    public string $expense_notes = '';
     #[Locked]
     public float $shift_expected_cash = 0;
     public bool $allowNegativeStock = false;
@@ -534,7 +544,7 @@ new class extends Component {
         return $this->activeShiftCache;
     }
 
-    /** @return array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} */
+    /** @return array{sales: float, returns: float, cash_receipts: float, cash_payments: float, card_receipts: float, bank_transfer_receipts: float, bank_receipts: float, expected_cash: float} */
     private function shiftFinancialSummary(Shift $shift): array
     {
         $orders = Order::query()
@@ -559,17 +569,33 @@ new class extends Component {
 
         $cashReceipts = (float) ($payments?->cash_receipts ?? 0);
         $cashPayments = (float) ($payments?->cash_payments ?? 0);
+        $bankReceipts = Payment::query()
+            ->where('tenant_id', $shift->tenant_id)
+            ->where('shift_id', $shift->id)
+            ->where(function ($query) use ($shift): void {
+                $query->where('branch_id', $shift->branch_id)->orWhereNull('branch_id');
+            })
+            ->where('type', 'receipt')
+            ->selectRaw("COALESCE(SUM(CASE WHEN payment_method = 'card' THEN amount ELSE 0 END), 0) as card_receipts")
+            ->selectRaw("COALESCE(SUM(CASE WHEN payment_method = 'bank_transfer' THEN amount ELSE 0 END), 0) as bank_transfer_receipts")
+            ->toBase()
+            ->first();
+        $cardReceipts = (float) ($bankReceipts?->card_receipts ?? 0);
+        $bankTransferReceipts = (float) ($bankReceipts?->bank_transfer_receipts ?? 0);
 
         return [
             'sales' => (float) ($orders?->sales ?? 0),
             'returns' => (float) ($orders?->returns ?? 0),
             'cash_receipts' => $cashReceipts,
             'cash_payments' => $cashPayments,
+            'card_receipts' => $cardReceipts,
+            'bank_transfer_receipts' => $bankTransferReceipts,
+            'bank_receipts' => $cardReceipts + $bankTransferReceipts,
             'expected_cash' => (float) $shift->opening_cash + $cashReceipts - $cashPayments,
         ];
     }
 
-    /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} $summary */
+    /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, card_receipts: float, bank_transfer_receipts: float, bank_receipts: float, expected_cash: float} $summary */
     private function applyShiftSummary(Shift $shift, array $summary): void
     {
         $shift->setAttribute('live_total_sales', $summary['sales']);
@@ -586,6 +612,7 @@ new class extends Component {
             || round($this->shift_total_returns, 2) !== round($summary['returns'], 2)
             || round($this->shift_cash_receipts, 2) !== round($summary['cash_receipts'], 2)
             || round($this->shift_cash_payments, 2) !== round($summary['cash_payments'], 2)
+            || round($this->shift_bank_receipts, 2) !== round($summary['bank_receipts'], 2)
             || round($this->shift_expected_cash, 2) !== round($summary['expected_cash'], 2);
     }
 
@@ -764,6 +791,9 @@ new class extends Component {
         $this->shift_total_returns = $summary['returns'];
         $this->shift_cash_receipts = $summary['cash_receipts'];
         $this->shift_cash_payments = $summary['cash_payments'];
+        $this->shift_card_receipts = $summary['card_receipts'];
+        $this->shift_bank_transfer_receipts = $summary['bank_transfer_receipts'];
+        $this->shift_bank_receipts = $summary['bank_receipts'];
         $this->shift_expected_cash = $summary['expected_cash'];
         $this->actual_cash = $this->shift_expected_cash;
         $this->shift_notes = '';
@@ -852,6 +882,9 @@ new class extends Component {
                 $this->shift_total_returns = $result['summary']['returns'];
                 $this->shift_cash_receipts = $result['summary']['cash_receipts'];
                 $this->shift_cash_payments = $result['summary']['cash_payments'];
+                $this->shift_card_receipts = $result['summary']['card_receipts'];
+                $this->shift_bank_transfer_receipts = $result['summary']['bank_transfer_receipts'];
+                $this->shift_bank_receipts = $result['summary']['bank_receipts'];
                 $this->shift_expected_cash = $result['summary']['expected_cash'];
                 $this->errorMessage = 'حدثت حركة جديدة أثناء التسوية. أعد عدّ النقد الموجود في الصندوق ثم أكد الإغلاق.';
                 return;
@@ -882,6 +915,71 @@ new class extends Component {
     {
         $this->showCloseShiftModal = false;
         $this->errorMessage = null;
+    }
+
+    public function openExpenseModal(): void
+    {
+        if (! $this->activeShift()) {
+            $this->errorMessage = 'افتح شيفتاً أولاً لتسجيل المصروف من الصندوق.';
+            $this->showOpenShiftModal = true;
+
+            return;
+        }
+
+        $this->expense_amount = 0;
+        $this->expense_category = 'كهرباء';
+        $this->expense_notes = '';
+        $this->errorMessage = null;
+        $this->showExpenseModal = true;
+    }
+
+    public function saveExpense(): void
+    {
+        $this->authorize('accounting.voucher.create');
+        $this->validate([
+            'expense_amount' => ['required', 'numeric', 'gt:0', 'max:9999999999.99'],
+            'expense_category' => ['required', 'string', 'max:80'],
+            'expense_notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $tenantId = $this->tenantId();
+        $branchId = $this->getActiveBranchId();
+        $user = Auth::user();
+        if (! $tenantId || ! $branchId || ! $user) {
+            $this->errorMessage = 'تعذر تحديد المتجر أو الفرع.';
+
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($tenantId, $branchId, $user): void {
+                $shift = Shift::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('opened_by', $user->id)->where('status', 'open')->latest('id')->lockForUpdate()->first();
+                if (! $shift) {
+                    throw new \RuntimeException('لا يوجد شيفت مفتوح لتسجيل المصروف.');
+                }
+
+                Payment::create([
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $branchId,
+                    'shift_id' => $shift->id,
+                    'created_by' => $user->id,
+                    'type' => 'payment',
+                    'voucher_number' => 'EXP-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
+                    'amount' => $this->expense_amount,
+                    'payment_method' => 'cash',
+                    'notes' => trim($this->expense_category.($this->expense_notes !== '' ? ' — '.$this->expense_notes : '')),
+                    'payment_date' => now(),
+                ]);
+            });
+
+            $this->invalidateActiveShiftCache();
+            $this->showExpenseModal = false;
+            $this->successMessage = 'تم تسجيل المصروف وخصمه من الصندوق.';
+        } catch (\Throwable $exception) {
+            Log::warning('POS expense creation failed', ['message' => $exception->getMessage(), 'tenant_id' => $tenantId, 'branch_id' => $branchId]);
+            $this->errorMessage = 'تعذر تسجيل المصروف. حاول مرة أخرى.';
+        }
     }
 
     public function updatedProductSearchQuery(): void
@@ -4359,6 +4457,7 @@ new class extends Component {
             @include('pages.tenant.pos.partials.products-modal')
             @include('pages.tenant.pos.partials.shift-open-modal')
             @include('pages.tenant.pos.partials.shift-close-modal')
+            @include('pages.tenant.pos.partials.expense-modal')
             @include('pages.tenant.pos.partials.held-invoices-modal')
             @include('pages.tenant.pos.partials.invoice-confirmation-modals')
             @include('pages.tenant.pos.partials.cost-modal')
