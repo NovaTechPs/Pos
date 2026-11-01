@@ -37,6 +37,7 @@ test('employee can login successfully with valid credentials', function () {
     $this->assertDatabaseHas('personal_access_tokens', [
         'tokenable_id' => $user->id,
         'name' => 'mobile-app',
+        'expires_at' => null,
     ]);
 });
 
@@ -101,4 +102,34 @@ test('inactive employee cannot login', function () {
         ->assertJson([
             'message' => 'Your account is inactive.',
         ]);
+});
+
+test('app token stays valid after a year and explicit logout still revokes it', function (): void {
+    $user = User::factory()->create(['tenant_id' => 1, 'is_active' => true, 'password' => 'Persistent-Password42!']);
+    $token = $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Persistent-Password42!'])
+        ->assertOk()->json('token');
+    expect($user->tokens()->sole()->expires_at)->toBeNull();
+    $this->travel(400)->days();
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token)->postJson('/api/logout')->assertOk();
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token)->getJson('/api/employee/profile')->assertUnauthorized();
+    $this->travelBack();
+});
+
+test('existing app tokens retain login without changing web sessions or other token expiries', function (): void {
+    $user = User::factory()->create(['tenant_id' => 1, 'remember_token' => 'existing-web-remember-token']);
+    $app = $user->createToken('mobile-app', ['*'], now()->addDays(30))->accessToken;
+    $expired = $user->createToken('mobile-app', ['*'], now()->subDay())->accessToken;
+    $integration = $user->createToken('integration', ['*'], now()->addDays(7))->accessToken;
+    $revoked = $user->createToken('mobile-app', ['*'], now()->addDays(30))->accessToken;
+    $revoked->delete();
+    $webSettings = [config('session.lifetime'), config('session.expire_on_close')];
+    (require database_path('migrations/2026_11_01_145646_keep_existing_app_tokens_signed_in.php'))->up();
+    expect($app->fresh()->expires_at)->toBeNull()
+        ->and($expired->fresh()->expires_at)->toBeNull()
+        ->and($integration->fresh()->expires_at->equalTo($integration->expires_at))->toBeTrue()
+        ->and($revoked->fresh())->toBeNull()
+        ->and($user->fresh()->remember_token)->toBe('existing-web-remember-token')
+        ->and([config('session.lifetime'), config('session.expire_on_close')])->toBe($webSettings);
 });

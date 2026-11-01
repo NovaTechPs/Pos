@@ -96,7 +96,7 @@ class AuthController extends Controller
             'first_name' => $employee->first_name,
             'last_name' => $employee->last_name,
         ] : null;
-        $token = $user->createToken('mobile-app', ['*'], now()->addDays(30));
+        $token = $user->createToken('mobile-app', ['*']);
 
         return response()->json([
             'message' => 'Login successful',
