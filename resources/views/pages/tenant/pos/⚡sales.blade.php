@@ -77,6 +77,7 @@ new class extends Component {
     public string $missingBarcode = '';
     public bool $showMissingBarcodeModal = false;
     public bool $showNewProductModal = false;
+    public ?int $editingProductId = null;
     public bool $linkMissingBarcode = false;
     public string $missingBarcodeSearch = '';
     public array $cart = [];
@@ -1286,6 +1287,7 @@ new class extends Component {
     public function finishNewProductForm(): void
     {
         $this->showNewProductModal = false;
+        $this->editingProductId = null;
         $this->cancelMissingBarcode();
         $this->loadQuickProducts();
     }
@@ -1567,6 +1569,19 @@ new class extends Component {
         }
 
         $this->recalculatePrices();
+    }
+
+    public function editCartProduct(int $productId): void
+    {
+        $this->authorize('products.view');
+        $this->authorize('products.edit');
+
+        Product::query()
+            ->where('tenant_id', $this->tenantId())
+            ->findOrFail($productId);
+
+        $this->editingProductId = $productId;
+        $this->showNewProductModal = true;
     }
 
     public function clearCart(): void
@@ -4465,7 +4480,7 @@ new class extends Component {
             @include('pages.tenant.pos.partials.missing-barcode-modal')
             @if ($showNewProductModal)
                 <div data-pos-missing-barcode-dialog>
-                    <livewire:pages::tenant.products.index :pos-embedded="true" :new-barcode="$missingBarcode" :key="'pos-new-product-'.$missingBarcode" />
+                    <livewire:pages::tenant.products.index :pos-embedded="true" :new-barcode="$missingBarcode" :edit-product-id="$editingProductId" :key="'pos-product-form-'.($editingProductId ? 'edit-'.$editingProductId : 'create-'.$missingBarcode)" />
                 </div>
             @endif
         </div>

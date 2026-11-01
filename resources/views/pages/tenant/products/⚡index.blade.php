@@ -380,12 +380,17 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    public function mount(bool $posEmbedded = false, ?string $newBarcode = null): void
+    public function mount(bool $posEmbedded = false, ?string $newBarcode = null, ?int $editProductId = null): void
     {
         $this->posEmbedded = $posEmbedded;
         if ($posEmbedded) {
-            $this->authorize('products.create');
             $this->authorize('products.view');
+        }
+        if ($editProductId) {
+            $this->authorize('products.edit');
+            $this->edit($editProductId);
+
+            return;
         }
         $newBarcode ??= request()->query('new_barcode');
         if (is_string($newBarcode) && trim($newBarcode) !== '') {
@@ -465,6 +470,7 @@ new class extends Component {
 
     public function edit(int $id): void
     {
+        $this->authorize('products.edit');
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {

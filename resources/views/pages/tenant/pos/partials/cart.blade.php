@@ -306,6 +306,18 @@
 
                         {{-- Remove --}}
                         <td class="px-2 py-2 text-center">
+                            @can('products.edit')
+                                <button
+                                    type="button"
+                                    wire:click="editCartProduct({{ $item['id'] }})"
+                                    class="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+                                    title="تعديل الصنف أو إضافة باركود"
+                                    aria-label="تعديل {{ $item['name'] }}"
+                                >
+                                    <flux:icon name="pencil-square" class="size-4" />
+                                </button>
+                            @endcan
+
                             <button type="button"
                                 wire:click="removeFromCart('{{ $lineKey }}')"
                                 wire:confirm="هل أنت متأكد من حذف هذا الصنف من الفاتورة؟"

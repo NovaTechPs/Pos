@@ -114,6 +114,26 @@ test('new product form opens inside POS with the barcode and leaves the cart unc
     expect(Product::query()->count())->toBe(1);
 });
 
+test('a cart item opens its product editor from the POS', function (): void {
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->call('selectInlineProduct', $this->product->id)
+        ->assertSee('wire:click="editCartProduct('.$this->product->id.')"', false)
+        ->call('editCartProduct', $this->product->id)
+        ->assertSet('showNewProductModal', true)
+        ->assertSet('editingProductId', $this->product->id)
+        ->assertSeeLivewire('pages::tenant.products.index');
+
+    Livewire::test('pages::tenant.products.index', ['posEmbedded' => true, 'editProductId' => $this->product->id])
+        ->assertSet('showModal', true)
+        ->assertSet('isEditing', true)
+        ->assertSet('name', 'إبريق تجريبي')
+        ->assertSet('product_id', $this->product->id);
+
+    $component->dispatch('pos-product-form-closed')
+        ->assertSet('showNewProductModal', false)
+        ->assertSet('editingProductId', null);
+});
+
 test('embedded product form reuses normal validation and saves the new product and barcode', function (): void {
     $component = Livewire::test('pages::tenant.products.index', ['posEmbedded' => true, 'newBarcode' => '000123'])
         ->assertSet('showModal', true)->assertSet('barcodes', ['000123'])
