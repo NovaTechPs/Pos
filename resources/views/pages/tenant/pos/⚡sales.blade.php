@@ -1747,15 +1747,7 @@ new class extends Component {
                 }
 
                 if ($order->status === 'completed') {
-                    foreach ($order->items()->orderBy('product_id')->get() as $item) {
-                        $stock = BranchProduct::query()->where('tenant_id', $this->tenantId())
-                            ->where('branch_id', $order->branch_id)->where('product_id', $item->product_id)
-                            ->lockForUpdate()->first();
-                        if (! $stock) {
-                            throw new \RuntimeException('تعذر إعادة مخزون أحد أصناف الفاتورة.');
-                        }
-                        \App\Services\StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', (float) $item->quantity), 'sale_reversal');
-                    }
+                    app(\App\Services\BranchStockAllocator::class)->restore($order);
                 }
 
                 foreach (Payment::query()->where('tenant_id', $this->tenantId())
@@ -2410,42 +2402,7 @@ new class extends Component {
                         throw new \DomainException('لا يمكن تعديل فاتورة مرتبطة بمرتجع؛ سجّل مرتجعاً جديداً أو أنشئ فاتورة جديدة.');
                     }
 
-                    $oldItems = OrderItem::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('order_id', $order->id)
-                        ->get();
-
-                    foreach ($oldItems as $oldItem) {
-                        $oldQuantity = (float) $oldItem->quantity;
-
-                        if (abs($oldQuantity) < 0.000001) {
-                            continue;
-                        }
-
-                        $oldBranchProduct = BranchProduct::query()
-                            ->where('tenant_id', $tenantId)
-                            ->where('branch_id', $branchId)
-                            ->where('product_id', $oldItem->product_id)
-                            ->lockForUpdate()
-                            ->first();
-
-                        if (!$oldBranchProduct) {
-                            $productName = Product::query()
-                                ->where('tenant_id', $tenantId)
-                                ->whereKey($oldItem->product_id)
-                                ->value('name') ?? $oldItem->product_id;
-
-                            throw new \RuntimeException(
-                                "المنتج {$productName} في الفاتورة القديمة غير مرتبط بالفرع الحالي."
-                            );
-                        }
-
-                        if ($oldQuantity > 0) {
-                            \App\Services\StockMovementContext::forDocument($order, fn () => $oldBranchProduct->increment('stock_quantity', $oldQuantity), 'sale_reversal');
-                        } else {
-                            \App\Services\StockMovementContext::forDocument($order, fn () => $oldBranchProduct->decrement('stock_quantity', abs($oldQuantity)), 'sale_reversal');
-                        }
-                    }
+                    app(\App\Services\BranchStockAllocator::class)->restore($order);
 
                     OrderItem::query()
                         ->where('tenant_id', $tenantId)
@@ -2668,7 +2625,11 @@ new class extends Component {
                     $itemQuantity = (float) $item['quantity'];
 
                     if ($itemQuantity > 0) {
-                        \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $itemQuantity));
+                        if (app(DesktopPosConnection::class)->enabled()) {
+                            \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $itemQuantity));
+                        } else {
+                            app(\App\Services\BranchStockAllocator::class)->deduct($order, (int) $item['product_id'], $itemQuantity, $this->unifiedStock, $this->allowNegativeStock);
+                        }
                     } elseif ($itemQuantity < 0) {
                         \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($itemQuantity)));
                     }

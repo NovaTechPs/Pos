@@ -206,6 +206,7 @@ class BranchSyncOperationProcessor
                     $available = (float) BranchProduct::query()
                         ->where('tenant_id', $operation->tenant_id)
                         ->where('product_id', $productId)
+                        ->where('stock_quantity', '>', 0)
                         ->sum('stock_quantity');
                 }
 
@@ -262,7 +263,7 @@ class BranchSyncOperationProcessor
             ]);
 
             if ($quantity > 0) {
-                StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $quantity));
+                app(BranchStockAllocator::class)->deduct($order, (int) $item['product_id'], $quantity, TenantSetting::getBool($operation->tenant_id, 'unified_stock', false), TenantSetting::getBool($operation->tenant_id, 'allow_negative_stock', false));
             } elseif ($quantity < 0) {
                 StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($quantity)));
             }

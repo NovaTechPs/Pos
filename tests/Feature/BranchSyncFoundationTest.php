@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Shift;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\User;
 use App\Services\BranchSyncOperationProcessor;
 use Illuminate\Database\QueryException;
@@ -18,6 +19,22 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+test('central shared stock synchronization consumes local stock then another branch', function (): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    TenantSetting::setBool($tenant->id, 'unified_stock', true);
+    $payload = branchSyncSalePayload($tenant, $branch);
+    $stock = BranchProduct::query()->sole();
+    $stock->update(['stock_quantity' => 1]);
+    $other = Branch::create(['tenant_id' => $tenant->id, 'name' => 'Other warehouse']);
+    $remote = BranchProduct::create(['tenant_id' => $tenant->id, 'branch_id' => $other->id,
+        'product_id' => $stock->product_id, 'stock_quantity' => 10, 'retail_price' => 12.5]);
+    $operation = BranchSyncOperation::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'sale.upsert', 'payload' => $payload]);
+    app(BranchSyncOperationProcessor::class)->process($operation);
+    expect((float) $stock->fresh()->stock_quantity)->toBe(0.0)
+        ->and((float) $remote->fresh()->stock_quantity)->toBe(9.0);
+});
 
 function branchSyncFixtures(): array
 {
