@@ -56,11 +56,11 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertDontSee('Return type');
 });
 
-test('sales return is account-based, uses the customer last sale price, and tracks aggregate return limits', function (): void {
+test('sales return is account-based, uses the customer last sale price, and tracks aggregate return limits', function (string $partyType, float $balance): void {
     $tenant = Tenant::query()->create(['name' => 'متجر مرتجعات المبيعات']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
     $user = returnsTestUser($tenant);
-    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل المرتجع', 'type' => 'customer']);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل المرتجع', 'type' => $partyType]);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'منتج', 'cost_price' => 5]);
     ProductBarcode::query()->create(['tenant_id' => $tenant->id, 'product_id' => $product->id, 'barcode' => 'RET-SKU-1']);
     $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
@@ -85,7 +85,7 @@ test('sales return is account-based, uses the customer last sale price, and trac
         ->set('productSearch', 'RET-SKU-1')->call('addFirstProduct')->assertSet('lines.0.price', 10.0)
         ->set('lines.0.quantity', 2)->call('saveReturn')->assertHasNoErrors();
 
-    expect((float) $stock->fresh()->stock_quantity)->toBe(5.0);
+    expect((float) $stock->fresh()->stock_quantity)->toBe(5.0)->and((float) $customer->fresh()->current_balance)->toBe($balance);
     $return = Order::query()->where('type', 'return')->firstOrFail();
     expect((int) $return->customer_id)->toBe($customer->id)
         ->and($return->original_order_id)->toBeNull()
@@ -94,7 +94,7 @@ test('sales return is account-based, uses the customer last sale price, and trac
 
     $component->call('addProduct', $product->id)->set('lines.0.quantity', 2)->call('saveReturn')
         ->assertSee('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل');
-});
+})->with([['customer', -20.0], ['supplier', 20.0]]);
 
 test('purchase return is supplier-based, uses last supplier cost, updates stock and statement', function (): void {
     $tenant = Tenant::query()->create(['name' => 'متجر مرتجعات المشتريات']);

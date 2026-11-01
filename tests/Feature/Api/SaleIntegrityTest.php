@@ -336,3 +336,10 @@ test('catalog exposes separate local and shared stock only when sharing is enabl
     expect((float) $product['stock_quantity'])->toBe(20.0)
         ->and($product['shared_stock_quantity'])->toBe($enabled ? 25 : null);
 })->with([true, false]);
+
+test('retail can sell to a supplier without changing its classification or balance for a paid sale', function (): void {
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'name' => 'Supplier buyer', 'type' => 'supplier', 'is_active' => true, 'current_balance' => 100]);
+    $payload = array_replace($this->payload, ['customer_id' => $party->id]);
+    $this->postJson('/api/pos/orders', $payload)->assertCreated()->assertJsonPath('order.customer_id', $party->id);
+    expect($party->fresh()->type)->toBe('supplier')->and((float) $party->fresh()->current_balance)->toBe(100.0);
+});

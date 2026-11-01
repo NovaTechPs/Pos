@@ -46,7 +46,7 @@ class VoucherController extends Controller
         $payment = DB::transaction(function () use ($validated, $user, $branchId): Payment {
             $activeShift = ApiShiftLedger::activeForWrite($user->tenant_id, $branchId, $user->id);
             $customer = ! empty($validated['customer_id'])
-                ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'both'])
+                ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])
                     ->where('is_active', true)->lockForUpdate()->findOrFail((int) $validated['customer_id'])
                 : null;
             $payment = Payment::create([
@@ -57,7 +57,7 @@ class VoucherController extends Controller
                 'payment_date' => $validated['payment_date'] ?? now(), 'notes' => $validated['notes'] ?? 'سند قبض نقدي',
             ]);
             if ($customer) {
-                $customer->decrement('current_balance', (float) $validated['amount']);
+                $customer->decrement('current_balance', $customer->saleBalanceDirection() * (float) $validated['amount']);
             }
 
             return $payment;
@@ -78,7 +78,7 @@ class VoucherController extends Controller
         $payment = DB::transaction(function () use ($validated, $user, $branchId): Payment {
             $activeShift = ApiShiftLedger::activeForWrite($user->tenant_id, $branchId, $user->id);
             $supplier = ! empty($validated['supplier_id'])
-                ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['supplier', 'both'])
+                ? Party::query()->where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])
                     ->where('is_active', true)->lockForUpdate()->findOrFail((int) $validated['supplier_id'])
                 : null;
             $payment = Payment::create([
@@ -89,7 +89,7 @@ class VoucherController extends Controller
                 'payment_date' => $validated['payment_date'] ?? now(), 'notes' => $validated['notes'] ?? null,
             ]);
             if ($supplier) {
-                $supplier->decrement('current_balance', (float) $validated['amount']);
+                $supplier->decrement('current_balance', $supplier->purchaseBalanceDirection() * (float) $validated['amount']);
             }
 
             return $payment;

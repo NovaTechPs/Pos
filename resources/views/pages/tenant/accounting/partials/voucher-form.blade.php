@@ -288,7 +288,7 @@
                                         <p class="mt-1 text-sm font-bold text-{{ $accent }}-600">
                                             {{ number_format(
                                                 (float) $selectedParty->current_balance
-                                                - (float) ($amount ?: 0),
+                                                - ($isPayment ? $selectedParty->purchaseBalanceDirection() : $selectedParty->saleBalanceDirection()) * (float) ($amount ?: 0),
                                                 2
                                             ) }}
                                         </p>
@@ -792,7 +792,7 @@
                                     <p class="mt-1 text-base font-bold text-{{ $accent }}-600">
                                         {{ number_format(
                                             (float) $selectedParty->current_balance
-                                            - (float) ($amount ?: 0),
+                                            - ($isPayment ? $selectedParty->purchaseBalanceDirection() : $selectedParty->saleBalanceDirection()) * (float) ($amount ?: 0),
                                             2
                                         ) }}
                                     </p>

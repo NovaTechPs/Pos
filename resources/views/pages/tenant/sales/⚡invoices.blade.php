@@ -253,7 +253,7 @@ new class extends Component {
 
         $customer = Party::query()
             ->where('tenant_id', $tenantId)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find($customerId);
 
@@ -555,7 +555,7 @@ new class extends Component {
         if ($this->selectedCustomerId) {
             $customer = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->find($this->selectedCustomerId);
 
@@ -957,7 +957,7 @@ new class extends Component {
 
             $customerResults = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->when($search !== '', function ($query) use ($search) {
                     $query->where(function ($subQuery) use ($search) {
@@ -975,7 +975,7 @@ new class extends Component {
         if ($tenantId && $this->selectedCustomerId) {
             $selectedCustomer = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->find($this->selectedCustomerId);
         }
 
@@ -1182,7 +1182,7 @@ new class extends Component {
 
                 {{-- العميل --}}
                 <div class="relative lg:col-span-5">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">العميل</label>
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">العميل / المورد</label>
 
                     @if ($selectedCustomer)
                         <div class="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
@@ -1207,7 +1207,7 @@ new class extends Component {
                             x-ref="customerSearch"
                             type="text"
                             wire:model.live.debounce.180ms="customerSearch"
-                            placeholder="ابحث باسم العميل أو الهاتف..."
+                            placeholder="ابحث باسم العميل أو المورد أو الهاتف..."
                             autocomplete="off"
                             class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white"
                         />

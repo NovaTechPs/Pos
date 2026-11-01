@@ -238,7 +238,7 @@ new class extends Component {
 
             ->where('is_active', true)
 
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
 
             ->when(trim($this->partySearch) !== '', function ($query) {
 
@@ -372,7 +372,7 @@ new class extends Component {
 
             ->where('is_active', true)
 
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
 
             ->findOrFail($partyId);
 
@@ -429,7 +429,7 @@ new class extends Component {
 
                 ->where('is_active', true)
 
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
 
                 ->lockForUpdate()
 
@@ -471,9 +471,9 @@ new class extends Component {
 
                         (float) $newParty->current_balance
 
-                        + $oldAmount
+                        + $newParty->saleBalanceDirection() * $oldAmount
 
-                        - $newAmount;
+                        - $newParty->saleBalanceDirection() * $newAmount;
 
                     $newParty->save();
 
@@ -503,7 +503,7 @@ new class extends Component {
 
                         (float) $oldParty->current_balance
 
-                        + $oldAmount;
+                        + $oldParty->saleBalanceDirection() * $oldAmount;
 
                     $oldParty->save();
 
@@ -517,7 +517,7 @@ new class extends Component {
 
                         (float) $newParty->current_balance
 
-                        - $newAmount;
+                        - $newParty->saleBalanceDirection() * $newAmount;
 
                     $newParty->save();
 
@@ -577,7 +577,7 @@ new class extends Component {
 
                     (float) $newParty->current_balance
 
-                    - $newAmount;
+                    - $newParty->saleBalanceDirection() * $newAmount;
 
                 $newParty->save();
 
@@ -672,7 +672,7 @@ new class extends Component {
 
                 (float) $party->current_balance
 
-                + (float) $receipt->amount;
+                + $party->saleBalanceDirection() * (float) $receipt->amount;
 
             $party->save();
 
@@ -936,7 +936,7 @@ new class extends Component {
 
                 'partyResults' => $this->partyResults,
 
-                'partyLabel' => 'العميل',
+                'partyLabel' => 'العميل / المورد',
 
                 'saveMethod' => 'saveReceipt',
 

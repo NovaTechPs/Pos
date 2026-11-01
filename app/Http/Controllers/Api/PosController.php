@@ -198,7 +198,7 @@ class PosController extends Controller
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
-                    ->whereIn('type', ['customer', 'both'])->where('is_active', true)
+                    ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
 
@@ -285,7 +285,7 @@ class PosController extends Controller
         $sellingBranchId = $branchId;
         if ($request->filled('customer_id')) {
             $customer = Party::query()->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])->findOrFail($request->integer('customer_id'));
+                ->whereIn('type', ['customer', 'supplier', 'both'])->findOrFail($request->integer('customer_id'));
             if ($customer->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
                 abort_unless((int) $customer->branch_id === (int) $user->branch_id, 404);
             }
@@ -411,7 +411,7 @@ class PosController extends Controller
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
-                    ->whereIn('type', ['customer', 'both'])->where('is_active', true)
+                    ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
             if ($customer?->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
@@ -508,7 +508,7 @@ class PosController extends Controller
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', round($total - $paid, 2));
+                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $paid, 2));
             }
 
             return $order->load('items.product', 'party');
@@ -566,7 +566,7 @@ class PosController extends Controller
             $customer = null;
             if (! empty($validated['customer_id'])) {
                 $customer = Party::query()->where('tenant_id', $tenantId)
-                    ->whereIn('type', ['customer', 'both'])->where('is_active', true)
+                    ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
 

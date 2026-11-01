@@ -181,7 +181,7 @@ class WholesaleWorkspaceController extends Controller
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', ($customer->type === 'supplier' ? -1 : 1) * round($total - $paid, 2));
+                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $paid, 2));
             }
 
             return $order->load(['items.product', 'party', 'branch'])->setAttribute('payment_method', $validated['payment_method'])->setAttribute('previous_balance', $previousBalance)->setAttribute('current_balance', $customer?->fresh()->current_balance ?? 0);
@@ -288,7 +288,7 @@ class WholesaleWorkspaceController extends Controller
         }
         if ($order->customer_id) {
             $party = Party::where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
-            $party->decrement('current_balance', ($party->type === 'supplier' ? -1 : 1) * round((float) $order->total - (float) $order->paid_amount, 2));
+            $party->decrement('current_balance', $party->saleBalanceDirection() * round((float) $order->total - (float) $order->paid_amount, 2));
         }
         foreach (Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->lockForUpdate()->get() as $payment) {
             $payment->delete();
@@ -334,7 +334,7 @@ class WholesaleWorkspaceController extends Controller
                 $payment = Payment::where('tenant_id', $user->tenant_id)->where('branch_id', $data['branch_id'])->where('type', 'receipt')->whereNull('order_id')->lockForUpdate()->whereKey($data['receipt_id'])->firstOrFail();
                 if ($payment->party_id) {
                     $previousParty = Party::where('tenant_id', $user->tenant_id)->whereKey($payment->party_id)->lockForUpdate()->firstOrFail();
-                    $previousParty->increment('current_balance', ($previousParty->type === 'supplier' ? -1 : 1) * (float) $payment->amount);
+                    $previousParty->increment('current_balance', $previousParty->saleBalanceDirection() * (float) $payment->amount);
                 }
             }
             $party = Party::where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)->lockForUpdate()->whereKey($data['customer_id'])->firstOrFail();
@@ -349,7 +349,7 @@ class WholesaleWorkspaceController extends Controller
                 'shift_id' => $payment->shift_id ?? $shift?->id, 'party_id' => $party->id, 'type' => 'receipt', 'voucher_number' => $number,
                 'amount' => $data['amount'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'], 'notes' => $data['notes'] ?? null]);
             $payment->save();
-            $party->decrement('current_balance', ($party->type === 'supplier' ? -1 : 1) * (float) $data['amount']);
+            $party->decrement('current_balance', $party->saleBalanceDirection() * (float) $data['amount']);
 
             return $payment->load('party')->setAttribute('previous_balance', $previous)->setAttribute('current_balance', $party->fresh()->current_balance);
         });

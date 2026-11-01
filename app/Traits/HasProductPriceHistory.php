@@ -72,7 +72,7 @@ trait HasProductPriceHistory
 
         return [
             'product' => $product,
-            'customers' => DB::table('parties')->where('tenant_id', $tenantId)->whereNull('deleted_at')->whereIn('type', ['customer', 'both'])->orderBy('name')->get(['id', 'name']),
+            'customers' => DB::table('parties')->where('tenant_id', $tenantId)->whereNull('deleted_at')->whereIn('type', ['customer', 'supplier', 'both'])->orderBy('name')->get(['id', 'name']),
             'customerSales' => $this->priceHistoryCustomerId ? (clone $sales)->where('orders.customer_id', $this->priceHistoryCustomerId)->paginate(10, ['*'], 'priceCustomerPage') : null,
             'sales' => $sales->paginate(10, ['*'], 'priceSalesPage'),
             'costs' => $costs->paginate(10, ['*'], 'priceCostsPage'),

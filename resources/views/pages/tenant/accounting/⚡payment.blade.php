@@ -126,7 +126,7 @@ new class extends Component
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->when(trim($this->partySearch) !== '', function ($query) {
                 $search = trim($this->partySearch);
 
@@ -205,7 +205,7 @@ new class extends Component
         $party = Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->findOrFail($partyId);
 
         $this->partyId = $party->id;
@@ -240,7 +240,7 @@ new class extends Component
             $newParty = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
-                ->whereIn('type', ['supplier', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->lockForUpdate()
                 ->findOrFail($validated['partyId']);
 
@@ -261,8 +261,8 @@ new class extends Component
                 if ($oldPartyId === $newParty->id) {
                     $newParty->current_balance =
                         (float) $newParty->current_balance
-                        + $oldAmount
-                        - $newAmount;
+                        + $newParty->purchaseBalanceDirection() * $oldAmount
+                        - $newParty->purchaseBalanceDirection() * $newAmount;
                     $newParty->save();
                 // تغيير المورد
                 } else {
@@ -274,13 +274,13 @@ new class extends Component
                     // إعادة تأثير سند الدفع القديم للمورد القديم
                     $oldParty->current_balance =
                         (float) $oldParty->current_balance
-                        + $oldAmount;
+                        + $oldParty->purchaseBalanceDirection() * $oldAmount;
                     $oldParty->save();
 
                     // تطبيق سند الدفع الجديد على المورد الجديد
                     $newParty->current_balance =
                         (float) $newParty->current_balance
-                        - $newAmount;
+                        - $newParty->purchaseBalanceDirection() * $newAmount;
                     $newParty->save();
                 }
 
@@ -308,7 +308,7 @@ new class extends Component
                 // سند الدفع يقلل رصيد المورد
                 $newParty->current_balance =
                     (float) $newParty->current_balance
-                    - $newAmount;
+                    - $newParty->purchaseBalanceDirection() * $newAmount;
                 $newParty->save();
             }
         });
@@ -366,7 +366,7 @@ new class extends Component
             // إعادة قيمة سند الدفع إلى رصيد المورد
             $party->current_balance =
                 (float) $party->current_balance
-                + (float) $payment->amount;
+                + $party->purchaseBalanceDirection() * (float) $payment->amount;
             $party->save();
 
             $payment->delete();
@@ -514,7 +514,7 @@ new class extends Component
             'showForm' => $showForm,
             'selectedParty' => $this->selectedParty,
             'partyResults' => $this->partyResults,
-            'partyLabel' => 'المورد',
+            'partyLabel' => 'العميل / المورد',
             'saveMethod' => 'savePayment',
             'paymentId' => $paymentId,
             'amount' => $amount,

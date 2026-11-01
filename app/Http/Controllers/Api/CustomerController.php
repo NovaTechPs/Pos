@@ -25,7 +25,7 @@ class CustomerController extends Controller
         $tenantId = $user->tenant_id;
 
         $customers = Party::where('tenant_id', $tenantId)
-            ->whereIn('type', $type === 'customer' ? ['customer', 'both'] : ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->when($user->branch_id && ! $user->isTenantOwner(), function ($query) use ($user): void {
                 $query->where(function ($branchQuery) use ($user): void {

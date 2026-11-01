@@ -254,7 +254,7 @@ new class extends Component {
 
         $supplier = Party::query()
             ->where('tenant_id', $tenantId)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find($supplierId);
 
@@ -556,7 +556,7 @@ new class extends Component {
         if ($this->selectedSupplierId) {
             $supplier = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['supplier', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->find($this->selectedSupplierId);
 
@@ -750,7 +750,7 @@ new class extends Component {
                         ->first();
 
                     if ($oldParty) {
-                        $oldParty->current_balance = (float) $oldParty->current_balance - $oldOutstanding;
+                        $oldParty->current_balance = (float) $oldParty->current_balance - $oldParty->purchaseBalanceDirection() * $oldOutstanding;
                         $oldParty->save();
                     }
                 }
@@ -763,7 +763,7 @@ new class extends Component {
                         ->first();
 
                     if ($supplier) {
-                        $supplier->current_balance = (float) $supplier->current_balance + $newOutstanding;
+                        $supplier->current_balance = (float) $supplier->current_balance + $supplier->purchaseBalanceDirection() * $newOutstanding;
                         $supplier->save();
                     }
                 }
@@ -1106,7 +1106,7 @@ new class extends Component {
 
             $supplierResults = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['supplier', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->when($search !== '', function ($query) use ($search) {
                     $query->where(function ($subQuery) use ($search) {
@@ -1124,7 +1124,7 @@ new class extends Component {
         if ($tenantId && $this->selectedSupplierId) {
             $selectedSupplier = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['supplier', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->find($this->selectedSupplierId);
         }
 
@@ -1244,7 +1244,7 @@ new class extends Component {
 
             <div class="grid gap-3 lg:grid-cols-12">
                 <div class="relative lg:col-span-4">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">المورد</label>
+                    <label class="mb-1.5 block text-xs font-black text-slate-600">العميل / المورد</label>
                     @if ($selectedSupplier)
                         <div class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
                             <div class="min-w-0">
@@ -1254,7 +1254,7 @@ new class extends Component {
                             <button type="button" wire:click="clearSupplier" class="rounded-lg px-2 py-1 text-xs font-black text-indigo-700 hover:bg-indigo-100">تغيير</button>
                         </div>
                     @else
-                        <input id="supplier-search-input" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم المورد أو الهاتف..." autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
+                        <input id="supplier-search-input" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم العميل أو المورد أو الهاتف..." autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
                         @if (trim($supplierSearch) !== '')
                             <div class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5" x-ref="supplierResults">

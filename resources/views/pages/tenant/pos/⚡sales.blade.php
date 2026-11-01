@@ -1894,7 +1894,7 @@ new class extends Component {
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($q) use ($search): void {
@@ -1920,7 +1920,7 @@ new class extends Component {
         }
         $customer = Party::query()
             ->where('tenant_id', $tenantId)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find($customerId);
 
@@ -1956,7 +1956,7 @@ new class extends Component {
 
         $customer = Party::query()
             ->where('tenant_id', $this->tenantId())
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find($this->selectedCustomerId);
 
@@ -1987,7 +1987,7 @@ new class extends Component {
 
         $customer = Party::query()
             ->where('tenant_id', $this->tenantId())
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->findOrFail($this->selectedCustomerId);
 
@@ -2411,7 +2411,7 @@ new class extends Component {
         if ($this->selectedCustomerId) {
             $customer = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->find($this->selectedCustomerId);
 

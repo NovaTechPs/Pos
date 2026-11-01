@@ -118,7 +118,7 @@ new class extends Component {
             return;
         }
 
-        $types = $this->kind === 'sale' ? ['customer', 'both'] : ['supplier', 'both'];
+        $types = ['customer', 'supplier', 'both'];
         $this->partyResults = Party::query()->where('tenant_id', $this->tenantId())->whereIn('type', $types)
             ->where('is_active', true)->where(function ($query) use ($search): void {
                 $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
@@ -127,7 +127,7 @@ new class extends Component {
 
     public function selectParty(int $partyId): void
     {
-        $types = $this->kind === 'sale' ? ['customer', 'both'] : ['supplier', 'both'];
+        $types = ['customer', 'supplier', 'both'];
         $party = Party::query()->where('tenant_id', $this->tenantId())->whereIn('type', $types)
             ->where('is_active', true)->find($partyId);
 
@@ -357,7 +357,7 @@ new class extends Component {
             return;
         }
 
-        $partyTypes = $this->kind === 'sale' ? ['customer', 'both'] : ['supplier', 'both'];
+        $partyTypes = ['customer', 'supplier', 'both'];
         $party = Party::query()->where('tenant_id', $tenantId)->whereIn('type', $partyTypes)
             ->where('is_active', true)->find($this->selectedPartyId);
         if (!$party) {
@@ -428,6 +428,8 @@ new class extends Component {
                         ]);
                         \App\Services\StockMovementContext::forDocument($return, fn () => $line['stock']->increment('stock_quantity', $line['quantity']));
                     }
+                    $lockedParty->current_balance = (float) $lockedParty->current_balance - $lockedParty->saleBalanceDirection() * $total;
+                    $lockedParty->save();
                 } else {
                     $returnId = DB::table('purchase_returns')->insertGetId([
                         'tenant_id' => $tenantId, 'branch_id' => $branchId, 'purchase_id' => null,
@@ -446,7 +448,7 @@ new class extends Component {
                         \App\Services\StockMovementContext::reference('purchase_return', $returnId, fn () => $line['stock']->decrement('stock_quantity', $line['quantity']));
                     }
 
-                    $lockedParty->current_balance = (float) $lockedParty->current_balance - $total;
+                    $lockedParty->current_balance = (float) $lockedParty->current_balance - $lockedParty->purchaseBalanceDirection() * $total;
                     $lockedParty->save();
                 }
             });

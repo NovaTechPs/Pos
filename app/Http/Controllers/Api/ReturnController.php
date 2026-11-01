@@ -153,8 +153,9 @@ class ReturnController extends Controller
             $credit = min($total, $outstanding);
             $cashRefund = round($total - $credit, 2);
             if ($credit > 0 && $originalOrder->customer_id) {
-                Party::query()->where('tenant_id', $tenantId)->whereKey($originalOrder->customer_id)
-                    ->lockForUpdate()->firstOrFail()->decrement('current_balance', $credit);
+                $party = Party::query()->where('tenant_id', $tenantId)->whereKey($originalOrder->customer_id)
+                    ->lockForUpdate()->firstOrFail();
+                $party->decrement('current_balance', $party->saleBalanceDirection() * $credit);
             }
 
             $returnOrder = Order::create([

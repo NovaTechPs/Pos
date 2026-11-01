@@ -128,6 +128,16 @@ class Party extends Model
     |--------------------------------------------------------------------------
     */
 
+    public function saleBalanceDirection(): int
+    {
+        return $this->type === 'supplier' ? -1 : 1;
+    }
+
+    public function purchaseBalanceDirection(): int
+    {
+        return $this->type === 'customer' ? -1 : 1;
+    }
+
     /**
      * @param  Builder<static>  $query
      * @return Builder<static>

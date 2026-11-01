@@ -40,7 +40,7 @@ class BranchSyncCatalogController extends Controller
                     ->where('barcode', $validated['barcode'])->select('product_id'));
             }
         } else {
-            $query->whereIn('type', ['customer', 'both'])->where('is_active', true)
+            $query->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                 ->where(fn ($query) => $query->whereNull('branch_id')->orWhere('branch_id', $device->branch_id));
         }
         if (isset($validated['ids'])) {
@@ -95,7 +95,7 @@ class BranchSyncCatalogController extends Controller
                 ->where('tenant_id', $device->tenant_id)
                 ->where('branch_id', $device->branch_id)->select('product_id'));
         } else {
-            $query->whereIn('type', ['customer', 'both'])
+            $query->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where(fn ($query) => $query->whereNull('branch_id')->orWhere('branch_id', $device->branch_id));
         }
 

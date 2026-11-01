@@ -282,7 +282,7 @@ new class extends Component {
 
         $customer = Party::query()
             ->where('tenant_id', $tenantId)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find($customerId);
 
@@ -881,7 +881,7 @@ new class extends Component {
                 if ($this->selectedCustomerId) {
                     $customer = Party::query()
                         ->where('tenant_id', $tenantId)
-                        ->whereIn('type', ['customer', 'both'])
+                        ->whereIn('type', ['customer', 'supplier', 'both'])
                         ->where('is_active', true)
                         ->lockForUpdate()
                         ->find($this->selectedCustomerId);
@@ -894,7 +894,7 @@ new class extends Component {
                 if ($oldCustomerId && (!$customer || (int) $customer->id !== $oldCustomerId)) {
                     $oldCustomer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($oldCustomerId);
                     if ($oldCustomer) {
-                        $oldCustomer->current_balance = round((float) $oldCustomer->current_balance - $oldEffect, 2);
+                        $oldCustomer->current_balance = round((float) $oldCustomer->current_balance - $oldCustomer->saleBalanceDirection() * $oldEffect, 2);
                         $oldCustomer->save();
                     }
                 }
@@ -1036,10 +1036,10 @@ new class extends Component {
                 if ($customer) {
                     if ($oldCustomerId && $oldCustomerId === (int) $customer->id) {
                         // ألغينا أثر الفاتورة القديمة من نفس الرصيد قبل حساب الأثر الجديد.
-                        $base = round((float) $customer->current_balance - $oldEffect, 2);
-                        $customer->current_balance = round($base + $newEffect, 2);
+                        $base = round((float) $customer->current_balance - $customer->saleBalanceDirection() * $oldEffect, 2);
+                        $customer->current_balance = round($base + $customer->saleBalanceDirection() * $newEffect, 2);
                     } else {
-                        $customer->current_balance = round((float) $customer->current_balance + $newEffect, 2);
+                        $customer->current_balance = round((float) $customer->current_balance + $customer->saleBalanceDirection() * $newEffect, 2);
                     }
                     $customer->save();
                     $currentBalance = (float) $customer->current_balance;
@@ -1169,7 +1169,7 @@ new class extends Component {
         $customer = $this->selectedCustomerId
             ? Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->find($this->selectedCustomerId)
             : null;
 
@@ -1283,7 +1283,7 @@ new class extends Component {
         if ($this->selectedCustomerId) {
             $customer = Party::query()
                 ->where('tenant_id', $tenantId)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->where('is_active', true)
                 ->find($this->selectedCustomerId);
 
@@ -1498,7 +1498,7 @@ new class extends Component {
                     $customer = Party::query()
                         ->whereKey($customer->id)
                         ->where('tenant_id', $tenantId)
-                        ->whereIn('type', ['customer', 'both'])
+                        ->whereIn('type', ['customer', 'supplier', 'both'])
                         ->where('is_active', true)
                         ->lockForUpdate()
                         ->first();
@@ -1702,7 +1702,7 @@ new class extends Component {
                     |--------------------------------------------------------------------------
                     */
 
-                    $currentBalance = round($previousBalance + $total - $paid, 2);
+                    $currentBalance = round($previousBalance + $customer->saleBalanceDirection() * ($total - $paid), 2);
 
                     $customer->update([
                         'current_balance' => $currentBalance,
@@ -1956,7 +1956,7 @@ new class extends Component {
 
         $customer = Party::query()
             ->where('tenant_id', $this->tenantId())
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->find($this->selectedCustomerId);
 
         return $this->customerBalance($customer);
@@ -2021,7 +2021,7 @@ new class extends Component {
             $customer = Party::query()
                 ->where('tenant_id', $this->tenantId())
                 ->where('is_active', true)
-                ->whereIn('type', ['customer', 'both'])
+                ->whereIn('type', ['customer', 'supplier', 'both'])
                 ->find($this->receiptPartyId);
 
             $this->receiptPartySearch = $customer?->name ?? '';
@@ -2047,7 +2047,7 @@ new class extends Component {
         $party = Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->find($partyId);
 
         if (!$party) {
@@ -2074,7 +2074,7 @@ new class extends Component {
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->when($search !== '', function ($query) use ($search) {
                 $like = "%{$search}%";
 
@@ -2236,7 +2236,7 @@ new class extends Component {
                 $party = Party::query()
                     ->where('tenant_id', $tenantId)
                     ->where('is_active', true)
-                    ->whereIn('type', ['customer', 'both'])
+                    ->whereIn('type', ['customer', 'supplier', 'both'])
                     ->lockForUpdate()
                     ->find($validated['receiptPartyId']);
 
@@ -2264,7 +2264,7 @@ new class extends Component {
                     if ($oldPartyId && $oldPartyId !== (int) $party->id) {
                         $oldParty = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($oldPartyId);
                         if ($oldParty) {
-                            $oldParty->current_balance = round((float) $oldParty->current_balance + $oldAmount, 2);
+                            $oldParty->current_balance = round((float) $oldParty->current_balance + $oldParty->saleBalanceDirection() * $oldAmount, 2);
                             $oldParty->save();
                         }
                     }
@@ -2281,9 +2281,9 @@ new class extends Component {
 
                     if ($oldPartyId === (int) $party->id) {
                         // نعيد الأثر القديم ثم نطبق الأثر الجديد.
-                        $party->current_balance = round((float) $party->current_balance + $oldAmount - $amount, 2);
+                        $party->current_balance = round((float) $party->current_balance + $party->saleBalanceDirection() * ($oldAmount - $amount), 2);
                     } else {
-                        $party->current_balance = round((float) $party->current_balance - $amount, 2);
+                        $party->current_balance = round((float) $party->current_balance - $party->saleBalanceDirection() * $amount, 2);
                     }
                     $party->save();
                     $remainingBalance = round((float) $party->current_balance, 2);
@@ -2303,7 +2303,7 @@ new class extends Component {
                         'payment_date' => $validated['receiptPaymentDate'],
                     ]);
 
-                    $party->current_balance = round((float) $party->current_balance - $amount, 2);
+                    $party->current_balance = round((float) $party->current_balance - $party->saleBalanceDirection() * $amount, 2);
                     $party->save();
                     $remainingBalance = round((float) $party->current_balance, 2);
                 }
@@ -2468,7 +2468,7 @@ new class extends Component {
 
         $customers = Party::query()
             ->where('tenant_id', $tenantId ?: 0)
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
 
             ->when($customerTerm !== '', function ($query) use ($customerTerm) {

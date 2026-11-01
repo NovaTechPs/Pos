@@ -18,6 +18,7 @@ use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
@@ -212,7 +213,9 @@ test('stock movement reports preserve before after and period totals and invento
     $stock = BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 10, 'alert_quantity' => 5, 'retail_price' => 20]);
     $stock->decrement('stock_quantity', 2.5);
     $stock->increment('stock_quantity', 1);
-    $filters = array_replace($this->filters, ['from' => '2026-10-01', 'to' => '2026-10-31']);
+    // Stock ledger triggers use the database clock rather than Carbon's test clock.
+    $databaseDate = (string) DB::scalar('SELECT CURRENT_DATE');
+    $filters = array_replace($this->filters, ['from' => $databaseDate, 'to' => $databaseDate]);
     $service = new ReportingService($this->user);
     $movement = $service->prepare('movements', $filters);
     $rows = $movement['query']->get();

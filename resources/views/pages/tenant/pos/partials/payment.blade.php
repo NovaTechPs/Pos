@@ -28,7 +28,7 @@
     if ($selectedCustomerId) {
         $whatsappCustomer = \App\Models\Party::query()
             ->where('tenant_id', $this->tenantId())
-            ->whereIn('type', ['customer', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
             ->find((int) $selectedCustomerId);
 
