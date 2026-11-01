@@ -10,9 +10,31 @@ use App\Models\TenantSetting;
 use App\Models\User;
 use App\Services\BranchStockAllocator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
+
+test('duplicate checkout lines use bounded stock reads instead of querying per line', function (): void {
+    $component = Livewire::test('pages::tenant.pos.sales');
+    $cart = [];
+    for ($i = 0; $i < 10; $i++) {
+        $cart['line_'.$i] = ['id' => $this->product->id, 'name' => $this->product->name,
+            'quantity' => 1, 'price' => 10, 'cost_price' => 4, 'subtotal' => 10];
+    }
+    $component->set('cart', $cart)->set('paid_amount', 100);
+    $stockReads = 0;
+    DB::listen(function ($query) use (&$stockReads): void {
+        if (preg_match('/^select .*from ["`]branch_products["`]/i', $query->sql)) {
+            $stockReads++;
+        }
+    });
+    $component->call('checkout')->assertSet('errorMessage', null);
+    $checkoutReads = $stockReads;
+    expect((float) $this->local->fresh()->stock_quantity)->toBe(0.0)
+        ->and((float) $this->remote->fresh()->stock_quantity)->toBe(2.0)
+        ->and($checkoutReads)->toBeLessThanOrEqual(2);
+});
 
 beforeEach(function (): void {
     $this->tenant = Tenant::create(['name' => 'Shared stock']);

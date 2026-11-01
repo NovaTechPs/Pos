@@ -2434,6 +2434,12 @@ new class extends Component {
                         ->delete();
                 }
 
+                $checkoutIds = array_values(array_unique(array_map(fn ($item) => (int) $item['id'], $this->cart)));
+                $checkoutProducts = Product::query()->where('tenant_id', $tenantId)->whereIn('id', $checkoutIds)->get()->keyBy('id');
+                $checkoutStocks = BranchProduct::query()->where('tenant_id', $tenantId)->whereIn('product_id', $checkoutIds)
+                    ->when(!$this->unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
+                    ->orderBy('product_id')->orderBy('id')->lockForUpdate()->get()->groupBy('product_id');
+
                 $validatedItems = [];
                 $saleQuantities = [];
                 $subtotal = 0;
@@ -2457,7 +2463,7 @@ new class extends Component {
                         throw new \RuntimeException('لا يمكن إضافة صنف مرتجع إلى فاتورة بيع. افتح فاتورة جديدة إذا أردت الإرجاع.');
                     }
 
-                    $product = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->first();
+                    $product = $checkoutProducts->get($productId);
 
                     if (!$product) {
                         throw new \RuntimeException('أحد المنتجات لم يعد متاحاً.');
@@ -2486,7 +2492,8 @@ new class extends Component {
                             $branchId,
                             $productId,
                             $saleQuantities[$productId],
-                            $product->name
+                            $product->name,
+                            $checkoutStocks->get($productId, collect())
                         );
                     } elseif (!$this->unifiedStock) {
                         $branchProduct = BranchProduct::query()
@@ -2633,12 +2640,7 @@ new class extends Component {
                         'discount' => 0,
                     ]);
 
-                    $branchProduct = BranchProduct::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $branchId)
-                        ->where('product_id', $item['product_id'])
-                        ->lockForUpdate()
-                        ->first();
+                    $branchProduct = $checkoutStocks->get($item['product_id'], collect())->firstWhere('branch_id', $branchId);
 
                     if (!$branchProduct) {
                         throw new \RuntimeException(
@@ -2651,12 +2653,14 @@ new class extends Component {
                     if ($itemQuantity > 0) {
                         if (app(DesktopPosConnection::class)->enabled()) {
                             \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->decrement('stock_quantity', $itemQuantity));
-                        } else {
-                            app(\App\Services\BranchStockAllocator::class)->deduct($order, (int) $item['product_id'], $itemQuantity, $this->unifiedStock, $this->allowNegativeStock);
                         }
                     } elseif ($itemQuantity < 0) {
                         \App\Services\StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($itemQuantity)));
                     }
+                }
+
+                if (!app(DesktopPosConnection::class)->enabled()) {
+                    app(\App\Services\BranchStockAllocator::class)->deductMany($order, $saleQuantities, $this->unifiedStock, $this->allowNegativeStock);
                 }
 
                 $voucherNumber = 'PAY-' . $order->invoice_number;
@@ -2762,9 +2766,10 @@ new class extends Component {
         int $currentBranchId,
         int $productId,
         float $quantity,
-        string $productName
+        string $productName,
+        ?\Illuminate\Support\Collection $lockedStockRows = null
     ): void {
-        $branchProducts = BranchProduct::query()
+        $branchProducts = $lockedStockRows ?? BranchProduct::query()
             ->where('tenant_id', $tenantId)
             ->where('product_id', $productId)
             ->lockForUpdate()
@@ -3577,56 +3582,53 @@ new class extends Component {
         }, 'invoice-' . $order->invoice_number . '.pdf');
     }
 
-    /** @return array<int, float|null> */
-    private function cartRemainingStock(bool $localOnly = false): array
+    /** @return array{local: array<int, float|null>, shared: array<int, float|null>} */
+    private function cartStockPreviews(): array
     {
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
+        $result = ['local' => [], 'shared' => []];
         if (!$tenantId || !$branchId || $this->cart === []) {
-            return [];
+            return $result;
         }
         $quantities = [];
         foreach ($this->cart as $item) {
             $productId = (int) $item['id'];
             $quantities[$productId] = ($quantities[$productId] ?? 0) + (float) $item['quantity'];
         }
-        $stock = BranchProduct::query()->where('tenant_id', $tenantId)
+        $stocks = BranchProduct::query()->where('tenant_id', $tenantId)
             ->whereIn('product_id', array_keys($quantities))
-            ->when(!$this->unifiedStock || $localOnly, fn ($query) => $query->where('branch_id', $branchId))
-            ->selectRaw('product_id, SUM(stock_quantity) as available_quantity')->groupBy('product_id')
-            ->pluck('available_quantity', 'product_id')->all();
-        if (!$localOnly && $this->unifiedStock && app(DesktopPosConnection::class)->enabled()) {
-            $shared = json_decode((string) TenantSetting::get($tenantId, 'desktop_shared_stock_'.$branchId, '{}'), true) ?: [];
-            foreach (array_keys($quantities) as $productId) {
-                if (isset($shared[$productId]) && is_numeric($shared[$productId])) {
-                    $stock[$productId] = (float) $shared[$productId];
-                }
-            }
+            ->when(!$this->unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
+            ->selectRaw('product_id, SUM(stock_quantity) as total_quantity, SUM(CASE WHEN branch_id = ? THEN stock_quantity ELSE 0 END) as local_quantity, SUM(CASE WHEN branch_id = ? THEN 1 ELSE 0 END) as local_records', [$branchId, $branchId])
+            ->groupBy('product_id')->get()->keyBy('product_id');
+        $remote = [];
+        if ($this->unifiedStock && app(DesktopPosConnection::class)->enabled()) {
+            $remote = json_decode((string) TenantSetting::get($tenantId, 'desktop_shared_stock_'.$branchId, '{}'), true) ?: [];
         }
         $original = [];
+        $localOriginal = [];
         if ($this->editingInvoiceId && $this->invoiceEditMode && Order::query()->where('tenant_id', $tenantId)
             ->where('branch_id', $branchId)->whereKey($this->editingInvoiceId)->where('status', 'completed')->exists()) {
             $original = OrderItem::query()->where('tenant_id', $tenantId)->where('order_id', $this->editingInvoiceId)
-                ->selectRaw('product_id, SUM(quantity) as original_quantity')->groupBy('product_id')
-                ->pluck('original_quantity', 'product_id')->all();
+                ->selectRaw('product_id, SUM(quantity) as quantity')->groupBy('product_id')->pluck('quantity', 'product_id')->all();
+            $localOriginal = $this->unifiedStock
+                ? DB::table('stock_movements')->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('source_id', $this->editingInvoiceId)->whereIn('source_type', ['order', 'sale_reversal'])
+                    ->selectRaw('product_id, -SUM(quantity) as quantity')->groupBy('product_id')->pluck('quantity', 'product_id')->all()
+                : $original;
         }
-        if ($localOnly && $this->unifiedStock && $this->editingInvoiceId && $this->invoiceEditMode) {
-            $original = DB::table('stock_movements')->where('tenant_id', $tenantId)
-                ->where('branch_id', $branchId)->where('source_id', $this->editingInvoiceId)
-                ->whereIn('source_type', ['order', 'sale_reversal'])
-                ->selectRaw('product_id, -SUM(quantity) as quantity')->groupBy('product_id')->pluck('quantity', 'product_id')->all();
-        }
-        $remaining = [];
+        $locked = $this->invoiceIsLocked();
         foreach ($quantities as $productId => $quantity) {
-            $base = (float) ($stock[$productId] ?? 0) + (float) ($original[$productId] ?? 0);
-            $deduction = $this->invoiceIsLocked() ? 0 : $quantity;
-            if ($localOnly && $this->unifiedStock && $deduction > 0) {
-                $deduction = min(max(0, $base), $deduction);
-            }
-            $remaining[$productId] = isset($stock[$productId]) ? round($base - $deduction, 3) : null;
+            $stock = $stocks->get($productId);
+            $deduction = $locked ? 0 : $quantity;
+            $base = (float) ($stock?->local_quantity ?? 0) + (float) ($localOriginal[$productId] ?? 0);
+            $localDeduction = $this->unifiedStock && $deduction > 0 ? min(max(0, $base), $deduction) : $deduction;
+            $result['local'][$productId] = $stock && $stock->local_records > 0 ? round($base - $localDeduction, 3) : null;
+            $total = isset($remote[$productId]) && is_numeric($remote[$productId]) ? (float) $remote[$productId] : $stock?->total_quantity;
+            $result['shared'][$productId] = $total !== null ? round((float) $total + (float) ($original[$productId] ?? 0) - $deduction, 3) : null;
         }
 
-        return $remaining;
+        return $result;
     }
 
     public function render()
@@ -3651,9 +3653,10 @@ new class extends Component {
                     })->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
             }
         }
+        $stockPreviews = $this->cartStockPreviews();
         return $this->view(['branches' => $branches, 'missingBarcodeProducts' => $missingBarcodeProducts,
-            'remainingStock' => $this->cartRemainingStock(),
-            'localRemainingStock' => $this->unifiedStock ? $this->cartRemainingStock(true) : [],
+            'remainingStock' => $stockPreviews['shared'],
+            'localRemainingStock' => $stockPreviews['local'],
         ])->layout('layouts::pos');
     }
 };

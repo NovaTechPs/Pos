@@ -11,32 +11,44 @@ class BranchStockAllocator
 {
     public function deduct(Order $order, int $productId, float $quantity, bool $shared, bool $allowNegative): void
     {
-        DB::transaction(function () use ($order, $productId, $quantity, $shared, $allowNegative): void {
-            $rows = BranchProduct::query()->where('tenant_id', $order->tenant_id)
-                ->where('product_id', $productId)
+        $this->deductMany($order, [$productId => $quantity], $shared, $allowNegative);
+    }
+
+    /** @param array<int, float> $quantities */
+    public function deductMany(Order $order, array $quantities, bool $shared, bool $allowNegative): void
+    {
+        if ($quantities === []) {
+            return;
+        }
+        DB::transaction(function () use ($order, $quantities, $shared, $allowNegative): void {
+            $stocks = BranchProduct::query()->where('tenant_id', $order->tenant_id)
+                ->whereIn('product_id', array_keys($quantities))
                 ->when(! $shared, fn ($query) => $query->where('branch_id', $order->branch_id))
-                ->orderBy('id')->lockForUpdate()->get();
-            $local = $rows->firstWhere('branch_id', $order->branch_id);
-            if (! $local) {
-                throw new DomainException('الصنف غير مرتبط بفرع البيع.');
-            }
-            $available = (float) $rows->sum(fn ($row) => max(0, (float) $row->stock_quantity));
-            if (! $allowNegative && $quantity > $available + 0.000001) {
-                throw new DomainException('المخزون غير كافٍ لإتمام البيع.');
-            }
-            $remaining = $quantity;
-            foreach ($rows->sortByDesc(fn ($row) => (int) $row->branch_id === (int) $order->branch_id) as $row) {
-                if ($remaining <= 0.000001) {
-                    break;
+                ->orderBy('product_id')->orderBy('id')->lockForUpdate()->get()->groupBy('product_id');
+            foreach ($quantities as $productId => $quantity) {
+                $rows = $stocks->get($productId, collect());
+                $local = $rows->firstWhere('branch_id', $order->branch_id);
+                if (! $local) {
+                    throw new DomainException('الصنف غير مرتبط بفرع البيع.');
                 }
-                $take = min($remaining, max(0, (float) $row->stock_quantity));
-                if ($take > 0) {
-                    StockMovementContext::forDocument($order, fn () => $row->decrement('stock_quantity', $take));
-                    $remaining -= $take;
+                $available = (float) $rows->sum(fn ($row) => max(0, (float) $row->stock_quantity));
+                if (! $allowNegative && $quantity > $available + 0.000001) {
+                    throw new DomainException('المخزون غير كافٍ لإتمام البيع.');
                 }
-            }
-            if ($remaining > 0.000001 && $allowNegative) {
-                StockMovementContext::forDocument($order, fn () => $local->decrement('stock_quantity', $remaining));
+                $remaining = $quantity;
+                foreach ($rows->sortByDesc(fn ($row) => (int) $row->branch_id === (int) $order->branch_id) as $row) {
+                    if ($remaining <= 0.000001) {
+                        break;
+                    }
+                    $take = min($remaining, max(0, (float) $row->stock_quantity));
+                    if ($take > 0) {
+                        StockMovementContext::forDocument($order, fn () => $row->decrement('stock_quantity', $take));
+                        $remaining -= $take;
+                    }
+                }
+                if ($remaining > 0.000001 && $allowNegative) {
+                    StockMovementContext::forDocument($order, fn () => $local->decrement('stock_quantity', $remaining));
+                }
             }
         });
     }
