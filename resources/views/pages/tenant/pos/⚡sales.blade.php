@@ -2910,7 +2910,18 @@ new class extends Component {
                     ->lockForUpdate()
                     ->first();
 
-                if ($paid > 0) {
+                // Delivery fees remain part of the invoice total and the customer's paid
+                // balance, but are collected by the delivery company.  Therefore they
+                // must not create a cash/bank movement in the cashier's shift.
+                $shiftReceiptAmount = $this->roundMoney(max(0, $paid - $deliveryFee));
+
+                if ($shiftReceiptAmount > 0) {
+                    $paymentNotes = 'سند قبض للفاتورة #' . $order->invoice_number;
+
+                    if ($deliveryFee > 0) {
+                        $paymentNotes .= ' (لا يشمل رسوم التوصيل: ' . number_format($deliveryFee, 2, '.', '') . ')';
+                    }
+
                     $paymentData = [
                         'tenant_id' => $tenantId,
                         'branch_id' => $branchId,
@@ -2919,10 +2930,10 @@ new class extends Component {
                         'party_id' => $customer?->id,
                         'type' => $invoiceType === 'return' ? 'payment' : 'receipt',
                         'voucher_number' => $voucherNumber,
-                        'amount' => $paid,
+                        'amount' => $shiftReceiptAmount,
                         'payment_method' => $this->payment_method,
                         'order_id' => $order->id,
-                        'notes' => 'سند قبض للفاتورة #' . $order->invoice_number,
+                        'notes' => $paymentNotes,
                         'payment_date' => now(),
                         'updated_at' => now(),
                     ];

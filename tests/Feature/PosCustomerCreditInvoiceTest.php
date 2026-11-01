@@ -89,3 +89,43 @@ test('customer checkout saves a sales invoice and only its actual payment enters
     'partial offline' => [4.0, 'partial', 'edge'],
     'partial card payment' => [4.0, 'partial', 'central', 'card'],
 ]);
+
+test('delivery notes are saved on the invoice while the delivery fee stays out of the shift', function (): void {
+    config(['branch-sync.mode' => 'central']);
+    $tenant = Tenant::query()->create(['name' => 'متجر التوصيل']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $shift = Shift::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'opening_cash' => 50, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف توصيل', 'cost_price' => 4]);
+    BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 10]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('selectInlineProduct', $product->id)
+        ->set('delivery_fee', 5)
+        ->set('deliveryCustomerName', 'عميل التوصيل')
+        ->set('deliveryCustomerPhone', '0599999999')
+        ->set('deliveryCustomerAddress', 'عنوان التوصيل')
+        ->set('deliveryNotes', 'اتصل قبل الوصول')
+        ->set('paid_amount', 15)
+        ->call('checkout')
+        ->assertSet('errorMessage', null);
+
+    $order = Order::query()->sole();
+    $payment = Payment::query()->sole();
+
+    expect((float) $order->total)->toBe(15.0)
+        ->and((float) $order->delivery_fee)->toBe(5.0)
+        ->and((float) $order->paid_amount)->toBe(15.0)
+        ->and($order->notes)->toContain('ملاحظة التوصيل: اتصل قبل الوصول')
+        ->and((float) $payment->amount)->toBe(10.0)
+        ->and($payment->notes)->toContain('لا يشمل رسوم التوصيل: 5.00');
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->set('cart', [])
+        ->call('prepareCloseShift')
+        ->assertSet('shift_cash_receipts', 10.0)
+        ->assertSet('shift_expected_cash', 60.0);
+
+    expect((int) $payment->shift_id)->toBe($shift->id);
+});
