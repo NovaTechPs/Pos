@@ -97,6 +97,12 @@ new class extends Component {
     public float $discount_amount = 0;
     public string $discount_type = 'fixed';
     public float $delivery_fee = 0;
+    public bool $showDeliveryDetailsModal = false;
+    public string $pendingDeliveryAction = 'checkout';
+    public string $deliveryCustomerName = '';
+    public string $deliveryCustomerPhone = '';
+    public string $deliveryCustomerAddress = '';
+    public string $deliveryNotes = '';
     public ?float $custom_final_total = null;
     public array $categories = [];
     public ?int $selectedCategoryId = null;
@@ -437,7 +443,7 @@ new class extends Component {
     private function draftFields(): array
     {
         return ['cart', 'paid_amount', 'payment_method', 'notes', 'selectedCustomerId', 'discount_amount',
-            'discount_type', 'delivery_fee', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
+            'discount_type', 'delivery_fee', 'deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress', 'deliveryNotes', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
             'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts'];
     }
 
@@ -1621,6 +1627,12 @@ new class extends Component {
         $this->discount_amount = 0;
         $this->discount_type = 'fixed';
         $this->delivery_fee = 0;
+        $this->showDeliveryDetailsModal = false;
+        $this->pendingDeliveryAction = 'checkout';
+        $this->deliveryCustomerName = '';
+        $this->deliveryCustomerPhone = '';
+        $this->deliveryCustomerAddress = '';
+        $this->deliveryNotes = '';
         $this->custom_final_total = null;
         $this->currentInvoiceId = null;
         $this->editingInvoiceId = null;
@@ -1697,6 +1709,10 @@ new class extends Component {
             'discount_amount' => $this->discount_amount,
             'discount_type' => $this->discount_type,
             'delivery_fee' => $this->delivery_fee,
+            'delivery_customer_name' => $this->deliveryCustomerName,
+            'delivery_customer_phone' => $this->deliveryCustomerPhone,
+            'delivery_customer_address' => $this->deliveryCustomerAddress,
+            'delivery_notes' => $this->deliveryNotes,
             'custom_final_total' => $this->custom_final_total,
             'is_return_mode' => $this->isReturnMode,
             'notes' => $this->notes,
@@ -1725,6 +1741,10 @@ new class extends Component {
         $this->discount_amount = (float) ($held['discount_amount'] ?? 0);
         $this->discount_type = $held['discount_type'] ?? 'fixed';
         $this->delivery_fee = (float) ($held['delivery_fee'] ?? 0);
+        $this->deliveryCustomerName = (string) ($held['delivery_customer_name'] ?? '');
+        $this->deliveryCustomerPhone = (string) ($held['delivery_customer_phone'] ?? '');
+        $this->deliveryCustomerAddress = (string) ($held['delivery_customer_address'] ?? '');
+        $this->deliveryNotes = (string) ($held['delivery_notes'] ?? '');
         $this->custom_final_total = isset($held['custom_final_total']) ? (float) $held['custom_final_total'] : null;
         $this->isReturnMode = (bool) ($held['is_return_mode'] ?? false);
         $this->notes = $held['notes'] ?? '';
@@ -1852,6 +1872,10 @@ new class extends Component {
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
+        $this->deliveryCustomerName = (string) ($invoice->customer_name ?? '');
+        $this->deliveryCustomerPhone = (string) ($invoice->customer_phone ?? '');
+        $this->deliveryCustomerAddress = (string) ($invoice->customer_address ?? '');
+        $this->deliveryNotes = '';
         $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
         $this->notes = $invoice->notes ?? '';
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
@@ -2192,6 +2216,65 @@ new class extends Component {
         );
     }
 
+    public function openDeliveryDetails(string $action = 'checkout'): void
+    {
+        $this->pendingDeliveryAction = $action;
+
+        if ($this->selectedCustomerId && ($this->deliveryCustomerName === '' || $this->deliveryCustomerPhone === '' || $this->deliveryCustomerAddress === '')) {
+            $customer = Party::query()
+                ->where('tenant_id', $this->tenantId())
+                ->whereKey($this->selectedCustomerId)
+                ->first();
+
+            if ($customer) {
+                $this->deliveryCustomerName = $this->deliveryCustomerName ?: (string) $customer->name;
+                $this->deliveryCustomerPhone = $this->deliveryCustomerPhone ?: (string) ($customer->phone ?? '');
+                $this->deliveryCustomerAddress = $this->deliveryCustomerAddress ?: (string) ($customer->address ?? '');
+            }
+        }
+
+        $this->showDeliveryDetailsModal = true;
+    }
+
+    private function needsDeliveryDetails(string $action): bool
+    {
+        if ($this->delivery_fee <= 0) {
+            return false;
+        }
+
+        if ($this->deliveryCustomerName !== '' && $this->deliveryCustomerPhone !== '' && $this->deliveryCustomerAddress !== '') {
+            return false;
+        }
+
+        $this->openDeliveryDetails($action);
+
+        return true;
+    }
+
+    public function confirmDeliveryDetails(): void
+    {
+        $this->validate([
+            'deliveryCustomerName' => ['required', 'string', 'max:255'],
+            'deliveryCustomerPhone' => ['required', 'string', 'max:40'],
+            'deliveryCustomerAddress' => ['required', 'string', 'max:2000'],
+            'deliveryNotes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $this->deliveryCustomerName = trim($this->deliveryCustomerName);
+        $this->deliveryCustomerPhone = trim($this->deliveryCustomerPhone);
+        $this->deliveryCustomerAddress = trim($this->deliveryCustomerAddress);
+        $this->deliveryNotes = trim($this->deliveryNotes);
+        $this->showDeliveryDetailsModal = false;
+
+        if ($this->pendingDeliveryAction === 'checkoutAndPrint') {
+            $this->checkoutAndPrint();
+
+            return;
+        }
+
+        $this->checkout();
+    }
+
     public function toggleDiscountType(): void
     {
         $this->discount_type = $this->discount_type === 'fixed' ? 'percentage' : 'fixed';
@@ -2370,6 +2453,9 @@ new class extends Component {
             $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً.';
             return null;
         }
+        if ($this->needsDeliveryDetails('checkout')) {
+            return null;
+        }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
             $this->openCustomerPaymentModal('checkout');
             return null;
@@ -2389,6 +2475,9 @@ new class extends Component {
     {
         if ($this->invoiceIsLocked()) {
             $this->printReceipt();
+            return;
+        }
+        if ($this->needsDeliveryDetails('checkoutAndPrint')) {
             return;
         }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
@@ -2687,6 +2776,15 @@ new class extends Component {
                 $storedInvoiceType = $invoiceType;
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
+                $isDelivery = $deliveryFee > 0;
+                $invoiceCustomerName = $isDelivery ? trim($this->deliveryCustomerName) : ($customer?->name ?? 'زبون عام');
+                $invoiceCustomerPhone = $isDelivery ? trim($this->deliveryCustomerPhone) : ($customer?->phone ?? null);
+                $invoiceCustomerAddress = $isDelivery ? trim($this->deliveryCustomerAddress) : ($customer?->address ?? null);
+                $invoiceNotes = trim($this->notes);
+
+                if ($isDelivery && trim($this->deliveryNotes) !== '') {
+                    $invoiceNotes = trim($invoiceNotes . ($invoiceNotes !== '' ? "\n\n" : '') . 'ملاحظة التوصيل: ' . trim($this->deliveryNotes));
+                }
 
                 if (!$order) {
                     $order = Order::create([
@@ -2695,9 +2793,9 @@ new class extends Component {
                         'shift_id' => $lockedShift->id,
                         'created_by' => $user->id,
                         'customer_id' => $customer?->id,
-                        'customer_name' => $customer?->name ?? 'زبون عام',
-                        'customer_phone' => $customer?->phone,
-                        'customer_address' => $customer?->address,
+                        'customer_name' => $invoiceCustomerName,
+                        'customer_phone' => $invoiceCustomerPhone,
+                        'customer_address' => $invoiceCustomerAddress,
                         'invoice_number' => $this->makeInvoiceNumber($storedInvoiceType, $tenantId, $branchId),
                         'type' => $storedInvoiceType,
                         'source' => 'pos',
@@ -2714,15 +2812,15 @@ new class extends Component {
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
                         'payment_status' => $paymentStatus,
-                        'notes' => trim($this->notes) ?: null,
+                        'notes' => $invoiceNotes ?: null,
                     ]);
                 } else {
                     $updateData = [
                         'shift_id' => $lockedShift->id,
                         'customer_id' => $customer?->id,
-                        'customer_name' => $customer?->name ?? 'زبون عام',
-                        'customer_phone' => $customer?->phone,
-                        'customer_address' => $customer?->address,
+                        'customer_name' => $invoiceCustomerName,
+                        'customer_phone' => $invoiceCustomerPhone,
+                        'customer_address' => $invoiceCustomerAddress,
                         'type' => $storedInvoiceType,
                         'source' => 'pos',
                         'sale_kind' => 'retail',
@@ -2738,7 +2836,7 @@ new class extends Component {
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
                         'payment_status' => $paymentStatus,
-                        'notes' => trim($this->notes) ?: null,
+                        'notes' => $invoiceNotes ?: null,
                         'updated_at' => now(),
                     ];
 

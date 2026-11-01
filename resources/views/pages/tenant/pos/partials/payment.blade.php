@@ -326,6 +326,17 @@
                     placeholder="0.00"
                 >
 
+                @if ($delivery_fee > 0)
+                    <button
+                        type="button"
+                        wire:click="openDeliveryDetails"
+                        @disabled($invoiceLocked)
+                        class="mt-2 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                        🚚 بيانات التوصيل
+                    </button>
+                @endif
+
             </div>
 
 
@@ -929,6 +940,40 @@
                         إلغاء
                     </button>
                 </div>
+            </div>
+        </div>
+    @endif
+
+    @if ($showDeliveryDetailsModal)
+        <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" dir="rtl">
+            <div class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="font-black text-slate-900">بيانات التوصيل</h2>
+                        <p class="mt-1 text-xs text-slate-500">هذه البيانات ستظهر وتحفظ مع الفاتورة.</p>
+                    </div>
+                    <button type="button" wire:click="$set('showDeliveryDetailsModal', false)" class="h-9 w-9 rounded-lg bg-slate-100 text-slate-600">✕</button>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="text-xs font-black text-slate-700">الاسم
+                        <input autofocus type="text" wire:model="deliveryCustomerName" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+                        @error('deliveryCustomerName')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
+                    </label>
+                    <label class="text-xs font-black text-slate-700">رقم الهاتف
+                        <input type="text" wire:model="deliveryCustomerPhone" inputmode="tel" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+                        @error('deliveryCustomerPhone')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
+                    </label>
+                </div>
+                <label class="mt-3 block text-xs font-black text-slate-700">المكان / العنوان
+                    <textarea wire:model="deliveryCustomerAddress" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"></textarea>
+                    @error('deliveryCustomerAddress')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
+                </label>
+                <label class="mt-3 block text-xs font-black text-slate-700">ملاحظة التوصيل
+                    <textarea wire:model="deliveryNotes" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"></textarea>
+                    @error('deliveryNotes')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
+                </label>
+                <button type="button" wire:click="confirmDeliveryDetails" class="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700">تأكيد والمتابعة للحفظ</button>
             </div>
         </div>
     @endif

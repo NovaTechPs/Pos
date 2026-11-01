@@ -1,4 +1,4 @@
-<div x-data="{ mobileToolsOpen: false }" x-bind:data-expanded="mobileToolsOpen" class="pos-toolbar min-w-0 shrink-0 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
+<div x-data="{ mobileToolsOpen: false, notesOpen: false }" x-bind:data-expanded="mobileToolsOpen" class="pos-toolbar min-w-0 shrink-0 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
 
     <div class="pos-mobile-tools flex items-center gap-2" dir="rtl">
         <button type="button" x-on:click="mobileToolsOpen = !mobileToolsOpen" x-bind:aria-expanded="mobileToolsOpen" aria-controls="pos-toolbar-tools-{{ $this->getId() }}" class="min-h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700">أدوات الفاتورة ▾</button>
@@ -399,13 +399,13 @@
 </div>
 
 <template x-teleport="body">
-    <div x-cloak x-show="notesOpen" x-on:keydown.escape.window="if (notesOpen) notesOpen = false" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label="ملاحظات الفاتورة" dir="rtl">
+    <div x-cloak x-show="notesOpen" x-effect="if (notesOpen) $nextTick(() => $refs.notesInput?.focus())" x-on:keydown.escape.window="if (notesOpen) notesOpen = false" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-label="ملاحظات الفاتورة" dir="rtl">
         <section x-on:click.outside="notesOpen = false" class="w-full max-w-lg rounded-2xl bg-white p-4 shadow-xl">
             <div class="mb-3 flex items-center justify-between">
                 <label for="pos-notes-{{ $this->getId() }}" class="font-bold text-slate-900">ملاحظات الفاتورة</label>
                 <button type="button" x-on:click="notesOpen = false" aria-label="إغلاق الملاحظات" class="h-10 w-10 rounded-lg bg-slate-100">✕</button>
             </div>
-            <textarea id="pos-notes-{{ $this->getId() }}" data-pos-notes-input wire:model.live.debounce.300ms="notes" @disabled($this->invoiceIsLocked()) rows="4" placeholder="ملاحظة الفاتورة..." class="w-full rounded-xl border border-slate-200 p-3 text-base text-slate-900 focus:border-indigo-500"></textarea>
+            <textarea x-ref="notesInput" id="pos-notes-{{ $this->getId() }}" data-pos-notes-input wire:model.live.debounce.300ms="notes" @disabled($this->invoiceIsLocked()) rows="4" placeholder="ملاحظة الفاتورة..." class="w-full rounded-xl border border-slate-200 p-3 text-base text-slate-900 focus:border-indigo-500"></textarea>
             <button type="button" x-on:click="notesOpen = false" class="mt-3 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white">تم</button>
         </section>
     </div>
