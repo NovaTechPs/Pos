@@ -2,7 +2,11 @@
 
 use Livewire\Component;
 use Livewire\WithPagination;
+use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
+use App\Models\Purchase;
+use App\Models\PurchaseReturn;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -58,6 +62,11 @@ new class extends Component {
     public bool $showStatementModal = false;
 
     public ?Party $selectedPartyForStatement = null;
+
+    /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
+    public ?array $statementDocument = null;
+
+    public bool $showStatementDocument = false;
 
 
     /*
@@ -607,6 +616,10 @@ new class extends Component {
             $transactions->push([
                 'id' => 'order-' . $order->id,
 
+                'source_type' => 'order',
+
+                'source_id' => $order->id,
+
                 'date' => $order->created_at,
 
                 'description' => $isReturn
@@ -624,6 +637,8 @@ new class extends Component {
         foreach ($party->purchases as $purchase) {
             $transactions->push([
                 'id' => 'purchase-' . $purchase->id,
+                'source_type' => 'purchase',
+                'source_id' => $purchase->id,
                 'date' => $purchase->created_at,
                 'description' => 'فاتورة مشتريات #' . ($purchase->reference_number ?: $purchase->id),
                 'debit' => abs((float) $purchase->total),
@@ -634,6 +649,8 @@ new class extends Component {
         foreach ($party->purchaseReturns as $purchaseReturn) {
             $transactions->push([
                 'id' => 'purchase-return-' . $purchaseReturn->id,
+                'source_type' => 'purchase_return',
+                'source_id' => $purchaseReturn->id,
                 'date' => $purchaseReturn->created_at,
                 'description' => 'مردود مشتريات #' . ($purchaseReturn->reference_number ?: $purchaseReturn->id),
                 'debit' => 0.00,
@@ -659,6 +676,8 @@ new class extends Component {
             if ($isSupplierPayment) {
                 $transactions->push([
                     'id' => 'payment-' . $payment->id,
+                    'source_type' => 'payment',
+                    'source_id' => $payment->id,
                     'date' => $payment->payment_date ?: $payment->created_at,
                     'description' => $this->paymentDescription($payment, true),
                     'debit' => 0.00,
@@ -670,6 +689,10 @@ new class extends Component {
 
             $transactions->push([
                 'id' => 'payment-' . $payment->id,
+
+                'source_type' => 'payment',
+
+                'source_id' => $payment->id,
 
                 'date' => $payment->payment_date ?: $payment->created_at,
 
@@ -791,6 +814,36 @@ new class extends Component {
         $this->showStatementModal = false;
 
         $this->selectedPartyForStatement = null;
+    }
+
+    public function openStatementDocument(string $sourceType, int $sourceId): void
+    {
+        $tenantId = $this->getTenantId();
+        $partyId = $this->selectedPartyForStatement?->id;
+
+        abort_unless($tenantId && $partyId, 404);
+
+        $document = match ($sourceType) {
+            'order' => Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->with('party')->findOrFail($sourceId),
+            'purchase' => Purchase::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->with('supplier')->findOrFail($sourceId),
+            'purchase_return' => PurchaseReturn::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->with('supplier')->findOrFail($sourceId),
+            'payment' => Payment::query()->where('tenant_id', $tenantId)->where('party_id', $partyId)->with('party')->findOrFail($sourceId),
+            default => abort(404),
+        };
+
+        $this->statementDocument = match ($sourceType) {
+            'order' => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
+            'purchase' => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
+            'purchase_return' => ['title' => 'مردود مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => '', 'notes' => (string) ($document->notes ?? '')],
+            'payment' => ['title' => $document->type === 'receipt' ? 'سند قبض' : 'سند صرف', 'reference' => (string) $document->voucher_number, 'date' => (string) $document->payment_date, 'party' => (string) ($document->party?->name ?? 'بدون طرف'), 'amount' => (float) $document->amount, 'status' => (string) $document->payment_method, 'notes' => (string) ($document->notes ?? '')],
+        };
+        $this->showStatementDocument = true;
+    }
+
+    public function closeStatementDocument(): void
+    {
+        $this->showStatementDocument = false;
+        $this->statementDocument = null;
     }
 
 
@@ -2291,7 +2344,8 @@ new class extends Component {
                                         @endphp
 
                                         <tr
-                                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/30"
+                                            wire:click="openStatementDocument('{{ $item['source_type'] }}', {{ $item['source_id'] }})"
+                                            class="cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
                                         >
 
                                             <td
@@ -2439,6 +2493,24 @@ new class extends Component {
 
             </div>
 
+        @endif
+
+        @if ($showStatementDocument && $statementDocument)
+            <div class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4" wire:click.self="closeStatementDocument">
+                <section role="dialog" aria-modal="true" aria-label="تفاصيل المستند" class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                    <div class="flex items-start justify-between gap-4">
+                        <div><h2 class="text-lg font-black text-slate-900 dark:text-white">{{ $statementDocument['title'] }}</h2><p class="mt-1 font-mono text-sm text-indigo-700 dark:text-indigo-300" dir="ltr">{{ $statementDocument['reference'] }}</p></div>
+                        <button type="button" wire:click="closeStatementDocument" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">إغلاق</button>
+                    </div>
+                    <dl class="mt-5 grid gap-3 sm:grid-cols-2">
+                        <div><dt class="text-xs text-slate-500">التاريخ</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['date'] }}</dd></div>
+                        <div><dt class="text-xs text-slate-500">الطرف</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['party'] }}</dd></div>
+                        <div><dt class="text-xs text-slate-500">المبلغ</dt><dd class="mt-1 text-lg font-black tabular-nums text-slate-900 dark:text-white" dir="ltr">{{ number_format($statementDocument['amount'], 2) }}</dd></div>
+                        <div><dt class="text-xs text-slate-500">الحالة / الطريقة</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['status'] ?: '—' }}</dd></div>
+                    </dl>
+                    @if ($statementDocument['notes'])<div class="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200"><p class="mb-1 text-xs text-slate-500">ملاحظات</p><p>{{ $statementDocument['notes'] }}</p></div>@endif
+                </section>
+            </div>
         @endif
 
     </div>
