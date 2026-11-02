@@ -822,27 +822,43 @@ new class extends Component {
             $order = Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->findOrFail($sourceId);
             $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
 
-            $this->dispatch('open-statement-document', url: route($route, ['invoice' => $order->id]));
+            $this->dispatch(
+                'open-statement-document',
+                url: route($route, ['invoice' => $order->id]),
+                title: 'فاتورة مبيعات '.$order->invoice_number,
+            );
 
             return;
         }
 
         if ($sourceType === 'purchase') {
             Purchase::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
-            $this->dispatch('open-statement-document', url: route('tenant.purchase-invoices', ['purchase' => $sourceId]));
+            $this->dispatch(
+                'open-statement-document',
+                url: route('tenant.purchase-invoices', ['purchase' => $sourceId]),
+                title: 'فاتورة مشتريات',
+            );
 
             return;
         }
 
         if ($sourceType === 'purchase_return') {
             PurchaseReturn::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
-            $this->dispatch('open-statement-document', url: route('tenant.purchase-returns', ['return' => $sourceId]));
+            $this->dispatch(
+                'open-statement-document',
+                url: route('tenant.purchase-returns', ['return' => $sourceId]),
+                title: 'مرتجع مشتريات',
+            );
 
             return;
         }
 
         $payment = Payment::query()->where('tenant_id', $tenantId)->where('party_id', $partyId)->findOrFail($sourceId);
-        $this->dispatch('open-statement-document', url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]));
+        $this->dispatch(
+            'open-statement-document',
+            url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]),
+            title: $payment->type === 'receipt' ? 'سند قبض' : 'سند دفع',
+        );
     }
 
 
@@ -2640,9 +2656,19 @@ new class extends Component {
 
     });
 
-    $wire.on('open-statement-document', ({ url }) => {
-        if (url) {
-            window.open(url, '_blank', 'noopener');
+    $wire.on('open-statement-document', ({ url, title }) => {
+        if (!url) return;
+
+        // The customer statement can itself be displayed inside a workspace
+        // iframe. Ask the top-level WaslaPOS workspace to create its own tab,
+        // rather than opening a separate browser tab.
+        try {
+            const workspace = window.top || window;
+            workspace.dispatchEvent(new CustomEvent('workspace:open-page', {
+                detail: { url, title: title || 'المستند' },
+            }));
+        } catch (_) {
+            window.location.assign(url);
         }
     });
 

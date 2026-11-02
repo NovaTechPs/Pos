@@ -327,6 +327,14 @@ function mountWorkspace(root) {
         focusPage(tab.id);
         return true;
     }
+    // Livewire pages inside a workspace iframe cannot use a normal browser
+    // navigation when they need to keep their parent page open. They can ask
+    // the shell to open a destination through this same internal tab manager.
+    const openRequestedPage = event => {
+        const {url, title} = event.detail ?? {};
+        if (typeof url !== 'string') return;
+        openPage(url, typeof title === 'string' ? title : 'صفحة');
+    };
     function intercept(event, base = window.location.href) {
         return interceptWorkspaceNavigation(event, base, openPage);
     }
@@ -357,6 +365,7 @@ function mountWorkspace(root) {
     document.addEventListener('keydown', key, true);
     window.addEventListener('tenant-changed', contextChanged);
     window.addEventListener('branch-changed', contextChanged);
+    window.addEventListener('workspace:open-page', openRequestedPage);
     if (saved) {
         if (!saved.tabs.some(tab => tab.url === initialUrl)) {
             state.close('initial');
@@ -378,6 +387,7 @@ function mountWorkspace(root) {
         document.removeEventListener('keydown', key, true);
         window.removeEventListener('tenant-changed', contextChanged);
         window.removeEventListener('branch-changed', contextChanged);
+        window.removeEventListener('workspace:open-page', openRequestedPage);
         bindings.forEach(cleanup => cleanup());
     };
 }
