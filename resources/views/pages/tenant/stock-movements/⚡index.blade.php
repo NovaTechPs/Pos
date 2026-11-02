@@ -31,12 +31,21 @@ new class extends Component
         $tenantId = auth()->user()?->tenant_id ?? session('active_tenant_id');
         abort_unless($tenantId, 403);
         $branchId = auth()->user()?->branch_id ?? $this->branchId;
-        $query = StockMovement::query()->where('tenant_id', $tenantId)
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->when(preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->dateFrom), fn ($q) => $q->whereDate('created_at', '>=', $this->dateFrom))
-            ->when(preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->dateTo), fn ($q) => $q->whereDate('created_at', '<=', $this->dateTo))
-            ->when($this->sourceType !== '', fn ($q) => $q->where('source_type', $this->sourceType))
-            ->when(trim($this->search) !== '', fn ($q) => $q->whereHas('product', fn ($p) => $p->where(fn ($p) => $p->where('name', 'like', '%'.trim($this->search).'%')->orWhere('product_number', 'like', '%'.trim($this->search).'%'))));
+        $search = trim($this->search);
+        $query = StockMovement::query()
+            ->select('stock_movements.*')
+            ->where('stock_movements.tenant_id', $tenantId)
+            ->when($branchId, fn ($q) => $q->where('stock_movements.branch_id', $branchId))
+            ->when(preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->dateFrom), fn ($q) => $q->whereDate('stock_movements.created_at', '>=', $this->dateFrom))
+            ->when(preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->dateTo), fn ($q) => $q->whereDate('stock_movements.created_at', '<=', $this->dateTo))
+            ->when($this->sourceType !== '', fn ($q) => $q->where('stock_movements.source_type', $this->sourceType))
+            ->when($search !== '', fn ($q) => $q
+                ->join('products as searched_products', 'searched_products.id', '=', 'stock_movements.product_id')
+                ->where('searched_products.tenant_id', $tenantId)
+                ->where(fn ($productQuery) => $productQuery
+                    ->where('searched_products.name', 'like', "%{$search}%")
+                    ->orWhere('searched_products.product_number', 'like', "%{$search}%")
+                ));
         return $this->view([
             'movements' => $query->with(['product', 'branch'])->latest('id')->paginate(30),
             'branches' => Branch::query()->where('tenant_id', $tenantId)->when(auth()->user()?->branch_id, fn ($q) => $q->whereKey(auth()->user()->branch_id))->get(),

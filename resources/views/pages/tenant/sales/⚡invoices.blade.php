@@ -1237,7 +1237,7 @@ new class extends Component {
             </div>
         @endif
 
-        <fieldset @disabled($currentOrderId && ! $invoiceEditMode) class="contents">
+        <div @class(['pointer-events-none select-none opacity-70' => $currentOrderId && ! $invoiceEditMode])>
         {{-- ================================================================
              بيانات رأس الفاتورة
         ================================================================= --}}
@@ -1791,7 +1791,7 @@ new class extends Component {
         ================================================================= --}}
 
         <div id="sales-print-template" class="hidden"></div>
-        </fieldset>
+        </div>
     </div>
     <livewire:product-price-history-modal />
 </flux:main>
