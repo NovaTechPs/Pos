@@ -138,6 +138,8 @@ test('loaded sales and purchase invoices stay read-only until edit is explicitly
         ->call('loadOrder', $order->id)
         ->assertSet('invoiceEditMode', false)
         ->assertSee('📄 PDF')
+        ->call('shareInvoicePdf')
+        ->assertDispatched('share-invoice-pdf')
         ->call('editLoadedInvoice')
         ->assertSet('invoiceEditMode', true);
 
@@ -145,6 +147,8 @@ test('loaded sales and purchase invoices stay read-only until edit is explicitly
         ->call('loadPurchase', $purchaseId)
         ->assertSet('invoiceEditMode', false)
         ->assertSee('📄 PDF')
+        ->call('shareInvoicePdf')
+        ->assertDispatched('share-invoice-pdf')
         ->call('editLoadedInvoice')
         ->assertSet('invoiceEditMode', true);
 });

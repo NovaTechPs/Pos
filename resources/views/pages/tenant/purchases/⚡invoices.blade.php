@@ -1116,6 +1116,22 @@ new class extends Component {
         }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
     }
 
+    public function shareInvoicePdf(): void
+    {
+        if (! $this->currentPurchaseId) {
+            $this->errorMessage = 'احفظ الفاتورة أولاً قبل إرسال PDF عبر واتساب.';
+
+            return;
+        }
+
+        $this->dispatch(
+            'share-invoice-pdf',
+            url: route('tenant.purchase-invoices.pdf', ['purchaseId' => $this->currentPurchaseId]),
+            filename: 'purchase-invoice-'.$this->invoiceNumber.'.pdf',
+            message: 'مرفق فاتورة مشتريات رقم '.$this->invoiceNumber
+        );
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Render
@@ -1252,6 +1268,7 @@ new class extends Component {
                     @if ($currentPurchaseId)
                         <button type="button" wire:click="printCurrentInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🖨 طباعة</button>
                         <button type="button" wire:click="downloadInvoicePdf" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">📄 PDF</button>
+                        <button type="button" wire:click="shareInvoicePdf" class="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/30">🟢 واتساب PDF</button>
                         @if (! $invoiceEditMode)
                             <button type="button" wire:click="editLoadedInvoice" class="rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 transition hover:bg-amber-400">✎ تعديل</button>
                         @endif
@@ -1942,6 +1959,34 @@ new class extends Component {
             first?.click();
         },
     }));
+
+    Livewire.on('share-invoice-pdf', async ({ url, filename, message }) => {
+        try {
+            const response = await fetch(url, { credentials: 'same-origin' });
+
+            if (!response.ok) {
+                throw new Error('PDF download failed');
+            }
+
+            const file = new File([await response.blob()], filename, { type: 'application/pdf' });
+
+            if (navigator.canShare?.({ files: [file] })) {
+                await navigator.share({ files: [file], text: message, title: filename });
+
+                return;
+            }
+
+            const downloadUrl = URL.createObjectURL(file);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(downloadUrl);
+            window.open('https://wa.me/?text=' + encodeURIComponent(message + '\n\nتم تنزيل ملف PDF؛ أرفقه في المحادثة.'), '_blank', 'noopener');
+        } catch {
+            window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank', 'noopener');
+        }
+    });
 
     Livewire.on('print-purchase-invoice', ({ invoice }) => {
         const esc = (value) => String(value ?? '')

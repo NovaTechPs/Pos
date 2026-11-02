@@ -4,6 +4,7 @@ use App\Http\Controllers\ReportPrintController;
 use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\TenantBackupController;
 use App\Http\Controllers\TenantDashboardController;
+use App\Http\Controllers\TenantInvoicePdfController;
 use Illuminate\Support\Facades\Route;
 
 // الصفحة الرئيسية
@@ -78,6 +79,9 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/sale-invoices', 'pages::tenant.sales.invoices')
             ->middleware('can:sales_invoices.view')
             ->name('sale-invoices');
+        Route::get('/sale-invoices/{orderId}/pdf', [TenantInvoicePdfController::class, 'sales'])
+            ->middleware('can:sales_invoices.view')
+            ->name('sale-invoices.pdf');
 
         // Wholesale
         Route::livewire('/wholesale-sales', 'pages::tenant.wholesale.sales')
@@ -95,6 +99,9 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/purchase-invoices', 'pages::tenant.purchases.invoices')
             ->middleware('can:purchases.view')
             ->name('purchase-invoices');
+        Route::get('/purchase-invoices/{purchaseId}/pdf', [TenantInvoicePdfController::class, 'purchase'])
+            ->middleware('can:purchases.view')
+            ->name('purchase-invoices.pdf');
 
         Route::livewire('/returns', 'pages::tenant.returns.index')
             ->middleware('can:returns.view')
