@@ -822,27 +822,27 @@ new class extends Component {
             $order = Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->findOrFail($sourceId);
             $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
 
-            $this->redirect(route($route, ['invoice' => $order->id]), navigate: true);
+            $this->dispatch('open-statement-document', url: route($route, ['invoice' => $order->id]));
 
             return;
         }
 
         if ($sourceType === 'purchase') {
             Purchase::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
-            $this->redirect(route('tenant.purchase-invoices', ['purchase' => $sourceId]), navigate: true);
+            $this->dispatch('open-statement-document', url: route('tenant.purchase-invoices', ['purchase' => $sourceId]));
 
             return;
         }
 
         if ($sourceType === 'purchase_return') {
             PurchaseReturn::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
-            $this->redirect(route('tenant.purchase-returns', ['return' => $sourceId]), navigate: true);
+            $this->dispatch('open-statement-document', url: route('tenant.purchase-returns', ['return' => $sourceId]));
 
             return;
         }
 
         $payment = Payment::query()->where('tenant_id', $tenantId)->where('party_id', $partyId)->findOrFail($sourceId);
-        $this->redirect(route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]), navigate: true);
+        $this->dispatch('open-statement-document', url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]));
     }
 
 
@@ -2638,6 +2638,12 @@ new class extends Component {
             '_blank'
         );
 
+    });
+
+    $wire.on('open-statement-document', ({ url }) => {
+        if (url) {
+            window.open(url, '_blank', 'noopener');
+        }
     });
 
 </script>
