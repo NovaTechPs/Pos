@@ -1,8 +1,12 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Product;
+use App\Models\Purchase;
+use App\Models\PurchaseReturn;
 use App\Services\ReportingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +33,9 @@ new class extends Component {
     public string $partySearch = '';
     public string $statementPartyType = 'customer';
     public string $productSearch = '';
+    /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
+    public ?array $statementDocument = null;
+    public bool $showStatementDocument = false;
 
     public function mount(): void
     {
@@ -62,6 +69,32 @@ new class extends Component {
     {
         $this->partyId = $partyId;
         $this->resetPage();
+    }
+
+    public function openStatementDocument(int $sourceOrder, int $sourceId): void
+    {
+        $tenantId = $this->service()->tenantId;
+        $document = match ($sourceOrder) {
+            1 => Order::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
+            2 => Purchase::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
+            3 => PurchaseReturn::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
+            4 => Payment::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
+            default => abort(404),
+        };
+
+        $this->statementDocument = match ($sourceOrder) {
+            1 => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
+            2 => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
+            3 => ['title' => 'مردود مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => '', 'notes' => (string) ($document->notes ?? '')],
+            4 => ['title' => $document->type === 'receipt' ? 'سند قبض' : 'سند صرف', 'reference' => (string) $document->voucher_number, 'date' => (string) $document->payment_date, 'party' => (string) ($document->party?->name ?? 'بدون طرف'), 'amount' => (float) $document->amount, 'status' => (string) $document->payment_method, 'notes' => (string) ($document->notes ?? '')],
+        };
+        $this->showStatementDocument = true;
+    }
+
+    public function closeStatementDocument(): void
+    {
+        $this->showStatementDocument = false;
+        $this->statementDocument = null;
     }
 
     public function updatedStatementPartySearch(): void
@@ -246,5 +279,14 @@ new class extends Component {
         </table>
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
+    @endif
+    @if ($showStatementDocument && $statementDocument)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" wire:click.self="closeStatementDocument">
+            <section role="dialog" aria-modal="true" aria-label="تفاصيل المستند" class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                <div class="flex items-start justify-between gap-4"><div><h2 class="text-lg font-black">{{ $statementDocument['title'] }}</h2><p class="mt-1 font-mono text-sm text-indigo-700" dir="ltr">{{ $statementDocument['reference'] }}</p></div><button type="button" wire:click="closeStatementDocument" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">إغلاق</button></div>
+                <dl class="mt-5 grid gap-3 sm:grid-cols-2"><div><dt class="text-xs text-slate-500">التاريخ</dt><dd class="mt-1 font-bold">{{ $statementDocument['date'] }}</dd></div><div><dt class="text-xs text-slate-500">الطرف</dt><dd class="mt-1 font-bold">{{ $statementDocument['party'] }}</dd></div><div><dt class="text-xs text-slate-500">المبلغ</dt><dd class="mt-1 text-lg font-black tabular-nums" dir="ltr">{{ number_format($statementDocument['amount'], 2) }}</dd></div><div><dt class="text-xs text-slate-500">الحالة / الطريقة</dt><dd class="mt-1 font-bold">{{ $statementDocument['status'] ?: '—' }}</dd></div></dl>
+                @if ($statementDocument['notes'])<div class="mt-4 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><p class="mb-1 text-xs text-slate-500">ملاحظات</p><p>{{ $statementDocument['notes'] }}</p></div>@endif
+            </section>
+        </div>
     @endif
 </flux:main>

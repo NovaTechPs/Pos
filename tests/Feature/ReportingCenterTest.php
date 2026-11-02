@@ -15,6 +15,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Role;
+use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
@@ -108,6 +109,28 @@ test('profit uses sale-time costs reverses return cost excludes tax and supplier
         ->and((float) $values['صافي تقديري بعد الرواتب المصروفة'])->toBe(50.0);
 });
 
+test('shift report shows sales profit and operating expenses for each shift', function (): void {
+    $shift = Shift::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'opened_by' => $this->user->id,
+        'opening_cash' => 25,
+        'status' => 'closed',
+        'opened_at' => '2026-10-15 08:00:00',
+        'closed_at' => '2026-10-15 17:00:00',
+    ]);
+    ($this->makeOrder)(['shift_id' => $shift->id, 'total' => 120, 'total_cost' => 70]);
+    ($this->makePayment)(['shift_id' => $shift->id, 'type' => 'payment', 'party_id' => null, 'amount' => 15]);
+
+    $report = (new ReportingService($this->user))->prepare('shifts', $this->filters);
+    $row = $report['query']->sole();
+
+    expect((float) $row->sales)->toBe(120.0)
+        ->and((float) $row->gross_profit)->toBe(50.0)
+        ->and((float) $row->expenses)->toBe(15.0)
+        ->and((float) $row->net_profit)->toBe(35.0);
+});
+
 test('branch-bound users cannot widen reports or import a different tenant from session', function (): void {
     ($this->makeOrder)(['total' => 25]);
     ($this->makeOrder)(['branch_id' => $this->otherBranch->id, 'total' => 500]);
@@ -163,6 +186,20 @@ test('statement directory lists customers and selecting one uses the selected da
         ->assertSee('LEDGER-CUSTOMER')
         ->set('statementPartyType', 'supplier')
         ->assertSee($supplier->name);
+});
+
+test('statement rows open their linked sales invoice or payment document', function (): void {
+    $order = ($this->makeOrder)(['invoice_number' => 'OPEN-ORDER']);
+    $payment = ($this->makePayment)(['voucher_number' => 'OPEN-PAYMENT']);
+
+    Livewire::test('pages::tenant.reports.center')
+        ->call('openStatementDocument', 1, $order->id)
+        ->assertSet('showStatementDocument', true)
+        ->assertSet('statementDocument.reference', 'OPEN-ORDER')
+        ->call('openStatementDocument', 4, $payment->id)
+        ->assertSet('statementDocument.reference', 'OPEN-PAYMENT')
+        ->call('closeStatementDocument')
+        ->assertSet('showStatementDocument', false);
 });
 
 test('print streams the complete report rather than just the visible page and safely escapes names', function (): void {

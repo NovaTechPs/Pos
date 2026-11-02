@@ -102,8 +102,8 @@
 
         .summary {
             width: 320px;
-            margin-right: auto;
-            margin-left: 0;
+            margin-right: 0;
+            margin-left: auto;
             margin-top: 20px;
             border-collapse: collapse;
             direction: rtl;
@@ -166,18 +166,18 @@
 
             <td>
                 <strong>
-                    {{ $ar('رقم الفاتورة:') }}
-                </strong>
-
-                {{ $order->invoice_number }}
-            </td>
-
-            <td>
-                <strong>
                     {{ $ar('التاريخ:') }}
                 </strong>
 
                 {{ optional($order->created_at)->format('Y/m/d H:i') }}
+            </td>
+
+            <td>
+                <strong>
+                    {{ $ar('رقم الفاتورة:') }}
+                </strong>
+
+                {{ $order->invoice_number }}
             </td>
 
         </tr>
@@ -186,18 +186,18 @@
 
             <td>
                 <strong>
-                    {{ $ar('العميل:') }}
-                </strong>
-
-                {{ $ar($order->customer_name ?? 'زبون عام') }}
-            </td>
-
-            <td>
-                <strong>
                     {{ $ar('الكاشير:') }}
                 </strong>
 
                 {{ $ar($order->user?->name ?? 'الكاشير') }}
+            </td>
+
+            <td>
+                <strong>
+                    {{ $ar('العميل:') }}
+                </strong>
+
+                {{ $ar($order->customer_name ?? 'زبون عام') }}
             </td>
 
         </tr>
@@ -212,15 +212,7 @@
             <tr>
 
                 <th>
-                    #
-                </th>
-
-                <th>
-                    {{ $ar('الصنف') }}
-                </th>
-
-                <th>
-                    {{ $ar('الكمية') }}
+                    {{ $ar('الإجمالي') }}
                 </th>
 
                 <th>
@@ -228,7 +220,15 @@
                 </th>
 
                 <th>
-                    {{ $ar('الإجمالي') }}
+                    {{ $ar('الكمية') }}
+                </th>
+
+                <th>
+                    {{ $ar('الصنف') }}
+                </th>
+
+                <th>
+                    #
                 </th>
 
             </tr>
@@ -241,7 +241,15 @@
                 <tr>
 
                     <td class="number">
-                        {{ $index + 1 }}
+                        {{ number_format((float) $item->total_price, 2) }}
+                    </td>
+
+                    <td class="number">
+                        {{ number_format((float) $item->unit_price, 2) }}
+                    </td>
+
+                    <td class="number">
+                        {{ number_format((float) $item->quantity, 2) }}
                     </td>
 
                     <td>
@@ -251,15 +259,7 @@
                     </td>
 
                     <td class="number">
-                        {{ number_format((float) $item->quantity, 2) }}
-                    </td>
-
-                    <td class="number">
-                        {{ number_format((float) $item->unit_price, 2) }}
-                    </td>
-
-                    <td class="number">
-                        {{ number_format((float) $item->total_price, 2) }}
+                        {{ $index + 1 }}
                     </td>
 
                 </tr>
@@ -276,12 +276,12 @@
 
         <tr>
 
-            <td>
-                {{ $ar('الإجمالي') }}
-            </td>
-
             <td class="number">
                 {{ number_format((float) $order->subtotal, 2) }}
+            </td>
+
+            <td>
+                {{ $ar('الإجمالي') }}
             </td>
 
         </tr>
@@ -289,22 +289,18 @@
 
         <tr>
 
-            <td>
-                {{ $ar('الخصم') }}
-            </td>
-
             <td class="number">
                 {{ number_format((float) $order->discount, 2) }}
+            </td>
+
+            <td>
+                {{ $ar('الخصم') }}
             </td>
 
         </tr>
 
 
         <tr class="total">
-
-            <td>
-                {{ $ar('الصافي') }}
-            </td>
 
             <td class="number">
                 {{ number_format(
@@ -313,14 +309,14 @@
                 ) }}
             </td>
 
+            <td>
+                {{ $ar('الصافي') }}
+            </td>
+
         </tr>
 
 
         <tr>
-
-            <td>
-                {{ $ar('المدفوع') }}
-            </td>
 
             <td class="number">
                 {{ number_format(
@@ -329,14 +325,14 @@
                 ) }}
             </td>
 
+            <td>
+                {{ $ar('المدفوع') }}
+            </td>
+
         </tr>
 
 
         <tr>
-
-            <td>
-                {{ $ar('الباقي') }}
-            </td>
 
             <td class="number">
 
@@ -351,6 +347,10 @@
                     )
                 }}
 
+            </td>
+
+            <td>
+                {{ $ar('الباقي') }}
             </td>
 
         </tr>

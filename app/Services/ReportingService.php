@@ -29,6 +29,7 @@ class ReportingService
         'sales' => ['ملخص المبيعات اليومي', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
         'profit' => ['الأرباح والمصروفات', 'reports.profit'],
+        'shifts' => ['تقرير الشيفتات: البيع والربح', 'reports.profit'],
         'purchases' => ['المشتريات ومردوداتها', 'reports.purchases'],
         'payroll' => ['مسيرات الرواتب والمستحقات', 'payroll.view'],
         'salary-payments' => ['الرواتب والسلف المصروفة', 'payroll.view'],
@@ -85,7 +86,7 @@ class ReportingService
         return match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
             'sales' => $this->sales(), 'product-sales' => $this->productSales(),
-            'profit' => $this->profit(), 'purchases' => $this->purchases(),
+            'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
             'inventory' => $this->inventory(), 'cashflow' => $this->cashflow(),
@@ -98,7 +99,7 @@ class ReportingService
             return '—';
         }
         $quantity = ['quantity', 'quantity_before', 'quantity_after', 'sold', 'returned', 'net_quantity', 'stock_quantity', 'alert_quantity', 'incoming', 'outgoing', 'gift_quantity'];
-        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'cost_price', 'retail_price', 'valuation'];
+        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit'];
         if (in_array($column, $quantity, true)) {
             return number_format((float) $value, 3, '.', '');
         }
@@ -351,6 +352,64 @@ class ReportingService
             'تقرير إداري تقديري بحسب التكاليف المحفوظة وقت البيع. لا يعيد تسعير الفواتير بتكلفة الصنف الحالية، ولا يعتبر شراء المخزون مصروفاً فورياً.',
             'الرواتب هنا على أساس الصرف، وليست تسوية استحقاق محاسبية. السلف وسداد الموردين ليست مصروفات تشغيلية. لا تسجّل الراتب نفسه مرة ثانية كمصروف عام.',
             'التكاليف التاريخية الناقصة أو المصروفات غير المسجلة تؤثر على الدقة. لا يُحسب هذا التقرير من المقبوضات بدلاً من المبيعات.',
+        ]);
+    }
+
+    /** @return ReportDefinition */
+    private function shifts(): array
+    {
+        $orders = $this->period($this->branch($this->table('orders'), 'orders.branch_id'), 'orders.created_at')
+            ->where('orders.status', 'completed')
+            ->whereNotNull('orders.shift_id')
+            ->whereIn('orders.type', ['pos', 'wholesale', 'online', 'return'])
+            ->when(! empty($this->filters['source']), fn (Builder $query): Builder => $query->where('orders.source', $this->filters['source']))
+            ->when(! empty($this->filters['sale_kind']), fn (Builder $query): Builder => $query->where('orders.sale_kind', $this->filters['sale_kind']))
+            ->select('orders.shift_id')
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END) as invoices")
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END) as sales")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END) as returns")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END) as net")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total_cost) ELSE orders.total_cost END) as cost")
+            ->groupBy('orders.shift_id');
+
+        $expenses = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payments.payment_date')
+            ->where('payments.type', 'payment')
+            ->whereNotNull('payments.shift_id')
+            ->whereNull('payments.party_id')
+            ->whereNull('payments.order_id')
+            ->whereNull('payments.purchase_id')
+            ->select('payments.shift_id')
+            ->selectRaw('SUM(payments.amount) as expenses')
+            ->groupBy('payments.shift_id');
+
+        $query = $this->period($this->branch($this->table('shifts'), 'shifts.branch_id'), 'shifts.opened_at')
+            ->join('branches', function ($join): void {
+                $join->on('branches.id', '=', 'shifts.branch_id')->where('branches.tenant_id', $this->tenantId);
+            })
+            ->leftJoin('users as shift_user', 'shift_user.id', '=', 'shifts.opened_by')
+            ->leftJoinSub($orders, 'shift_orders', 'shift_orders.shift_id', '=', 'shifts.id')
+            ->leftJoinSub($expenses, 'shift_expenses', 'shift_expenses.shift_id', '=', 'shifts.id')
+            ->select('shifts.id', 'shifts.opened_at', 'shifts.closed_at', 'shifts.status', 'branches.name as branch_name', 'shift_user.name as cashier_name', 'shifts.opening_cash', 'shifts.expected_cash', 'shifts.actual_cash', 'shifts.difference')
+            ->selectRaw('COALESCE(shift_orders.invoices, 0) as invoices')
+            ->selectRaw('COALESCE(shift_orders.sales, 0) as sales')
+            ->selectRaw('COALESCE(shift_orders.returns, 0) as returns')
+            ->selectRaw('COALESCE(shift_orders.net, 0) as net')
+            ->selectRaw('COALESCE(shift_orders.cost, 0) as cost')
+            ->selectRaw('COALESCE(shift_orders.net, 0) - COALESCE(shift_orders.cost, 0) as gross_profit')
+            ->selectRaw('COALESCE(shift_expenses.expenses, 0) as expenses')
+            ->selectRaw('COALESCE(shift_orders.net, 0) - COALESCE(shift_orders.cost, 0) - COALESCE(shift_expenses.expenses, 0) as net_profit');
+
+        $totals = DB::query()->fromSub(clone $query, 'shift_totals')
+            ->selectRaw('COALESCE(SUM(sales), 0) as sales, COALESCE(SUM(returns), 0) as returns, COALESCE(SUM(net), 0) as net, COALESCE(SUM(gross_profit), 0) as gross_profit, COALESCE(SUM(expenses), 0) as expenses, COALESCE(SUM(net_profit), 0) as net_profit')
+            ->first();
+
+        return $this->definition($query->orderByDesc('shifts.opened_at')->orderByDesc('shifts.id'), [
+            'id' => 'رقم الشيفت', 'opened_at' => 'وقت الفتح', 'closed_at' => 'وقت الإغلاق', 'branch_name' => 'الفرع', 'cashier_name' => 'الكاشير', 'status' => 'الحالة', 'invoices' => 'فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات', 'cost' => 'التكلفة', 'gross_profit' => 'مجمل الربح', 'expenses' => 'مصروفات الشيفت', 'net_profit' => 'الربح بعد المصروفات', 'opening_cash' => 'افتتاحي الصندوق', 'expected_cash' => 'النقد المتوقع', 'actual_cash' => 'النقد الفعلي', 'difference' => 'فرق الصندوق',
+        ], [
+            'إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net, 'مجمل الربح' => $totals->gross_profit, 'مصروفات الشيفت' => $totals->expenses, 'الربح بعد المصروفات' => $totals->net_profit,
+        ], [
+            'يعتمد التقرير على الفواتير المكتملة المرتبطة بالشيفت. تقرير اليوم متاح أيضاً من تقريري «ملخص المبيعات اليومي» و«الأرباح والمصروفات» باختيار زر اليوم.',
+            'التكلفة هي تكلفة البيع المحفوظة وقت الفاتورة. مصروفات الشيفت تشمل سندات الصرف التشغيلية غير المرتبطة بطرف أو فاتورة، ولا تشمل الرواتب أو سداد الموردين.',
         ]);
     }
 

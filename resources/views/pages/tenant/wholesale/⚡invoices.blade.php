@@ -287,8 +287,7 @@ new class extends Component {
 
         $receipts = (float) DB::table('payments')
             ->where('tenant_id', $tenantId)
-            ->where('payable_type', Party::class)
-            ->where('payable_id', $customer->id)
+            ->where('party_id', $customer->id)
             ->where('type', 'receipt')
             ->whereNull('deleted_at')
             ->sum('amount');
@@ -305,8 +304,7 @@ new class extends Component {
 
         $otherPayments = (float) DB::table('payments')
             ->where('tenant_id', $tenantId)
-            ->where('payable_type', Party::class)
-            ->where('payable_id', $customer->id)
+            ->where('party_id', $customer->id)
             ->where('type', 'payment')
             ->whereNull('deleted_at')
             ->sum('amount');
