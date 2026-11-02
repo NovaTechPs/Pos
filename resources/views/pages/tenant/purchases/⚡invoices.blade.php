@@ -19,6 +19,8 @@ new class extends Component {
 
     public ?int $currentPurchaseId = null;
 
+    public bool $invoiceEditMode = true;
+
     public string $invoiceNumber = '';
 
     public string $invoiceDate = '';
@@ -196,6 +198,7 @@ new class extends Component {
 
     public function startNewInvoice(bool $showMessage = true): void
     {
+        $this->invoiceEditMode = true;
         $this->currentPurchaseId = null;
         $this->invoiceNumber = $this->makeInvoiceNumber();
         $this->invoiceDate = now()->format('Y-m-d');
@@ -529,6 +532,12 @@ new class extends Component {
 
     public function saveInvoice(bool $shouldPrint = false): void
     {
+        if ($this->currentPurchaseId && ! $this->invoiceEditMode) {
+            $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.';
+
+            return;
+        }
+
         $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
         $this->errorMessage = null;
         $this->successMessage = null;
@@ -860,6 +869,7 @@ new class extends Component {
         }
 
         $this->currentPurchaseId = $purchase->id;
+        $this->invoiceEditMode = false;
         $this->invoiceNumber = $purchase->reference_number;
         $this->invoiceDate = $purchase->created_at
             ? \Carbon\Carbon::parse($purchase->created_at)->format('Y-m-d')
@@ -1052,6 +1062,60 @@ new class extends Component {
         );
     }
 
+    public function editLoadedInvoice(): void
+    {
+        if (! $this->currentPurchaseId) {
+            return;
+        }
+
+        $this->invoiceEditMode = true;
+        $this->successMessage = 'تم تفعيل تعديل الفاتورة. عدّل البيانات ثم اضغط حفظ.';
+        $this->errorMessage = null;
+    }
+
+    public function downloadInvoicePdf(): mixed
+    {
+        if (! $this->currentPurchaseId) {
+            $this->errorMessage = 'احفظ الفاتورة أولاً قبل تنزيل PDF.';
+
+            return null;
+        }
+
+        $tenantId = $this->tenantId();
+        $purchase = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->whereKey($this->currentPurchaseId)
+            ->first();
+
+        if (! $purchase) {
+            $this->errorMessage = 'لم يتم العثور على الفاتورة.';
+
+            return null;
+        }
+
+        $items = DB::table('purchase_items as pi')
+            ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
+            ->where('pi.purchase_id', $purchase->id)
+            ->orderBy('pi.id')
+            ->get(['pi.quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name']);
+
+        $supplierName = $purchase->supplier_id
+            ? Party::query()->where('tenant_id', $tenantId)->whereKey($purchase->supplier_id)->value('name')
+            : null;
+
+        return response()->streamDownload(function () use ($purchase, $items, $supplierName): void {
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('pages.tenant.purchases.partials.invoice-pdf', [
+                'purchase' => $purchase,
+                'items' => $items,
+                'supplierName' => $supplierName ?: 'مورد عام',
+                'storeName' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
+            ]);
+
+            echo $pdf->output();
+        }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Render
@@ -1185,7 +1249,15 @@ new class extends Component {
                     <button type="button" wire:click="togglePurchaseSearch" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🔎 استعلام</button>
                     <button type="button" wire:click="previousInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">← السابقة</button>
                     <button type="button" wire:click="nextInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">التالية →</button>
-                    <button type="button" wire:click="saveAndPrint" class="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black transition hover:bg-indigo-500">💾 حفظ وطباعة</button>
+                    @if ($currentPurchaseId)
+                        <button type="button" wire:click="printCurrentInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🖨 طباعة</button>
+                        <button type="button" wire:click="downloadInvoicePdf" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">📄 PDF</button>
+                        @if (! $invoiceEditMode)
+                            <button type="button" wire:click="editLoadedInvoice" class="rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 transition hover:bg-amber-400">✎ تعديل</button>
+                        @endif
+                    @else
+                        <button type="button" wire:click="saveAndPrint" class="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black transition hover:bg-indigo-500">💾 حفظ وطباعة</button>
+                    @endif
                 </div>
             </div>
 
@@ -1229,6 +1301,7 @@ new class extends Component {
             </div>
         @endif
 
+        <fieldset @disabled($currentPurchaseId && ! $invoiceEditMode) class="contents">
         {{-- رأس الفاتورة --}}
         <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
             <div class="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1642,6 +1715,7 @@ new class extends Component {
                 </div>
             </div>
         </div>
+        </fieldset>
     </div>
     <livewire:product-price-history-modal />
 </flux:main>

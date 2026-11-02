@@ -21,6 +21,8 @@ new class extends Component {
 
     public ?int $currentOrderId = null;
 
+    public bool $invoiceEditMode = true;
+
     #[\Livewire\Attributes\Locked]
     public float $savedPaidAmount = 0.0;
 
@@ -196,6 +198,7 @@ new class extends Component {
 
     public function startNewInvoice(bool $showMessage = true): void
     {
+        $this->invoiceEditMode = true;
         $this->savedPaidAmount = 0.0;
         $this->currentOrderId = null;
         $this->invoiceNumber = $this->makeInvoiceNumber();
@@ -528,6 +531,12 @@ new class extends Component {
 
     public function saveInvoice(bool $shouldPrint = false): void
     {
+        if ($this->currentOrderId && ! $this->invoiceEditMode) {
+            $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.';
+
+            return;
+        }
+
         $this->authorize($this->currentOrderId ? 'sales_invoices.edit' : 'sales_invoices.create');
         $this->errorMessage = null;
         $this->successMessage = null;
@@ -744,6 +753,7 @@ new class extends Component {
         $order->load('items.product');
 
         $this->currentOrderId = $order->id;
+        $this->invoiceEditMode = false;
         $this->invoiceNumber = $order->invoice_number;
         $this->invoiceDate = $order->created_at?->format('Y-m-d') ?? now()->format('Y-m-d');
         $this->selectedBranchId = $order->branch_id;
@@ -901,6 +911,48 @@ new class extends Component {
         ];
 
         $this->dispatchPrint($order, $totals);
+    }
+
+    public function editLoadedInvoice(): void
+    {
+        if (! $this->currentOrderId) {
+            return;
+        }
+
+        $this->invoiceEditMode = true;
+        $this->successMessage = 'تم تفعيل تعديل الفاتورة. عدّل البيانات ثم اضغط حفظ.';
+        $this->errorMessage = null;
+    }
+
+    public function downloadInvoicePdf(): mixed
+    {
+        if (! $this->currentOrderId) {
+            $this->errorMessage = 'احفظ الفاتورة أولاً قبل تنزيل PDF.';
+
+            return null;
+        }
+
+        $order = Order::query()
+            ->where('tenant_id', $this->tenantId())
+            ->whereKey($this->currentOrderId)
+            ->with(['items.product', 'user', 'branch'])
+            ->first();
+
+        if (! $order) {
+            $this->errorMessage = 'لم يتم العثور على الفاتورة.';
+
+            return null;
+        }
+
+        return response()->streamDownload(function () use ($order): void {
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
+                'order' => $order,
+                'storeName' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: $order->branch?->name ?: 'المتجر',
+            ]);
+
+            echo $pdf->output();
+        }, 'sales-invoice-'.$order->invoice_number.'.pdf');
     }
 
     /*
@@ -1079,6 +1131,14 @@ new class extends Component {
                     >
                         التالية →
                     </button>
+
+                    @if ($currentOrderId)
+                        <button type="button" wire:click="printCurrentInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🖨 طباعة</button>
+                        <button type="button" wire:click="downloadInvoicePdf" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">📄 PDF</button>
+                        @if (! $invoiceEditMode)
+                            <button type="button" wire:click="editLoadedInvoice" class="rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 transition hover:bg-amber-400">✎ تعديل</button>
+                        @endif
+                    @endif
                 </div>
             </div>
 
@@ -1096,6 +1156,7 @@ new class extends Component {
             </div>
         </div>
 
+        <fieldset @disabled($currentOrderId && ! $invoiceEditMode) class="contents">
         {{-- ================================================================
              الرسائل
         ================================================================= --}}
@@ -1713,6 +1774,7 @@ new class extends Component {
         ================================================================= --}}
 
         <div id="sales-print-template" class="hidden"></div>
+        </fieldset>
     </div>
     <livewire:product-price-history-modal />
 </flux:main>

@@ -2,11 +2,13 @@
 
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -108,6 +110,43 @@ test('barcode lookup does not select products from another tenant', function ():
         ->call('selectProductByBarcode', 'not-a-barcode')
         ->assertReturned(false)
         ->assertSet('selectedProductId', null);
+});
+
+test('loaded sales and purchase invoices stay read-only until edit is explicitly enabled', function (): void {
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'invoice_number' => 'SAL-READ-ONLY',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 10,
+        'total' => 10,
+        'paid_amount' => 0,
+    ]);
+    $purchaseId = DB::table('purchases')->insertGetId([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'reference_number' => 'PUR-READ-ONLY',
+        'total' => 10,
+        'paid_amount' => 0,
+        'payment_status' => 'unpaid',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    Livewire::test('pages::tenant.sales.invoices')
+        ->call('loadOrder', $order->id)
+        ->assertSet('invoiceEditMode', false)
+        ->assertSee('📄 PDF')
+        ->call('editLoadedInvoice')
+        ->assertSet('invoiceEditMode', true);
+
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->call('loadPurchase', $purchaseId)
+        ->assertSet('invoiceEditMode', false)
+        ->assertSee('📄 PDF')
+        ->call('editLoadedInvoice')
+        ->assertSet('invoiceEditMode', true);
 });
 test('example', function () {
     $response = $this->get('/');
