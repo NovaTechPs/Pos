@@ -1156,7 +1156,6 @@ new class extends Component {
             </div>
         </div>
 
-        <fieldset @disabled($currentOrderId && ! $invoiceEditMode) class="contents">
         {{-- ================================================================
              الرسائل
         ================================================================= --}}
@@ -1221,6 +1220,7 @@ new class extends Component {
             </div>
         @endif
 
+        <fieldset @disabled($currentOrderId && ! $invoiceEditMode) class="contents">
         {{-- ================================================================
              بيانات رأس الفاتورة
         ================================================================= --}}
