@@ -73,10 +73,7 @@ test('customer checkout saves a sales invoice and only its actual payment enters
     Livewire::test('pages::tenant.customers.index')
         ->call('openStatementModal', $customer->id)
         ->call('openStatementDocument', 'order', $order->id)
-        ->assertSet('showStatementDocument', true)
-        ->assertSet('statementDocument.reference', $order->invoice_number)
-        ->call('closeStatementDocument')
-        ->assertSet('showStatementDocument', false);
+        ->assertRedirect(route('tenant.pos', ['invoice' => $order->id]));
 
     expect((float) $order->fresh()->paid_amount)->toBe($paid)
         ->and($order->fresh()->payment_status)->toBe($status);

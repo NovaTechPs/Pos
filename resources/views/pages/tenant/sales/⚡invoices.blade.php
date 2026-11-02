@@ -91,6 +91,14 @@ new class extends Component {
         $this->invoiceDate = now()->format('Y-m-d');
         $this->selectedBranchId = $this->resolveBranchId();
         $this->startNewInvoice(false);
+
+        $invoiceId = request()->integer('invoice');
+        if ($invoiceId > 0) {
+            $order = Order::query()->where('tenant_id', $this->tenantId())->find($invoiceId);
+            if ($order) {
+                $this->loadOrder($order);
+            }
+        }
     }
 
     /*

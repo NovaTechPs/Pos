@@ -35,6 +35,11 @@ new class extends Component
     public function mount(): void
     {
         $this->paymentDate = now()->format('Y-m-d');
+
+        $voucherId = request()->integer('voucher');
+        if ($voucherId > 0) {
+            $this->edit($voucherId);
+        }
     }
 
     protected function getTenantId(): ?int

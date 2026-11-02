@@ -91,6 +91,11 @@ new class extends Component {
     {
         $this->selectedBranchId = $this->resolveBranchId();
         $this->startNewInvoice(false);
+
+        $purchaseId = request()->integer('purchase');
+        if ($purchaseId > 0) {
+            $this->loadPurchase($purchaseId);
+        }
     }
 
     /*

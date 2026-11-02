@@ -63,11 +63,6 @@ new class extends Component {
 
     public ?Party $selectedPartyForStatement = null;
 
-    /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
-    public ?array $statementDocument = null;
-
-    public bool $showStatementDocument = false;
-
 
     /*
     |--------------------------------------------------------------------------
@@ -823,27 +818,31 @@ new class extends Component {
 
         abort_unless($tenantId && $partyId, 404);
 
-        $document = match ($sourceType) {
-            'order' => Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->with('party')->findOrFail($sourceId),
-            'purchase' => Purchase::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->with('supplier')->findOrFail($sourceId),
-            'purchase_return' => PurchaseReturn::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->with('supplier')->findOrFail($sourceId),
-            'payment' => Payment::query()->where('tenant_id', $tenantId)->where('party_id', $partyId)->with('party')->findOrFail($sourceId),
-            default => abort(404),
-        };
+        if ($sourceType === 'order') {
+            $order = Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->findOrFail($sourceId);
+            $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
 
-        $this->statementDocument = match ($sourceType) {
-            'order' => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
-            'purchase' => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
-            'purchase_return' => ['title' => 'مردود مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => '', 'notes' => (string) ($document->notes ?? '')],
-            'payment' => ['title' => $document->type === 'receipt' ? 'سند قبض' : 'سند صرف', 'reference' => (string) $document->voucher_number, 'date' => (string) $document->payment_date, 'party' => (string) ($document->party?->name ?? 'بدون طرف'), 'amount' => (float) $document->amount, 'status' => (string) $document->payment_method, 'notes' => (string) ($document->notes ?? '')],
-        };
-        $this->showStatementDocument = true;
-    }
+            $this->redirect(route($route, ['invoice' => $order->id]), navigate: true);
 
-    public function closeStatementDocument(): void
-    {
-        $this->showStatementDocument = false;
-        $this->statementDocument = null;
+            return;
+        }
+
+        if ($sourceType === 'purchase') {
+            Purchase::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
+            $this->redirect(route('tenant.purchase-invoices', ['purchase' => $sourceId]), navigate: true);
+
+            return;
+        }
+
+        if ($sourceType === 'purchase_return') {
+            PurchaseReturn::query()->where('tenant_id', $tenantId)->where('supplier_id', $partyId)->findOrFail($sourceId);
+            $this->redirect(route('tenant.purchase-returns', ['return' => $sourceId]), navigate: true);
+
+            return;
+        }
+
+        $payment = Payment::query()->where('tenant_id', $tenantId)->where('party_id', $partyId)->findOrFail($sourceId);
+        $this->redirect(route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]), navigate: true);
     }
 
 
@@ -2493,24 +2492,6 @@ new class extends Component {
 
             </div>
 
-        @endif
-
-        @if ($showStatementDocument && $statementDocument)
-            <div class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4" wire:click.self="closeStatementDocument">
-                <section role="dialog" aria-modal="true" aria-label="تفاصيل المستند" class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                    <div class="flex items-start justify-between gap-4">
-                        <div><h2 class="text-lg font-black text-slate-900 dark:text-white">{{ $statementDocument['title'] }}</h2><p class="mt-1 font-mono text-sm text-indigo-700 dark:text-indigo-300" dir="ltr">{{ $statementDocument['reference'] }}</p></div>
-                        <button type="button" wire:click="closeStatementDocument" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">إغلاق</button>
-                    </div>
-                    <dl class="mt-5 grid gap-3 sm:grid-cols-2">
-                        <div><dt class="text-xs text-slate-500">التاريخ</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['date'] }}</dd></div>
-                        <div><dt class="text-xs text-slate-500">الطرف</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['party'] }}</dd></div>
-                        <div><dt class="text-xs text-slate-500">المبلغ</dt><dd class="mt-1 text-lg font-black tabular-nums text-slate-900 dark:text-white" dir="ltr">{{ number_format($statementDocument['amount'], 2) }}</dd></div>
-                        <div><dt class="text-xs text-slate-500">الحالة / الطريقة</dt><dd class="mt-1 font-bold text-slate-800 dark:text-white">{{ $statementDocument['status'] ?: '—' }}</dd></div>
-                    </dl>
-                    @if ($statementDocument['notes'])<div class="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200"><p class="mb-1 text-xs text-slate-500">ملاحظات</p><p>{{ $statementDocument['notes'] }}</p></div>@endif
-                </section>
-            </div>
         @endif
 
     </div>

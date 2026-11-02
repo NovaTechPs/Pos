@@ -186,6 +186,15 @@ new class extends Component {
         return auth()->user();
     }
 
+    public function mount(): void
+    {
+        $invoiceId = request()->integer('invoice');
+
+        if ($invoiceId > 0) {
+            $this->loadOldInvoice($invoiceId);
+        }
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Stock Settings

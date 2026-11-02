@@ -201,6 +201,11 @@ new class extends Component {
         $this->loadQuickProducts();
         $this->refreshBranchSyncStatus();
         $this->restoreCurrentDraft();
+
+        $invoiceId = request()->integer('invoice');
+        if ($invoiceId > 0) {
+            $this->loadInvoice($invoiceId);
+        }
     }
 
     public function refreshBranchSyncStatus(): void

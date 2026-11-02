@@ -42,4 +42,9 @@ test('vehicle wholesale invoice details calculate party payments through party_i
         ->assertSet('showDetailModal', true)
         ->assertSet('selectedCustomerBalance.receipts', 25.0)
         ->assertSet('selectedCustomerBalance.balance', 85.0);
+
+    Livewire::test('pages::tenant.customers.index')
+        ->call('openStatementModal', $party->id)
+        ->call('openStatementDocument', 'order', $order->id)
+        ->assertRedirect(route('tenant.wholesale-sales', ['invoice' => $order->id]));
 });
