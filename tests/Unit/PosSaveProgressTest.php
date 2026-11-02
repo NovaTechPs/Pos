@@ -15,7 +15,7 @@ test('POS saving immediately blocks repeated actions and unlocks after completio
         const call = name => intercept({ action: { name, component: { el: root }, cancel: () => canceled++ }, onFinish: callback => finish = callback });
         call('scanBarcode');
         assert.equal(overlay.style.display, 'none');
-        for (const name of ['checkout', 'checkoutAndPrint', 'saveOrEditInvoice', 'confirmCustomerPayment', 'confirmBelowCostCheckout', 'sendInvoiceWhatsApp', 'downloadInvoicePdf']) {
+        for (const name of ['checkout', 'checkoutAndPrint', 'saveOrEditInvoice', 'confirmCustomerPayment', 'confirmBelowCostCheckout', 'sendInvoiceWhatsApp']) {
             call(name);
             assert.equal(overlay.style.display, 'flex');
             assert.equal(root['aria-busy'], 'true');
@@ -27,6 +27,8 @@ test('POS saving immediately blocks repeated actions and unlocks after completio
             assert.equal(overlay.style.display, 'none');
             assert.equal(root['aria-busy'], undefined);
         }
+        call('downloadInvoicePdf');
+        assert.equal(overlay.style.display, 'none');
         intercept({ action: { name: 'checkout', component: { el: { matches: () => false } } } });
         console.log('POS_SAVE_PROGRESS_OK');
     })().catch(error => { console.error(error); process.exitCode = 1; });

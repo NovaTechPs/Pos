@@ -1,4 +1,4 @@
-const saveActions = new Set(['checkout', 'checkoutAndPrint', 'saveOrEditInvoice', 'confirmCustomerPayment', 'confirmBelowCostCheckout', 'sendInvoiceWhatsApp', 'downloadInvoicePdf']);
+const saveActions = new Set(['checkout', 'checkoutAndPrint', 'saveOrEditInvoice', 'confirmCustomerPayment', 'confirmBelowCostCheckout', 'sendInvoiceWhatsApp']);
 
 export function createPosSaveInterceptor() {
     const active = new WeakSet();
@@ -15,7 +15,13 @@ export function createPosSaveInterceptor() {
         active.add(root);
         root.setAttribute('aria-busy', 'true');
         overlay.style.display = 'flex';
+        const failSafe = setTimeout(() => {
+            active.delete(root);
+            root.removeAttribute('aria-busy');
+            overlay.style.display = 'none';
+        }, 15000);
         onFinish(() => {
+            clearTimeout(failSafe);
             active.delete(root);
             root.removeAttribute('aria-busy');
             overlay.style.display = 'none';
