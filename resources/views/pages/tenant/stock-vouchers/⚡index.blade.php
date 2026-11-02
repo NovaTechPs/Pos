@@ -21,6 +21,7 @@ new class extends Component
     /** @var list<array{product_id: string, quantity: float|int|string}> */
     public array $lines = [['product_id' => '', 'quantity' => 1]];
     public ?string $successMessage = null;
+    public ?string $errorMessage = null;
 
     public function mount(): void
     {
@@ -33,6 +34,43 @@ new class extends Component
         $this->lines[] = ['product_id' => '', 'quantity' => 1];
     }
 
+    public function addProduct(int $productId): void
+    {
+        $this->authorize('products.stock.adjust');
+        $tenantId = auth()->user()?->tenant_id;
+
+        $product = Product::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('deleted_at')
+            ->find($productId);
+
+        if (! $product) {
+            $this->errorMessage = 'الصنف المحدد غير متاح.';
+
+            return;
+        }
+
+        foreach ($this->lines as $line) {
+            if ((int) ($line['product_id'] ?? 0) === $product->id) {
+                $this->errorMessage = 'الصنف موجود بالفعل في السند. عدّل كميته من الجدول.';
+
+                return;
+            }
+        }
+
+        $emptyIndex = collect($this->lines)->search(fn (array $line): bool => blank($line['product_id']));
+
+        if ($emptyIndex === false) {
+            $this->lines[] = ['product_id' => (string) $product->id, 'quantity' => 1];
+        } else {
+            $this->lines[$emptyIndex]['product_id'] = (string) $product->id;
+            $this->lines[$emptyIndex]['quantity'] = 1;
+        }
+
+        $this->productSearch = '';
+        $this->errorMessage = null;
+    }
+
     public function removeLine(int $index): void
     {
         unset($this->lines[$index]);
@@ -43,6 +81,7 @@ new class extends Component
     {
         $this->authorize('products.stock.adjust');
         $this->successMessage = null;
+        $this->errorMessage = null;
         $this->validate([
             'type' => ['required', 'in:in,out'],
             'branchId' => ['required', 'integer'],
@@ -113,9 +152,18 @@ new class extends Component
         $tenantId = auth()->user()?->tenant_id;
         abort_unless($tenantId, 403);
         $branches = Branch::withoutGlobalScopes()->where('tenant_id', $tenantId)->when(auth()->user()?->branch_id, fn ($query) => $query->whereKey(auth()->user()->branch_id))->orderBy('name')->get(['id', 'name']);
+        $search = trim($this->productSearch);
         $products = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereNull('deleted_at')
-            ->when(trim($this->productSearch) !== '', fn ($query) => $query->where(fn ($query) => $query->where('name', 'like', '%'.trim($this->productSearch).'%')->orWhere('product_number', 'like', '%'.trim($this->productSearch).'%')))
-            ->orderBy('name')->limit(100)->get(['id', 'name', 'product_number']);
+            ->when($search !== '', fn ($query) => $query->where(fn ($productQuery) => $productQuery
+                ->where('name', 'like', "%{$search}%")
+                ->orWhere('product_number', 'like', "%{$search}%")
+                ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
+                    ->where('tenant_id', $tenantId)
+                    ->where('barcode', 'like', "%{$search}%"))))
+            ->with(['branchProducts' => fn ($query) => $query
+                ->where('tenant_id', $tenantId)
+                ->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
+            ->orderBy('name')->limit($search === '' ? 30 : 50)->get(['id', 'name', 'product_number']);
         $recent = StockMovement::query()->where('tenant_id', $tenantId)->whereIn('source_type', ['stock_in', 'stock_out'])->when($this->branchId, fn ($query) => $query->where('branch_id', $this->branchId))->with(['product:id,name,product_number', 'branch:id,name'])->latest('id')->limit(30)->get();
 
         return $this->view(compact('branches', 'products', 'recent'))->layout('layouts::tenant');
@@ -129,11 +177,26 @@ new class extends Component
         <flux:button :href="route('tenant.stock-movements')" wire:navigate>سجل حركات المخزون</flux:button>
     </div>
     @if ($successMessage)<div class="rounded-xl bg-emerald-50 p-4 font-bold text-emerald-800">{{ $successMessage }}</div>@endif
+    @if ($errorMessage)<div class="rounded-xl bg-rose-50 p-4 font-bold text-rose-800">{{ $errorMessage }}</div>@endif
     <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div class="grid gap-4 md:grid-cols-3">
             <flux:select label="نوع السند" wire:model.live="type"><option value="in">سند إدخال بضاعة</option><option value="out">سند إخراج بضاعة</option></flux:select>
             <flux:select label="الفرع / المخزن" wire:model="branchId"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             <flux:input label="ابحث عن صنف" wire:model.live.debounce.250ms="productSearch" placeholder="الاسم أو رقم الصنف" />
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+            <div class="mb-2 text-xs font-bold text-slate-500">نتائج الأصناف — ابحث بالاسم أو رقم الصنف أو الباركود ثم اضغط الصنف لإضافته للسند.</div>
+            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                @forelse ($products as $product)
+                    @php $stock = $product->branchProducts->first()?->stock_quantity; @endphp
+                    <button type="button" wire:click="addProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="addProduct({{ $product->id }})" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900">
+                        <span class="min-w-0"><span class="block truncate text-sm font-black text-slate-800 dark:text-white">{{ $product->name }}</span><span class="mt-1 block font-mono text-[10px] text-slate-400">{{ $product->product_number ?: '#'.$product->id }}</span></span>
+                        <span class="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-black {{ $stock !== null && $stock <= 0 ? 'text-rose-700' : 'text-emerald-700' }} dark:bg-slate-800">{{ $stock === null ? '—' : number_format((float) $stock, 3) }}</span>
+                    </button>
+                @empty
+                    <div class="col-span-full py-3 text-center text-sm text-slate-500">لا توجد أصناف مطابقة للبحث.</div>
+                @endforelse
+            </div>
         </div>
         <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table class="w-full text-right text-sm"><thead class="bg-slate-50 dark:bg-slate-800"><tr><th class="p-3">الصنف</th><th class="p-3">الكمية</th><th class="p-3">إجراء</th></tr></thead><tbody>@foreach ($lines as $index => $line)<tr wire:key="voucher-line-{{ $index }}" class="border-t border-slate-100 dark:border-slate-800"><td class="p-3 min-w-80"><select wire:model="lines.{{ $index }}.product_id" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 dark:bg-slate-900"><option value="">اختر الصنف</option>@foreach ($products as $product)<option value="{{ $product->id }}">{{ $product->product_number ? $product->product_number.' — ' : '' }}{{ $product->name }}</option>@endforeach</select>@error('lines.'.$index.'.product_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td><td class="p-3 min-w-40"><input wire:model="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-center tabular-nums dark:bg-slate-900">@error('lines.'.$index.'.quantity')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td><td class="p-3"><button type="button" wire:click="removeLine({{ $index }})" class="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">حذف</button></td></tr>@endforeach</tbody></table></div>
         @error('lines')<p class="text-sm font-bold text-rose-600">{{ $message }}</p>@enderror

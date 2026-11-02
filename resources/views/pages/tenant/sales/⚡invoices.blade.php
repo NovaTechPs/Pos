@@ -359,6 +359,18 @@ new class extends Component {
         return true;
     }
 
+    public function updatedRowSearch(string $value): void
+    {
+        if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
+            $this->selectedProductId = null;
+            $this->selectedProductName = '';
+            $this->selectedPrice = 0;
+            $this->selectedCost = 0;
+            $this->selectedStock = 0;
+            $this->selectedQuantity = 1;
+        }
+    }
+
     public function commitRowToCart(): void
     {
         if (!$this->selectedProductId) {

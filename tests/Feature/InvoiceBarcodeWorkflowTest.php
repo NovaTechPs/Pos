@@ -105,6 +105,15 @@ test('sales invoice scanner loads barcode details and Enter progression commits 
         ->and($cart[0]['price'])->toBe(8.0);
 });
 
+test('sales invoice search becomes available again after selecting a product', function (): void {
+    Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->assertSet('selectedProductId', $this->product->id)
+        ->set('rowSearch', 'بحث جديد')
+        ->assertSet('selectedProductId', null)
+        ->assertSet('selectedProductName', '');
+});
+
 test('barcode lookup does not select products from another tenant', function (): void {
     Livewire::test('pages::tenant.sales.invoices')
         ->call('selectProductByBarcode', 'not-a-barcode')

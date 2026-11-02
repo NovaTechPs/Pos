@@ -3,6 +3,7 @@
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\StockVoucher;
 use App\Models\Tenant;
 use App\Models\User;
@@ -56,4 +57,23 @@ test('stock out voucher refuses a quantity larger than the branch balance', func
         ->assertHasErrors(['lines']);
 
     expect(StockVoucher::count())->toBe(0)->and((float) $this->stock->fresh()->stock_quantity)->toBe(10.0);
+});
+
+test('stock vouchers find a product by barcode and add it to the voucher line', function (): void {
+    ProductBarcode::create([
+        'tenant_id' => $this->tenant->id,
+        'product_id' => $this->product->id,
+        'barcode' => '9876543210123',
+    ]);
+
+    Livewire::test('pages::tenant.stock-vouchers.index')
+        ->set('branchId', $this->branch->id)
+        ->set('productSearch', '9876543210123')
+        ->assertViewHas('products', fn ($products): bool => $products->pluck('id')->all() === [$this->product->id])
+        ->call('addProduct', $this->product->id)
+        ->assertSet('lines.0.product_id', (string) $this->product->id)
+        ->assertSet('lines.0.quantity', 1)
+        ->assertSet('productSearch', '')
+        ->call('addProduct', $this->product->id)
+        ->assertSet('errorMessage', 'الصنف موجود بالفعل في السند. عدّل كميته من الجدول.');
 });
