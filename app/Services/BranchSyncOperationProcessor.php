@@ -122,11 +122,17 @@ class BranchSyncOperationProcessor
         $this->assertTenantUser($operation->tenant_id, $orderData['created_by'] ?? null);
         $this->assertTenantUser($operation->tenant_id, $shiftData['opened_by'] ?? null);
 
-        if (($orderData['customer_id'] ?? null) !== null && ! Party::query()
-            ->where('tenant_id', $operation->tenant_id)
-            ->whereKey($orderData['customer_id'])
-            ->exists()) {
-            throw new RuntimeException('العميل غير موجود في قاعدة البيانات المركزية.');
+        $party = null;
+        if (($orderData['customer_id'] ?? null) !== null) {
+            $party = Party::query()
+                ->where('tenant_id', $operation->tenant_id)
+                ->whereKey($orderData['customer_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $party) {
+                throw new RuntimeException('العميل غير موجود في قاعدة البيانات المركزية.');
+            }
         }
 
         $shift = Shift::query()
@@ -270,6 +276,14 @@ class BranchSyncOperationProcessor
         }
 
         $this->syncPayment($operation, $order, $shift, $payload['payment'] ?? null);
+
+        if ($party && $order->type !== 'return') {
+            $outstanding = max(0, round((float) $order->total - (float) $order->paid_amount, 2));
+
+            if ($outstanding > 0) {
+                $party->increment('current_balance', $party->saleBalanceDirection() * $outstanding);
+            }
+        }
     }
 
     /** @param array<string, mixed>|null $payment */

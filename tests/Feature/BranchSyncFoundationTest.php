@@ -461,4 +461,5 @@ test('customer credit sales sync separately from shifts while payments retain th
         expect((int) Payment::query()->sole()->shift_id)->toBe(Shift::query()->sole()->id)
             ->and((float) Payment::query()->sole()->amount)->toBe($paid);
     }
+    expect((float) $customer->fresh()->current_balance)->toBe(25.0 - $paid);
 })->with([[0.0, 'unpaid'], [10.0, 'partial'], [25.0, 'paid']]);
