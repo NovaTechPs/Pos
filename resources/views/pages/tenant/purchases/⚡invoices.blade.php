@@ -333,12 +333,7 @@ new class extends Component {
             return;
         }
 
-        $this->selectedProductId = null;
         $this->selectProduct($productId);
-
-        if ($this->selectedProductId === $productId) {
-            $this->commitRowToCart();
-        }
     }
 
     public function updatedRowSearch(string $value): void
@@ -1474,7 +1469,7 @@ new class extends Component {
                                                     $resultPrice = (float) $product->cost_price;
                                                     $stock = (float) ($bp?->stock_quantity ?? 0);
                                                 @endphp
-                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="addProductFromSearch({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
+                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
                                                     <td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td>
                                                     <td class="p-2 font-bold">{{ $product->name }}</td>
                                                     <td class="p-2 font-mono">{{ number_format($resultPrice, 2) }}</td>
@@ -1496,7 +1491,7 @@ new class extends Component {
                         type="number"
                         min="0.01"
                         step="0.01"
-                        wire:model.live="selectedQuantity"
+                        wire:model="selectedQuantity"
                         x-on:keydown.enter.prevent="$nextTick(() => $refs.purchasePriceInput?.focus())"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
                     />
@@ -1565,15 +1560,15 @@ new class extends Component {
                                             <td class="px-3 py-3">
                                                 <div class="flex items-center gap-1">
                                                     <button type="button" wire:click="decrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">−</button>
-                                                    <input type="number" min="0.01" step="0.01" wire:model.live="cart.{{ $key }}.quantity" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
+                                                    <input type="number" min="0.01" step="0.01" wire:model.blur="cart.{{ $key }}.quantity" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
                                                     <button type="button" wire:click="incrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">+</button>
                                                 </div>
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.discount" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="number" min="0" step="0.01" wire:model.blur="cart.{{ $key }}.discount" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
                                             <td class="px-3 py-3 text-sm font-black text-slate-900">{{ number_format($lineTotal, 2) }}</td>
                                             <td class="px-3 py-3 text-center">
@@ -1612,15 +1607,15 @@ new class extends Component {
                                 <div class="mt-3 grid grid-cols-3 gap-2">
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
-                                        <input type="number" min="0.01" step="0.01" wire:model.live="cart.{{ $key }}.quantity" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
+                                        <input type="number" min="0.01" step="0.01" wire:model.blur="cart.{{ $key }}.quantity" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
-                                        <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الخصم</label>
-                                        <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.discount" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="number" min="0" step="0.01" wire:model.blur="cart.{{ $key }}.discount" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
                                     </div>
                                 </div>
                             </div>
@@ -1806,6 +1801,10 @@ new class extends Component {
             return [...this.$el.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0);
         },
 
+        purchaseGridInput(row, column) {
+            return this.visibleResults(`[data-purchase-grid-input][data-row="${row}"][data-col="${column}"]`)[0] ?? null;
+        },
+
         registerKeyboard() {
             this.keyboardController = new AbortController();
             window.addEventListener('keydown', async (event) => {
@@ -1819,6 +1818,36 @@ new class extends Component {
                     target?.isContentEditable;
 
                 const key = event.key;
+
+                const purchaseGridInput = target?.closest?.('[data-purchase-grid-input]');
+                if (purchaseGridInput && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
+                    const row = Number(purchaseGridInput.dataset.row);
+                    const column = Number(purchaseGridInput.dataset.col);
+                    let next = null;
+
+                    if (key === 'ArrowUp' || key === 'ArrowDown') {
+                        next = this.purchaseGridInput(row + (key === 'ArrowDown' ? 1 : -1), column);
+                        if (!next && key === 'ArrowDown') {
+                            next = this.$refs.productSearch;
+                        }
+                    } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
+                        const nextColumn = column + (key === 'ArrowRight' ? 1 : -1);
+                        if (nextColumn >= 0 && nextColumn <= 2) {
+                            next = this.purchaseGridInput(row, nextColumn);
+                        }
+                    } else if (column < 2) {
+                        next = this.purchaseGridInput(row, column + 1);
+                    } else {
+                        next = this.purchaseGridInput(row + 1, 0) ?? this.$refs.productSearch;
+                    }
+
+                    if (next) {
+                        event.preventDefault();
+                        next.focus();
+                        next.select?.();
+                    }
+                    return;
+                }
 
                 if (key === 'F2') {
                     event.preventDefault();

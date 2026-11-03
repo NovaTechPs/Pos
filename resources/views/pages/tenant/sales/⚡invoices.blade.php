@@ -1298,15 +1298,15 @@ new class extends Component {
                                 <div class="mt-0.5 text-[11px] font-semibold text-emerald-700">
                                     {{ $selectedCustomer->phone ?: 'بدون هاتف' }}
                                 </div>
+                                <div class="mt-0.5 text-[11px] font-bold text-slate-600">الرصيد الحالي: {{ number_format((float) $selectedCustomer->current_balance, 2) }}</div>
                             </div>
 
-                            <button
-                                type="button"
-                                wire:click="clearCustomer"
-                                class="rounded-lg px-2 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100"
-                            >
-                                تغيير
-                            </button>
+                            <div class="flex shrink-0 flex-col items-end gap-1">
+                                @if (auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+                                    <a href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-indigo-700 shadow-sm">كشف الحساب</a>
+                                @endif
+                                <button type="button" wire:click="clearCustomer" class="rounded-lg px-2 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100">تغيير</button>
+                            </div>
                         </div>
                     @else
                         <input
@@ -1449,7 +1449,7 @@ new class extends Component {
                         type="number"
                         min="0.01"
                         step="0.01"
-                        wire:model.live="selectedQuantity"
+                        wire:model="selectedQuantity"
                         x-on:keydown.enter.prevent="$nextTick(() => $refs.priceInput?.focus())"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
                     />
