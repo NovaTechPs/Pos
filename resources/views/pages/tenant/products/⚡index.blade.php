@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\ProductBarcode;
 use App\Models\ProductOffer;
+use App\Services\PosProductSearch;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
@@ -51,7 +52,7 @@ new class extends Component {
     public $wholesale_price = '';
     public int $min_wholesale_quantity = 1;
 
-    public bool $is_price_unified = true;
+    public bool $is_price_unified = false;
 
     /**
      * [
@@ -200,7 +201,7 @@ new class extends Component {
             ];
 
             $rules['wholesale_price'] = [
-                'required',
+                'nullable',
                 'numeric',
                 'min:0',
             ];
@@ -219,7 +220,7 @@ new class extends Component {
             ];
 
             $rules['branchPricesInput.*.wholesale_price'] = [
-                'required',
+                'nullable',
                 'numeric',
                 'min:0',
             ];
@@ -448,6 +449,7 @@ new class extends Component {
 
         $branches = DB::table('branches')
             ->where('tenant_id', $tenantId)
+            ->when($this->activeBranchId(), fn ($query) => $query->where('id', $this->activeBranchId()))
             ->orderBy('name')
             ->get();
 
@@ -852,6 +854,18 @@ new class extends Component {
             ->map(fn ($id) => (int) $id)
             ->values();
 
+        if (!$this->isEditing) {
+            $activeBranchId = $this->activeBranchId();
+
+            if (!$activeBranchId || !$branchIds->contains($activeBranchId)) {
+                session()->flash('error', 'يرجى اختيار الفرع الحالي قبل حفظ المنتج.');
+
+                return;
+            }
+
+            $branchIds = collect([$activeBranchId]);
+        }
+
         if ($branchIds->isEmpty()) {
             session()->flash(
                 'error',
@@ -976,7 +990,7 @@ new class extends Component {
                                 $this->retail_price,
 
                             'wholesale_price' =>
-                                $this->wholesale_price,
+                                filled($this->wholesale_price) ? $this->wholesale_price : 0,
 
                             'min_wholesale_quantity' =>
                                 $this->min_wholesale_quantity,
@@ -994,8 +1008,9 @@ new class extends Component {
                                 ?? 0,
 
                             'wholesale_price' =>
-                                $branchData['wholesale_price']
-                                ?? 0,
+                                filled($branchData['wholesale_price'] ?? null)
+                                ? $branchData['wholesale_price']
+                                : 0,
 
                             'min_wholesale_quantity' =>
                                 $branchData['min_wholesale_quantity']
@@ -1532,7 +1547,7 @@ new class extends Component {
 
         $this->min_wholesale_quantity = 1;
 
-        $this->is_price_unified = true;
+        $this->is_price_unified = false;
 
         $this->branchPricesInput = [];
 
@@ -1607,27 +1622,15 @@ new class extends Component {
             ->when(
                 $this->search !== '',
                 function ($query) {
-                    $search = trim($this->search);
+                    $search = app(PosProductSearch::class)->normalize($this->search);
 
-                    $query->where(function ($query) use ($search) {
-                        $query
-                            ->where(
-                                'name',
-                                'like',
-                                '%' . $search . '%'
-                            )
-                            ->orWhere('product_number', 'like', '%' . $search . '%')
-                            ->orWhereHas(
-                                'barcodes',
-                                function ($barcodeQuery) use ($search) {
-                                    $barcodeQuery->where(
-                                        'barcode',
-                                        'like',
-                                        '%' . $search . '%'
-                                    );
-                                }
-                            );
-                    });
+                    if (mb_strlen($search) < 2 && !ctype_digit($search)) {
+                        $query->whereRaw('1 = 0');
+
+                        return;
+                    }
+
+                    app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $this->tenantId());
                 }
             )
             ->when(
@@ -2738,6 +2741,7 @@ new class extends Component {
 
             <form
                 wire:submit.prevent="save"
+                x-on:keydown.enter="if ($event.target.matches('textarea')) return; $event.preventDefault(); if (!$event.target.matches('input, select')) return; const fields = Array.from($el.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled])')).filter(field => field.getClientRects().length > 0); const index = fields.indexOf($event.target); if (index >= 0) fields[index + 1]?.focus()"
                 x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }"
                 class="space-y-6"
             >
@@ -3110,7 +3114,6 @@ new class extends Component {
                                     <flux:input
                                         wire:model="barcodes.{{ $index }}"
                                         placeholder="امسح الباركود أو أدخله يدوياً..."
-                                        x-on:keydown.enter.prevent.stop
                                     />
 
                                     @error('barcodes.' . $index)
@@ -3175,8 +3178,7 @@ new class extends Component {
 
                                 <p class="mt-1 max-w-2xl text-xs leading-5 text-indigo-800/70 dark:text-indigo-300/70">
 
-                                    عند التفعيل يتم استخدام نفس أسعار التجزئة والجملة لجميع الفروع.
-                                    عند الإيقاف يمكنك تحديد الأسعار لكل فرع بشكل مستقل.
+                                    عند التفعيل يستخدم السعر نفسه في الفروع المرتبط بها المنتج، وعند الإيقاف يمكنك تحديد سعر مستقل لكل فرع.
 
                                 </p>
 
@@ -3215,7 +3217,7 @@ new class extends Component {
                                 </div>
 
                                 <div class="text-xs text-zinc-500">
-                                    هذه الأسعار سيتم تطبيقها على جميع فروع المتجر.
+                                    {{ $isEditing ? 'سيتم تحديث هذه الأسعار في فروع المنتج.' : 'سيتم إضافة المنتج إلى الفرع الحالي بهذه الأسعار.' }}
                                 </div>
 
                             </div>
@@ -3311,6 +3313,12 @@ new class extends Component {
                         BRANCH SPECIFIC PRICES
                     ================================================== --}}
 
+                    @php
+                        $priceBranches = $isEditing
+                            ? $allBranches
+                            : $allBranches->where('id', $activeBranchId);
+                    @endphp
+
                     <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
 
                         <div class="mb-4 flex items-center justify-between gap-3">
@@ -3336,7 +3344,7 @@ new class extends Component {
                             </div>
 
                             <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                                {{ $allBranches->count() }} فرع
+                                {{ $priceBranches->count() }} فرع
                             </span>
 
                         </div>
@@ -3369,9 +3377,9 @@ new class extends Component {
 
                         <div class="space-y-4">
 
-                            @if ($allBranches->isNotEmpty())
+                            @if ($priceBranches->isNotEmpty())
 
-                            @foreach ($allBranches as $branch)
+                            @foreach ($priceBranches as $branch)
 
                                 @php
                                     $branchInput = $branchPricesInput[$branch->id] ?? [];
@@ -3688,6 +3696,7 @@ new class extends Component {
 
             <form
                 wire:submit.prevent="saveCategory"
+                x-on:keydown.enter="if ($event.target.matches('textarea')) return; $event.preventDefault(); if (!$event.target.matches('input, select')) return; const fields = Array.from($el.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled])')).filter(field => field.getClientRects().length > 0); const index = fields.indexOf($event.target); if (index >= 0) fields[index + 1]?.focus()"
                 class="mt-6 space-y-4"
             >
 

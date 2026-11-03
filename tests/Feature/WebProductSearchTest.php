@@ -41,6 +41,35 @@ test('invoice search uses POS matching for Arabic words numbers and barcodes', f
         ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
 })->with(['sales', 'purchases'])->with(['فاتحه قهوه', 'ايطاليه', 'coffee-42', '1234567890123']);
 
+test('products page search uses POS matching for Arabic words numbers and barcodes', function (string $search): void {
+    Product::create(['tenant_id' => $this->tenant->id, 'name' => 'صنف لا يطابق']);
+
+    Livewire::test('pages::tenant.products.index')->set('search', $search)
+        ->assertViewHas('products', fn ($products): bool => $products->pluck('id')->all() === [$this->product->id]);
+})->with(['فاتحه قهوه', 'ايطاليه', 'coffee-42', '1234567890123']);
+
+test('barcode printer selects products from a search dropdown', function (): void {
+    $component = Livewire::test('pages::tenant.products.printer')
+        ->set('productSearch', 'coffee-42')
+        ->assertSee('wire:click="selectProduct('.$this->product->id.')"', false)
+        ->assertSee('x-on:click.outside="open = false"', false)
+        ->assertDontSee('wire:model.live="selectedProductId"', false)
+        ->call('selectProduct', $this->product->id)
+        ->assertSet('selectedProductId', $this->product->id)
+        ->assertSet('selectedBarcode', '1234567890123');
+
+    expect($component->get('productSearch'))->toBe($this->product->name);
+});
+
+test('Enter moves to the next product field without submitting the form', function (): void {
+    $html = Livewire::test('pages::tenant.products.index')->assertSet('showModal', false)->html();
+
+    expect(substr_count($html, 'fields[index + 1]?.focus()'))->toBe(2)
+        ->and($html)->toContain('if ($event.target.matches(\'textarea\')) return')
+        ->and($html)->toContain('wire:submit.prevent="save"')
+        ->and($html)->toContain('type="submit"');
+});
+
 test('invoice search can replace a selected product without leaving stale prices', function (string $page): void {
     Livewire::test('pages::tenant.'.$page.'.invoices')->call('selectProduct', $this->product->id)
         ->set('rowSearch', 'فاتحه قهوه')->assertSet('selectedProductId', null)

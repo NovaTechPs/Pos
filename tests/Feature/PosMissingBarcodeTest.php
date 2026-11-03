@@ -138,7 +138,7 @@ test('embedded product form reuses normal validation and saves the new product a
     $component = Livewire::test('pages::tenant.products.index', ['posEmbedded' => true, 'newBarcode' => '000123'])
         ->assertSet('showModal', true)->assertSet('barcodes', ['000123'])
         ->call('save')->assertHasErrors('name')->assertNotDispatched('pos-product-form-closed')
-        ->set('name', 'صنف جديد من نقطة البيع')->set('retail_price', 10)->set('wholesale_price', 8)
+        ->set('name', 'صنف جديد من نقطة البيع')->set('branchPricesInput.'.$this->branch->id.'.retail_price', 10)
         ->call('save')->assertHasNoErrors()->assertSet('showModal', false)
         ->assertDispatched('pos-product-form-closed');
     $record = ProductBarcode::query()->where('barcode', '000123')->sole();

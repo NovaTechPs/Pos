@@ -54,14 +54,14 @@ test('products default to product number order with blank numbers last and can s
         });
 });
 
-test('a product can be saved without a barcode', function (): void {
+test('a product can be saved without a barcode or wholesale price to the active branch only', function (): void {
     Livewire::test('pages::tenant.products.index')
         ->call('openCreateModal')
+        ->assertSet('is_price_unified', false)
         ->set('name', 'Product without barcode')
         ->set('barcodes', [''])
         ->set('cost_price', '5')
-        ->set('retail_price', '10')
-        ->set('wholesale_price', '8')
+        ->set('branchPricesInput.'.$this->branch->id.'.retail_price', '10')
         ->set('min_wholesale_quantity', 1)
         ->call('save')
         ->assertHasNoErrors();
@@ -71,8 +71,12 @@ test('a product can be saved without a barcode', function (): void {
         ->where('name', 'Product without barcode')
         ->firstOrFail();
 
+    $branchProduct = BranchProduct::query()->where('product_id', $product->id)->sole();
+
     expect($product->barcodes)->toHaveCount(0)
-        ->and(BranchProduct::query()->where('product_id', $product->id)->count())->toBe(2);
+        ->and((bool) $product->is_price_unified)->toBeFalse()
+        ->and($branchProduct->branch_id)->toBe($this->branch->id)
+        ->and((float) $branchProduct->wholesale_price)->toBe(0.0);
 });
 
 test('product stock category and website filters combine within the active branch and reset pagination', function (): void {

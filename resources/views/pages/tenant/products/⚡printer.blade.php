@@ -22,6 +22,15 @@ new class extends Component
 
     public string $productSearch = '';
 
+    public function updatedProductSearch(): void
+    {
+        if ($this->selectedProductId) {
+            $this->selectedProductId = null;
+            $this->product = null;
+            $this->selectedBarcode = '';
+        }
+    }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -45,19 +54,10 @@ new class extends Component
                     foreach ($words as $word) {
 
                         $query->where(function ($q) use ($word) {
+                            $pattern = '%' . mb_strtolower($word) . '%';
 
-                            $q->where(
-                                'name',
-                                'ilike',
-                                '%' . $word . '%'
-                            );
-
-                            $q->orWhere(
-                                'product_number',
-                                'ilike',
-                                '%' . $word . '%'
-                            );
-
+                            $q->whereRaw('LOWER(name) LIKE ?', [$pattern])
+                                ->orWhereRaw('LOWER(product_number) LIKE ?', [$pattern]);
                         });
                     }
                 }
@@ -123,6 +123,16 @@ new class extends Component
          */
         $this->selectedBarcode =
             $barcodes[0] ?? '';
+    }
+
+    public function selectProduct(int $productId): void
+    {
+        $this->selectedProductId = $productId;
+        $this->updatedSelectedProductId($productId);
+
+        if ($this->product) {
+            $this->productSearch = $this->product->name;
+        }
     }
 
 
@@ -461,7 +471,7 @@ new class extends Component
 
             {{-- البحث --}}
 
-            <div class="md:col-span-2">
+            <div class="relative md:col-span-2" x-data="{ open: false }" x-on:click.outside="open = false">
 
                 <label
                     class="block text-sm font-medium text-gray-700 mb-1"
@@ -472,77 +482,39 @@ new class extends Component
                 <input
                     type="text"
                     wire:model.live.debounce.300ms="productSearch"
+                    autocomplete="off"
+                    x-on:focus="open = true"
+                    x-on:keydown.escape="open = false"
                     placeholder="اكتب اسم الصنف أو رقم الصنف..."
                     class="w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 >
 
-            </div>
-
-
-            {{-- اختيار المنتج --}}
-
-            <div class="md:col-span-2">
-
-                <label
-                    class="block text-sm font-medium text-gray-700 mb-1"
-                >
-                    اختر الصنف / المنتج
-                </label>
-
-
-                <select
-                    wire:model.live="selectedProductId"
-                    class="w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-
-                    <option value="">
-                        -- اختر صنفاً من القائمة --
-                    </option>
-
-
-                    @foreach($this->products as $p)
-
-                        @php
-                            $firstBarcode =$p->barcodes->first()?->barcode
-                                ?? 'لا يوجد';
-                        @endphp
-
-
-                        <option
-                            value="{{ $p->id }}"
-                        >
-
-                            {{ $p->name }}
-
-                            -
-
-                            الباركود:
-                            {{ $firstBarcode }}
-
-                            -
-
-                            السعر:
-                            {{ $p->cost_price ?? 0 }}
-
-                            NIS
-
-                        </option>
-
-                    @endforeach
-
-                </select>
-
-
-                @if(
-                    $productSearch !== '' &&$this->products->count() === 0
-                )
-
-                    <div
-                        class="mt-2 text-sm text-red-500"
-                    >
-                        لا يوجد منتج مطابق للبحث.
+                @if(trim($productSearch) !== '')
+                    <div x-show="open" x-transition class="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl">
+                        @forelse($this->products as $p)
+                            @php
+                                $firstBarcode = $p->barcodes->first()?->barcode ?? 'لا يوجد';
+                            @endphp
+                            <button
+                                type="button"
+                                wire:click="selectProduct({{ $p->id }})"
+                                x-on:mousedown.prevent
+                                x-on:click="open = false"
+                                class="block w-full border-b border-gray-100 px-4 py-3 text-right transition last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                            >
+                                <span class="block text-sm font-semibold text-gray-800">{{ $p->name }}</span>
+                                <span class="mt-1 block text-xs text-gray-500">
+                                    رقم الصنف: {{ $p->product_number ?? '—' }}
+                                    <span class="mx-1">·</span>
+                                    الباركود: {{ $firstBarcode }}
+                                    <span class="mx-1">·</span>
+                                    السعر: {{ $p->cost_price ?? 0 }} NIS
+                                </span>
+                            </button>
+                        @empty
+                            <div class="px-4 py-3 text-sm text-gray-500">لا يوجد منتج مطابق للبحث.</div>
+                        @endforelse
                     </div>
-
                 @endif
 
             </div>
