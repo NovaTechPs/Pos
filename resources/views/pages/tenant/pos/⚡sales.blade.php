@@ -1298,12 +1298,21 @@ new class extends Component {
             return;
         }
 
-        $remoteIds = $this->refreshRemoteCatalog(filters: ['barcode' => $barcode]);
         $record = ProductBarcode::query()
             ->where('tenant_id', $this->tenantId())
-            ->when($remoteIds !== null, fn ($query) => $query->whereIn('product_id', $remoteIds))
             ->where('barcode', $barcode)
             ->first(['id', 'product_id']);
+        if (!$record) {
+            $remoteIds = $this->refreshRemoteCatalog(filters: ['barcode' => $barcode]);
+            $record = ProductBarcode::query()
+                ->where('tenant_id', $this->tenantId())
+                ->when($remoteIds !== null, fn ($query) => $query->whereIn('product_id', $remoteIds))
+                ->where('barcode', $barcode)
+                ->first(['id', 'product_id']);
+        } else {
+            // Use the cached barcode immediately; queued sync reconciles the sale afterward.
+            $this->verifiedRemoteProductIds[] = (int) $record->product_id;
+        }
 
         if (!$record) {
             $this->missingBarcode = $barcode;

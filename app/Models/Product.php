@@ -42,20 +42,19 @@ class Product extends Model
         return $this->getConnection()->transaction(function () use ($options): bool {
             Tenant::on($this->getConnectionName())->whereKey($this->tenant_id)->lockForUpdate()->firstOrFail();
 
-            $highestNumber = BigInteger::zero();
             $products = $this->getConnection()->table('products')
-                ->where('tenant_id', $this->tenant_id)->whereNotNull('product_number')->select('product_number')->cursor();
-
-            foreach ($products as $product) {
-                if (preg_match('/^i([0-9]+)$/i', $product->product_number, $matches) !== 1) {
-                    continue;
-                }
-
-                $number = BigInteger::of($matches[1]);
-                if ($number->isGreaterThan($highestNumber)) {
-                    $highestNumber = $number;
-                }
+                ->where('tenant_id', $this->tenant_id)->whereNotNull('product_number');
+            $driver = $this->getConnection()->getDriverName();
+            if ($driver === 'mysql') {
+                $products->whereRaw("product_number REGEXP '^[iI][0-9]+$'");
+            } elseif ($driver === 'pgsql') {
+                $products->whereRaw("product_number ~* '^[i][0-9]+$'");
             }
+            $highestProductNumber = $products->orderByRaw('LENGTH(product_number) DESC')
+                ->orderByRaw('LOWER(product_number) DESC')->value('product_number');
+            $highestNumber = preg_match('/^i([0-9]+)$/i', (string) $highestProductNumber, $matches) === 1
+                ? BigInteger::of($matches[1])
+                : BigInteger::zero();
 
             $this->product_number = 'i'.str_pad((string) $highestNumber->plus(1), 8, '0', STR_PAD_LEFT);
 
