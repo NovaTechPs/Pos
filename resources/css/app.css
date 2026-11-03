@@ -137,7 +137,7 @@ select:focus[data-flux-control] {
 
 /* Keep data rows easy to follow everywhere without changing printed receipts. */
 @media screen {
-    body.app-responsive table:not(.items):not(.items-table):not(.summary):not(.info) > tbody > tr:nth-child(even) {
+    body.app-responsive table:not(.items):not(.items-table):not(.summary):not(.info):not(.pos-cart-table) > tbody > tr:nth-child(even) {
         @apply bg-slate-50/70 dark:bg-zinc-800/35;
     }
 }

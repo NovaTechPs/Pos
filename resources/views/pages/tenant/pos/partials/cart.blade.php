@@ -87,7 +87,7 @@
 
     <div data-pos-cart-scroll class="pos-cart-scroll min-h-0 flex-1 overflow-auto">
 
-        <table class="w-full text-right text-xs" dir="rtl">
+        <table class="pos-cart-table w-full text-right text-xs" dir="rtl">
 
             <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 shadow-sm">
 
@@ -136,10 +136,16 @@
 
                 @php
                     $productOccurrences = [];
-                    $cartProductIds = array_values(array_unique(array_column($cart, 'id')));
+                    $productColorKeys = [];
+                    foreach ($cart as $cartItem) {
+                        $colorKey = app(\App\Services\PosProductSearch::class)->normalize((string) ($cartItem['name'] ?? ''));
+                        if (!array_key_exists($colorKey, $productColorKeys)) {
+                            $productColorKeys[$colorKey] = count($productColorKeys);
+                        }
+                    }
                     $productColors = [];
-                    foreach ($cartProductIds as $colorIndex => $cartProductId) {
-                        $productColors[(int) $cartProductId] = 70 + ($colorIndex * 210) / max(1, count($cartProductIds));
+                    foreach ($productColorKeys as $colorKey => $colorIndex) {
+                        $productColors[$colorKey] = 70 + ($colorIndex * 210) / max(1, count($productColorKeys));
                     }
                 @endphp
                 @forelse ($cart as $lineKey => $item)
@@ -147,7 +153,8 @@
                         $productIdentity = (int) $item['id'];
                         $productOccurrences[$productIdentity] = ($productOccurrences[$productIdentity] ?? 0) + 1;
                         $productOccurrence = $productOccurrences[$productIdentity];
-                        $productHue = $productColors[$productIdentity];
+                        $productColorKey = app(\App\Services\PosProductSearch::class)->normalize((string) ($item['name'] ?? ''));
+                        $productHue = $productColors[$productColorKey];
                         $belowCost =
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp

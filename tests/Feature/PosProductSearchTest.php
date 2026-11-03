@@ -50,6 +50,17 @@ test('pos search understands Arabic spelling and unordered words in both search 
     ['Premium Long Grain Rice', 'rice PREMIUM'],
 ]);
 
+test('POS product results fit the panel and add by selecting a wrapped result row', function (): void {
+    $template = file_get_contents(resource_path('views/pages/tenant/pos/partials/quick-product-results.blade.php'));
+
+    expect($template)->toContain('table-fixed')
+        ->and($template)->toContain('data-pos-product data-product-index')
+        ->and($template)->toContain('break-words')
+        ->and($template)->toContain('break-all')
+        ->and($template)->not->toContain('min-w-[920px]')
+        ->and($template)->not->toContain('quickProductQuantities')
+        ->and($template)->not->toContain('wire:click="addSearchedProduct');
+});
 test('Enter does not implicitly submit forms anywhere in the app', function (): void {
     $script = file_get_contents(resource_path('js/prevent-enter-submit.js'));
 
@@ -57,6 +68,20 @@ test('Enter does not implicitly submit forms anywhere in the app', function (): 
         ->and($script)->toContain("event.target.closest('form')")
         ->and($script)->toContain('event.preventDefault()')
         ->and($script)->toContain('/^(search|applyFilters|filter|preview|calculate|lookup)/i');
+});
+test('cart rows with equivalent product names share the same background color', function (): void {
+    $first = searchablePosProduct($this, 'إبريق شفاف');
+    $second = searchablePosProduct($this, 'ابريق شفاف');
+
+    $html = Livewire::test('pages::tenant.pos.sales')->set('mergeSimilarProducts', false)
+        ->call('selectInlineProduct', $first->id)->call('selectInlineProduct', $second->id)->html();
+    preg_match_all('/data-pos-product-color="(\\d+)" style="--pos-cart-hue: ([^"]+)"/', $html, $matches, PREG_SET_ORDER);
+    $hues = [];
+    foreach ($matches as [, $productId, $hue]) {
+        $hues[(int) $productId] = $hue;
+    }
+
+    expect($hues[$first->id] ?? null)->toBe($hues[$second->id] ?? null);
 });
 test('product list search includes one-character product name queries', function (): void {
     $product = searchablePosProduct($this, 'إبريق زجاج');
