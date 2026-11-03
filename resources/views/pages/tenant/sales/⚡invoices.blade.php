@@ -1383,7 +1383,7 @@ new class extends Component {
                         </div>
                     @else
                         <input
-                            id="customer-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true"
+                            id="customer-search-input" autofocus x-init="$nextTick(() => requestAnimationFrame(() => $el.focus({ preventScroll: true })))" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true"
                             x-ref="customerSearch"
                             type="text"
                             wire:model.live.debounce.180ms="customerSearch"
@@ -1923,10 +1923,10 @@ new class extends Component {
         resultRefreshTimer: null,
 
         init() {
-            this.$nextTick(() => {
-                const input = this.$refs.customerSearch ?? this.$refs.productSearch;
-                input?.focus({ preventScroll: true });
-            });
+            this.$nextTick(() => setTimeout(() => {
+                const input = this.$el.querySelector('#customer-search-input') ?? this.$el.querySelector('#product-search-input');
+                if (this.$el.isConnected) input?.focus({ preventScroll: true });
+            }, 120));
 
             this.refreshResultClasses();
 
