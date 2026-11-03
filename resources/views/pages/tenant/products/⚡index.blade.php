@@ -281,9 +281,21 @@ new class extends Component {
 
     private function activeBranchId(): ?int
     {
-        $branchId = session('active_branch_id');
+        $tenantId = $this->tenantId();
+        if (!$tenantId) {
+            return null;
+        }
 
-        return $branchId ? (int) $branchId : null;
+        $branchId = auth()->user()?->branch_id ?: session('active_branch_id');
+        $branchQuery = DB::table('branches')->where('tenant_id', $tenantId);
+
+        if ($branchId && $branchQuery->where('id', $branchId)->exists()) {
+            return (int) $branchId;
+        }
+
+        $firstBranchId = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('id')->value('id');
+
+        return $firstBranchId ? (int) $firstBranchId : null;
     }
 
     private function tenantHasBranches(): bool
