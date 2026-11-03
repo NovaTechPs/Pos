@@ -1945,8 +1945,14 @@ new class extends Component {
         productIndex: -1,
         customerIndex: -1,
         resultRefreshTimer: null,
+        keyboardController: null,
 
         init() {
+            this.keyboardController = new AbortController();
+            window.addEventListener('keydown', (event) => this.globalKeydown(event), {
+                signal: this.keyboardController.signal,
+            });
+
             this.$nextTick(() => setTimeout(() => {
                 const input = this.$el.querySelector('#customer-search-input') ?? this.$el.querySelector('#product-search-input');
                 if (this.$el.isConnected) input?.focus({ preventScroll: true });
@@ -1999,6 +2005,11 @@ new class extends Component {
                 clearTimeout(this.resultRefreshTimer);
                 this.resultRefreshTimer = setTimeout(() => this.refreshResultClasses(), 10);
             });
+        },
+
+        destroy() {
+            clearTimeout(this.resultRefreshTimer);
+            this.keyboardController?.abort();
         },
 
         isTypingElement(element) {
@@ -2070,7 +2081,14 @@ new class extends Component {
         },
 
         rowInputs() {
-            return Array.from(document.querySelectorAll('[data-grid-input]'));
+            return Array.from(this.$el.querySelectorAll('[data-grid-input]'))
+                .filter((element) => element.getClientRects().length > 0);
+        },
+
+        gridInput(row, column) {
+            return this.rowInputs().find((element) =>
+                Number(element.dataset.row) === row && Number(element.dataset.col) === column
+            ) ?? null;
         },
 
         moveGridInput(element, direction, axis) {
@@ -2079,20 +2097,21 @@ new class extends Component {
 
             if (axis === 'row') {
                 const targetRow = row + direction;
-                const selector = `[data-grid-input][data-row="${targetRow}"][data-col="${col}"]`;
-                const target = document.querySelector(selector);
+                const target = this.gridInput(targetRow, col);
 
                 if (target) {
                     target.focus();
                     target.select();
+                } else if (direction > 0) {
+                    this.$refs.productSearch?.focus();
+                    this.$refs.productSearch?.select();
                 }
 
                 return;
             }
 
             const targetCol = col + direction;
-            const selector = `[data-grid-input][data-row="${row}"][data-col="${targetCol}"]`;
-            const target = document.querySelector(selector);
+            const target = this.gridInput(row, targetCol);
 
             if (target) {
                 target.focus();
@@ -2104,9 +2123,7 @@ new class extends Component {
             const row = Number(element.dataset.row);
             const col = Number(element.dataset.col);
 
-            const nextSameRow = document.querySelector(
-                `[data-grid-input][data-row="${row}"][data-col="${col + 1}"]`
-            );
+            const nextSameRow = this.gridInput(row, col + 1);
 
             if (nextSameRow) {
                 nextSameRow.focus();
@@ -2114,9 +2131,7 @@ new class extends Component {
                 return;
             }
 
-            const nextRow = document.querySelector(
-                `[data-grid-input][data-row="${row + 1}"][data-col="0"]`
-            );
+            const nextRow = this.gridInput(row + 1, 0);
 
             if (nextRow) {
                 nextRow.focus();
@@ -2298,26 +2313,6 @@ new class extends Component {
             }
         }
     }));
-
-    window.addEventListener('keydown', (event) => {
-        const root = document.querySelector('[x-data="salesInvoiceKeyboard()"]');
-        if (!root || !root.__x) return;
-
-        // Alpine handles the exact same event through the x-data instance.
-        // This fallback intentionally remains empty.
-    });
-
-    document.addEventListener('keydown', (event) => {
-        const root = document.querySelector('[x-data^="salesInvoiceKeyboard"]');
-
-        if (!root) return;
-
-        const alpineData = root._x_dataStack?.[0];
-
-        if (alpineData?.globalKeydown) {
-            alpineData.globalKeydown(event);
-        }
-    });
 
     Livewire.on('print-sales-invoice', ({ invoice }) => {
         if (!invoice) return;
