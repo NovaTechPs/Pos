@@ -1923,7 +1923,10 @@ new class extends Component {
         resultRefreshTimer: null,
 
         init() {
-            this.$nextTick(() => this.$refs.customerSearch?.focus());
+            this.$nextTick(() => {
+                const input = this.$refs.customerSearch ?? this.$refs.productSearch;
+                input?.focus({ preventScroll: true });
+            });
 
             this.refreshResultClasses();
 
