@@ -35,8 +35,18 @@ class PosProductSearch
         $barcode = 'EXISTS (SELECT 1 FROM product_barcodes AS search_barcodes WHERE search_barcodes.product_id = products.id AND search_barcodes.tenant_id = ? AND LOWER(search_barcodes.barcode)';
         $pattern = strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']);
         $wordPrefixPattern = '% '.$pattern.'%';
-        $query->where(function (Builder $query) use ($search, $name, $number, $barcode, $pattern, $tenantId): void {
-            $query->where(function (Builder $query) use ($name, $pattern): void {
+        $keywords = array_map(fn (string $keyword): string => preg_replace('/[^\\p{L}\\p{N}]+/u', '', $keyword) ?? '', explode(' ', $search));
+        $useFullText = $query->getConnection()->getDriverName() === 'mysql'
+            && $keywords !== []
+            && collect($keywords)->every(fn (string $keyword): bool => mb_strlen($keyword) >= 3);
+        $booleanSearch = implode(' ', array_map(fn (string $keyword): string => '+'.$keyword.'*', $keywords));
+        $query->where(function (Builder $query) use ($search, $name, $number, $barcode, $pattern, $tenantId, $useFullText, $booleanSearch): void {
+            $query->where(function (Builder $query) use ($name, $pattern, $useFullText, $booleanSearch): void {
+                if ($useFullText) {
+                    $query->whereRaw('MATCH(products.search_name) AGAINST (? IN BOOLEAN MODE)', [$booleanSearch]);
+
+                    return;
+                }
                 foreach (explode(' ', $pattern) as $keyword) {
                     $query->whereRaw("{$name} LIKE ? ESCAPE '!'", ['%'.$keyword.'%']);
                 }
