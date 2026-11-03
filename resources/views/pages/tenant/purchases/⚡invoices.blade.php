@@ -327,6 +327,20 @@ new class extends Component {
         $this->dispatch('focus-quantity');
     }
 
+    public function addProductFromSearch(int $productId): void
+    {
+        if ($this->currentPurchaseId && ! $this->invoiceEditMode) {
+            return;
+        }
+
+        $this->selectedProductId = null;
+        $this->selectProduct($productId);
+
+        if ($this->selectedProductId === $productId) {
+            $this->commitRowToCart();
+        }
+    }
+
     public function updatedRowSearch(string $value): void
     {
         if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
@@ -1452,7 +1466,9 @@ new class extends Component {
                                             type="button"
                                             data-product-result
                                             data-result-index="{{ $loop->index }}"
-                                            wire:click="selectProduct({{ $product->id }})"
+                                            x-on:mousedown.prevent
+                                            wire:click="addProductFromSearch({{ $product->id }})"
+                                            wire:loading.attr="disabled"
                                             class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-indigo-50"
                                         >
                                             <div class="flex min-w-0 items-center gap-3">

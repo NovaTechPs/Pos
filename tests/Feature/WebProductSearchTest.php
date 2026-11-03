@@ -19,6 +19,22 @@ beforeEach(function (): void {
     ProductBarcode::create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '1234567890123']);
 });
 
+test('clicking a purchase search result adds that product to the invoice', function (): void {
+    $component = Livewire::test('pages::tenant.purchases.invoices')->set('rowSearch', 'قهوه')
+        ->assertSee('wire:click="addProductFromSearch('.$this->product->id.')"', false)
+        ->assertSee('x-on:mousedown.prevent', false)
+        ->call('addProductFromSearch', $this->product->id)
+        ->assertSet('rowSearch', '')->assertSet('selectedProductId', null)->assertSet('errorMessage', null)
+        ->assertDispatched('focus-product-search');
+    $items = array_values($component->get('cart'));
+    expect($items)->toHaveCount(1)->and($items[0]['id'])->toBe($this->product->id)
+        ->and($items[0]['quantity'])->toBe(1.0)->and($items[0]['price'])->toBe(2.0);
+    $otherTenant = Tenant::create(['name' => 'متجر آخر']);
+    $otherProduct = Product::create(['tenant_id' => $otherTenant->id, 'name' => 'صنف مخفي']);
+    $component->call('addProductFromSearch', $otherProduct->id);
+    expect($component->get('cart'))->toHaveCount(1);
+});
+
 test('invoice search uses POS matching for Arabic words numbers and barcodes', function (string $page, string $search): void {
     Product::create(['tenant_id' => $this->tenant->id, 'name' => 'صنف لا يطابق']);
     Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', $search)
