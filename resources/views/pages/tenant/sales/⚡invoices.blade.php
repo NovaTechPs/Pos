@@ -35,6 +35,16 @@ new class extends Component {
 
     public ?int $selectedCustomerId = null;
 
+    public bool $showCustomerStatementModal = false;
+
+    public array $customerStatementRows = [];
+
+    public float $customerStatementOpeningBalance = 0.0;
+
+    public float $customerStatementCurrentBalance = 0.0;
+
+    public float $customerStatementCalculatedBalance = 0.0;
+
     public string $customerSearch = '';
 
     public string $rowSearch = '';
@@ -286,6 +296,69 @@ new class extends Component {
         $this->selectedCustomerId = null;
         $this->customerSearch = '';
         $this->dispatch('focus-customer-search');
+    }
+
+    public function openCustomerStatement(): void
+    {
+        abort_unless(auth()->user()?->can('reports.analytics') && auth()->user()?->can('customers.view'), 403);
+
+        $tenantId = $this->tenantId();
+        abort_unless($tenantId && $this->selectedCustomerId, 404);
+
+        $party = Party::query()->where('tenant_id', $tenantId)
+            ->whereIn('type', ['customer', 'both'])->findOrFail($this->selectedCustomerId);
+        $this->customerStatementOpeningBalance = (float) $party->opening_balance;
+        $this->customerStatementCurrentBalance = (float) $party->current_balance;
+        $runningBalance = $this->customerStatementOpeningBalance;
+        $transactions = collect();
+
+        Order::query()->where('tenant_id', $tenantId)->where('customer_id', $party->id)
+            ->get(['id', 'type', 'total', 'delivery_fee', 'invoice_number', 'invoice_date', 'created_at'])
+            ->each(function (Order $order) use ($transactions): void {
+                $isReturn = $order->type === 'return';
+                $amount = max(0, abs((float) $order->total) - (float) $order->delivery_fee);
+                $transactions->push([
+                    'date' => $order->invoice_date ?? $order->created_at,
+                    'description' => ($isReturn ? 'مردود مبيعات #' : 'فاتورة مبيعات #').($order->invoice_number ?: $order->id),
+                    'debit' => $isReturn ? 0.0 : $amount,
+                    'credit' => $isReturn ? $amount : 0.0,
+                ]);
+            });
+
+        Payment::query()->where('tenant_id', $tenantId)->where('party_id', $party->id)
+            ->get(['id', 'type', 'amount', 'order_id', 'payment_date', 'created_at', 'notes'])
+            ->each(function (Payment $payment) use ($transactions): void {
+                $isRefund = $payment->type === 'payment';
+                $description = $isRefund ? 'مبلغ مردود للعميل' : 'سند قبض';
+                if ($payment->order_id) {
+                    $description .= ' للفاتورة #'.$payment->order_id;
+                }
+                if ($payment->notes) {
+                    $description .= ' ('.$payment->notes.')';
+                }
+                $transactions->push([
+                    'date' => $payment->payment_date ?: $payment->created_at,
+                    'description' => $description,
+                    'debit' => $isRefund ? abs((float) $payment->amount) : 0.0,
+                    'credit' => $isRefund ? 0.0 : abs((float) $payment->amount),
+                ]);
+            });
+
+        $this->customerStatementRows = $transactions->sortBy(fn (array $transaction): int => \Illuminate\Support\Carbon::parse($transaction['date'])->timestamp)
+            ->values()->map(function (array $transaction) use (&$runningBalance): array {
+                $runningBalance += $transaction['debit'] - $transaction['credit'];
+                $transaction['balance'] = $runningBalance;
+
+                return $transaction;
+            })->all();
+        $this->customerStatementCalculatedBalance = $runningBalance;
+        $this->showCustomerStatementModal = true;
+    }
+
+    public function closeCustomerStatement(): void
+    {
+        $this->showCustomerStatementModal = false;
+        $this->customerStatementRows = [];
     }
 
     /*
@@ -1101,9 +1174,6 @@ new class extends Component {
     >
 
         <livewire:product-history />
-        @if ($selectedCustomerId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
-            <a class="mb-3 inline-flex rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener">كشف حساب الزبون</a>
-        @endif
         {{-- ================================================================
              شريط الأدوات الرئيسي
         ================================================================= --}}
@@ -1303,7 +1373,10 @@ new class extends Component {
 
                             <div class="flex shrink-0 flex-col items-end gap-1">
                                 @if (auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
-                                    <a href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-indigo-700 shadow-sm">كشف الحساب</a>
+                                    <button type="button" wire:click="openCustomerStatement" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-indigo-700 shadow-sm">كشف الحساب</button>
+                                @endif
+                                @if ($currentOrderId)
+                                    <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-emerald-700 shadow-sm">إضافة سند قبض</a>
                                 @endif
                                 <button type="button" wire:click="clearCustomer" class="rounded-lg px-2 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100">تغيير</button>
                             </div>
@@ -1803,6 +1876,42 @@ new class extends Component {
 
         <div id="sales-print-template" class="hidden"></div>
     </div>
+    @if ($showCustomerStatementModal)
+        <div class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="كشف حساب الزبون" wire:key="sales-customer-statement-{{ $selectedCustomerId }}">
+            <div class="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" x-on:keydown.escape.window="$wire.closeCustomerStatement()">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900">كشف حساب {{ $selectedCustomer?->name }}</h2>
+                        <p class="mt-1 text-xs font-semibold text-slate-500">الحركات المسجلة للزبون ورصيده الحالي.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        @if ($currentOrderId && $selectedCustomerId)
+                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">إضافة سند قبض</a>
+                        @endif
+                        <button type="button" wire:click="closeCustomerStatement" class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-50" aria-label="إغلاق">✕</button>
+                    </div>
+                </div>
+                <div class="grid shrink-0 gap-2 border-b border-slate-100 p-4 sm:grid-cols-3">
+                    <div class="rounded-xl bg-slate-50 p-3"><div class="text-xs font-bold text-slate-500">الرصيد الافتتاحي</div><div class="mt-1 font-mono font-black">{{ number_format($customerStatementOpeningBalance, 2) }}</div></div>
+                    <div class="rounded-xl bg-indigo-50 p-3"><div class="text-xs font-bold text-indigo-600">الرصيد الحالي المسجل</div><div class="mt-1 font-mono font-black text-indigo-800">{{ number_format($customerStatementCurrentBalance, 2) }}</div></div>
+                    <div class="rounded-xl bg-emerald-50 p-3"><div class="text-xs font-bold text-emerald-700">الرصيد المحسوب من الحركات</div><div class="mt-1 font-mono font-black text-emerald-800">{{ number_format($customerStatementCalculatedBalance, 2) }}</div></div>
+                </div>
+                <div class="min-h-0 flex-1 overflow-auto">
+                    <table class="w-full min-w-[680px] text-right text-sm">
+                        <thead class="sticky top-0 bg-slate-900 text-white"><tr><th class="p-3">التاريخ</th><th class="p-3">البيان</th><th class="p-3">مدين</th><th class="p-3">دائن</th><th class="p-3">الرصيد</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr class="bg-slate-50 font-bold"><td class="p-3">—</td><td class="p-3">رصيد افتتاحي</td><td class="p-3">{{ $customerStatementOpeningBalance > 0 ? number_format($customerStatementOpeningBalance, 2) : '—' }}</td><td class="p-3">{{ $customerStatementOpeningBalance < 0 ? number_format(abs($customerStatementOpeningBalance), 2) : '—' }}</td><td class="p-3">{{ number_format($customerStatementOpeningBalance, 2) }}</td></tr>
+                            @forelse ($customerStatementRows as $transaction)
+                                <tr><td class="whitespace-nowrap p-3">{{ \Illuminate\Support\Carbon::parse($transaction['date'])->format('Y-m-d H:i') }}</td><td class="p-3">{{ $transaction['description'] }}</td><td class="p-3 tabular-nums">{{ $transaction['debit'] > 0 ? number_format($transaction['debit'], 2) : '—' }}</td><td class="p-3 tabular-nums">{{ $transaction['credit'] > 0 ? number_format($transaction['credit'], 2) : '—' }}</td><td class="p-3 font-bold tabular-nums">{{ number_format($transaction['balance'], 2) }}</td></tr>
+                            @empty
+                                <tr><td colspan="5" class="p-8 text-center font-semibold text-slate-400">لا توجد حركات بعد الرصيد الافتتاحي.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    @endif
     <livewire:product-price-history-modal />
 </flux:main>
 
@@ -1819,13 +1928,13 @@ new class extends Component {
             this.refreshResultClasses();
 
             Livewire.on('focus-product-search', () => {
-                setTimeout(() => {
+                this.$nextTick(() => requestAnimationFrame(() => {
                     const input = this.$refs.productSearch;
-                    if (input) {
-                        input.focus();
-                        input.select();
-                    }
-                }, 60);
+                    if (!input || !this.$el.contains(input)) return;
+
+                    input.focus({ preventScroll: true });
+                    input.select();
+                }));
             });
 
             Livewire.on('focus-quantity', () => {
