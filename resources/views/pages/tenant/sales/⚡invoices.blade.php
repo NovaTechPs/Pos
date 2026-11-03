@@ -1383,7 +1383,7 @@ new class extends Component {
                         </div>
                     @else
                         <input
-                            id="customer-search-input" autofocus x-init="$nextTick(() => requestAnimationFrame(() => $el.focus({ preventScroll: true })))" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true"
+                            id="customer-search-input" autofocus x-init="$nextTick(() => requestAnimationFrame(() => $el.focus({ preventScroll: true })))" x-on:focus="partySearchOpen = true" x-on:input="customerIndex = -1; refreshResultClasses(); partySearchOpen = true"
                             x-ref="customerSearch"
                             type="text"
                             wire:model.live.debounce.180ms="customerSearch"
@@ -1482,7 +1482,7 @@ new class extends Component {
                             x-ref="productSearch"
                             type="text"
                             wire:model.live.debounce.250ms="rowSearch"
-                            maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true"
+                            maxlength="120" x-on:input="productIndex = -1; refreshResultClasses(); productSearchOpen = true" x-on:focus="productSearchOpen = true"
                             autocomplete="off"
                             placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..."
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
@@ -1918,8 +1918,8 @@ new class extends Component {
 @script
 <script>
     Alpine.data('salesInvoiceKeyboard', () => ({
-        productIndex: 0,
-        customerIndex: 0,
+        productIndex: -1,
+        customerIndex: -1,
         resultRefreshTimer: null,
 
         init() {
@@ -2018,13 +2018,9 @@ new class extends Component {
             if (!list.length) return;
 
             const key = type === 'product' ? 'productIndex' : 'customerIndex';
-            this[key] = Math.max(
-                0,
-                Math.min(
-                    list.length - 1,
-                    this[key] + direction
-                )
-            );
+            this[key] = direction > 0
+                ? Math.min(list.length - 1, this[key] + 1)
+                : Math.max(0, this[key] < 0 ? list.length - 1 : this[key] - 1);
 
             this.refreshResultClasses();
 
@@ -2042,7 +2038,10 @@ new class extends Component {
             if (!list.length) return false;
 
             const key = type === 'product' ? 'productIndex' : 'customerIndex';
-            list[this[key]]?.click();
+            const selected = list[this[key]] ?? (this[key] < 0 ? list[0] : null);
+            if (!selected) return false;
+
+            selected.click();
             return true;
         },
 
