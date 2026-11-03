@@ -39,6 +39,7 @@ new class extends Component {
     public ?int $paymentId = null;
 
     public ?int $partyId = null;
+    public ?int $orderId = null;
 
     public bool $showForm = false;
 
@@ -59,6 +60,17 @@ new class extends Component {
         $voucherId = request()->integer('voucher');
         if ($voucherId > 0) {
             $this->edit($voucherId);
+        } elseif (request()->integer('order_id') > 0) {
+            $order = Order::query()->where('tenant_id', $this->getTenantId())->findOrFail(request()->integer('order_id'));
+            abort_unless($order->customer_id, 404);
+            $this->resetForm();
+            $this->orderId = $order->id;
+            $this->partyId = $order->customer_id;
+            $this->paymentDate = ($order->invoice_date ?? $order->created_at)->format('Y-m-d');
+            $this->amount = (string) request()->input('amount', max(0, (float) $order->total - (float) $order->paid_amount));
+            $this->notes = (string) request()->input('notes', 'سند قبض لفاتورة '.$order->invoice_number);
+            $this->voucherNumber = $this->generateVoucherNumber();
+            $this->showForm = true;
         }
 
     }
@@ -558,6 +570,12 @@ new class extends Component {
 
                     'party_id' => $newParty->id,
 
+                    'order_id' => $this->orderId,
+
+                    'branch_id' => $this->orderId ? Order::query()->where('tenant_id', $tenantId)->whereKey($this->orderId)->value('branch_id') : null,
+
+                    'created_by' => Auth::id(),
+
                     'type' => 'receipt',
 
                     'voucher_number' => $validated['voucherNumber'],
@@ -571,6 +589,13 @@ new class extends Component {
                     'notes' => $validated['notes'] ?? null,
 
                 ]);
+
+                if ($this->orderId) {
+                    $order = Order::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($this->orderId);
+                    abort_unless((int) $order->customer_id === (int) $newParty->id, 404);
+                    $paidAmount = min((float) $order->total, (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount') + (float) $order->delivery_fee);
+                    $order->update(['paid_amount' => $paidAmount, 'payment_status' => $paidAmount >= (float) $order->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid')]);
+                }
 
                 /*
 
@@ -868,6 +893,7 @@ new class extends Component {
             'paymentId',
 
             'partyId',
+            'orderId',
 
         ]);
 

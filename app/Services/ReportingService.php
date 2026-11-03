@@ -175,14 +175,17 @@ class ReportingService
         $partyIds = $this->parties()->select('parties.id');
         $orders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
             ->whereIn('type', ['pos', 'wholesale', 'online', 'return'])->whereIn('customer_id', clone $partyIds)
-            ->selectRaw("customer_id as party_id, created_at as event_date, invoice_number as reference, 'فاتورة مبيعات / مردود' as description, CASE WHEN type = 'return' THEN -ABS(total) ELSE ABS(total) END as amount, 1 as source_order, id as source_id");
+            ->selectRaw("customer_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'فاتورة مبيعات / مردود' as description, CASE WHEN type = 'return' THEN -ABS(total) ELSE ABS(total - delivery_fee) END as amount, 1 as source_order, id as source_id");
+        $deliveryOrders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
+            ->whereNotNull('delivery_party_id')->whereIn('delivery_party_id', clone $partyIds)->where('delivery_fee', '>', 0)
+            ->selectRaw("delivery_party_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'رسوم توصيل' as description, -ABS(delivery_fee) as amount, 2 as source_order, id as source_id");
         $linkedPurchasePayments = $this->table('payments')->whereNotNull('purchase_id')->select('purchase_id')
             ->selectRaw("SUM(CASE WHEN type = 'payment' THEN amount ELSE -amount END) as linked_paid")->groupBy('purchase_id');
         $purchases = $this->branch($this->table('purchases'), 'purchases.branch_id')->whereIn('supplier_id', clone $partyIds)
             ->leftJoinSub($linkedPurchasePayments, 'purchase_paid', 'purchase_paid.purchase_id', '=', 'purchases.id')
-            ->selectRaw("supplier_id as party_id, purchases.created_at as event_date, reference_number as reference, 'فاتورة مشتريات (بعد المدفوع غير المربوط بسند)' as description, -total + CASE WHEN paid_amount > COALESCE(linked_paid,0) THEN paid_amount - COALESCE(linked_paid,0) ELSE 0 END as amount, 2 as source_order, purchases.id as source_id");
+            ->selectRaw("supplier_id as party_id, COALESCE(purchases.invoice_date, purchases.created_at) as event_date, reference_number as reference, 'فاتورة مشتريات (بعد المدفوع غير المربوط بسند)' as description, -total + CASE WHEN paid_amount > COALESCE(linked_paid,0) THEN paid_amount - COALESCE(linked_paid,0) ELSE 0 END as amount, 3 as source_order, purchases.id as source_id");
         $returns = $this->branch($this->table('purchase_returns'), 'purchase_returns.branch_id')->whereIn('supplier_id', clone $partyIds)
-            ->selectRaw("supplier_id as party_id, created_at as event_date, reference_number as reference, 'مردود مشتريات' as description, ABS(total) as amount, 3 as source_order, id as source_id");
+            ->selectRaw("supplier_id as party_id, created_at as event_date, reference_number as reference, 'مردود مشتريات' as description, ABS(total) as amount, 4 as source_order, id as source_id");
         $payments = $this->branch($this->table('payments'), 'payments.branch_id')
             ->leftJoin('orders as paid_order', function ($join): void {
                 $join->on('paid_order.id', '=', 'payments.order_id')->where('paid_order.tenant_id', $this->tenantId);
@@ -191,9 +194,9 @@ class ReportingService
                 $join->on('paid_purchase.id', '=', 'payments.purchase_id')->where('paid_purchase.tenant_id', $this->tenantId);
             })
             ->whereIn(DB::raw('COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id)'), clone $partyIds)
-            ->selectRaw("COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id) as party_id, COALESCE(payments.payment_date, payments.created_at) as event_date, voucher_number as reference, CASE WHEN payments.type = 'receipt' THEN 'سند قبض' ELSE 'سند صرف / رد مبلغ' END as description, CASE WHEN payments.type = 'receipt' THEN -ABS(amount) ELSE ABS(amount) END as amount, 4 as source_order, payments.id as source_id");
+            ->selectRaw("COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id) as party_id, COALESCE(payments.payment_date, payments.created_at) as event_date, voucher_number as reference, CASE WHEN payments.type = 'receipt' THEN 'سند قبض' ELSE 'سند صرف / رد مبلغ' END as description, CASE WHEN payments.type = 'receipt' THEN -ABS(amount) ELSE ABS(amount) END as amount, 5 as source_order, payments.id as source_id");
 
-        return DB::query()->fromSub($orders->unionAll($purchases)->unionAll($returns)->unionAll($payments), 'events');
+        return DB::query()->fromSub($orders->unionAll($deliveryOrders)->unionAll($purchases)->unionAll($returns)->unionAll($payments), 'events');
     }
 
     /** @return ReportDefinition */

@@ -61,6 +61,20 @@ test('barcode printer selects products from a search dropdown', function (): voi
     expect($component->get('productSearch'))->toBe($this->product->name);
 });
 
+test('barcode labels use the selected branch retail price instead of cost price', function (): void {
+    $component = Livewire::test('pages::tenant.products.printer')->call('selectProduct', $this->product->id);
+
+    expect($component->instance()->getRetailPrice())->toBe(5.0);
+});
+test('barcode printer keeps the barcode digits within the label height', function (): void {
+    $template = file_get_contents(resource_path('views/pages/tenant/products/⚡printer.blade.php'));
+
+    expect($template)->toContain('textPosition:')
+        ->and(preg_match_all('/height:\s+17,/', $template))->toBe(1)
+        ->and(preg_match_all('/fontSize:\s+8,/', $template))->toBe(1)
+        ->and($template)->toContain('12mm');
+});
+
 test('Enter moves to the next product field without submitting the form', function (): void {
     $html = Livewire::test('pages::tenant.products.index')->assertSet('showModal', false)->html();
 

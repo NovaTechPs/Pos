@@ -31,6 +31,10 @@ class Order extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'invoice_date' => 'date',
+    ];
+
     /** @return HasMany<OrderItem, $this> */
     public function items(): HasMany
     {

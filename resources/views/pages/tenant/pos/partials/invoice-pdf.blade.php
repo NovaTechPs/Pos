@@ -169,7 +169,7 @@
                     {{ $ar('التاريخ:') }}
                 </strong>
 
-                {{ optional($order->created_at)->format('Y/m/d H:i') }}
+                {{ $order->invoice_date?->format('Y/m/d') ?? optional($order->created_at)->format('Y/m/d H:i') }}
             </td>
 
             <td>

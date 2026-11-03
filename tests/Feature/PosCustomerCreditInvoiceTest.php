@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\ReportingService;
 use Livewire\Livewire;
 
 test('customer checkout saves a sales invoice and only its actual payment enters the shift', function (float $paid, string $status, string $mode, string $paymentMethod = 'cash'): void {
@@ -25,6 +26,7 @@ test('customer checkout saves a sales invoice and only its actual payment enters
 
     $component = Livewire::test('pages::tenant.pos.sales')
         ->call('selectInlineProduct', $product->id)
+        ->set('selectedCustomerId', $customer->id)
         ->set('payment_method', $paymentMethod)
         ->set('selectedCustomerId', $customer->id)
         ->call('checkout')
@@ -32,10 +34,16 @@ test('customer checkout saves a sales invoice and only its actual payment enters
         ->set('customerPaymentAmount', $paid)
         ->call('confirmCustomerPayment')
         ->assertSet('errorMessage', null)
-        ->assertSet('invoiceEditMode', false);
+        ->assertSet('invoiceEditMode', false)
+        ->assertSet('currentInvoiceId', null)
+        ->assertSet('cart', [])
+        ->assertSet('selectedCustomerId', null)
+        ->assertSee('وفتح فاتورة جديدة');
 
     $order = Order::query()->sole();
-    $component->assertSet('currentInvoiceId', $order->id);
+    $component->assertSet('currentInvoiceId', null)
+        ->call('loadInvoice', $order->id)
+        ->assertSet('currentInvoiceId', $order->id);
 
     expect($order->type)->toBe('pos')
         ->and((int) $order->shift_id)->toBe($shift->id)
@@ -73,7 +81,7 @@ test('customer checkout saves a sales invoice and only its actual payment enters
     Livewire::test('pages::tenant.customers.index')
         ->call('openStatementModal', $customer->id)
         ->call('openStatementDocument', 'order', $order->id)
-        ->assertDispatched('open-statement-document', url: route('tenant.pos', ['invoice' => $order->id]));
+        ->assertDispatched('open-statement-document', url: route('tenant.pos', ['invoice' => $order->id, 'customer_copy' => 1]));
 
     expect((float) $order->fresh()->paid_amount)->toBe($paid)
         ->and($order->fresh()->payment_status)->toBe($status);
@@ -100,6 +108,8 @@ test('delivery notes are saved on the invoice while the delivery fee stays out o
     $tenant = Tenant::query()->create(['name' => 'متجر التوصيل']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
     $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'is_active' => true]);
+    $deliveryCompany = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'شركة التوصيل', 'type' => 'supplier', 'is_active' => true]);
     $shift = Shift::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'opening_cash' => 50, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id]);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف توصيل', 'cost_price' => 4]);
     BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 10]);
@@ -107,6 +117,8 @@ test('delivery notes are saved on the invoice while the delivery fee stays out o
 
     Livewire::test('pages::tenant.pos.sales')
         ->call('selectInlineProduct', $product->id)
+        ->set('selectedCustomerId', $customer->id)
+        ->set('deliveryCompanyId', $deliveryCompany->id)
         ->set('delivery_fee', 5)
         ->set('deliveryCustomerName', 'عميل التوصيل')
         ->set('deliveryCustomerPhone', '0599999999')
@@ -114,17 +126,57 @@ test('delivery notes are saved on the invoice while the delivery fee stays out o
         ->set('deliveryNotes', 'اتصل قبل الوصول')
         ->set('paid_amount', 15)
         ->call('checkout')
+        ->set('customerPaymentAmount', 15)
+        ->call('confirmCustomerPayment')
         ->assertSet('errorMessage', null);
 
     $order = Order::query()->sole();
     $payment = Payment::query()->sole();
 
     expect((float) $order->total)->toBe(15.0)
+        ->and((int) $order->customer_id)->toBe($customer->id)
         ->and((float) $order->delivery_fee)->toBe(5.0)
         ->and((float) $order->paid_amount)->toBe(15.0)
         ->and($order->notes)->toContain('ملاحظة التوصيل: اتصل قبل الوصول')
         ->and((float) $payment->amount)->toBe(10.0)
         ->and($payment->notes)->toContain('لا يشمل رسوم التوصيل: 5.00');
+
+    $statement = (new ReportingService($user))->prepare('statement', [
+        'from' => now()->subYear()->toDateString(),
+        'to' => now()->addYear()->toDateString(),
+        'party_id' => $customer->id,
+        'product_id' => null,
+        'search' => '',
+        'party_type' => 'all',
+        'balance_side' => 'all',
+        'stock_filter' => 'all',
+        'source' => '',
+        'sale_kind' => '',
+    ]);
+    expect((float) $statement['summary']['إجمالي المدين'])->toBe(10.0);
+
+    $deliveryStatement = (new ReportingService($user))->prepare('statement', [
+        'from' => now()->subYear()->toDateString(),
+        'to' => now()->addYear()->toDateString(),
+        'party_id' => $deliveryCompany->id,
+        'product_id' => null,
+        'search' => '',
+        'party_type' => 'all',
+        'balance_side' => 'all',
+        'stock_filter' => 'all',
+        'source' => '',
+        'sale_kind' => '',
+    ]);
+    expect((float) $deliveryStatement['summary']['إجمالي الدائن'])->toBe(5.0);
+
+    $customerCopy = Livewire::withQueryParams(['customer_copy' => 1])
+        ->test('pages::tenant.pos.sales')
+        ->call('loadInvoice', $order->id)
+        ->call('printReceipt')
+        ->assertDispatched('print-receipt')
+        ->get('receipt');
+    expect($customerCopy['delivery_fee'])->toBe('0.00')
+        ->and($customerCopy['total_amount'])->toBe('10.00');
 
     Livewire::test('pages::tenant.pos.sales')
         ->set('cart', [])

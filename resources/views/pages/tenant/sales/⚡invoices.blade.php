@@ -5,6 +5,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Party;
 use App\Models\Tenant;
 use App\Models\Product;
@@ -527,11 +528,12 @@ new class extends Component {
             $subtotal - $invoiceDiscount
         );
 
-        $taxAmount = $this->taxable
-            ? $taxableAmount * ((float) $this->taxPercent / 100)
+        $taxRate = max(0, (float) $this->taxPercent);
+        $taxAmount = $taxRate > 0
+            ? $taxableAmount * ($taxRate / (100 + $taxRate))
             : 0.0;
 
-        $grandTotal = $taxableAmount + $taxAmount;
+        $grandTotal = $taxableAmount;
 
         return [
             'subtotal' => round($subtotal, 2),
@@ -539,7 +541,7 @@ new class extends Component {
             'tax' => round($taxAmount, 2),
             'total' => round($grandTotal, 2),
             'total_cost' => round($totalCost, 2),
-            'profit' => round($grandTotal - $totalCost, 2),
+            'profit' => round($grandTotal - $taxAmount - $totalCost, 2),
         ];
     }
 
@@ -560,6 +562,8 @@ new class extends Component {
         $this->authorize($this->currentOrderId ? 'sales_invoices.edit' : 'sales_invoices.create');
         $this->errorMessage = null;
         $this->successMessage = null;
+
+        $this->validate(['invoiceDate' => ['required', 'date']]);
 
         if (empty($this->cart)) {
             $this->errorMessage = 'أضف مادة واحدة على الأقل إلى الفاتورة.';
@@ -616,11 +620,13 @@ new class extends Component {
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
                         'invoice_number' => $this->invoiceNumber,
+                        'invoice_date' => $this->invoiceDate,
                         'type' => 'wholesale',
                         'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $totals['subtotal'],
                         'tax_amount' => $totals['tax'],
+                        'tax_percent' => max(0, $this->taxPercent),
                         'discount_type' => 'fixed',
                         'discount_rate' => 0,
                         'discount' => $totals['discount'],
@@ -644,12 +650,14 @@ new class extends Component {
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
                         'invoice_number' => $this->invoiceNumber,
+                        'invoice_date' => $this->invoiceDate,
                         'type' => 'wholesale',
                         'source' => 'web',
                         'sale_kind' => 'retail',
                         'status' => 'completed',
                         'subtotal' => $totals['subtotal'],
                         'tax_amount' => $totals['tax'],
+                        'tax_percent' => max(0, $this->taxPercent),
                         'discount_type' => 'fixed',
                         'discount_rate' => 0,
                         'discount' => $totals['discount'],
@@ -732,7 +740,7 @@ new class extends Component {
 
     public function searchInvoice(): void
     {
-        $search = trim($this->searchInvoiceQuery);
+        $search = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
         $tenantId = $this->tenantId();
 
         if ($search === '' || !$tenantId) {
@@ -779,16 +787,14 @@ new class extends Component {
         $this->currentOrderId = $order->id;
         $this->invoiceEditMode = false;
         $this->invoiceNumber = $order->invoice_number;
-        $this->invoiceDate = $order->created_at?->format('Y-m-d') ?? now()->format('Y-m-d');
+        $this->invoiceDate = $order->invoice_date?->format('Y-m-d') ?? $order->created_at?->format('Y-m-d') ?? now()->format('Y-m-d');
         $this->selectedBranchId = $order->branch_id;
         $this->selectedCustomerId = $order->customer_id;
         $this->savedPaidAmount = (float) $order->paid_amount;
         $this->customerSearch = $order->customer_name ?: '';
         $this->discount = (float) ($order->discount ?? 0);
-        $this->taxPercent = $order->subtotal > 0 && $order->tax_amount > 0
-            ? round(($order->tax_amount / max(0.01, ($order->subtotal - $order->discount))) * 100, 2)
-            : 16;
-        $this->taxable = (float) ($order->tax_amount ?? 0) > 0;
+        $this->taxPercent = max(0, (float) ($order->tax_percent ?? 16));
+        $this->taxable = true;
         $this->notes = $order->notes ?? '';
 
         $this->cart = [];
@@ -894,7 +900,7 @@ new class extends Component {
             invoice: [
                 'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $order->invoice_number,
-                'date' => $order->created_at?->format('Y-m-d H:i'),
+                'date' => $order->invoice_date?->format('Y-m-d') ?? $order->created_at?->format('Y-m-d H:i'),
                 'customer' => $order->customer_name ?: 'زبون عام',
                 'phone' => $order->customer_phone,
                 'notes' => $order->notes,
@@ -1064,6 +1070,9 @@ new class extends Component {
         }
 
         $totals = $this->calculateTotals();
+        $linkedReceiptAmount = $tenantId && $this->currentOrderId
+            ? (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $this->currentOrderId)->where('type', 'receipt')->sum('amount')
+            : 0.0;
 
         return $this->view([
             'branches' => $branches,
@@ -1074,6 +1083,7 @@ new class extends Component {
             'invoiceDiscount' => $totals['discount'],
             'taxAmount' => $totals['tax'],
             'grandTotal' => $totals['total'],
+            'linkedReceiptAmount' => $linkedReceiptAmount,
             'totalCost' => $totals['total_cost'],
             'profit' => $totals['profit'],
             'userBranchLocked' => (bool) $user?->branch_id,
@@ -1407,39 +1417,25 @@ new class extends Component {
 
                         @if (count($productResults) > 0)
                             <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
-                                <div class="max-h-80 overflow-y-auto p-1.5">
-                                    @foreach ($productResults as $product)
-                                        @php
-                                            $bp = $product->branchProducts->first();
-                                            $salePrice = (float) ($bp?->wholesale_price > 0 ? $bp?->wholesale_price : ($bp?->retail_price ?? 0));
-                                            $stock = (float) ($bp?->stock_quantity ?? 0);
-                                        @endphp
-
-                                        <button
-                                            type="button"
-                                            data-product-result
-                                            data-result-index="{{ $loop->index }}"
-                                            wire:click="selectProduct({{ $product->id }})"
-                                            class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-indigo-50"
-                                        >
-                                            <div class="flex min-w-0 items-center gap-3">
-                                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-black text-slate-500">
-                                                    {{ $product->id }}
-                                                </div>
-                                                <div class="min-w-0">
-                                                    <div class="truncate text-sm font-black text-slate-800">{{ $product->name }}</div>
-                                                    <div class="mt-0.5 text-[11px] font-semibold text-slate-400">
-                                                        المخزون: {{ number_format($stock, 2) }}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div class="shrink-0 text-left">
-                                                <div class="font-mono text-sm font-black text-indigo-700">{{ number_format($salePrice, 2) }}</div>
-                                                <div class="mt-0.5 text-[10px] font-bold text-slate-400">سعر البيع</div>
-                                            </div>
-                                        </button>
-                                    @endforeach
+                                <div class="max-h-80 overflow-auto" x-ref="productResults">
+                                    <table class="w-full text-right text-sm">
+                                        <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
+                                        <tbody>
+                                            @foreach ($productResults as $product)
+                                                @php
+                                                    $bp = $product->branchProducts->first();
+                                                    $resultPrice = (float) ($bp?->wholesale_price > 0 ? $bp?->wholesale_price : ($bp?->retail_price ?? 0));
+                                                    $stock = (float) ($bp?->stock_quantity ?? 0);
+                                                @endphp
+                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
+                                                    <td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td>
+                                                    <td class="p-2 font-bold">{{ $product->name }}</td>
+                                                    <td class="p-2 font-mono">{{ number_format($resultPrice, 2) }}</td>
+                                                    <td class="p-2 tabular-nums">{{ number_format($stock, 2) }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         @endif
@@ -1466,7 +1462,7 @@ new class extends Component {
                         type="number"
                         step="0.01"
                         min="0"
-                        wire:model.live="selectedPrice"
+        wire:model="selectedPrice"
                         wire:keydown.enter.prevent="commitRowToCart"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
                     />
@@ -1691,14 +1687,7 @@ new class extends Component {
                             <div class="mt-1 text-[11px] font-semibold text-slate-400">قيمة الفاتورة قبل الحفظ</div>
                         </div>
 
-                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <input
-                                type="checkbox"
-                                wire:model.live="taxable"
-                                class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <span class="text-[11px] font-black text-slate-700">ضريبة</span>
-                        </label>
+                        <span class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700">الأسعار شاملة الضريبة</span>
                     </div>
 
                     <div class="space-y-3">
@@ -1719,14 +1708,13 @@ new class extends Component {
                         </div>
 
                         <div class="flex items-center justify-between gap-4">
-                            <span class="text-xs font-bold text-slate-500">الضريبة</span>
+                            <span class="text-xs font-bold text-slate-500">قيمة الضريبة المضمنة</span>
                             <div class="flex items-center gap-2">
                                 <input
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    wire:model.live="taxPercent"
-                                    @disabled(!$taxable)
+                                    wire:model.live.debounce.500ms="taxPercent"
                                     class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:opacity-50"
                                 />
                                 <span class="text-xs font-black text-slate-500">%</span>
@@ -1758,6 +1746,9 @@ new class extends Component {
                             <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($savedPaidAmount, 2) }}</span></div>
                             <div class="flex justify-between text-rose-600"><span>المتبقي على الزبون</span><span>{{ number_format(max(0, $grandTotal - $savedPaidAmount), 2) }}</span></div>
                         </div>
+                        @if ($selectedCustomerId)
+                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="mb-4 block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-black text-emerald-700 hover:bg-emerald-100">إضافة سند قبض لهذه الفاتورة</a>
+                        @endif
                     @endif
 
                     <div class="space-y-2">

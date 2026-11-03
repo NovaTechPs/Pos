@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\StockMovement;
 use App\Models\StockTransfer;
 use App\Models\Tenant;
 use App\Models\User;
@@ -62,6 +63,7 @@ test('a product can be saved without a barcode or wholesale price to the active 
         ->set('barcodes', [''])
         ->set('cost_price', '5')
         ->set('branchPricesInput.'.$this->branch->id.'.retail_price', '10')
+        ->set('stockQuantity', '4.5')
         ->set('min_wholesale_quantity', 1)
         ->call('save')
         ->assertHasNoErrors();
@@ -72,11 +74,49 @@ test('a product can be saved without a barcode or wholesale price to the active 
         ->firstOrFail();
 
     $branchProduct = BranchProduct::query()->where('product_id', $product->id)->sole();
+    $openingMovement = StockMovement::query()->where('branch_product_id', $branchProduct->id)->sole();
 
     expect($product->barcodes)->toHaveCount(0)
         ->and((bool) $product->is_price_unified)->toBeFalse()
         ->and($branchProduct->branch_id)->toBe($this->branch->id)
+        ->and((float) $branchProduct->stock_quantity)->toBe(4.5)
         ->and((float) $branchProduct->wholesale_price)->toBe(0.0);
+    expect($openingMovement->source_type)->toBe('opening')
+        ->and((float) $openingMovement->quantity)->toBe(4.5);
+});
+
+test('editing product quantity records a manual stock movement for the active branch', function (): void {
+    $product = Product::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Product with existing stock',
+        'cost_price' => 4,
+    ]);
+    $branchProduct = BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'product_id' => $product->id,
+        'stock_quantity' => 12,
+        'retail_price' => 8,
+    ]);
+
+    $component = Livewire::test('pages::tenant.products.index')
+        ->call('edit', $product->id);
+
+    expect((float) $component->get('stockQuantity'))->toBe(12.0);
+
+    $component->set('stockQuantity', '7.5')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $movement = StockMovement::query()
+        ->where('branch_product_id', $branchProduct->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect((float) $branchProduct->fresh()->stock_quantity)->toBe(7.5)
+        ->and($movement->source_type)->toBe('manual')
+        ->and((float) $movement->quantity)->toBe(-4.5)
+        ->and((int) $movement->recorded_by)->toBe($this->user->id);
 });
 
 test('product stock category and website filters combine within the active branch and reset pagination', function (): void {

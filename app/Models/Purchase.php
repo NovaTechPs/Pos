@@ -14,6 +14,10 @@ class Purchase extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'invoice_date' => 'date',
+    ];
+
     /** @return BelongsTo<Party, $this> */
     public function supplier(): BelongsTo
     {

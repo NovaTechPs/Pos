@@ -11,33 +11,14 @@
                         @endforeach
                     </select>
                     <div class="relative min-w-0 basis-full sm:basis-auto sm:min-w-[200px] flex-1">
-                        <input x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''" wire:model.live.debounce.200ms="productSearchQuery" type="text" placeholder="ابحث باسم المنتج أو الباركود..." class="w-full rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none">
+                        <input x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''" wire:model.live.debounce.350ms="productSearchQuery" type="text" placeholder="ابحث باسم المنتج أو الباركود..." class="w-full rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none">
                     </div>
                     <button wire:click="loadQuickProducts" class="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black">تحديث</button>
                     <button wire:click="$set('showProductsModal', false)" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-black">إغلاق Esc</button>
                 </div>
             </div>
             <div class="min-h-0 flex-1 overflow-auto bg-slate-50 p-2">
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    @forelse ($quickProducts as $product)
-                        <button wire:click="selectInlineProduct({{ $product['id'] }})" class="{{ !empty($product['has_offer']) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white' }} rounded-2xl border p-3 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="font-black text-slate-900">{{ $product['name'] }} @if (!empty($product['has_offer'])) <span class="block text-xs text-amber-700">عرض {{ $product['offer_quantity_value'] + 0 }} بـ {{ number_format($product['offer_price_value'], 2) }}</span> @endif</div>
-                                @include('pages.tenant.pos.partials.stock-badge')
-                            </div>
-                            <div class="mt-3 flex items-end justify-between">
-                                <div>
-                                    <div class="text-[9px] font-bold text-slate-400">سعر البيع</div>
-                                    <div class="font-mono text-base font-black text-indigo-700">{{ number_format((float) $product['retail_price'], 2) }}</div>
-                                </div>
-                                <div class="text-xs font-mono text-slate-500">رقم المنتج: {{ $product['product_number'] ?? '—' }}</div>
-                                <div class="text-left text-[9px] font-mono text-slate-400">{{ $product['barcode_value'] ?: 'بدون باركود' }}</div>
-                            </div>
-                        </button>
-                    @empty
-                        <div class="col-span-full py-24 text-center text-xs font-black text-slate-400">لا توجد أصناف مطابقة.</div>
-                    @endforelse
-                </div>
+                @include('pages.tenant.pos.partials.quick-product-results')
             </div>
             <div class="shrink-0 border-t border-slate-200 bg-white px-3 py-2 text-[10px] font-bold text-slate-500">عدد الأصناف: {{ count($quickProducts) }} · اضغط على الصنف لإضافته إلى الفاتورة</div>
         </div>

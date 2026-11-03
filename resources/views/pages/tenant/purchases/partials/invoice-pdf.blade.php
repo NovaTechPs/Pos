@@ -38,7 +38,7 @@
     <table class="info">
         <tr>
             <td><strong>{{ $ar('رقم الفاتورة:') }}</strong> <span dir="ltr">{{ $purchase->reference_number }}</span></td>
-            <td><strong>{{ $ar('التاريخ:') }}</strong> <span dir="ltr">{{ \Carbon\Carbon::parse($purchase->created_at)->format('Y-m-d H:i') }}</span></td>
+            <td><strong>{{ $ar('التاريخ:') }}</strong> <span dir="ltr">{{ \Carbon\Carbon::parse($purchase->invoice_date ?: $purchase->created_at)->format('Y-m-d') }}</span></td>
         </tr>
         <tr><td colspan="2"><strong>{{ $ar('المورد:') }}</strong> {{ $ar($supplierName) }}</td></tr>
     </table>

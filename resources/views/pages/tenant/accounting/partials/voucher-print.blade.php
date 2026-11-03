@@ -12,7 +12,7 @@
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-xl font-black text-slate-900">
-                        {{ $isPayment ? 'سند دفع' : 'سند قبض' }}
+                        {{ $isPayment ? 'سند صرف' : 'سند قبض' }}
                     </h2>
 
                     <p class="mt-1 text-sm text-slate-500">
@@ -34,7 +34,7 @@
 
             <div class="mb-6 text-center">
                 <h1 class="text-2xl font-black text-slate-900">
-                    {{ $isPayment ? 'سند دفع' : 'سند قبض' }}
+                    {{ $isPayment ? 'سند صرف' : 'سند قبض' }}
                 </h1>
 
                 <p class="mt-1 text-sm text-slate-500">

@@ -30,9 +30,9 @@ test('POS displays product numbers and supports searching by number', function (
         ->call('loadQuickProducts')
         ->assertSet('quickProducts.0.product_number', 'P01')
         ->set('showProductsModal', true)
-        ->assertSee('رقم المنتج: P01')
+        ->assertSee('رقم الصنف')
         ->call('selectInlineProduct', $this->product->id)
-        ->assertSee('رقم المنتج')
+        ->assertSee('رقم الصنف')
         ->assertSee('P01');
 
     expect(collect($component->get('cart'))->first()['product_number'])->toBe('P01');

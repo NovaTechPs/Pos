@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Services\ReportingService;
+use App\Services\PosProductSearch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
@@ -68,6 +69,24 @@ new class extends Component {
     {
         $this->resetErrorBag();
         $this->resetPage();
+    }
+
+    public function updatedProductSearch(): void
+    {
+        $this->productId = null;
+    }
+
+    public function selectReportProduct(int $productId): void
+    {
+        $product = Product::withoutGlobalScopes()->where('tenant_id', $this->service()->tenantId)->whereNull('deleted_at')->findOrFail($productId);
+        $this->productId = $product->id;
+        $this->productSearch = trim(($product->product_number ?? '').' — '.$product->name, ' —');
+    }
+
+    public function clearReportProduct(): void
+    {
+        $this->productId = null;
+        $this->productSearch = '';
     }
 
     public function selectStatementParty(int $partyId): void
@@ -187,10 +206,13 @@ new class extends Component {
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
         }
-        if (in_array($this->report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory'], true)) {
+        if (in_array($this->report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory'], true) && trim($this->productSearch) !== '') {
             $products = Product::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
-                ->when(trim($this->productSearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->productSearch.'%')->orWhere('product_number', 'like', '%'.$this->productSearch.'%')->orWhereHas('barcodes', fn ($codes) => $codes->where('tenant_id', $service->tenantId)->where('barcode', 'like', '%'.$this->productSearch.'%'))))
-                ->orderBy('name')->limit(100)->get(['id', 'name', 'product_number']);
+                ->tap(function ($query) use ($service): void {
+                    app(PosProductSearch::class)->apply($query->getQuery(), trim($this->productSearch), $service->tenantId);
+                })
+                ->with(['barcodes' => fn ($query) => $query->where('tenant_id', $service->tenantId)])
+                ->orderBy('name')->limit(30)->get(['id', 'name', 'product_number']);
         }
         $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId] + $this->filters()) : null;
         return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'branches' => $branches, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
@@ -228,9 +250,22 @@ new class extends Component {
             </div>
         @endif
         @if (in_array($report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))
-            <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input label="ابحث عن الصنف للاختيار" wire:model.live.debounce.300ms="productSearch" placeholder="الاسم أو الرقم أو الباركود؛ أول 100 نتيجة" />
-                <flux:select label="الصنف" wire:model="productId"><option value="">كل الأصناف</option>@foreach ($products as $product)<option wire:key="product-{{ $product->id }}" value="{{ $product->id }}">{{ $product->product_number }} — {{ $product->name }}</option>@endforeach</flux:select>
+            <div class="relative" x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
+                <div class="flex items-end gap-2">
+                    <flux:input label="الصنف" wire:model.live.debounce.250ms="productSearch" x-on:focus="open = true" x-on:input="open = true; active = 0" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود" />
+                    <flux:button type="button" wire:click="clearReportProduct">كل الأصناف</flux:button>
+                </div>
+                @if ($productSearch !== '')
+                    <div x-cloak x-show="open" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                        <div class="max-h-72 overflow-auto" x-ref="rows">
+                            <table class="w-full text-right text-sm"><thead class="sticky top-0 bg-slate-100 text-xs dark:bg-slate-800"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">الباركود</th></tr></thead><tbody>
+                                @forelse ($products as $product)
+                                    <tr data-report-product wire:key="report-product-{{ $product->id }}" x-bind:class="active === {{ $loop->index }} ? 'bg-indigo-50 dark:bg-slate-800' : ''" wire:click="selectReportProduct({{ $product->id }})" x-on:click="open = false" class="cursor-pointer border-t hover:bg-indigo-50 dark:hover:bg-slate-800"><td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td><td class="p-2">{{ $product->name }}</td><td class="p-2 font-mono">{{ $product->barcodes->first()?->barcode ?? '—' }}</td></tr>
+                                @empty<tr><td colspan="3" class="p-4 text-center text-slate-500">لا توجد أصناف مطابقة.</td></tr>@endforelse
+                            </tbody></table>
+                        </div>
+                    </div>
+                @endif
             </div>
         @endif
         @if (in_array($report, ['sales', 'product-sales', 'profit']))

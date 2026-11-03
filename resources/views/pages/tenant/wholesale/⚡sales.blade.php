@@ -673,7 +673,7 @@ new class extends Component {
     {
         $tenantId = $this->tenantId();
         $branchId = $this->branchId();
-        $query = trim($this->invoiceSearch);
+        $query = trim(strtr(trim($this->invoiceSearch), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
 
         if (!$tenantId || !$branchId || $query === '') {
             session()->flash('error', 'اكتب رقم الفاتورة أولاً.');

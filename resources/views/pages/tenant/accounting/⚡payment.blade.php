@@ -24,6 +24,7 @@ new class extends Component
 
     public ?int $paymentId = null;
     public ?int $partyId = null;
+    public ?int $purchaseId = null;
 
     public bool $showForm = false;
     public bool $showDeleteModal = false;
@@ -39,6 +40,17 @@ new class extends Component
         $voucherId = request()->integer('voucher');
         if ($voucherId > 0) {
             $this->edit($voucherId);
+        } elseif (request()->integer('purchase_id') > 0) {
+            $purchase = \App\Models\Purchase::query()->where('tenant_id', $this->getTenantId())->findOrFail(request()->integer('purchase_id'));
+            abort_unless($purchase->supplier_id, 404);
+            $this->resetForm();
+            $this->purchaseId = $purchase->id;
+            $this->partyId = $purchase->supplier_id;
+            $this->paymentDate = ($purchase->invoice_date ?? $purchase->created_at)->format('Y-m-d');
+            $this->amount = (string) request()->input('amount', max(0, (float) $purchase->total - (float) $purchase->paid_amount));
+            $this->notes = (string) request()->input('notes', 'سند دفع لفاتورة '.$purchase->reference_number);
+            $this->voucherNumber = $this->generateVoucherNumber();
+            $this->showForm = true;
         }
     }
 
@@ -251,7 +263,7 @@ new class extends Component
 
             $newAmount = (float) $validated['amount'];
 
-            // تعديل سند دفع موجود
+            // تعديل سند صرف موجود
             if ($this->paymentId) {
                 $payment = Payment::query()
                     ->where('tenant_id', $tenantId)
@@ -276,13 +288,13 @@ new class extends Component
                         ->lockForUpdate()
                         ->findOrFail($oldPartyId);
 
-                    // إعادة تأثير سند الدفع القديم للمورد القديم
+                    // إعادة تأثير سند الصرف القديم للمورد القديم
                     $oldParty->current_balance =
                         (float) $oldParty->current_balance
                         + $oldParty->purchaseBalanceDirection() * $oldAmount;
                     $oldParty->save();
 
-                    // تطبيق سند الدفع الجديد على المورد الجديد
+                    // تطبيق سند الصرف الجديد على المورد الجديد
                     $newParty->current_balance =
                         (float) $newParty->current_balance
                         - $newParty->purchaseBalanceDirection() * $newAmount;
@@ -297,11 +309,14 @@ new class extends Component
                     'amount' => $newAmount,
                     'notes' => $validated['notes'] ?? null,
                 ]);
-            // إنشاء سند دفع جديد
+            // إنشاء سند صرف جديد
             } else {
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'party_id' => $newParty->id,
+                    'purchase_id' => $this->purchaseId,
+                    'branch_id' => $this->purchaseId ? \App\Models\Purchase::query()->where('tenant_id', $tenantId)->whereKey($this->purchaseId)->value('branch_id') : null,
+                    'created_by' => Auth::id(),
                     'type' => 'payment',
                     'voucher_number' => $validated['voucherNumber'],
                     'payment_date' => $validated['paymentDate'],
@@ -310,7 +325,15 @@ new class extends Component
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
-                // سند الدفع يقلل رصيد المورد
+                if ($this->purchaseId) {
+                    $purchase = \App\Models\Purchase::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($this->purchaseId);
+                    abort_unless((int) $purchase->supplier_id === (int) $newParty->id, 404);
+                    $linkedPaid = (float) Payment::query()->where('tenant_id', $tenantId)->where('purchase_id', $purchase->id)->where('type', 'payment')->sum('amount');
+                    $paidAmount = min((float) $purchase->total, max((float) $purchase->paid_amount + $newAmount, $linkedPaid));
+                    $purchase->update(['paid_amount' => $paidAmount, 'payment_status' => $paidAmount >= (float) $purchase->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid')]);
+                }
+
+                // سند الصرف يقلل رصيد المورد
                 $newParty->current_balance =
                     (float) $newParty->current_balance
                     - $newParty->purchaseBalanceDirection() * $newAmount;
@@ -319,8 +342,8 @@ new class extends Component
         });
 
         $message = $this->paymentId
-            ? 'تم تحديث سند الدفع بنجاح.'
-            : 'تم إنشاء سند الدفع بنجاح.';
+            ? 'تم تحديث سند الصرف بنجاح.'
+            : 'تم إنشاء سند الصرف بنجاح.';
 
         $this->showForm = false;
 
@@ -368,7 +391,7 @@ new class extends Component
                 ->lockForUpdate()
                 ->findOrFail($payment->party_id);
 
-            // إعادة قيمة سند الدفع إلى رصيد المورد
+            // إعادة قيمة سند الصرف إلى رصيد المورد
             $party->current_balance =
                 (float) $party->current_balance
                 + $party->purchaseBalanceDirection() * (float) $payment->amount;
@@ -383,7 +406,7 @@ new class extends Component
         $this->dispatch(
             'toast',
             type: 'success',
-            message: 'تم حذف سند الدفع وتحديث الرصيد.'
+            message: 'تم حذف سند الصرف وتحديث الرصيد.'
         );
 
         $this->resetPage();
@@ -436,7 +459,7 @@ new class extends Component
         }
 
         $message = implode("\n", [
-            'سند دفع',
+            'سند صرف',
             'رقم السند: ' . $payment->voucher_number,
             'المورد: ' . ($payment->party?->name ?? '-'),
             'المبلغ: ' . number_format((float) $payment->amount, 2),
@@ -484,6 +507,7 @@ new class extends Component
             'voucherNumber',
             'paymentId',
             'partyId',
+            'purchaseId',
         ]);
 
         $this->paymentDate = now()->format('Y-m-d');
@@ -505,12 +529,12 @@ new class extends Component
         <div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
             @include('pages.tenant.accounting.partials.voucher-table', [
                 'mode' => 'payment',
-                'title' => 'سندات الدفع',
+                'title' => 'سندات الصرف',
                 'subtitle' => 'إدارة دفعات الموردين وتحديث أرصدتهم.',
                 'items' => $payments,
                 'todayTotal' => $this->todayTotal,
                 'voucherCount' => $this->voucherCount,
-                'createLabel' => 'سند دفع',
+                'createLabel' => 'سند صرف',
             ])
         </div>
 
@@ -529,7 +553,7 @@ new class extends Component
             <div class="app-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
                 <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
                     <h3 class="text-lg font-black text-slate-900">
-                        حذف سند الدفع
+                        حذف سند الصرف
                     </h3>
 
                     <p class="mt-2 text-sm leading-6 text-slate-500">

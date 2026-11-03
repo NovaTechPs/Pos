@@ -537,6 +537,8 @@ new class extends Component {
                         'customer_id',
                         'type',
                         'total',
+                        'delivery_fee',
+                        'invoice_date',
                         'invoice_number',
                         'created_at'
                     );
@@ -606,7 +608,7 @@ new class extends Component {
 
         foreach ($party->orders as $order) {
             $isReturn = $order->type === 'return';
-            $amount = abs((float) $order->total);
+            $amount = max(0, abs((float) $order->total) - (float) $order->delivery_fee);
 
             $transactions->push([
                 'id' => 'order-' . $order->id,
@@ -615,7 +617,7 @@ new class extends Component {
 
                 'source_id' => $order->id,
 
-                'date' => $order->created_at,
+                'date' => $order->invoice_date ?? $order->created_at,
 
                 'description' => $isReturn
                     ? 'مردود مبيعات #' . ($order->invoice_number ?: $order->id)
@@ -627,6 +629,26 @@ new class extends Component {
                 // مردود المبيعات يخفض مديونية العميل.
                 'credit' => $isReturn ? $amount : 0.00,
             ]);
+        }
+
+        if (in_array($party->type, ['supplier', 'both'], true)) {
+            Order::query()
+                ->where('tenant_id', $party->tenant_id)
+                ->where('delivery_party_id', $party->id)
+                ->where('status', 'completed')
+                ->where('delivery_fee', '>', 0)
+                ->get()
+                ->each(function (Order $order) use ($transactions): void {
+                    $transactions->push([
+                        'id' => 'delivery-' . $order->id,
+                        'source_type' => 'delivery',
+                        'source_id' => $order->id,
+                        'date' => $order->invoice_date ?? $order->created_at,
+                        'description' => 'رسوم توصيل فاتورة #' . ($order->invoice_number ?: $order->id),
+                        'debit' => (float) $order->delivery_fee,
+                        'credit' => 0.00,
+                    ]);
+                });
         }
 
         foreach ($party->purchases as $purchase) {
@@ -824,7 +846,7 @@ new class extends Component {
 
             $this->dispatch(
                 'open-statement-document',
-                url: route($route, ['invoice' => $order->id]),
+                url: route($route, ['invoice' => $order->id, 'customer_copy' => 1]),
                 title: 'فاتورة مبيعات '.$order->invoice_number,
             );
 
@@ -857,7 +879,7 @@ new class extends Component {
         $this->dispatch(
             'open-statement-document',
             url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]),
-            title: $payment->type === 'receipt' ? 'سند قبض' : 'سند دفع',
+            title: $payment->type === 'receipt' ? 'سند قبض' : 'سند صرف',
         );
     }
 

@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Models\ProductBarcode;
 use App\Models\ProductOffer;
 use App\Services\PosProductSearch;
+use App\Services\StockMovementContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
@@ -51,6 +52,10 @@ new class extends Component {
     public $retail_price = '';
     public $wholesale_price = '';
     public int $min_wholesale_quantity = 1;
+    public string $stockQuantity = '0';
+
+    #[Locked]
+    public string $originalStockQuantity = '0';
 
     public bool $is_price_unified = false;
 
@@ -104,6 +109,12 @@ new class extends Component {
     */
 
     public bool $showOfferModal = false;
+    public bool $showBranchPriceModal = false;
+    public ?int $branchPriceProductId = null;
+    public string $branchPriceProductName = '';
+    public string $branchRetailPrice = '';
+    public string $branchWholesalePrice = '';
+    public int $branchMinWholesaleQuantity = 1;
     public ?int $offerProductId = null;
     public ?int $offerBranchId = null;
     public $offerQuantity = null;
@@ -171,6 +182,8 @@ new class extends Component {
                 'numeric',
                 'min:0',
             ],
+
+            'stockQuantity' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
 
             'is_price_unified' => [
                 'boolean',
@@ -474,12 +487,22 @@ new class extends Component {
     {
         $this->authorize('products.edit');
         $tenantId = $this->tenantId();
+        $currentBranchId = $this->activeBranchId();
 
         if (!$tenantId) {
             session()->flash(
                 'error',
                 'يرجى اختيار المتجر أولاً.'
             );
+
+            return;
+        }
+
+        if (!$currentBranchId || !DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->where('id', $currentBranchId)
+            ->exists()) {
+            session()->flash('error', 'اختر الفرع الذي تريد تعديل الصنف فيه أولاً.');
 
             return;
         }
@@ -496,9 +519,7 @@ new class extends Component {
         $this->name = $product->name;
         $this->cost_price = $product->cost_price;
 
-        $this->is_price_unified = (bool) (
-            $product->is_price_unified ?? true
-        );
+        $this->is_price_unified = false;
 
         $this->show_in_website = (bool) (
             $product->show_in_website ?? true
@@ -512,12 +533,14 @@ new class extends Component {
 
         $existingPrices = DB::table('branch_products')
             ->where('tenant_id', $tenantId)
+            ->where('branch_id', $currentBranchId)
             ->where('product_id', $product->id)
             ->get()
             ->keyBy('branch_id');
 
         $branches = DB::table('branches')
             ->where('tenant_id', $tenantId)
+            ->where('id', $currentBranchId)
             ->orderBy('name')
             ->get();
 
@@ -540,8 +563,6 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $currentBranchId = $this->activeBranchId();
-
         if (
             $currentBranchId &&
             isset($this->branchPricesInput[$currentBranchId])
@@ -557,6 +578,17 @@ new class extends Component {
             $this->min_wholesale_quantity =
                 $current['min_wholesale_quantity'];
         }
+
+        $currentBranchStock = $currentBranchId
+            ? DB::table('branch_products')
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $currentBranchId)
+                ->where('product_id', $product->id)
+                ->value('stock_quantity')
+            : null;
+
+        $this->stockQuantity = (string) ($currentBranchStock ?? 0);
+        $this->originalStockQuantity = $this->stockQuantity;
 
         /*
         |--------------------------------------------------------------------------
@@ -594,6 +626,103 @@ new class extends Component {
 
         $this->isEditing = true;
         $this->showModal = true;
+    }
+
+    public function editBranchPrice(int $productId): void
+    {
+        $this->authorize('products.price.edit');
+
+        $tenantId = $this->tenantId();
+        $branchId = $this->activeBranchId();
+
+        if (!$tenantId || !$branchId || !DB::table('branches')->where('tenant_id', $tenantId)->where('id', $branchId)->exists()) {
+            session()->flash('error', 'اختر الفرع الذي تريد تعديل سعر الصنف فيه.');
+
+            return;
+        }
+
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($productId);
+        $price = DB::table('branch_products')
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)
+            ->where('product_id', $product->id)
+            ->first();
+
+        $this->branchPriceProductId = $product->id;
+        $this->branchPriceProductName = $product->name;
+        $this->branchRetailPrice = number_format((float) ($price->retail_price ?? 0), 2, '.', '');
+        $this->branchWholesalePrice = (float) ($price->wholesale_price ?? 0) > 0
+            ? number_format((float) $price->wholesale_price, 2, '.', '')
+            : '';
+        $this->branchMinWholesaleQuantity = (int) ($price->min_wholesale_quantity ?? 1);
+        $this->resetValidation();
+        $this->showBranchPriceModal = true;
+    }
+
+    public function saveBranchPrice(): void
+    {
+        $this->authorize('products.price.edit');
+
+        $tenantId = $this->tenantId();
+        $branchId = $this->activeBranchId();
+
+        if (!$tenantId || !$branchId || !$this->branchPriceProductId) {
+            session()->flash('error', 'تعذر تحديد الصنف أو الفرع الحالي.');
+
+            return;
+        }
+
+        $this->validate([
+            'branchRetailPrice' => ['required', 'numeric', 'min:0', 'max:999999999'],
+            'branchWholesalePrice' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
+            'branchMinWholesaleQuantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $productExists = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($this->branchPriceProductId)
+            ->exists();
+
+        if (!$productExists || !DB::table('branches')->where('tenant_id', $tenantId)->where('id', $branchId)->exists()) {
+            session()->flash('error', 'الصنف أو الفرع غير تابعين لهذا المتجر.');
+
+            return;
+        }
+
+        $branchProductQuery = DB::table('branch_products')
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)
+            ->where('product_id', $this->branchPriceProductId);
+        $pricePayload = [
+            'retail_price' => $this->branchRetailPrice,
+            'wholesale_price' => filled($this->branchWholesalePrice) ? $this->branchWholesalePrice : 0,
+            'min_wholesale_quantity' => $this->branchMinWholesaleQuantity,
+            'updated_at' => now(),
+        ];
+
+        if ($branchProductQuery->exists()) {
+            $branchProductQuery->update($pricePayload);
+        } else {
+            DB::table('branch_products')->insert([
+                ...$pricePayload,
+                'tenant_id' => $tenantId,
+                'branch_id' => $branchId,
+                'product_id' => $this->branchPriceProductId,
+                'stock_quantity' => 0,
+                'created_at' => now(),
+            ]);
+        }
+
+        Product::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($this->branchPriceProductId)
+            ->update(['is_price_unified' => false]);
+
+        $this->showBranchPriceModal = false;
+        $this->branchPriceProductId = null;
+        session()->flash('message', 'تم تحديث سعر الصنف لهذا الفرع فقط.');
     }
 
     /*
@@ -758,6 +887,9 @@ new class extends Component {
     public function save(): void
     {
         $this->authorize($this->product_id ? 'products.edit' : 'products.create');
+        if ($this->isEditing) {
+            $this->is_price_unified = false;
+        }
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
@@ -788,6 +920,14 @@ new class extends Component {
         }
 
         $this->validate();
+
+        $stockQuantityChanged = $this->isEditing
+            ? abs((float) $this->stockQuantity - (float) $this->originalStockQuantity) >= 0.005
+            : (float) $this->stockQuantity > 0;
+
+        if ($stockQuantityChanged) {
+            $this->authorize('products.stock.adjust');
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -844,27 +984,19 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
-        $branches = DB::table('branches')
+        $activeBranchId = $this->activeBranchId();
+        $branchExists = $activeBranchId && DB::table('branches')
             ->where('tenant_id', $tenantId)
-            ->orderBy('id')
-            ->get();
+            ->where('id', $activeBranchId)
+            ->exists();
 
-        $branchIds = $branches
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values();
+        if (!$branchExists) {
+            session()->flash('error', 'اختر الفرع الحالي قبل حفظ المنتج أو تعديل أسعاره.');
 
-        if (!$this->isEditing) {
-            $activeBranchId = $this->activeBranchId();
-
-            if (!$activeBranchId || !$branchIds->contains($activeBranchId)) {
-                session()->flash('error', 'يرجى اختيار الفرع الحالي قبل حفظ المنتج.');
-
-                return;
-            }
-
-            $branchIds = collect([$activeBranchId]);
+            return;
         }
+
+        $branchIds = collect([(int) $activeBranchId]);
 
         if ($branchIds->isEmpty()) {
             session()->flash(
@@ -937,7 +1069,8 @@ new class extends Component {
                 $tenantId,
                 $productData,
                 $cleanBarcodes,
-                $branchIds
+                $branchIds,
+                $stockQuantityChanged
             ) {
                 /*
                 |--------------------------------------------------------------------------
@@ -1034,6 +1167,18 @@ new class extends Component {
                             ->exists();
 
                     if ($existingBranchProduct) {
+                        if (
+                            $this->isEditing &&
+                            $branchId === $this->activeBranchId() &&
+                            $stockQuantityChanged
+                        ) {
+                            $payload = array_merge(
+                                $payload,
+                                ['stock_quantity' => (float) $this->stockQuantity],
+                                StockMovementContext::attributes()
+                            );
+                        }
+
                         DB::table('branch_products')
                             ->where('tenant_id', $tenantId)
                             ->where('branch_id', $branchId)
@@ -1052,6 +1197,15 @@ new class extends Component {
 
                                         'product_id' =>
                                             $product->id,
+
+                                        'stock_quantity' =>
+                                            $branchId === $this->activeBranchId()
+                                                ? (float) $this->stockQuantity
+                                                : 0,
+
+                                        ...($branchId === $this->activeBranchId() && (float) $this->stockQuantity > 0
+                                            ? array_merge(StockMovementContext::attributes(), ['stock_source_type' => 'opening'])
+                                            : []),
 
                                         'created_at' =>
                                             now(),
@@ -1086,11 +1240,11 @@ new class extends Component {
                 ? 'تم تحديث بيانات المنتج بنجاح.'
                 : 'تم إضافة المنتج بنجاح.';
 
-            session()->flash(
-                'message',
-                $message
-            );
-            Flux::toast(variant: 'success', text: $message);
+            if ($this->posEmbedded) {
+                Flux::toast(text: $message, duration: 5000, variant: 'success');
+            } else {
+                session()->flash('message', $message);
+            }
 
             $this->closeModal();
 
@@ -1126,11 +1280,13 @@ new class extends Component {
                 }
             }
 
-            session()->flash(
-                'error',
-                'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.'
-            );
-            Flux::toast(variant: 'danger', text: 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.');
+            $message = 'حدث خطأ أثناء حفظ المنتج. يرجى المحاولة مرة أخرى.';
+
+            if ($this->posEmbedded) {
+                Flux::toast(text: $message, duration: 5000, variant: 'danger');
+            } else {
+                session()->flash('error', $message);
+            }
         }
     }
 
@@ -1546,6 +1702,8 @@ new class extends Component {
         $this->wholesale_price = '';
 
         $this->min_wholesale_quantity = 1;
+        $this->stockQuantity = '0';
+        $this->originalStockQuantity = '0';
 
         $this->is_price_unified = false;
 
@@ -1624,11 +1782,6 @@ new class extends Component {
                 function ($query) {
                     $search = app(PosProductSearch::class)->normalize($this->search);
 
-                    if (mb_strlen($search) < 2 && !ctype_digit($search)) {
-                        $query->whereRaw('1 = 0');
-
-                        return;
-                    }
 
                     app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $this->tenantId());
                 }
@@ -2228,6 +2381,11 @@ new class extends Component {
                                 <span class="font-bold text-zinc-900 dark:text-white">
                                     {{ $priceData ? number_format($priceData->retail_price, 2) : '0.00' }}
                                 </span>
+                                @can('products.price.edit')
+                                    <button type="button" wire:click.stop="editBranchPrice({{ $product->id }})" class="mt-1 block text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                                        تعديل سعر هذا الفرع
+                                    </button>
+                                @endcan
 
                             </td>
 
@@ -2525,6 +2683,11 @@ new class extends Component {
                                 <div class="mt-1 text-sm font-bold text-indigo-600 dark:text-indigo-400">
                                     {{ $priceData ? number_format($priceData->retail_price, 2) : '0.00' }}
                                 </div>
+                                @can('products.price.edit')
+                                    <button type="button" wire:click.stop="editBranchPrice({{ $product->id }})" class="mt-1 text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                                        تعديل سعر هذا الفرع
+                                    </button>
+                                @endcan
 
                             </div>
 
@@ -3160,6 +3323,7 @@ new class extends Component {
                     PRICING POLICY
                 ===================================================== --}}
 
+                @if (!$isEditing)
                 <section class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/20">
 
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -3194,6 +3358,11 @@ new class extends Component {
                     </div>
 
                 </section>
+                @else
+                    <div class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-200">
+                        يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.
+                    </div>
+                @endif
 
 
                 {{-- ====================================================
@@ -3217,7 +3386,7 @@ new class extends Component {
                                 </div>
 
                                 <div class="text-xs text-zinc-500">
-                                    {{ $isEditing ? 'سيتم تحديث هذه الأسعار في فروع المنتج.' : 'سيتم إضافة المنتج إلى الفرع الحالي بهذه الأسعار.' }}
+                                    {{ $isEditing ? 'سيتم تحديث سعر الفرع الحالي فقط.' : 'سيتم إضافة المنتج إلى الفرع الحالي بهذه الأسعار.' }}
                                 </div>
 
                             </div>
@@ -3314,9 +3483,7 @@ new class extends Component {
                     ================================================== --}}
 
                     @php
-                        $priceBranches = $isEditing
-                            ? $allBranches
-                            : $allBranches->where('id', $activeBranchId);
+                        $priceBranches = $allBranches->where('id', $activeBranchId);
                     @endphp
 
                     <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
@@ -3336,7 +3503,7 @@ new class extends Component {
                                     </div>
 
                                     <div class="text-xs text-zinc-500">
-                                        حدد الأسعار لكل فرع بشكل مستقل.
+                                        {{ $isEditing ? 'يتم تعديل أسعار الفرع الحالي فقط.' : 'يُضاف المنتج إلى الفرع الحالي بهذه الأسعار.' }}
                                     </div>
 
                                 </div>
@@ -3481,6 +3648,31 @@ new class extends Component {
                 @endif
 
 
+                @can('products.stock.adjust')
+                    <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+                        <div class="mb-4 flex items-center gap-3">
+                            <div class="flex size-9 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm dark:bg-zinc-900 dark:text-amber-400">
+                                <flux:icon name="archive-box" class="size-5" />
+                            </div>
+                            <div>
+                                <div class="font-semibold text-zinc-900 dark:text-white">
+                                    {{ $isEditing ? 'كمية الفرع الحالي' : 'كمية البداية' }}
+                                </div>
+                                <div class="text-xs text-zinc-500">
+                                    {{ $isEditing ? 'تعديل الكمية يسجل حركة مخزون يدوية للفرع الحالي.' : 'تُسجّل الكمية كرصيد افتتاحي للفرع الحالي.' }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <flux:field class="max-w-sm">
+                            <flux:label>{{ $isEditing ? 'الكمية الحالية' : 'الكمية الافتتاحية' }}</flux:label>
+                            <flux:input type="number" min="0" max="9999999999.99" step="0.01" wire:model="stockQuantity" placeholder="0.00" />
+                            <flux:error name="stockQuantity" />
+                        </flux:field>
+                    </section>
+                @endcan
+
+
                 {{-- ====================================================
                     WEBSITE
                 ===================================================== --}}
@@ -3560,6 +3752,47 @@ new class extends Component {
 
         </div>
 
+    </flux:modal>
+
+
+    {{-- ================================================================
+        BRANCH PRICE MODAL
+    ================================================================= --}}
+
+    <flux:modal wire:model="showBranchPriceModal" class="w-full max-w-md">
+        <div>
+            <flux:heading size="lg">تعديل سعر الفرع الحالي</flux:heading>
+            <flux:subheading class="mt-1">{{ $branchPriceProductName }}</flux:subheading>
+
+            <form wire:submit.prevent="saveBranchPrice" class="mt-6 space-y-4">
+                <flux:field>
+                    <flux:label>سعر البيع</flux:label>
+                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="branchRetailPrice" placeholder="0.00" />
+                    <flux:error name="branchRetailPrice" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>سعر الجملة (اختياري)</flux:label>
+                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="branchWholesalePrice" placeholder="0.00" />
+                    <flux:error name="branchWholesalePrice" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>أقل كمية للجملة</flux:label>
+                    <flux:input type="number" min="1" wire:model="branchMinWholesaleQuantity" />
+                    <flux:error name="branchMinWholesaleQuantity" />
+                </flux:field>
+
+                <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-900/50 dark:bg-indigo-950/20 dark:text-indigo-300">
+                    سيُحفظ السعر للفرع المحدد حاليًا فقط.
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                    <flux:button type="button" variant="ghost" wire:click="$set('showBranchPriceModal', false)">إلغاء</flux:button>
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="saveBranchPrice">حفظ السعر</flux:button>
+                </div>
+            </form>
+        </div>
     </flux:modal>
 
 

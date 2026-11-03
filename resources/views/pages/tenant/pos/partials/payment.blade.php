@@ -980,6 +980,15 @@
                     <textarea wire:model="deliveryNotes" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"></textarea>
                     @error('deliveryNotes')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
                 </label>
+                <label class="mt-3 block text-xs font-black text-slate-700">شركة التوصيل
+                    <select wire:model="deliveryCompanyId" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+                        <option value="">اختر شركة التوصيل من الموردين</option>
+                        @foreach ($this->deliveryCompanies as $company)
+                            <option value="{{ $company->id }}">{{ $company->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('deliveryCompanyId')<span class="mt-1 block text-rose-600">اختر شركة التوصيل.</span>@enderror
+                </label>
                 <button type="button" wire:click="confirmDeliveryDetails" class="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700">تأكيد والمتابعة للحفظ</button>
             </div>
         </div>

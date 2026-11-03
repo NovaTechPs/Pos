@@ -278,7 +278,7 @@ test('search matches saved product barcodes for sales and product options withou
     $report = (new ReportingService($this->user))->prepare('product-sales', array_replace($this->filters, ['search' => '000123']));
     expect($report['query']->get())->toHaveCount(1);
     expect((float) $report['summary']['الكمية المباعة'])->toBe(2.5);
-    Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')->set('productSearch', '000123')->assertSee('قهوة التقارير');
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')->set('productSearch', '000123')->assertSee('قهوة التقارير')->assertSee('data-report-product')->call('selectReportProduct', $this->product->id)->assertSet('productId', $this->product->id);
 });
 
 test('report permissions are enforced on livewire selection exports and direct print endpoints', function (): void {

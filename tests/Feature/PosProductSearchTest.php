@@ -35,7 +35,9 @@ function searchablePosProduct(object $context, string $name, ?string $number = n
 test('pos search understands Arabic spelling and unordered words in both search controls', function (string $name, string $search): void {
     $product = searchablePosProduct($this, $name);
     searchablePosProduct($this, 'صنف غير مطابق');
-    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search);
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search)
+        ->assertSee('data-pos-product-grid', false)
+        ->assertSee('الكمية');
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$product->id]);
     $component->set('inlineSearchQuery', $search);
     expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$product->id]);
@@ -48,6 +50,20 @@ test('pos search understands Arabic spelling and unordered words in both search 
     ['Premium Long Grain Rice', 'rice PREMIUM'],
 ]);
 
+test('Enter does not implicitly submit forms anywhere in the app', function (): void {
+    $script = file_get_contents(resource_path('js/prevent-enter-submit.js'));
+
+    expect($script)->toContain("event.key !== 'Enter'")
+        ->and($script)->toContain("event.target.closest('form')")
+        ->and($script)->toContain('event.preventDefault()')
+        ->and($script)->toContain('/^(search|applyFilters|filter|preview|calculate|lookup)/i');
+});
+test('product list search includes one-character product name queries', function (): void {
+    $product = searchablePosProduct($this, 'إبريق زجاج');
+
+    Livewire::test('pages::tenant.products.index')->set('search', 'ب')
+        ->assertViewHas('products', fn ($products): bool => $products->contains('id', $product->id));
+});
 test('exact barcode and product number outrank name matches', function (): void {
     $name = searchablePosProduct($this, '123456 coffee');
     $number = searchablePosProduct($this, 'Coffee by code', '123456');
@@ -59,7 +75,9 @@ test('exact barcode and product number outrank name matches', function (): void 
 test('both pos search controls find full and partial product numbers', function (string $search): void {
     $product = searchablePosProduct($this, 'صنف تجريبي', 'ITEM-12345');
     searchablePosProduct($this, 'صنف آخر', 'OTHER-987');
-    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search);
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search)
+        ->assertSee('data-pos-product-grid', false)
+        ->assertSee('الكمية');
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$product->id]);
     $component->set('inlineSearchQuery', $search);
     expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$product->id]);
@@ -143,6 +161,29 @@ test('selecting a searched product clears both search controls and restores the 
         ->and(array_column($component->get('cart'), 'id'))->toBe([$coffee->id]);
 });
 
+test('pos search shows product rows and adds the requested quantity', function (): void {
+    $coffee = searchablePosProduct($this, 'Coffee beans', 'COFFEE-10', '1234567890123');
+    Shift::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opened_by' => $this->user->id, 'opened_at' => now(), 'status' => 'open', 'opening_cash' => 0]);
+
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->set('productSearchQuery', 'coffee')
+        ->assertSee('data-pos-product-results', false)
+        ->assertSee('رقم الصنف')
+        ->assertSee('سعر البيع')
+        ->assertSee('الباركود')
+        ->assertSee('المتوفر')
+        ->assertSee('الكمية')
+        ->set('quickProductQuantities.'.$coffee->id, 3)
+        ->call('addSearchedProduct', $coffee->id)
+        ->assertSet('productSearchQuery', '');
+
+    $item = array_values($component->get('cart'))[0];
+    expect($item['id'])->toBe($coffee->id)
+        ->and((float) $item['quantity'])->toBe(3.0)
+        ->and((float) $item['subtotal'])->toBe(45.0);
+});
+
 test('failed addition preserves search and does not dispatch a successful selection', function (): void {
     $coffee = searchablePosProduct($this, 'Coffee');
     Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'coffee')
@@ -163,7 +204,7 @@ test('repeated search in one request reuses results while explicit refresh reads
     });
     $instance->updatedProductSearchQuery();
     $instance->submitProductSearch('coffee');
-    expect($reads)->toBe(1);
-    $instance->loadQuickProducts(true);
     expect($reads)->toBe(2);
+    $instance->loadQuickProducts(true);
+    expect($reads)->toBe(3);
 });

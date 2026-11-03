@@ -569,18 +569,15 @@ new class extends Component {
                             <span class="text-[11px] font-bold text-amber-700">اختر {{ $kind === 'sale' ? 'العميل' : 'المورد' }} أولاً لتفعيل إضافة الأصناف.</span>
                         @endunless
                     </div>
-                    <div class="relative">
-                        <input id="return-product-search" type="text" wire:model.live.debounce.120ms="productSearch" wire:keydown.enter.prevent="addFirstProduct" @disabled(!$selectedPartyId) autocomplete="off" placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
+                    <div class="relative" x-data="{ active: 0, rows() { return [...this.$refs.returnResults.querySelectorAll('[data-return-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:keydown.arrow-down.prevent="move(1)" x-on:keydown.arrow-up.prevent="move(-1)">
+                        <input id="return-product-search" type="text" wire:model.live.debounce.120ms="productSearch" x-on:keydown.enter.prevent="rows().length ? choose() : $wire.addFirstProduct()" x-on:input="active = 0" @disabled(!$selectedPartyId) autocomplete="off" placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
                         @if ($productSearch !== '' || count($productResults))
-                            <div class="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-indigo-200 bg-white p-1.5 shadow-2xl">
-                                @forelse ($productResults as $product)
-                                    <button type="button" wire:click="addProduct({{ $product['id'] }})" class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right hover:bg-indigo-50">
-                                        <span class="font-black text-slate-800">{{ $product['name'] }}</span>
-                                        <span class="text-xs font-bold text-slate-500">المتاح للإرجاع {{ number_format($product['available'] ?? $product['stock'], 2) }}</span>
-                                    </button>
-                                @empty
-                                    <div class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</div>
-                                @endforelse
+                            <div x-ref="returnResults" class="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-auto rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                                <table class="w-full text-right text-sm"><thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">المتاح للإرجاع</th></tr></thead><tbody>
+                                    @forelse ($productResults as $product)
+                                        <tr data-return-product wire:key="return-search-{{ $product['id'] }}" x-bind:class="active === {{ $loop->index }} ? 'bg-indigo-50' : ''" wire:click="addProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50"><td class="p-2 font-mono">{{ $product['id'] }}</td><td class="p-2 font-bold">{{ $product['name'] }}</td><td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td></tr>
+                                    @empty<tr><td colspan="3" class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</td></tr>@endforelse
+                                </tbody></table>
                             </div>
                         @endif
                     </div>

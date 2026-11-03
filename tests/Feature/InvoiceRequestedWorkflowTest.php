@@ -23,6 +23,7 @@ beforeEach(function (): void {
 
 test('saving a sales or purchase invoice immediately starts a fresh invoice after printing the saved data', function (string $page, string $model, string $idField): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set('invoiceDate', '2026-01-15')
         ->call('selectProduct', $this->product->id)
         ->set('selectedQuantity', 3)->call('commitRowToCart');
     $number = $component->get('invoiceNumber');
@@ -30,6 +31,7 @@ test('saving a sales or purchase invoice immediately starts a fresh invoice afte
         ->assertSet($idField, null)->assertSet('cart', [])->assertSet('invoiceEditMode', true)
         ->assertDispatched($page === 'sales' ? 'print-sales-invoice' : 'print-purchase-invoice');
     expect($model::query()->count())->toBe(1)
+        ->and($model::query()->sole()->invoice_date->format('Y-m-d'))->toBe('2026-01-15')
         ->and($component->get('invoiceNumber'))->not->toBe($number);
     $component->call('saveInvoice');
     expect($model::query()->count())->toBe(1);
@@ -38,13 +40,82 @@ test('saving a sales or purchase invoice immediately starts a fresh invoice afte
     ['purchases', Purchase::class, 'currentPurchaseId'],
 ]);
 
+test('saving a sales or purchase invoice without printing starts a fresh invoice', function (string $page, string $model, string $idField): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set('invoiceDate', '2026-01-15')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart');
+    $savedNumber = $component->get('invoiceNumber');
+
+    $component->call('saveInvoice')
+        ->assertHasNoErrors()
+        ->assertSet($idField, null)
+        ->assertSet('cart', [])
+        ->assertSet('invoiceEditMode', true)
+        ->assertSee('وفتح فاتورة جديدة');
+
+    expect($model::query()->count())->toBe(1)
+        ->and($model::query()->sole()->invoice_date->format('Y-m-d'))->toBe('2026-01-15')
+        ->and($component->get('invoiceNumber'))->not->toBe($savedNumber);
+})->with([
+    ['sales', Order::class, 'currentOrderId'],
+    ['purchases', Purchase::class, 'currentPurchaseId'],
+]);
+
+test('sales and purchase invoice totals include the tax already present in item prices', function (string $page, string $model, string $priceField, string $taxField): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->set($priceField, 116)
+        ->call('commitRowToCart')
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $invoice = $model::query()->sole();
+
+    expect((float) $invoice->total)->toBe(116.0)
+        ->and((float) $invoice->$taxField)->toBe(16.0);
+})->with([
+    ['sales', Order::class, 'selectedPrice', 'tax_amount'],
+    ['purchases', Purchase::class, 'selectedPurchasePrice', 'tax_amount'],
+]);
+
+test('purchase invoice product search shows results and adds the chosen item', function (): void {
+    $component = Livewire::test('pages::tenant.purchases.invoices')
+        ->set('rowSearch', 'الصنف')
+        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id])
+        ->assertSee('data-invoice-search-results', false)
+        ->assertSee('wire:click="addProductFromSearch('.$this->product->id.')"', false)
+        ->call('addProductFromSearch', $this->product->id);
+
+    expect(array_values($component->get('cart'))[0]['id'])->toBe($this->product->id);
+});
+
+test('purchase invoice search opens a saved invoice by its reference', function (): void {
+    $purchase = Purchase::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'reference_number' => 'PUR-SEARCH-42',
+        'total' => 10,
+        'paid_amount' => 0,
+        'payment_status' => 'unpaid',
+    ]);
+
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->call('togglePurchaseSearch')
+        ->set('searchPurchaseQuery', 'PUR-SEARCH-42')
+        ->call('searchPurchase')
+        ->assertSet('currentPurchaseId', $purchase->id)
+        ->assertSet('searchPurchaseQuery', '')
+        ->assertSet('showPurchaseSearch', false);
+});
+
 test('scanning the printed invoice barcode opens that exact invoice without an open shift', function (): void {
     $order = Order::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'invoice_number' => 'POS-000123', 'type' => 'pos', 'status' => 'completed', 'subtotal' => 10, 'total' => 10, 'paid_amount' => 10]);
     Order::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'invoice_number' => 'POS-0001230', 'type' => 'pos', 'status' => 'completed', 'subtotal' => 10, 'total' => 10, 'paid_amount' => 10]);
     Shift::query()->update(['status' => 'closed']);
     Livewire::test('pages::tenant.pos.sales')->call('scanBarcode', $order->invoice_number)
         ->assertSet('currentInvoiceId', $order->id)->assertSet('invoiceEditMode', false)->assertSet('showMissingBarcodeModal', false);
-    Livewire::test('pages::tenant.pos.sales')->set('searchInvoiceQuery', $order->invoice_number)->call('searchInvoice')
+    Livewire::test('pages::tenant.pos.sales')->set('searchInvoiceQuery', 'POS-٠٠٠١٢٣')->call('searchInvoice')
         ->assertSet('currentInvoiceId', $order->id);
 });
 

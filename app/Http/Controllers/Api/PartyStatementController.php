@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Order;
 use App\Models\Party;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,11 +24,12 @@ class PartyStatementController extends Controller
         $from = $request->date('from');
         $to = $request->date('to');
         $branchId = $user->branch_id && ! $user->isTenantOwner() ? $user->branch_id : $request->integer('branch_id');
-        $orders = $party->orders()->where('tenant_id', $user->tenant_id)->where('status', 'completed')->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))->get()->map(fn ($r) => ['id' => $r->id, 'date' => $r->created_at->toDateString(), 'type' => $r->type === 'return' ? 'مرتجع مبيعات' : 'فاتورة بيع', 'amount' => $r->total, 'notes' => $r->invoice_number]);
+        $orders = $party->orders()->where('tenant_id', $user->tenant_id)->where('status', 'completed')->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereRaw('COALESCE(invoice_date, created_at) >= ?', [$from]))->when($to, fn ($q) => $q->whereRaw('COALESCE(invoice_date, created_at) < ?', [$to->copy()->addDay()]))->get()->map(fn ($r) => ['id' => $r->id, 'date' => ($r->invoice_date ?? $r->created_at)->toDateString(), 'type' => $r->type === 'return' ? 'مرتجع مبيعات' : 'فاتورة بيع', 'amount' => $r->type === 'return' ? $r->total : (float) $r->total - (float) $r->delivery_fee, 'notes' => $r->invoice_number]);
+        $deliveryCharges = Order::query()->where('tenant_id', $user->tenant_id)->where('delivery_party_id', $party->id)->where('status', 'completed')->where('delivery_fee', '>', 0)->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereRaw('COALESCE(invoice_date, created_at) >= ?', [$from]))->when($to, fn ($q) => $q->whereRaw('COALESCE(invoice_date, created_at) < ?', [$to->copy()->addDay()]))->get()->map(fn ($r) => ['id' => $r->id, 'date' => ($r->invoice_date ?? $r->created_at)->toDateString(), 'type' => 'رسوم توصيل مستحقة', 'amount' => $r->delivery_fee, 'notes' => $r->invoice_number]);
         $purchases = $party->purchases()->where('tenant_id', $user->tenant_id)->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))->get()->map(fn ($r) => ['id' => $r->id, 'date' => $r->created_at->toDateString(), 'type' => 'فاتورة شراء', 'amount' => $r->total, 'notes' => $r->invoice_number ?? '']);
         $purchaseReturns = $party->purchaseReturns()->where('tenant_id', $user->tenant_id)->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))->get()->map(fn ($r) => ['id' => $r->id, 'date' => $r->created_at->toDateString(), 'type' => 'مرتجع مشتريات', 'amount' => -abs((float) $r->total), 'notes' => $r->reference_number]);
         $payments = $party->payments()->where('tenant_id', $user->tenant_id)->when($branchId, fn ($q) => $q->where('branch_id', $branchId))->when($from, fn ($q) => $q->whereDate('payment_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('payment_date', '<=', $to))->get()->map(fn ($r) => ['id' => $r->id, 'date' => $r->payment_date->toDateString(), 'type' => $r->type === 'receipt' ? 'قبض' : 'دفع', 'amount' => $r->amount, 'notes' => $r->notes ?? $r->voucher_number]);
 
-        return response()->json(['party' => $party, 'opening_balance' => (float) $party->opening_balance, 'current_balance' => (float) $party->current_balance, 'transactions' => $orders->concat($purchases)->concat($purchaseReturns)->concat($payments)->sortBy('date')->values()]);
+        return response()->json(['party' => $party, 'opening_balance' => (float) $party->opening_balance, 'current_balance' => (float) $party->current_balance, 'transactions' => $orders->concat($deliveryCharges)->concat($purchases)->concat($purchaseReturns)->concat($payments)->sortBy('date')->values()]);
     }
 }

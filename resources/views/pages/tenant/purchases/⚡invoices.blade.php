@@ -529,11 +529,12 @@ new class extends Component {
 
         $taxableAmount = max(0, $base - $invoiceDiscount);
 
-        $taxAmount = $this->taxable
-            ? $taxableAmount * (max(0, $this->taxPercent) / 100)
+        $taxRate = max(0, $this->taxPercent);
+        $taxAmount = $taxRate > 0
+            ? $taxableAmount * ($taxRate / (100 + $taxRate))
             : 0.0;
 
-        $grandTotal = $taxableAmount + $taxAmount;
+        $grandTotal = $taxableAmount;
 
         $paid = min(max(0, (float) $this->paidAmount), $grandTotal);
 
@@ -572,6 +573,8 @@ new class extends Component {
         $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
         $this->errorMessage = null;
         $this->successMessage = null;
+
+        $this->validate(['invoiceDate' => ['required', 'date']]);
 
         if (empty($this->cart)) {
             $this->errorMessage = 'أضف مادة واحدة على الأقل إلى الفاتورة.';
@@ -685,7 +688,10 @@ new class extends Component {
                             'branch_id' => $this->selectedBranchId,
                             'supplier_id' => $supplier?->id,
                             'reference_number' => $this->invoiceNumber,
+                            'invoice_date' => $this->invoiceDate,
                             'total' => $totals['total'],
+                            'tax_amount' => $totals['tax'],
+                            'tax_percent' => max(0, $this->taxPercent),
                             'paid_amount' => $totals['paid'],
                             'payment_status' => $totals['payment_status'],
                             'updated_at' => now(),
@@ -706,7 +712,10 @@ new class extends Component {
                         'supplier_id' => $supplier?->id,
                         'created_by' => auth()->id(),
                         'reference_number' => $this->invoiceNumber,
+                        'invoice_date' => $this->invoiceDate,
                         'total' => $totals['total'],
+                        'tax_amount' => $totals['tax'],
+                        'tax_percent' => max(0, $this->taxPercent),
                         'paid_amount' => $totals['paid'],
                         'payment_status' => $totals['payment_status'],
                         'created_at' => now(),
@@ -906,16 +915,17 @@ new class extends Component {
         $this->currentPurchaseId = $purchase->id;
         $this->invoiceEditMode = false;
         $this->invoiceNumber = $purchase->reference_number;
-        $this->invoiceDate = $purchase->created_at
-            ? \Carbon\Carbon::parse($purchase->created_at)->format('Y-m-d')
-            : now()->format('Y-m-d');
+        $this->invoiceDate = $purchase->invoice_date
+            ? \Carbon\Carbon::parse($purchase->invoice_date)->format('Y-m-d')
+            : ($purchase->created_at
+                ? \Carbon\Carbon::parse($purchase->created_at)->format('Y-m-d')
+                : now()->format('Y-m-d'));
         $this->selectedBranchId = $purchase->branch_id;
         $this->selectedSupplierId = $purchase->supplier_id;
-        // purchases الحالية لا تخزن تفصيل الخصم/الضريبة؛ نحملها كقيم محلية فقط.
         $this->discount = 0.0;
         $this->discountType = 'fixed';
-        $this->taxPercent = 0.0;
-        $this->taxable = false;
+        $this->taxPercent = max(0, (float) ($purchase->tax_percent ?? 16));
+        $this->taxable = true;
         $this->paidAmount = (float) $purchase->paid_amount;
         $this->notes = '';
 
@@ -1083,13 +1093,13 @@ new class extends Component {
             invoice: [
                 'store_name' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $purchase->reference_number,
-                'date' => $purchase->created_at,
+                'date' => $purchase->invoice_date ?: $purchase->created_at,
                 'supplier' => $supplierName,
                 'notes' => null,
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
                 'discount' => 0.0,
-                'tax' => 0.0,
+                'tax' => (float) ($purchase->tax_amount ?? 0),
                 'total' => (float) $purchase->total,
                 'paid' => (float) $purchase->paid_amount,
                 'remaining' => max(0, (float) $purchase->total - (float) $purchase->paid_amount),
@@ -1454,41 +1464,25 @@ new class extends Component {
 
                         @if (count($productResults) > 0)
                             <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
-                                <div class="max-h-80 overflow-y-auto p-1.5" x-ref="productResults">
-                                    @foreach ($productResults as $product)
-                                        @php
-                                            $bp = $product->branchProducts->first();
-                                            $salePrice = (float) $product->cost_price;
-                                            $stock = (float) ($bp?->stock_quantity ?? 0);
-                                        @endphp
-
-                                        <button
-                                            type="button"
-                                            data-product-result
-                                            data-result-index="{{ $loop->index }}"
-                                            x-on:mousedown.prevent
-                                            wire:click="addProductFromSearch({{ $product->id }})"
-                                            wire:loading.attr="disabled"
-                                            class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-indigo-50"
-                                        >
-                                            <div class="flex min-w-0 items-center gap-3">
-                                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-black text-slate-500">
-                                                    {{ $product->id }}
-                                                </div>
-                                                <div class="min-w-0">
-                                                    <div class="truncate text-sm font-black text-slate-800">{{ $product->name }}</div>
-                                                    <div class="mt-0.5 text-[11px] font-semibold text-slate-400">
-                                                        المخزون: {{ number_format($stock, 2) }}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div class="shrink-0 text-left">
-                                                <div class="font-mono text-sm font-black text-indigo-700">{{ number_format($salePrice, 2) }}</div>
-                                                <div class="mt-0.5 text-[10px] font-bold text-slate-400">سعر التكلفة</div>
-                                            </div>
-                                        </button>
-                                    @endforeach
+                                <div class="max-h-80 overflow-auto" x-ref="productResults">
+                                    <table class="w-full text-right text-sm">
+                                        <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
+                                        <tbody>
+                                            @foreach ($productResults as $product)
+                                                @php
+                                                    $bp = $product->branchProducts->first();
+                                                    $resultPrice = (float) $product->cost_price;
+                                                    $stock = (float) ($bp?->stock_quantity ?? 0);
+                                                @endphp
+                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="addProductFromSearch({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
+                                                    <td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td>
+                                                    <td class="p-2 font-bold">{{ $product->name }}</td>
+                                                    <td class="p-2 font-mono">{{ number_format($resultPrice, 2) }}</td>
+                                                    <td class="p-2 tabular-nums">{{ number_format($stock, 2) }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         @endif
@@ -1515,7 +1509,7 @@ new class extends Component {
                         type="number"
                         step="0.01"
                         min="0"
-                        wire:model.live="selectedPurchasePrice"
+        wire:model="selectedPurchasePrice"
                         wire:keydown.enter.prevent="commitRowToCart"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
                     />
@@ -1576,7 +1570,7 @@ new class extends Component {
                                                 </div>
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.price" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
                                             <td class="px-3 py-3">
                                                 <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.discount" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
@@ -1622,7 +1616,7 @@ new class extends Component {
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
-                                        <input type="number" min="0" step="0.01" wire:model.live="cart.{{ $key }}.price" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الخصم</label>
@@ -1678,16 +1672,11 @@ new class extends Component {
                             </div>
 
                             <div class="flex items-center justify-between text-sm">
-                                <span class="font-bold text-slate-500">الضريبة</span>
+                                <span class="font-bold text-slate-500">قيمة الضريبة المضمنة</span>
                                 <div class="flex items-center gap-2">
-                                    <label class="inline-flex items-center gap-1.5 text-[10px] font-black text-slate-500">
-                                        <input type="checkbox" wire:model.live="taxable" class="rounded border-slate-300 text-indigo-600" />
-                                        مفعلة
-                                    </label>
-                                    @if ($taxable)
-                                        <input type="number" min="0" step="0.01" wire:model.live="taxPercent" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-black" />
-                                        <span class="text-[10px] font-black text-slate-400">%</span>
-                                    @endif
+                                    <span class="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">شامل الضريبة</span>
+                                    <input type="number" min="0" step="0.01" wire:model.live.debounce.500ms="taxPercent" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-black" />
+                                    <span class="text-[10px] font-black text-slate-400">%</span>
                                 </div>
                             </div>
 
@@ -1745,6 +1734,9 @@ new class extends Component {
                                 {{ $paymentStatus === 'paid' ? 'مدفوعة' : ($paymentStatus === 'partial' ? 'جزئية' : 'آجلة') }}
                             </span>
                         </div>
+                        @if ($currentPurchaseId && $selectedSupplierId)
+                            <a href="{{ route('tenant.payment', ['party_id' => $selectedSupplierId, 'purchase_id' => $currentPurchaseId, 'amount' => $remainingTotal, 'notes' => 'سند دفع لفاتورة '.$invoiceNumber]) }}" class="mt-3 block rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-black text-rose-700 hover:bg-rose-100">إضافة سند صرف لهذه الفاتورة</a>
+                        @endif
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1783,7 +1775,10 @@ new class extends Component {
             this.registerKeyboard();
 
             Livewire.on('focus-product-search', () => {
-                this.$nextTick(() => this.$refs.productSearch?.focus());
+                this.$nextTick(() => {
+                    this.$refs.productSearch?.focus();
+                    this.$refs.productSearch?.select();
+                });
             });
 
             Livewire.on('focus-supplier-search', () => {

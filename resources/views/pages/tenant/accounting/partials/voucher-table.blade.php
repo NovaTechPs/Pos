@@ -6,11 +6,11 @@
     $partyLabel = $isPayment ? 'المورد' : 'العميل';
 
     $emptyTitle = $isPayment
-        ? 'لا توجد سندات دفع'
+        ? 'لا توجد سندات صرف'
         : 'لا توجد سندات قبض';
 
     $emptyDescription = $isPayment
-        ? 'لم يتم تسجيل أي سند دفع حتى الآن.'
+        ? 'لم يتم تسجيل أي سند صرف حتى الآن.'
         : 'لم يتم تسجيل أي سند قبض حتى الآن.';
 @endphp
 
@@ -332,8 +332,8 @@
                                         <button
                                             type="button"
                                             wire:click="print({{ $item->id }})"
-                                            title="طباعة"
-                                            class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                                            title="طباعة السند" aria-label="طباعة السند"
+                                            class="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                                         >
                                             <flux:icon
                                                 name="printer"

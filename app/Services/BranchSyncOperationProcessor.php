@@ -121,6 +121,14 @@ class BranchSyncOperationProcessor
         $shiftData = $payload['shift'];
         $this->assertTenantUser($operation->tenant_id, $orderData['created_by'] ?? null);
         $this->assertTenantUser($operation->tenant_id, $shiftData['opened_by'] ?? null);
+        if (! empty($orderData['delivery_party_id']) && ! Party::query()
+            ->where('tenant_id', $operation->tenant_id)
+            ->where('is_active', true)
+            ->whereIn('type', ['supplier', 'both'])
+            ->whereKey($orderData['delivery_party_id'])
+            ->exists()) {
+            throw new RuntimeException('شركة التوصيل غير متاحة لهذا المتجر.');
+        }
 
         $party = null;
         if (($orderData['customer_id'] ?? null) !== null) {
@@ -229,6 +237,7 @@ class BranchSyncOperationProcessor
             'shift_id' => $orderData['type'] === 'wholesale' ? null : $shift->id,
             'created_by' => $orderData['created_by'] ?? null,
             'customer_id' => $orderData['customer_id'] ?? null,
+            'delivery_party_id' => $orderData['delivery_party_id'] ?? null,
             'customer_name' => $orderData['customer_name'],
             'customer_phone' => $orderData['customer_phone'] ?? null,
             'customer_address' => $orderData['customer_address'] ?? null,
@@ -339,6 +348,7 @@ class BranchSyncOperationProcessor
             'order.created_at' => ['required', 'date'],
             'order.created_by' => ['nullable', 'integer'],
             'order.customer_id' => ['required_if:order.type,wholesale', 'nullable', 'integer'],
+            'order.delivery_party_id' => ['nullable', 'integer'],
             'order.customer_name' => ['required', 'string', 'max:255'],
             'order.customer_phone' => ['nullable', 'string', 'max:255'],
             'order.customer_address' => ['nullable', 'string'],

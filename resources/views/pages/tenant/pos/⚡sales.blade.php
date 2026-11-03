@@ -65,7 +65,7 @@ new class extends Component {
             app(DesktopPosConnection::class)->retry((int) $this->tenantId(), (int) $this->getActiveBranchId());
             app(DesktopPosConnection::class)->flush((int) $this->tenantId(), (int) $this->getActiveBranchId());
         }
-        $this->loadQuickProducts();
+        $this->loadQuickProducts(force: true, refreshRemoteCatalog: true);
         $this->refreshBranchSyncStatus();
     }
 
@@ -93,6 +93,8 @@ new class extends Component {
     public array $inlineSearchResults = [];
     public string $searchInvoiceQuery = '';
     public string $productSearchQuery = '';
+    /** @var array<int, int|float|string> */
+    public array $quickProductQuantities = [];
     public ?int $selectedBranchId = null;
     public float $discount_amount = 0;
     public string $discount_type = 'fixed';
@@ -100,9 +102,11 @@ new class extends Component {
     public bool $showDeliveryDetailsModal = false;
     public string $pendingDeliveryAction = 'checkout';
     public string $deliveryCustomerName = '';
+    public ?int $deliveryCompanyId = null;
     public string $deliveryCustomerPhone = '';
     public string $deliveryCustomerAddress = '';
     public string $deliveryNotes = '';
+    public bool $customerInvoiceCopy = false;
     public ?float $custom_final_total = null;
     public array $categories = [];
     public ?int $selectedCategoryId = null;
@@ -203,6 +207,7 @@ new class extends Component {
         $this->restoreCurrentDraft();
 
         $invoiceId = request()->integer('invoice');
+        $this->customerInvoiceCopy = request()->boolean('customer_copy');
         if ($invoiceId > 0) {
             $this->loadInvoice($invoiceId);
         }
@@ -448,7 +453,7 @@ new class extends Component {
     private function draftFields(): array
     {
         return ['cart', 'paid_amount', 'payment_method', 'notes', 'selectedCustomerId', 'discount_amount',
-            'discount_type', 'delivery_fee', 'deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress', 'deliveryNotes', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
+            'discount_type', 'delivery_fee', 'deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress', 'deliveryCompanyId', 'deliveryNotes', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
             'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts'];
     }
 
@@ -996,6 +1001,7 @@ new class extends Component {
 
     public function updatedProductSearchQuery(): void
     {
+        $this->quickProductQuantities = [];
         $this->loadQuickProducts();
     }
 
@@ -1005,7 +1011,7 @@ new class extends Component {
             return;
         }
         $this->productSearchQuery = $search;
-        $this->loadQuickProducts();
+        $this->loadQuickProducts(force: true, refreshRemoteCatalog: true);
         if (count($this->quickProducts) === 1) {
             $this->selectInlineProduct((int) $this->quickProducts[0]['id']);
         } elseif ($this->quickProducts !== []) {
@@ -1104,8 +1110,32 @@ new class extends Component {
             return;
         }
 
+        $this->finishInlineProductSelection();
+    }
+
+    public function addSearchedProduct(int $productId): void
+    {
+        $quantity = $this->quickProductQuantities[$productId] ?? 1;
+
+        if (!is_numeric($quantity) || (float) $quantity <= 0 || (float) $quantity > 999999999.99) {
+            $this->errorMessage = 'أدخل كمية صحيحة أكبر من صفر.';
+
+            return;
+        }
+
+        if (!$this->addToCart($productId, '', (float) $quantity)) {
+            return;
+        }
+
+        unset($this->quickProductQuantities[$productId]);
+        $this->finishInlineProductSelection();
+    }
+
+    private function finishInlineProductSelection(): void
+    {
         $this->inlineSearchQuery = '';
         $this->productSearchQuery = '';
+        $this->quickProductQuantities = [];
         $this->inlineSearchResults = [];
         $this->selectedCategoryId = null;
         $this->loadQuickProducts();
@@ -1144,7 +1174,7 @@ new class extends Component {
         $this->errorMessage = 'سجّل المرتجعات من صفحة مردودات المبيعات، لربطها بفاتورتها وضبط الكميات والمخزون.';
     }
 
-    public function loadQuickProducts(bool $force = false): void
+    public function loadQuickProducts(bool $force = false, bool $refreshRemoteCatalog = false): void
     {
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
@@ -1160,9 +1190,11 @@ new class extends Component {
             return;
         }
 
-        $remoteIds = $this->refreshRemoteCatalog(filters: array_filter([
-            'search' => trim($this->productSearchQuery), 'category_id' => $this->selectedCategoryId,
-        ], fn ($value) => $value !== null && $value !== ''));
+        $remoteIds = $refreshRemoteCatalog
+            ? $this->refreshRemoteCatalog(filters: array_filter([
+                'search' => trim($this->productSearchQuery), 'category_id' => $this->selectedCategoryId,
+            ], fn ($value) => $value !== null && $value !== ''))
+            : null;
         $query = Product::query()
             ->select(['id', 'tenant_id', 'name', 'category_id', 'product_number'])
             ->where('tenant_id', $tenantId)
@@ -1184,7 +1216,7 @@ new class extends Component {
         }
         app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
 
-        $matchedProducts = $query->orderBy('name')->orderBy('id')->limit(40)->get();
+        $matchedProducts = $query->orderBy('name')->orderBy('id')->limit(24)->get();
         if ($matchedProducts->isEmpty()) {
             $this->quickProducts = [];
             $this->quickProductsRequestKey = $requestKey;
@@ -1347,9 +1379,14 @@ new class extends Component {
         $this->successMessage = 'تم ربط الباركود بالصنف. امسحه مرة أخرى لإضافته إلى الفاتورة.';
     }
 
-    public function addToCart(int $productId, string $scannedBarcode = ''): bool
+    public function addToCart(int $productId, string $scannedBarcode = '', float $quantity = 1): bool
     {
         if (!$this->ensureInvoiceEditable()) {
+            return false;
+        }
+        if (!is_finite($quantity) || $quantity <= 0 || $quantity > 999999999.99) {
+            $this->errorMessage = 'أدخل كمية صحيحة أكبر من صفر.';
+
             return false;
         }
         if (!$this->activeShift()) {
@@ -1393,7 +1430,7 @@ new class extends Component {
         }
         $this->selectingGift = false;
         $this->showProductsModal = false;
-        $changeQty = $this->isReturnMode ? -1 : 1;
+        $changeQty = ($this->isReturnMode ? -1 : 1) * $quantity;
 
         $activeOffer = $this->getActiveProductOffer($productId, (int) $tenantId, (int) $branchId);
         $offerQuantity = $activeOffer?->offer_quantity !== null
@@ -1650,6 +1687,7 @@ new class extends Component {
         $this->showDeliveryDetailsModal = false;
         $this->pendingDeliveryAction = 'checkout';
         $this->deliveryCustomerName = '';
+        $this->deliveryCompanyId = null;
         $this->deliveryCustomerPhone = '';
         $this->deliveryCustomerAddress = '';
         $this->deliveryNotes = '';
@@ -1730,6 +1768,7 @@ new class extends Component {
             'discount_type' => $this->discount_type,
             'delivery_fee' => $this->delivery_fee,
             'delivery_customer_name' => $this->deliveryCustomerName,
+            'delivery_company_id' => $this->deliveryCompanyId,
             'delivery_customer_phone' => $this->deliveryCustomerPhone,
             'delivery_customer_address' => $this->deliveryCustomerAddress,
             'delivery_notes' => $this->deliveryNotes,
@@ -1762,6 +1801,7 @@ new class extends Component {
         $this->discount_type = $held['discount_type'] ?? 'fixed';
         $this->delivery_fee = (float) ($held['delivery_fee'] ?? 0);
         $this->deliveryCustomerName = (string) ($held['delivery_customer_name'] ?? '');
+        $this->deliveryCompanyId = isset($held['delivery_company_id']) ? (int) $held['delivery_company_id'] : null;
         $this->deliveryCustomerPhone = (string) ($held['delivery_customer_phone'] ?? '');
         $this->deliveryCustomerAddress = (string) ($held['delivery_customer_address'] ?? '');
         $this->deliveryNotes = (string) ($held['delivery_notes'] ?? '');
@@ -1793,7 +1833,7 @@ new class extends Component {
 
     public function searchInvoice(): void
     {
-        $query = trim($this->searchInvoiceQuery);
+        $query = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
 
@@ -1894,6 +1934,7 @@ new class extends Component {
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
         $this->deliveryCustomerName = (string) ($invoice->customer_name ?? '');
+        $this->deliveryCompanyId = $invoice->delivery_party_id ? (int) $invoice->delivery_party_id : null;
         $this->deliveryCustomerPhone = (string) ($invoice->customer_phone ?? '');
         $this->deliveryCustomerAddress = (string) ($invoice->customer_address ?? '');
         $this->deliveryNotes = '';
@@ -2237,6 +2278,26 @@ new class extends Component {
         );
     }
 
+    public function getDeliveryCompaniesProperty(): \Illuminate\Support\Collection
+    {
+        return Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)
+            ->whereIn('type', ['supplier', 'both'])
+            ->orderBy('name')
+            ->get(['id', 'name']);
+    }
+
+    private function deliveryCompanyIsValid(): bool
+    {
+        return $this->deliveryCompanyId !== null && Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)
+            ->whereIn('type', ['supplier', 'both'])
+            ->whereKey($this->deliveryCompanyId)
+            ->exists();
+    }
+
     public function openDeliveryDetails(string $action = 'checkout'): void
     {
         $this->pendingDeliveryAction = $action;
@@ -2264,7 +2325,9 @@ new class extends Component {
         }
 
         if ($this->deliveryCustomerName !== '' && $this->deliveryCustomerPhone !== '' && $this->deliveryCustomerAddress !== '') {
-            return false;
+            if ($this->deliveryCompanyIsValid()) {
+                return false;
+            }
         }
 
         $this->openDeliveryDetails($action);
@@ -2278,8 +2341,15 @@ new class extends Component {
             'deliveryCustomerName' => ['required', 'string', 'max:255'],
             'deliveryCustomerPhone' => ['required', 'string', 'max:40'],
             'deliveryCustomerAddress' => ['required', 'string', 'max:2000'],
+            'deliveryCompanyId' => ['required', 'integer'],
             'deliveryNotes' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        if (! $this->deliveryCompanyIsValid()) {
+            $this->addError('deliveryCompanyId', 'اختر شركة توصيل من قائمة الموردين.');
+
+            return;
+        }
 
         $this->deliveryCustomerName = trim($this->deliveryCustomerName);
         $this->deliveryCustomerPhone = trim($this->deliveryCustomerPhone);
@@ -2798,6 +2868,9 @@ new class extends Component {
 
                 $paymentStatus = $requiredPayment <= 0 || $paid >= $requiredPayment ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
                 $isDelivery = $deliveryFee > 0;
+                if ($isDelivery && ! $this->deliveryCompanyIsValid()) {
+                    throw new \DomainException('اختر شركة توصيل صحيحة من الموردين.');
+                }
                 $invoiceCustomerName = $isDelivery ? trim($this->deliveryCustomerName) : ($customer?->name ?? 'زبون عام');
                 $invoiceCustomerPhone = $isDelivery ? trim($this->deliveryCustomerPhone) : ($customer?->phone ?? null);
                 $invoiceCustomerAddress = $isDelivery ? trim($this->deliveryCustomerAddress) : ($customer?->address ?? null);
@@ -2828,6 +2901,7 @@ new class extends Component {
                         'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, $this->discount_amount)) : 0,
                         'discount' => $discount,
                         'delivery_fee' => $deliveryFee,
+                        'delivery_party_id' => $isDelivery ? $this->deliveryCompanyId : null,
                         'total' => $total,
                         'total_cost' => $totalCost,
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
@@ -2852,6 +2926,7 @@ new class extends Component {
                         'discount_rate' => $this->discount_type === 'percentage' ? min(100, max(0, $this->discount_amount)) : 0,
                         'discount' => $discount,
                         'delivery_fee' => $deliveryFee,
+                        'delivery_party_id' => $isDelivery ? $this->deliveryCompanyId : null,
                         'total' => $total,
                         'total_cost' => $totalCost,
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
@@ -2982,16 +3057,7 @@ new class extends Component {
             $this->invalidateActiveShiftCache();
             $this->activeShiftId = $shift->id;
 
-            if ($customer) {
-                // Keep customer invoices in POS so the cashier can review or edit them.
-                // The invoice is loaded in read-only mode until the cashier chooses "تعديل".
-                $this->loadInvoice($order->id);
-                $this->currentInvoiceId = $order->id;
-                $this->editingInvoiceId = $order->id;
-                $this->invoiceEditMode = false;
-            } else {
-                $this->clearCartState();
-            }
+            $this->clearCartState();
             $operation = null;
             if (app(DesktopPosConnection::class)->enabled()) {
                 $operation = BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
@@ -3004,7 +3070,9 @@ new class extends Component {
             $this->activeShiftId = $shift->id;
 
             $this->successMessage = $customer
-                ? "تم حفظ فاتورة الزبون {$savedInvoiceNumber}. يمكنك الضغط على «تعديل» لتغييرها."
+                ? ($wasEditing
+                    ? "تم تعديل فاتورة الزبون {$savedInvoiceNumber} وفتح فاتورة جديدة."
+                    : "تم حفظ فاتورة الزبون {$savedInvoiceNumber} وفتح فاتورة جديدة.")
                 : ($wasEditing ? ($invoiceType === 'return' ? "تم تعديل المرتجع {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة." : "تم تعديل الفاتورة {$savedInvoiceNumber} بنجاح وتم فتح فاتورة جديدة.") : ($invoiceType === 'return' ? "تم حفظ المرتجع {$savedInvoiceNumber} وتم فتح فاتورة جديدة." : "تم حفظ الفاتورة {$savedInvoiceNumber} وتم فتح فاتورة جديدة."));
 
             if (app(DesktopPosConnection::class)->enabled()) {
@@ -3170,6 +3238,7 @@ new class extends Component {
                     'discount_rate' => (float) $order->discount_rate,
                     'discount' => (float) $order->discount,
                     'delivery_fee' => (float) $order->delivery_fee,
+                    'delivery_party_id' => $order->delivery_party_id,
                     'total' => (float) $order->total,
                     'total_cost' => (float) $order->total_cost,
                     'total_profit' => (float) $order->total_profit,
@@ -3590,9 +3659,9 @@ new class extends Component {
             'total_promotion_savings' => number_format($totalPromotionSavings, 2),
             'subtotal' => number_format((float) $order->subtotal, 2),
             'discount' => number_format((float) $order->discount, 2),
-            'delivery_fee' => number_format((float) ($order->delivery_fee ?? 0), 2),
-            'total_amount' => number_format(abs((float) $order->total), 2),
-            'paid' => number_format((float) $order->paid_amount, 2),
+            'delivery_fee' => number_format($this->customerInvoiceCopy ? 0 : (float) ($order->delivery_fee ?? 0), 2),
+            'total_amount' => number_format(max(0, abs((float) $order->total) - ($this->customerInvoiceCopy ? (float) $order->delivery_fee : 0)), 2),
+            'paid' => number_format(max(0, (float) $order->paid_amount - ($this->customerInvoiceCopy ? (float) $order->delivery_fee : 0)), 2),
             'change' => number_format(max(0, (float) $order->paid_amount - abs((float) $order->total)), 2),
             'currency' => $currencySymbols[$currency] ?? '₪',
             'notice' => TenantSetting::get((int) $this->tenantId(), 'receipt_footer', 'شكراً لتعاملكم معنا'),
@@ -3992,7 +4061,7 @@ new class extends Component {
             @if ($errorMessage || $successMessage || $this->has_below_cost_item)
                 <div data-pos-notice-strip class="pos-notice-strip flex shrink-0 flex-wrap items-start gap-1.5" dir="rtl">
                     @if ($errorMessage)
-                        <div data-pos-notice role="alert" class="pos-notice flex items-start gap-1 bg-rose-50 text-rose-800">
+                        <div data-pos-notice data-message="{{ $errorMessage }}" wire:key="pos-error-notice-{{ md5($errorMessage) }}" x-init="const message = $el.dataset.message; window.setTimeout(() => { if ($wire.errorMessage === message) $wire.set('errorMessage', null) }, 5000)" role="alert" class="pos-notice flex items-start gap-1 bg-rose-50 text-rose-800">
                             <details class="min-w-0">
                                 <summary class="cursor-pointer">⚠ {{ \Illuminate\Support\Str::limit($errorMessage, 65) }}</summary>
                                 <p class="mt-1 max-w-lg whitespace-normal">{{ $errorMessage }}</p>
@@ -4001,7 +4070,7 @@ new class extends Component {
                         </div>
                     @endif
                     @if ($successMessage)
-                        <div data-pos-notice role="status" class="pos-notice flex items-start gap-1 bg-emerald-50 text-emerald-800">
+                        <div data-pos-notice data-message="{{ $successMessage }}" wire:key="pos-success-notice-{{ md5($successMessage) }}" x-init="const message = $el.dataset.message; window.setTimeout(() => { if ($wire.successMessage === message) $wire.set('successMessage', null) }, 5000)" role="status" class="pos-notice flex items-start gap-1 bg-emerald-50 text-emerald-800">
                             <details class="min-w-0">
                                 <summary class="cursor-pointer">✓ {{ \Illuminate\Support\Str::limit($successMessage, 65) }}</summary>
                                 <p class="mt-1 max-w-lg whitespace-normal">{{ $successMessage }}</p>
@@ -4035,7 +4104,7 @@ new class extends Component {
                                             </div>
                                         </div>
 
-                                        <button type="button" wire:click="loadQuickProducts(true)"
+                                        <button type="button" wire:click="loadQuickProducts(true, true)"
                                             @disabled($this->invoiceIsLocked())
                                             class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:bg-slate-100">
                                             ↻ تحديث
@@ -4051,7 +4120,7 @@ new class extends Component {
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
                                         x-on:keydown.enter.prevent="$wire.submitProductSearch($el.value)"
                                         x-on:pos-search-results-ready.window="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
-                                        wire:model.live.debounce.200ms="productSearchQuery" @disabled($this->invoiceIsLocked())
+                                        wire:model.live.debounce.350ms="productSearchQuery" @disabled($this->invoiceIsLocked())
                                         type="search" maxlength="120" aria-describedby="pos-search-help" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="اسم الصنف، أي كلمات منه، رقمه أو باركوده…"
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                     </label>
@@ -4087,56 +4156,7 @@ new class extends Component {
 
                                 <div data-pos-products-panel class="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-2"
                                     tabindex="0">
-                                    <div data-pos-product-grid class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-3">
-                                        @forelse ($quickProducts as $product)
-                                            <button type="button" data-pos-product
-                                                data-product-index="{{ $loop->index }}"
-                                                wire:click="selectInlineProduct({{ $product['id'] }})"
-                                                wire:loading.attr="disabled" wire:target="productSearchQuery,loadQuickProducts,selectInlineProduct"
-                                                @disabled($this->invoiceIsLocked())
-                                                wire:key="pos-quick-product-{{ $product['id'] }}"
-                                                class="{{ !empty($product['has_offer']) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white' }} min-h-[78px] rounded-xl border p-2 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400 hover:shadow-md active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
-                                                <div
-                                                    class="line-clamp-2 min-h-[30px] text-[11px] font-black leading-4 text-slate-800">
-                                                    {{ $product['name'] }}
-                                                        @if (!empty($product['has_offer']))
-                                                            <span class="mt-1 block text-[10px] font-bold text-amber-700">عرض {{ $product['offer_quantity_value'] + 0 }} بـ {{ number_format($product['offer_price_value'], 2) }}</span>
-                                                        @endif
-                                                </div>
-                                                @if (trim($productSearchQuery) !== '')
-                                                    <div class="mt-1 truncate font-mono text-[9px] text-slate-500" dir="ltr" title="رقم الصنف / الباركود">
-                                                        #{{ $product['product_number'] ?: $product['id'] }} · {{ $product['barcode_value'] ?: '—' }}
-                                                    </div>
-                                                @endif
-
-                                                <div class="mt-2 flex items-end justify-between gap-1">
-                                                    <span class="font-mono text-sm font-black text-indigo-700">
-                                                        {{ number_format((float) $product['retail_price'], 2) }}
-                                                    </span>
-
-                                                    @include('pages.tenant.pos.partials.stock-badge')
-                                                </div>
-                                            </button>
-                                        @empty
-                                            <div
-                                                class="col-span-full flex min-h-[220px] items-center justify-center text-center">
-                                                <div>
-                                                    <div class="text-3xl opacity-30">📦</div>
-                                                    <div class="mt-2 text-xs font-black text-slate-400">{{ trim($productSearchQuery) !== '' ? 'لم نجد صنفاً مطابقاً' : 'لا توجد أصناف' }}
-                                                    </div>
-                                                    @if (trim($productSearchQuery) !== '')
-                                                        <p class="mt-1 text-[10px] text-slate-500">جرّب كلمة من الاسم أو رقم الصنف أو الباركود، وتحقق من التصنيف المحدد.</p>
-                                                    @endif
-                                                    @if ($selectedCategoryId || trim($productSearchQuery) !== '')
-                                                        <button type="button" wire:click="selectCategory(null)"
-                                                            class="mt-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-[9px] font-black text-indigo-700">
-                                                            عرض الكل
-                                                        </button>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                        @endforelse
-                                    </div>
+                                    @include('pages.tenant.pos.partials.quick-product-results')
                                 </div>
 
                             </div>

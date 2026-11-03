@@ -1,3 +1,4 @@
+import './prevent-enter-submit.js';
 import './workspace-tabs.js';
 import './barcode-camera.js';
 import './login-progress.js';

@@ -40,8 +40,14 @@ new class extends Component
 
     public function getProductsProperty()
     {
+        $tenantId = $this->getCurrentTenantId();
+        $branchId = $this->getCurrentBranchId();
+
         return Product::query()
-            ->with('barcodes')
+            ->with([
+                'barcodes',
+                'branchProducts' => fn ($query) => $query->where('tenant_id', $tenantId)->when($branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $branchId)),
+            ])
             ->when(
                 trim($this->productSearch) !== '',
                 function ($query) {
@@ -68,6 +74,19 @@ new class extends Component
     }
 
 
+    private function getCurrentBranchId(): ?int
+    {
+        $branchId = auth()->user()?->branch_id ?? session('active_branch_id');
+
+        return $branchId ? (int) $branchId : null;
+    }
+
+    public function getRetailPrice(?Product $product = null): float
+    {
+        $branchProduct = ($product ?? $this->product)?->branchProducts?->first();
+
+        return (float) ($branchProduct?->retail_price ?? 0);
+    }
     /*
     |--------------------------------------------------------------------------
     | اختيار المنتج
@@ -85,8 +104,10 @@ new class extends Component
         }
 
 
-        $this->product = Product::with('barcodes')
-            ->find((int) $value);
+        $this->product = Product::with([
+            'barcodes',
+            'branchProducts' => fn ($query) => $query->where('tenant_id', $this->getCurrentTenantId())->when($this->getCurrentBranchId(), fn ($branchQuery) => $branchQuery->where('branch_id', $this->getCurrentBranchId())),
+        ])->find((int) $value);
 
 
         if (!$this->product) {
@@ -421,7 +442,7 @@ new class extends Component
                 'price' =>
                     $this->showPrice
                         ? (string) (
-                            $this->product->cost_price ?? 0
+                            $this->getRetailPrice()
                         )
                         : '',
 
@@ -508,7 +529,7 @@ new class extends Component
                                     <span class="mx-1">·</span>
                                     الباركود: {{ $firstBarcode }}
                                     <span class="mx-1">·</span>
-                                    السعر: {{ $p->cost_price ?? 0 }} NIS
+                                    السعر: {{ $this->getRetailPrice($p) }} NIS
                                 </span>
                             </button>
                         @empty
@@ -667,7 +688,7 @@ new class extends Component
                                         <td class="p-2">
 
                                             {{
-                                                $product->cost_price ?? 0
+                                                $this->getRetailPrice()
                                             }}
 
                                         </td>
@@ -908,7 +929,7 @@ new class extends Component
                                 @endif
 
                                 @if($showPrice)
-                                    <span style="font-size: 11pt;">{{ $product->cost_price ?? 0 }}</span>
+                                    <span style="font-size: 11pt;">{{ $this->getRetailPrice() }}</span>
                                     <span style="font-size: 8.5pt;">NIS</span>
                                 @endif
                             </div>
@@ -918,11 +939,11 @@ new class extends Component
                                 <div
                                     id="preview-barcode-wrapper"
                                     data-barcode="{{ $selectedBarcode }}"
-                                    style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; overflow: hidden;"
+                        style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: visible;"
                                 >
                                     <svg
                                         id="preview-barcode-element"
-                                        style="display:block; width:100%; height:auto; max-height:18mm;"
+                                        style="display:block; width:100%; height:auto; max-height:15mm;"
                                     ></svg>
                                 </div>
                             @endif
@@ -1215,19 +1236,19 @@ new class extends Component
                                     1.3,
 
                                 height:
-                                    28,
+                                    22,
 
                                 displayValue:
                                     true,
 
                                 fontSize:
-                                    13,
+                                    10,
 
                                 margin:
                                     0,
 
                                 textMargin:
-                                    2,
+                                    1,
 
                                 background:
                                     '#ffffff',
@@ -1545,6 +1566,9 @@ new class extends Component
             gap:
                 1.5mm;
 
+            padding-bottom:
+                1mm;
+
             flex-grow:
                 1;
 
@@ -1625,22 +1649,22 @@ new class extends Component
                 center;
 
             justify-content:
-                flex-end;
+                center;
 
         }
 
 
+        .barcode-box {
+            min-height: 0;
+            overflow: hidden;
+        }
+
         .barcode-box svg {
-
-            max-width:
-                100%;
-
-            height:
-                auto;
-
-            max-height:
-                18mm;
-
+            display: block;
+            max-width: 100%;
+            height: auto;
+            max-height: 12mm;
+            overflow: hidden;
         }
 
     </style>
@@ -1780,19 +1804,22 @@ new class extends Component
                                                         1.3,
 
                                                     height:
-                                                        28,
+                                                        17,
 
                                                     displayValue:
                                                         true,
 
+                                                    textPosition:
+                                                        'top',
+
                                                     fontSize:
-                                                        13,
+                                                        8,
 
                                                     margin:
                                                         0,
 
                                                     textMargin:
-                                                        2
+                                                        1
 
                                                 }
                                             );

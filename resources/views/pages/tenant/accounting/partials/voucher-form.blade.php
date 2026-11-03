@@ -23,7 +23,7 @@
         : 'رصيد العميل الحالي';
 
     $balanceAfterLabel = $isPayment
-        ? 'الرصيد بعد سند الدفع'
+        ? 'الرصيد بعد سند الصرف'
         : 'الرصيد بعد سند القبض';
 @endphp
 
@@ -108,7 +108,7 @@
                             <div>
                                 <h2 class="text-lg font-bold text-slate-900">
                                     {{ $paymentId ? 'تعديل ' : 'إضافة ' }}
-                                    {{ $isPayment ? 'سند دفع' : 'سند قبض' }}
+                                    {{ $isPayment ? 'سند صرف' : 'سند قبض' }}
                                 </h2>
 
                                 <p class="mt-0.5 text-xs text-slate-500">
