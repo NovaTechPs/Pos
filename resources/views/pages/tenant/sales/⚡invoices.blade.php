@@ -91,6 +91,14 @@ new class extends Component {
 
     public ?string $successMessage = null;
 
+    public ?int $lastSavedOrderId = null;
+
+    public ?int $lastSavedCustomerId = null;
+
+    public string $lastSavedInvoiceNumber = '';
+
+    public float $lastSavedReceiptAmount = 0.0;
+
     /*
     |--------------------------------------------------------------------------
     | Mount
@@ -773,6 +781,17 @@ new class extends Component {
             $this->currentOrderId = $order->id;
             $this->savedPaidAmount = (float) $order->paid_amount;
             $this->invoiceNumber = $order->invoice_number;
+            $this->lastSavedOrderId = $order->id;
+            $this->lastSavedCustomerId = $order->customer_id;
+            $this->lastSavedInvoiceNumber = $order->invoice_number;
+            $this->lastSavedReceiptAmount = max(
+                0,
+                (float) $order->total - (float) Payment::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('order_id', $order->id)
+                    ->where('type', 'receipt')
+                    ->sum('amount')
+            );
 
             $this->successMessage = $this->currentOrderId
                 ? 'تم حفظ الفاتورة بنجاح.'
@@ -1295,7 +1314,12 @@ new class extends Component {
                     <span>{{ $successMessage }}</span>
                 </div>
 
-                <button type="button" wire:click="$set('successMessage', null)" class="rounded-lg px-2 py-1 hover:bg-emerald-100">✕</button>
+                <div class="flex items-center gap-2">
+                    @if ($lastSavedOrderId && $lastSavedCustomerId)
+                        <a href="{{ route('tenant.receipts', ['party_id' => $lastSavedCustomerId, 'order_id' => $lastSavedOrderId, 'amount' => $lastSavedReceiptAmount, 'notes' => 'سند قبض لفاتورة '.$lastSavedInvoiceNumber]) }}" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">إضافة سند قبض</a>
+                    @endif
+                    <button type="button" wire:click="$set('successMessage', null)" class="rounded-lg px-2 py-1 hover:bg-emerald-100">✕</button>
+                </div>
             </div>
         @endif
 
