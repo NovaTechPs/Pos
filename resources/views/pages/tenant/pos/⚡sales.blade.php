@@ -1216,7 +1216,7 @@ new class extends Component {
         }
         app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
 
-        $resultLimit = $search === '' ? 24 : 12;
+        $resultLimit = 24;
         $matchedProducts = $query->orderBy('name')->orderBy('id')->limit($resultLimit)->get();
         if ($matchedProducts->isEmpty()) {
             $this->quickProducts = [];

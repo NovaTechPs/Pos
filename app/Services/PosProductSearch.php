@@ -35,6 +35,7 @@ class PosProductSearch
         $number = 'LOWER(products.product_number)';
         $barcode = 'EXISTS (SELECT 1 FROM product_barcodes AS search_barcodes WHERE search_barcodes.product_id = products.id AND search_barcodes.tenant_id = ? AND LOWER(search_barcodes.barcode)';
         $pattern = strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']);
+        $wordPrefixPattern = '% '.$pattern.'%';
         $query->where(function (Builder $query) use ($search, $name, $number, $barcode, $pattern, $tenantId): void {
             $query->where(function (Builder $query) use ($name, $pattern): void {
                 foreach (explode(' ', $pattern) as $keyword) {
@@ -47,8 +48,8 @@ class PosProductSearch
             }
         });
         $productId = ctype_digit($search) && strlen($search) <= 18 ? (int) $search : 0;
-        $query->orderByRaw("CASE WHEN {$barcode} = ?) THEN 0 WHEN {$number} = ? OR products.id = ? THEN 1 WHEN {$name} = ? THEN 2 WHEN {$name} LIKE ? ESCAPE '!' THEN 3 ELSE 4 END",
-            [$tenantId, $search, $search, $productId, $search, $pattern.'%']);
+        $query->orderByRaw("CASE WHEN {$barcode} = ?) THEN 0 WHEN {$number} = ? OR products.id = ? THEN 1 WHEN {$name} = ? THEN 2 WHEN {$name} LIKE ? ESCAPE '!' THEN 3 WHEN {$name} LIKE ? ESCAPE '!' THEN 4 ELSE 5 END",
+            [$tenantId, $search, $search, $productId, $search, $pattern.'%', $wordPrefixPattern]);
     }
 
     /**

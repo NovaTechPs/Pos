@@ -83,14 +83,14 @@ test('cart rows with equivalent product names share the same background color', 
 
     expect($hues[$first->id] ?? null)->toBe($hues[$second->id] ?? null);
 });
-test('POS text search returns only the twelve closest matches', function (): void {
-    for ($index = 1; $index <= 16; $index++) {
+test('POS text search returns up to twenty-four relevant matches', function (): void {
+    for ($index = 1; $index <= 28; $index++) {
         searchablePosProduct($this, 'Coffee type '.$index);
     }
 
     $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'coffee');
 
-    expect($component->get('quickProducts'))->toHaveCount(12);
+    expect($component->get('quickProducts'))->toHaveCount(24);
 });
 test('product list search includes one-character product name queries', function (): void {
     $product = searchablePosProduct($this, 'إبريق زجاج');
@@ -123,6 +123,14 @@ test('exact names outrank prefixes which outrank word matches', function (): voi
     $exact = searchablePosProduct($this, 'قهوة');
     $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'قهوه');
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$exact->id, $prefix->id, $word->id]);
+});
+
+test('POS search ranks a whole-word match inside the name above a partial-word match', function (): void {
+    $partial = searchablePosProduct($this, 'وعاء زجاجي جاطي');
+    $word = searchablePosProduct($this, 'وعاء زجاجي جاط قهوة');
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'جاط');
+
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$word->id, $partial->id]);
 });
 
 test('search wildcards are literal and cannot expand results', function (): void {
