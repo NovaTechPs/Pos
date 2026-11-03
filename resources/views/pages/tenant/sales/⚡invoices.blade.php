@@ -1932,7 +1932,7 @@ new class extends Component {
 
             Livewire.on('focus-product-search', () => {
                 this.$nextTick(() => requestAnimationFrame(() => {
-                    const input = this.$refs.productSearch;
+                    const input = this.$el.querySelector('#product-search-input');
                     if (!input || !this.$el.contains(input)) return;
 
                     input.focus({ preventScroll: true });
@@ -1952,7 +1952,7 @@ new class extends Component {
 
             Livewire.on('focus-customer-search', () => {
                 setTimeout(() => {
-                    const input = this.$refs.customerSearch;
+                    const input = this.$el.querySelector('#customer-search-input');
                     if (input) {
                         input.focus();
                         input.select();
@@ -2142,15 +2142,17 @@ new class extends Component {
 
             if (key === 'F8') {
                 event.preventDefault();
-                this.$refs.customerSearch?.focus();
-                this.$refs.customerSearch?.select();
+                const input = this.$el.querySelector('#customer-search-input');
+                input?.focus({ preventScroll: true });
+                input?.select();
                 return;
             }
 
             if (key === 'F9') {
                 event.preventDefault();
-                this.$refs.productSearch?.focus();
-                this.$refs.productSearch?.select();
+                const input = this.$el.querySelector('#product-search-input');
+                input?.focus({ preventScroll: true });
+                input?.select();
                 return;
             }
 
@@ -2172,8 +2174,8 @@ new class extends Component {
                 return;
             }
 
-            const productInput = target === this.$refs.productSearch;
-            const customerInput = target === this.$refs.customerSearch;
+            const productInput = target?.matches?.('#product-search-input') ?? false;
+            const customerInput = target?.matches?.('#customer-search-input') ?? false;
 
             if (productInput) {
                 if (key === 'ArrowDown') {
