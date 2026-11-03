@@ -11,7 +11,7 @@
                         @endforeach
                     </select>
                     <div class="relative min-w-0 basis-full sm:basis-auto sm:min-w-[200px] flex-1">
-                        <input x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''" wire:model.live.debounce.350ms="productSearchQuery" type="text" placeholder="ابحث باسم المنتج أو الباركود..." class="w-full rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none">
+                        <input x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''" wire:model.live.debounce.200ms="productSearchQuery" type="text" placeholder="ابحث باسم المنتج أو الباركود..." class="w-full rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none">
                     </div>
                     <button wire:click="loadQuickProducts" class="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black">تحديث</button>
                     <button wire:click="$set('showProductsModal', false)" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-black">إغلاق Esc</button>

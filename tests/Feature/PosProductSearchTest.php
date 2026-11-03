@@ -83,6 +83,15 @@ test('cart rows with equivalent product names share the same background color', 
 
     expect($hues[$first->id] ?? null)->toBe($hues[$second->id] ?? null);
 });
+test('POS text search returns only the twelve closest matches', function (): void {
+    for ($index = 1; $index <= 16; $index++) {
+        searchablePosProduct($this, 'Coffee type '.$index);
+    }
+
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'coffee');
+
+    expect($component->get('quickProducts'))->toHaveCount(12);
+});
 test('product list search includes one-character product name queries', function (): void {
     $product = searchablePosProduct($this, 'إبريق زجاج');
 

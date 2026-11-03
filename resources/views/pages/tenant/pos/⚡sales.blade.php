@@ -1216,7 +1216,8 @@ new class extends Component {
         }
         app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
 
-        $matchedProducts = $query->orderBy('name')->orderBy('id')->limit(24)->get();
+        $resultLimit = $search === '' ? 24 : 12;
+        $matchedProducts = $query->orderBy('name')->orderBy('id')->limit($resultLimit)->get();
         if ($matchedProducts->isEmpty()) {
             $this->quickProducts = [];
             $this->quickProductsRequestKey = $requestKey;
@@ -4120,7 +4121,7 @@ new class extends Component {
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
                                         x-on:keydown.enter.prevent="$wire.submitProductSearch($el.value)"
                                         x-on:pos-search-results-ready.window="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
-                                        wire:model.live.debounce.350ms="productSearchQuery" @disabled($this->invoiceIsLocked())
+                                        wire:model.live.debounce.200ms="productSearchQuery" @disabled($this->invoiceIsLocked())
                                         type="search" maxlength="120" aria-describedby="pos-search-help" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="اسم الصنف، أي كلمات منه، رقمه أو باركوده…"
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                     </label>
