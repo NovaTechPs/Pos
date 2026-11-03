@@ -171,6 +171,12 @@ test('normalization preserves codes and translates Arabic and Persian digits', f
     expect(app(PosProductSearch::class)->normalize('  إِبْرِيـق   ۱۲٣  '))->toBe('ابريق 123');
 });
 
+test('products store their normalized search name when saved', function (): void {
+    $product = searchablePosProduct($this, 'إِبْرِيـق زجاجي');
+
+    expect($product->fresh()->search_name)->toBe('ابريق زجاجي');
+});
+
 test('Enter searches the current input before adding a unique result instead of a stale result', function (): void {
     $old = searchablePosProduct($this, 'Old coffee');
     $current = searchablePosProduct($this, 'New tea');

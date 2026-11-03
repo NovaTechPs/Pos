@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\PosProductSearch;
 use App\Traits\BelongsToTenant;
 use Brick\Math\BigInteger;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,6 +22,13 @@ class Product extends Model
         'show_in_website' => 'boolean',
         'images' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $product): void {
+            $product->search_name = app(PosProductSearch::class)->normalize((string) $product->name);
+        });
+    }
 
     /** @param array<string, mixed> $options */
     public function save(array $options = []): bool

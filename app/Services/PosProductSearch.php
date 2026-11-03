@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Database\Query\Builder;
-use Illuminate\Database\Query\Grammars\PostgresGrammar;
 
 class PosProductSearch
 {
@@ -31,7 +30,7 @@ class PosProductSearch
 
             return;
         }
-        $name = $this->normalizedColumn('products.name', $query->getGrammar() instanceof PostgresGrammar);
+        $name = 'products.search_name';
         $number = 'LOWER(products.product_number)';
         $barcode = 'EXISTS (SELECT 1 FROM product_barcodes AS search_barcodes WHERE search_barcodes.product_id = products.id AND search_barcodes.tenant_id = ? AND LOWER(search_barcodes.barcode)';
         $pattern = strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']);
@@ -50,22 +49,5 @@ class PosProductSearch
         $productId = ctype_digit($search) && strlen($search) <= 18 ? (int) $search : 0;
         $query->orderByRaw("CASE WHEN {$barcode} = ?) THEN 0 WHEN {$number} = ? OR products.id = ? THEN 1 WHEN {$name} = ? THEN 2 WHEN {$name} LIKE ? ESCAPE '!' THEN 3 WHEN {$name} LIKE ? ESCAPE '!' THEN 4 ELSE 5 END",
             [$tenantId, $search, $search, $productId, $search, $pattern.'%', $wordPrefixPattern]);
-    }
-
-    /**
-     * @param  literal-string  $column
-     * @return literal-string
-     */
-    private function normalizedColumn(string $column, bool $postgres = false): string
-    {
-        if ($postgres) {
-            return "TRANSLATE(LOWER({$column}), 'أإآٱىةـًٌٍَُِّْٰ', 'اااايه')";
-        }
-        $expression = "LOWER({$column})";
-        foreach (self::LETTERS as $from => $to) {
-            $expression = "REPLACE({$expression}, '{$from}', '{$to}')";
-        }
-
-        return $expression;
     }
 }
