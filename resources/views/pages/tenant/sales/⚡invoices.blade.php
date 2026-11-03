@@ -701,6 +701,9 @@ new class extends Component {
                 $this->dispatchPrint($order, $totals);
             }
 
+            $this->startNewInvoice(false);
+            $this->successMessage = 'تم حفظ الفاتورة بنجاح وفتح فاتورة جديدة.';
+
         } catch (\Throwable $e) {
             report($e);
             $this->errorMessage = 'تعذر حفظ الفاتورة. تأكد من البيانات وحاول مرة أخرى.';
@@ -743,6 +746,7 @@ new class extends Component {
                 $query->where('invoice_number', 'like', "%{$search}%")
                     ->orWhere('id', is_numeric($search) ? (int) $search : 0);
             })
+            ->orderByRaw('CASE WHEN invoice_number = ? THEN 0 ELSE 1 END', [$search])
             ->orderByDesc('id')
             ->first();
 
@@ -1022,16 +1026,8 @@ new class extends Component {
                 ->with([
                     'branchProducts' => fn ($query) => $query->where('branch_id', $branchId),
                 ])
-                ->where(function ($query) use ($search) {
-                    $query->where('name', 'like', "%{$search}%")
-                        ->orWhere('product_number', 'like', "%{$search}%")
-                        ->orWhereHas('barcodes', function ($barcodeQuery) use ($search) {
-                            $barcodeQuery->where('barcode', 'like', "%{$search}%");
-                        });
-
-                    if (is_numeric($search)) {
-                        $query->orWhere('id', (int) $search);
-                    }
+                ->tap(function ($query) use ($search, $tenantId): void {
+                    app(\App\Services\PosProductSearch::class)->apply($query->getQuery(), $search, $tenantId);
                 })
                 ->orderBy('name')
                 ->limit(10)
@@ -1094,6 +1090,10 @@ new class extends Component {
         x-init="init()"
     >
 
+        <livewire:product-history />
+        @if ($selectedCustomerId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+            <a class="mb-3 inline-flex rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener">كشف حساب الزبون</a>
+        @endif
         {{-- ================================================================
              شريط الأدوات الرئيسي
         ================================================================= --}}
@@ -1278,7 +1278,7 @@ new class extends Component {
             <div class="grid gap-3 lg:grid-cols-12">
 
                 {{-- العميل --}}
-                <div class="relative lg:col-span-5">
+                <div class="relative lg:col-span-5" data-invoice-search-group x-data="{ partySearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) partySearchOpen = false" x-on:click.outside="partySearchOpen = false" x-on:keydown.escape.stop="partySearchOpen = false">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">العميل / المورد</label>
 
                     @if ($selectedCustomer)
@@ -1300,7 +1300,7 @@ new class extends Component {
                         </div>
                     @else
                         <input
-                            id="customer-search-input"
+                            id="customer-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true"
                             x-ref="customerSearch"
                             type="text"
                             wire:model.live.debounce.180ms="customerSearch"
@@ -1310,7 +1310,7 @@ new class extends Component {
                         />
 
                         @if (trim($customerSearch) !== '')
-                            <div class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                            <div data-invoice-search-results x-cloak x-show="partySearchOpen" x-on:click="partySearchOpen = false" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5">
                                     @forelse ($customerResults as $customer)
                                         <button
@@ -1392,20 +1392,21 @@ new class extends Component {
                 <div class="min-w-0 flex-1">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
 
-                    <div class="relative">
+                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
                         <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                         <input
                             id="product-search-input"
                             x-ref="productSearch"
                             type="text"
-                            wire:model.live.debounce.120ms="rowSearch"
+                            wire:model.live.debounce.250ms="rowSearch"
+                            maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true"
                             autocomplete="off"
                             placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..."
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
                         />
 
                         @if (count($productResults) > 0)
-                            <div class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                            <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <div class="max-h-80 overflow-y-auto p-1.5">
                                     @foreach ($productResults as $product)
                                         @php
@@ -1536,7 +1537,7 @@ new class extends Component {
                                 </td>
 
                                 <td class="px-3 py-2.5">
-                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }}</div>
+                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button></div>
                                     <div class="mt-0.5 text-[10px] font-semibold text-slate-400">
                                         تكلفة الوحدة: {{ number_format((float) $item['cost'], 2) }}
                                     </div>
@@ -1819,6 +1820,7 @@ new class extends Component {
     Alpine.data('salesInvoiceKeyboard', () => ({
         productIndex: 0,
         customerIndex: 0,
+        resultRefreshTimer: null,
 
         init() {
             this.$nextTick(() => this.$refs.customerSearch?.focus());
@@ -1865,8 +1867,10 @@ new class extends Component {
                 }, 60);
             });
 
-            Livewire.hook('morph.updated', () => {
-                setTimeout(() => this.refreshResultClasses(), 10);
+            Livewire.hook('morph.updated', ({ el }) => {
+                if (!this.$el.isConnected || !this.$el.contains(el)) return;
+                clearTimeout(this.resultRefreshTimer);
+                this.resultRefreshTimer = setTimeout(() => this.refreshResultClasses(), 10);
             });
         },
 
@@ -1877,11 +1881,11 @@ new class extends Component {
         },
 
         productResults() {
-            return Array.from(document.querySelectorAll('[data-product-result]'));
+            return Array.from(this.$el.querySelectorAll('[data-product-result]')).filter(element => element.getClientRects().length > 0);
         },
 
         customerResults() {
-            return Array.from(document.querySelectorAll('[data-customer-result]'));
+            return Array.from(this.$el.querySelectorAll('[data-customer-result]')).filter(element => element.getClientRects().length > 0);
         },
 
         refreshResultClasses() {

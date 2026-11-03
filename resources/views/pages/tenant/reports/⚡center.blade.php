@@ -45,6 +45,11 @@ new class extends Component {
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
+        if ($this->report === 'statement' && request()->integer('party_id') > 0) {
+            $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
+                ->whereKey(request()->integer('party_id'))->value('id');
+            $this->statementPartyType = request('party_type') === 'supplier' ? 'supplier' : 'customer';
+        }
     }
 
     private function service(): ReportingService
@@ -182,7 +187,7 @@ new class extends Component {
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
         }
-        if (in_array($this->report, ['product-sales', 'movements', 'movement-summary', 'inventory'], true)) {
+        if (in_array($this->report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory'], true)) {
             $products = Product::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when(trim($this->productSearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->productSearch.'%')->orWhere('product_number', 'like', '%'.$this->productSearch.'%')->orWhereHas('barcodes', fn ($codes) => $codes->where('tenant_id', $service->tenantId)->where('barcode', 'like', '%'.$this->productSearch.'%'))))
                 ->orderBy('name')->limit(100)->get(['id', 'name', 'product_number']);
@@ -212,7 +217,7 @@ new class extends Component {
             </flux:select>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (in_array($report, ['balances', 'product-sales', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
+            @if (in_array($report, ['balances', 'product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
         @if (in_array($report, ['statement', 'balances']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -222,7 +227,7 @@ new class extends Component {
                 @if ($report === 'balances')<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
             </div>
         @endif
-        @if (in_array($report, ['product-sales', 'movements', 'movement-summary', 'inventory']))
+        @if (in_array($report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:input label="ابحث عن الصنف للاختيار" wire:model.live.debounce.300ms="productSearch" placeholder="الاسم أو الرقم أو الباركود؛ أول 100 نتيجة" />
                 <flux:select label="الصنف" wire:model="productId"><option value="">كل الأصناف</option>@foreach ($products as $product)<option wire:key="product-{{ $product->id }}" value="{{ $product->id }}">{{ $product->product_number }} — {{ $product->name }}</option>@endforeach</flux:select>
@@ -275,7 +280,7 @@ new class extends Component {
     <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
         <table class="w-full whitespace-nowrap text-right text-sm">
             <thead class="bg-slate-100 dark:bg-slate-800"><tr>@foreach ($definition['columns'] as $label)<th class="p-3">{{ $label }}</th>@endforeach</tr></thead>
-            <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">{{ ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
+            <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">@if ($report === 'product-history' && $key === 'reference' && auth()->user()->can($row->invoice_type === 'purchase' ? 'purchases.view' : (in_array($row->invoice_type, ['pos', 'return']) ? 'pos.view' : 'sales_invoices.view')))<a class="font-bold text-indigo-600 dark:text-indigo-400" target="_blank" rel="noopener" href="{{ route($row->invoice_type === 'purchase' ? 'tenant.purchase-invoices' : (in_array($row->invoice_type, ['pos', 'return']) ? 'tenant.pos' : 'tenant.sale-invoices'), ['invoice' => $row->invoice_id]) }}">{{ $row->reference }} ↗</a>@else {{ ReportingService::formatCell($key, $row->{$key} ?? null) }} @endif</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
         </table>
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>

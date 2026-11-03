@@ -1229,6 +1229,21 @@ new class extends Component {
         if ($this->showMissingBarcodeModal || $this->showNewProductModal) {
             return;
         }
+        $invoiceBarcode = trim($scannedBarcode !== '' ? $scannedBarcode : $this->barcode);
+        $invoice = Order::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->getActiveBranchId())
+            ->whereIn('type', ['pos', 'return'])
+            ->where('invoice_number', $invoiceBarcode)
+            ->first();
+
+        if ($invoice) {
+            $this->loadInvoice($invoice->id);
+            $this->barcode = '';
+            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $invoiceBarcode);
+
+            return;
+        }
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
@@ -1808,6 +1823,7 @@ new class extends Component {
                     $q->orWhere('invoice_number', 'like', "%{$digitsOnly}%");
                 }
             })
+            ->orderByRaw('CASE WHEN invoice_number = ? THEN 0 ELSE 1 END', [$query])
             ->latest('id')
             ->first();
 
@@ -2787,7 +2803,7 @@ new class extends Component {
                 $invoiceCustomerAddress = $isDelivery ? trim($this->deliveryCustomerAddress) : ($customer?->address ?? null);
                 $invoiceNotes = trim($this->notes);
 
-                if ($isDelivery && trim($this->deliveryNotes) !== '') {
+                if (trim($this->deliveryNotes) !== '') {
                     $invoiceNotes = trim($invoiceNotes . ($invoiceNotes !== '' ? "\n\n" : '') . 'ملاحظة التوصيل: ' . trim($this->deliveryNotes));
                 }
 
@@ -3935,6 +3951,7 @@ new class extends Component {
         </div>
     </div>
     <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
+        <livewire:product-history />
 
         <div x-data="{
                 printInProgress: false,

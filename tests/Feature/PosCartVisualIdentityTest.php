@@ -35,6 +35,8 @@ test('each product type has its own color and repeated rows share that color wit
     $colors = [];
     foreach ($rows as $row) {
         $colors[] = $row->getAttribute('style');
+        $hue = (float) str_replace('--pos-cart-hue: ', '', $row->getAttribute('style'));
+        expect($hue)->toBeGreaterThanOrEqual(70)->toBeLessThan(280);
     }
     expect(array_unique($colors))->toHaveCount(2);
     $occurrences = [];

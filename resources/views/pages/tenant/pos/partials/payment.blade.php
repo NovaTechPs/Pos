@@ -518,6 +518,13 @@
         ========================================================== --}}
 
         <div data-pos-customer-notes class="md:order-2 lg:order-1 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
+            @if ($selectedCustomerId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+                <a class="text-xs font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener">كشف حساب الزبون</a>
+            @endif
+            @if (filled($deliveryNotes))
+                <p class="my-2 whitespace-pre-wrap text-xs text-slate-700">ملاحظة التوصيل: {{ $deliveryNotes }}</p>
+            @endif
+
 
             <div class="mb-1.5 flex items-center justify-between">
 

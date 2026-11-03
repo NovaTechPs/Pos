@@ -28,6 +28,7 @@ class ReportingService
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
         'sales' => ['ملخص المبيعات اليومي', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
+        'product-history' => ['حركة صنف — مبيعات ومشتريات', 'reports.inventory'],
         'profit' => ['الأرباح والمصروفات', 'reports.profit'],
         'shifts' => ['تقرير الشيفتات: البيع والربح', 'reports.profit'],
         'purchases' => ['المشتريات ومردوداتها', 'reports.purchases'],
@@ -86,6 +87,7 @@ class ReportingService
         return match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
             'sales' => $this->sales(), 'product-sales' => $this->productSales(),
+            'product-history' => $this->productHistory(),
             'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
@@ -99,7 +101,7 @@ class ReportingService
             return '—';
         }
         $quantity = ['quantity', 'quantity_before', 'quantity_after', 'sold', 'returned', 'net_quantity', 'stock_quantity', 'alert_quantity', 'incoming', 'outgoing', 'gift_quantity'];
-        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit'];
+        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit'];
         if (in_array($column, $quantity, true)) {
             return number_format((float) $value, 3, '.', '');
         }
@@ -265,6 +267,33 @@ class ReportingService
         $totals = DB::query()->fromSub(clone $query, 'daily_totals')->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(net),0) as net')->first();
 
         return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['الفواتير المكتملة فقط؛ صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
+    }
+
+    /** @return ReportDefinition */
+    private function productHistory(): array
+    {
+        $sales = $this->orders()->where('orders.type', '!=', 'return')
+            ->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)
+            ->join('products', 'products.id', '=', 'order_items.product_id')->where('products.tenant_id', $this->tenantId)
+            ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId));
+        $this->productFilters($sales, 'products.id');
+        $sales->select('orders.id as invoice_id', 'orders.type as invoice_type', 'orders.created_at as event_date', 'orders.invoice_number as reference', 'products.product_number', 'products.name', 'order_items.id as line_id', 'order_items.quantity', 'order_items.unit_price', 'order_items.total_price as amount')
+            ->selectRaw("'بيع' as kind, COALESCE(NULLIF(orders.customer_name, ''), parties.name, 'زبون عام') as party_name, CASE WHEN order_items.is_gift = true THEN 0 ELSE order_items.quantity END as sold, 0 as incoming, CASE WHEN order_items.is_gift = true THEN order_items.quantity ELSE 0 END as gift_quantity");
+        $purchases = $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), 'purchases.created_at')
+            ->join('purchase_items', 'purchase_items.purchase_id', '=', 'purchases.id')
+            ->join('products', 'products.id', '=', 'purchase_items.product_id')->where('products.tenant_id', $this->tenantId)
+            ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'purchases.supplier_id')->where('parties.tenant_id', $this->tenantId));
+        $this->productFilters($purchases, 'products.id');
+        $purchases->select('purchases.id as invoice_id')->selectRaw("'purchase' as invoice_type")
+            ->addSelect('purchases.created_at as event_date', 'purchases.reference_number as reference', 'products.product_number', 'products.name', 'purchase_items.id as line_id', 'purchase_items.quantity', 'purchase_items.unit_cost as unit_price', 'purchase_items.subtotal as amount')
+            ->selectRaw("'شراء' as kind, COALESCE(parties.name, 'بدون مورد') as party_name, 0 as sold, purchase_items.quantity as incoming, 0 as gift_quantity");
+        $query = DB::query()->fromSub($sales->unionAll($purchases), 'product_history');
+        $summary = (clone $query)->selectRaw('COALESCE(SUM(sold), 0) as sold, COALESCE(SUM(incoming), 0) as incoming, COALESCE(SUM(gift_quantity), 0) as gift_quantity')->first();
+
+        return $this->definition($query->orderBy('event_date')->orderBy('invoice_type')->orderBy('invoice_id')->orderBy('line_id'),
+            ['event_date' => 'التاريخ', 'kind' => 'الحركة', 'reference' => 'الفاتورة', 'product_number' => 'رقم الصنف', 'name' => 'الصنف', 'party_name' => 'الزبون / المورد', 'quantity' => 'الكمية', 'gift_quantity' => 'الهدايا', 'unit_price' => 'سعر الوحدة', 'amount' => 'قيمة السطر'],
+            ['الكمية المباعة' => $summary->sold, 'الكمية المشتراة' => $summary->incoming, 'كمية الهدايا' => $summary->gift_quantity],
+            ['فواتير المبيعات المكتملة والمشتريات خلال الفترة المحددة، دون المرتجعات أو الفواتير الملغاة والمحذوفة. قيمة السطر قبل توزيع خصم الفاتورة العام والضريبة والتوصيل.']);
     }
 
     /** @return ReportDefinition */

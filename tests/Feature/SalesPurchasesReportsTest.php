@@ -218,6 +218,7 @@ test('editing purchase invoice cannot erase stock already consumed', function ()
     Livewire::actingAs($user)
         ->test('pages::tenant.purchases.invoices')
         ->call('loadPurchase', $purchaseId)
+        ->call('editLoadedInvoice')
         ->call('saveInvoice')
         ->assertSet('errorMessage', 'لا يمكن تعديل فاتورة الشراء لأن جزءًا من كمياتها استُهلك أو أُخرج من المخزون. سجّل حركة تصحيح للمخزون أولًا.');
 

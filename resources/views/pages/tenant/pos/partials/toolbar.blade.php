@@ -1,4 +1,4 @@
-<div x-data="{ mobileToolsOpen: false, notesOpen: false }" x-bind:data-expanded="mobileToolsOpen" class="pos-toolbar min-w-0 shrink-0 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
+<div x-data="{ mobileToolsOpen: false }" x-bind:data-expanded="mobileToolsOpen" class="pos-toolbar min-w-0 shrink-0 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
 
     <div class="pos-mobile-tools flex items-center gap-2" dir="rtl">
         <button type="button" x-on:click="mobileToolsOpen = !mobileToolsOpen" x-bind:aria-expanded="mobileToolsOpen" aria-controls="pos-toolbar-tools-{{ $this->getId() }}" class="min-h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700">أدوات الفاتورة ▾</button>

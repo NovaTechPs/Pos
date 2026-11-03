@@ -12,6 +12,7 @@ use App\Models\Payment;
 use App\Models\PayrollPeriod;
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Role;
@@ -41,6 +42,46 @@ beforeEach(function (): void {
         return Payment::create($attributes + ['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $this->customer->id,
             'type' => 'receipt', 'voucher_number' => 'V-'.str()->uuid(), 'amount' => 50, 'payment_method' => 'cash', 'payment_date' => '2026-10-16 12:00:00']);
     };
+});
+
+test('product history filters actual sales and purchases by product date and branch and opens invoices', function (): void {
+    $sale = ($this->makeOrder)(['invoice_number' => 'HISTORY-SALE', 'customer_name' => $this->customer->name, 'created_at' => '2026-10-20 23:59:59']);
+    $sale->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 2.5, 'unit_price' => 40, 'total_price' => 100, 'cost_price' => 20, 'total_cost' => 50]);
+    $purchase = Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'HISTORY-PURCHASE', 'total' => 200, 'paid_amount' => 0, 'created_at' => '2026-10-10 00:00:00']);
+    $purchase->items()->create(['product_id' => $this->product->id, 'quantity' => 10, 'unit_cost' => 20, 'subtotal' => 200]);
+    foreach ([['created_at' => '2026-10-21 00:00:00'], ['status' => 'cancelled'], ['deleted_at' => now()], ['branch_id' => $this->otherBranch->id], ['type' => 'return']] as $attributes) {
+        $excluded = ($this->makeOrder)($attributes);
+        $excluded->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 99, 'unit_price' => 40, 'total_price' => 3960, 'cost_price' => 20, 'total_cost' => 1980]);
+    }
+    $otherProduct = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'صنف آخر']);
+    $purchase->items()->create(['product_id' => $otherProduct->id, 'quantity' => 99, 'unit_cost' => 20, 'subtotal' => 1980]);
+    $filters = array_replace($this->filters, ['product_id' => $this->product->id]);
+    $definition = (new ReportingService($this->user, $this->branch->id))->prepare('product-history', $filters);
+    $rows = $definition['query']->get();
+    expect($rows)->toHaveCount(2)->and($rows->pluck('reference')->all())->toBe(['HISTORY-PURCHASE', 'HISTORY-SALE'])
+        ->and((float) $definition['summary']['الكمية المباعة'])->toBe(2.5)
+        ->and((float) $definition['summary']['الكمية المشتراة'])->toBe(10.0)
+        ->and($rows->pluck('party_name')->all())->toBe([$this->supplier->name, $this->customer->name]);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-history')
+        ->set('from', $filters['from'])->set('to', $filters['to'])->set('branchId', $this->branch->id)
+        ->set('productSearch', 'P-42')->assertSee($this->product->name)->set('productId', $this->product->id)->call('applyFilters')
+        ->assertSee('HISTORY-SALE')->assertSee('HISTORY-PURCHASE')->assertSee('الكمية المشتراة')
+        ->assertSee(route('tenant.pos', ['invoice' => $sale->id]))->assertSee(route('tenant.purchase-invoices', ['invoice' => $purchase->id]))
+        ->call('exportCsv')->assertFileDownloaded('report-product-history-2026-10-10-2026-10-20.csv');
+    $response = $this->get(route('tenant.reports.print', ['report' => 'product-history', 'branch_id' => $this->branch->id] + $filters))
+        ->assertSuccessful();
+    expect($response->streamedContent())->toContain('HISTORY-PURCHASE', 'HISTORY-SALE');
+    $purchase->delete();
+    expect((new ReportingService($this->user, $this->branch->id))->prepare('product-history', $filters)['query']->count())->toBe(1);
+});
+
+test('product history searches barcodes and rejects products from another tenant', function (): void {
+    ProductBarcode::create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '9876543210123']);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-history')->set('productSearch', '9876543210123')
+        ->assertViewHas('products', fn ($products): bool => $products->pluck('id')->all() === [$this->product->id]);
+    $otherTenant = Tenant::create(['name' => 'متجر آخر']);
+    $otherProduct = Product::create(['tenant_id' => $otherTenant->id, 'name' => 'صنف مخفي']);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-history')->set('productId', $otherProduct->id)->assertNotFound();
 });
 
 test('customer statement has brought-forward opening and correct running balance across pages', function (): void {

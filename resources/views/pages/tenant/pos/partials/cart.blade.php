@@ -139,7 +139,7 @@
                     $cartProductIds = array_values(array_unique(array_column($cart, 'id')));
                     $productColors = [];
                     foreach ($cartProductIds as $colorIndex => $cartProductId) {
-                        $productColors[(int) $cartProductId] = ($colorIndex * 360) / max(1, count($cartProductIds));
+                        $productColors[(int) $cartProductId] = 70 + ($colorIndex * 210) / max(1, count($cartProductIds));
                     }
                 @endphp
                 @forelse ($cart as $lineKey => $item)
@@ -179,6 +179,7 @@
                         <td class="px-3 py-2">
                             <div class="font-black text-slate-900 {{ ! $mergeSimilarProducts ? 'dark:text-slate-100' : '' }}">
                                 {{ $item['name'] }}
+                                <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button>
                                 @if (! $mergeSimilarProducts)
                                     <span data-pos-product-occurrence="{{ $productOccurrence }}" class="pos-cart-occurrence"
                                         aria-label="تكرار الصنف في السلة: {{ $productOccurrence }}">{{ $productOccurrence }}</span>
@@ -190,7 +191,7 @@
 
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
                                 @if ($item['quantity'] < 0)
-                                    <span class="text-rose-600">
+                                    <span class="text-slate-600">
                                         مرتجع
                                     </span>
                                 @endif
@@ -245,7 +246,7 @@
                         <td class="px-2 py-2 text-center" data-pos-stock-remaining="{{ $item['id'] }}"
                             data-remaining-quantity="{{ $remainingQuantity }}"
                             title="{{ $invoiceLocked ? 'المخزون الحالي:' : 'المتبقي بعد الفاتورة:' }}">
-                            <span class="inline-flex items-center justify-center rounded-md px-2 py-1 font-mono text-[11px] font-bold {{ $remainingQuantity !== null && $remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' }}" dir="ltr">
+                            <span class="inline-flex items-center justify-center rounded-md px-2 py-1 font-mono text-[11px] font-bold {{ $remainingQuantity === null ? 'bg-slate-50 text-slate-600' : ($remainingQuantity > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700') }}" dir="ltr">
                                 {{ $remainingQuantity === null ? 'غير متاح' : rtrim(rtrim(number_format($remainingQuantity, 3, '.', ','), '0'), '.') }}
                             </span>
                             @if ($unifiedStock)
