@@ -772,6 +772,7 @@ new class extends Component {
         }
 
         $totals = $this->calculateTotals();
+        $wasEditingInvoice = $this->currentOrderId !== null;
 
         try {
             $order = DB::transaction(function () use ($tenantId, $customer, $totals) {
@@ -890,6 +891,14 @@ new class extends Component {
 
             if ($shouldPrint) {
                 $this->dispatchPrint($order, $totals);
+            }
+
+            if ($wasEditingInvoice) {
+                $this->loadOrder($order);
+                $this->successMessage = 'تم تعديل فاتورة المبيعات بنجاح.';
+                $this->dispatch('toast', type: 'success', message: $this->successMessage);
+
+                return;
             }
 
             $this->startNewInvoice(false);
