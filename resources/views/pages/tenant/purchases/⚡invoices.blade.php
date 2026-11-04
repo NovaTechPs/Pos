@@ -1836,11 +1836,11 @@ new class extends Component {
                     </div>
 
                     <div class="grid grid-cols-2 gap-2">
-                        <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
+                        <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
                             <span wire:loading.remove wire:target="saveInvoice">💾 حفظ</span>
                             <span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
                         </button>
-                        <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
+                        <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" wire:target="saveAndPrint" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
                             <span wire:loading.remove wire:target="saveAndPrint">🖨 حفظ وطباعة</span>
                             <span wire:loading wire:target="saveAndPrint">جاري الحفظ...</span>
                         </button>

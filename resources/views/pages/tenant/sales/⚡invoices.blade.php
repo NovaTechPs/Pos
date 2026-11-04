@@ -1859,7 +1859,8 @@ new class extends Component {
                         <button
                             type="button"
                             wire:click="saveInvoice"
-                            @disabled(empty($cart))
+                            wire:loading.attr="disabled"
+                            wire:target="saveInvoice"
                             class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {{ $currentOrderId ? 'حفظ التعديل' : 'حفظ الفاتورة' }}
@@ -1868,7 +1869,8 @@ new class extends Component {
                         <button
                             type="button"
                             wire:click="saveAndPrint"
-                            @disabled(empty($cart))
+                            wire:loading.attr="disabled"
+                            wire:target="saveAndPrint"
                             class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             حفظ وطباعة
