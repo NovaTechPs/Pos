@@ -533,6 +533,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['quantity'] = round($quantity, 2);
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function incrementItem(string $cartKey): void
@@ -545,6 +546,7 @@ new class extends Component {
             (float) $this->cart[$cartKey]['quantity'] + 1,
             2
         );
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function decrementItem(string $cartKey): void
@@ -564,6 +566,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['quantity'] = $quantity;
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function updateItemPrice(string $cartKey, $price): void
@@ -573,6 +576,16 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['price'] = max(0, round((float) $price, 2));
+        unset($this->cart[$cartKey]['total_override']);
+    }
+
+    public function updateItemTotal(string $cartKey, $total): void
+    {
+        if (!isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['total_override'] = max(0, round((float) $total, 2));
     }
 
     public function updateItemDiscount(string $cartKey, $discount): void
@@ -582,6 +595,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['discount'] = max(0, round((float) $discount, 2));
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     /*
@@ -601,10 +615,9 @@ new class extends Component {
             $lineDiscount = (float) ($item['discount'] ?? 0);
             $cost = (float) ($item['cost'] ?? 0);
 
-            $lineTotal = max(
-                0,
-                ($price * $quantity) - $lineDiscount
-            );
+            $lineTotal = isset($item['total_override'])
+                ? max(0, (float) $item['total_override'])
+                : max(0, ($price * $quantity) - $lineDiscount);
 
             $subtotal += $lineTotal;
             $totalCost += $cost * $quantity;
@@ -765,10 +778,9 @@ new class extends Component {
                     $lineDiscount = (float) ($item['discount'] ?? 0);
                     $cost = (float) ($item['cost'] ?? 0);
 
-                    $lineTotal = max(
-                        0,
-                        ($price * $quantity) - $lineDiscount
-                    );
+                    $lineTotal = isset($item['total_override'])
+                        ? max(0, (float) $item['total_override'])
+                        : max(0, ($price * $quantity) - $lineDiscount);
 
                     OrderItem::query()->create([
                         'tenant_id' => $tenantId,
@@ -911,6 +923,11 @@ new class extends Component {
                 'discount' => (float) $item->discount,
                 'stock' => 0,
             ];
+
+            $calculatedLineTotal = max(0, ((float) $item->unit_price * (float) $item->quantity) - (float) $item->discount);
+            if (abs($calculatedLineTotal - (float) $item->total_price) >= 0.005) {
+                $this->cart[$key]['total_override'] = (float) $item->total_price;
+            }
         }
 
         $this->selectedProductId = null;
@@ -1615,11 +1632,9 @@ new class extends Component {
 
                         @forelse ($cart as $key => $item)
                             @php
-                                $lineTotal = max(
-                                    0,
-                                    ((float) $item['price'] * (float) $item['quantity'])
-                                        - (float) ($item['discount'] ?? 0)
-                                );
+                                $lineTotal = isset($item['total_override'])
+                                    ? max(0, (float) $item['total_override'])
+                                    : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0));
                             @endphp
 
                             <tr
@@ -1693,9 +1708,7 @@ new class extends Component {
                                 </td>
 
                                 <td class="px-3 py-2.5 text-center">
-                                    <div class="font-mono text-sm font-black text-slate-900">
-                                        {{ number_format($lineTotal, 2) }}
-                                    </div>
+                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" data-grid-input data-row="{{ $loop->index }}" data-col="3" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500" aria-label="إجمالي السطر" />
                                 </td>
 
                                 <td class="px-3 py-2.5 text-center">

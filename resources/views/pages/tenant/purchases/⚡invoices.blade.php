@@ -442,6 +442,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['quantity'] = round($quantity, 2);
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function incrementItem(string $cartKey): void
@@ -454,6 +455,7 @@ new class extends Component {
             (float) $this->cart[$cartKey]['quantity'] + 1,
             2
         );
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function decrementItem(string $cartKey): void
@@ -473,6 +475,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['quantity'] = $quantity;
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     public function updateItemPrice(string $cartKey, $price): void
@@ -482,6 +485,16 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['price'] = max(0, round((float) $price, 2));
+        unset($this->cart[$cartKey]['total_override']);
+    }
+
+    public function updateItemTotal(string $cartKey, $total): void
+    {
+        if (!isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['total_override'] = max(0, round((float) $total, 2));
     }
 
     public function updateItemDiscount(string $cartKey, $discount): void
@@ -491,6 +504,7 @@ new class extends Component {
         }
 
         $this->cart[$cartKey]['discount'] = max(0, round((float) $discount, 2));
+        unset($this->cart[$cartKey]['total_override']);
     }
 
     /*
@@ -509,10 +523,9 @@ new class extends Component {
             $quantity = max(0, (float) ($item['quantity'] ?? 0));
             $lineDiscount = max(0, (float) ($item['discount'] ?? 0));
 
-            $lineTotal = max(
-                0,
-                ($price * $quantity) - $lineDiscount
-            );
+            $lineTotal = isset($item['total_override'])
+                ? max(0, (float) $item['total_override'])
+                : max(0, ($price * $quantity) - $lineDiscount);
 
             $subtotal += $lineTotal;
             $totalQuantity += $quantity;
@@ -725,10 +738,9 @@ new class extends Component {
                     $quantity = max(0, (float) ($item['quantity'] ?? 0));
                     $unitCost = max(0, (float) ($item['price'] ?? 0));
                     $lineDiscount = max(0, (float) ($item['discount'] ?? 0));
-                    $lineTotal = max(
-                        0,
-                        ($unitCost * $quantity) - $lineDiscount
-                    );
+                    $lineTotal = isset($item['total_override'])
+                        ? max(0, (float) $item['total_override'])
+                        : max(0, ($unitCost * $quantity) - $lineDiscount);
 
                     if ($quantity <= 0) {
                         continue;
@@ -952,12 +964,18 @@ new class extends Component {
                 'price' => (float) $item->unit_cost,
                 'retail_price' => 0,
                 'quantity' => (float) $item->quantity,
-                'discount' => max(
-                    0,
-                    ((float) $item->unit_cost * (float) $item->quantity) - (float) $item->subtotal
-                ),
+                'discount' => max(0, ((float) $item->unit_cost * (float) $item->quantity) - (float) $item->subtotal),
                 'stock' => 0,
             ];
+
+            $calculatedLineTotal = max(
+                0,
+                ((float) $item->unit_cost * (float) $item->quantity)
+                    - (float) $this->cart[$key]['discount']
+            );
+            if (abs($calculatedLineTotal - (float) $item->subtotal) >= 0.005) {
+                $this->cart[$key]['total_override'] = (float) $item->subtotal;
+            }
         }
 
         $this->selectedProductId = null;
@@ -1544,7 +1562,7 @@ new class extends Component {
                                 </thead>
                                 <tbody class="divide-y divide-slate-100">
                                     @forelse ($cart as $key => $item)
-                                        @php($lineTotal = max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
+                                        @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
                                         <tr
                                             wire:key="purchase-item-{{ $key }}"
                                             data-cart-row="{{ $loop->index }}"
@@ -1560,7 +1578,7 @@ new class extends Component {
                                             <td class="px-3 py-3">
                                                 <div class="flex items-center gap-1">
                                                     <button type="button" wire:click="decrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">−</button>
-                                                    <input type="number" min="0.01" step="0.01" wire:model.blur="cart.{{ $key }}.quantity" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
+                                                    <input type="number" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
                                                     <button type="button" wire:click="incrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">+</button>
                                                 </div>
                                             </td>
@@ -1568,9 +1586,9 @@ new class extends Component {
                                                 <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" wire:model.blur="cart.{{ $key }}.discount" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="number" min="0" step="0.01" value="{{ $item['discount'] }}" wire:change="updateItemDiscount('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
-                                            <td class="px-3 py-3 text-sm font-black text-slate-900">{{ number_format($lineTotal, 2) }}</td>
+                                            <td class="px-3 py-3"><input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="3" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
                                             <td class="px-3 py-3 text-center">
                                                 <button type="button" wire:click="removeItem('{{ $key }}')" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button>
                                             </td>
@@ -1595,7 +1613,7 @@ new class extends Component {
                     {{-- Mobile --}}
                     <div class="divide-y divide-slate-100 md:hidden">
                         @forelse ($cart as $key => $item)
-                            @php($lineTotal = max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
+                            @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
                             <div wire:key="purchase-mobile-item-{{ $key }}" class="p-3">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
@@ -1604,10 +1622,10 @@ new class extends Component {
                                     </div>
                                     <button type="button" wire:click="removeItem('{{ $key }}')" class="text-xs font-black text-rose-600">حذف</button>
                                 </div>
-                                <div class="mt-3 grid grid-cols-3 gap-2">
+                                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
-                                        <input type="number" min="0.01" step="0.01" wire:model.blur="cart.{{ $key }}.quantity" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
+                                        <input type="number" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
@@ -1615,7 +1633,11 @@ new class extends Component {
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الخصم</label>
-                                        <input type="number" min="0" step="0.01" wire:model.blur="cart.{{ $key }}.discount" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="number" min="0" step="0.01" value="{{ $item['discount'] }}" wire:change="updateItemDiscount('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الإجمالي</label>
+                                        <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="3" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
                                     </div>
                                 </div>
                             </div>
@@ -1826,10 +1848,10 @@ new class extends Component {
                         }
                     } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
                         const nextColumn = column + (key === 'ArrowRight' ? 1 : -1);
-                        if (nextColumn >= 0 && nextColumn <= 2) {
+                        if (nextColumn >= 0 && nextColumn <= 3) {
                             next = this.purchaseGridInput(row, nextColumn);
                         }
-                    } else if (column < 2) {
+                    } else if (column < 3) {
                         next = this.purchaseGridInput(row, column + 1);
                     } else {
                         next = this.purchaseGridInput(row + 1, 0) ?? this.productInput();
