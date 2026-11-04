@@ -610,6 +610,84 @@ new class extends Component {
         ];
     }
 
+    private function synchronizePurchaseStock(int $tenantId, int $purchaseId, int $branchId): void
+    {
+        $desiredQuantities = [];
+
+        foreach ($this->cart as $item) {
+            $productId = (int) ($item['id'] ?? 0);
+            $quantity = max(0, (float) ($item['quantity'] ?? 0));
+
+            if ($productId > 0 && $quantity > 0) {
+                $desiredQuantities[$productId] = ($desiredQuantities[$productId] ?? 0) + $quantity;
+            }
+        }
+
+        $recordedMovements = DB::table('stock_movements')
+            ->where('tenant_id', $tenantId)
+            ->where('source_type', 'purchase')
+            ->where('source_id', $purchaseId)
+            ->get(['branch_id', 'product_id', 'quantity']);
+
+        $recordedQuantities = [];
+
+        foreach ($recordedMovements as $movement) {
+            $key = $movement->branch_id.':'.$movement->product_id;
+            $recordedQuantities[$key] = ($recordedQuantities[$key] ?? 0) + (float) $movement->quantity;
+        }
+
+        $desiredByLocation = [];
+
+        foreach ($desiredQuantities as $productId => $quantity) {
+            $desiredByLocation[$branchId.':'.$productId] = $quantity;
+        }
+
+        $locations = array_unique(array_merge(array_keys($recordedQuantities), array_keys($desiredByLocation)));
+
+        foreach ($locations as $location) {
+            [$movementBranchId, $productId] = array_map('intval', explode(':', $location, 2));
+            $recordedQuantity = (float) ($recordedQuantities[$location] ?? 0);
+            $desiredQuantity = (float) ($desiredByLocation[$location] ?? 0);
+            $quantityDelta = $desiredQuantity - $recordedQuantity;
+
+            if (abs($quantityDelta) < 0.000001) {
+                continue;
+            }
+
+            $branchProduct = DB::table('branch_products')
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $movementBranchId)
+                ->where('product_id', $productId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $branchProduct) {
+                if ($desiredQuantity > 0) {
+                    $productName = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->value('name');
+
+                    throw new \RuntimeException("المادة {$productName} غير مرتبطة بالفرع الحالي.");
+                }
+
+                throw new \RuntimeException('تعذر العثور على مخزون صنف مرتبط بفاتورة المشتريات.');
+            }
+
+            $newStock = (float) $branchProduct->stock_quantity + $quantityDelta;
+
+            if ($newStock < -0.000001) {
+                throw new \DomainException(
+                    'لا يمكن تقليل كمية الصنف في فاتورة المشتريات؛ الكمية المراد سحبها غير متوفرة حالياً في المخزون.'
+                );
+            }
+
+            DB::table('branch_products')
+                ->where('id', $branchProduct->id)
+                ->update([
+                    'stock_quantity' => max(0, $newStock),
+                    'updated_at' => now(),
+                ] + \App\Services\StockMovementContext::referenceAttributes('purchase', $purchaseId));
+        }
+    }
+
     /*
     |--------------------------------------------------------------------------
     | حفظ الفاتورة
@@ -716,42 +794,6 @@ new class extends Component {
                         (float) $purchase->total - (float) $purchase->paid_amount
                     );
 
-                    $oldItems = DB::table('purchase_items')
-                        ->where('purchase_id', $purchase->id)
-                        ->lockForUpdate()
-                        ->get(['id', 'product_id', 'quantity']);
-
-                    foreach ($oldItems as $oldItem) {
-                        $branchProduct = DB::table('branch_products')
-                            ->where('tenant_id', $tenantId)
-                            ->where('branch_id', $purchase->branch_id)
-                            ->where('product_id', $oldItem->product_id)
-                            ->lockForUpdate()
-                            ->first();
-
-                        if (!$branchProduct) {
-                            throw new \RuntimeException('تعذر العثور على مخزون أحد أصناف الفاتورة السابقة.');
-                        }
-
-                        $currentStock = (float) $branchProduct->stock_quantity;
-                        $previousPurchaseQuantity = (float) $oldItem->quantity;
-
-                        if ($currentStock + 0.000001 < $previousPurchaseQuantity) {
-                            throw new \DomainException(
-                                'لا يمكن تعديل فاتورة الشراء لأن جزءًا من كمياتها استُهلك أو أُخرج من المخزون. سجّل حركة تصحيح للمخزون أولًا.'
-                            );
-                        }
-
-                        $newStock = $currentStock - $previousPurchaseQuantity;
-
-                        DB::table('branch_products')
-                            ->where('id', $branchProduct->id)
-                            ->update([
-                                'stock_quantity' => $newStock,
-                                'updated_at' => now(),
-                            ] + \App\Services\StockMovementContext::referenceAttributes('purchase', $purchase->id));
-                    }
-
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
                         ->delete();
@@ -806,6 +848,8 @@ new class extends Component {
 
                 $purchaseId = $purchase->id;
 
+                $this->synchronizePurchaseStock($tenantId, (int) $purchaseId, (int) $this->selectedBranchId);
+
                 foreach ($this->cart as $item) {
                     $quantity = max(0, (float) ($item['quantity'] ?? 0));
                     $unitCost = max(0, (float) ($item['price'] ?? 0));
@@ -840,23 +884,6 @@ new class extends Component {
                         'updated_at' => now(),
                     ]);
 
-                    $branchProduct = DB::table('branch_products')
-                        ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $this->selectedBranchId)
-                        ->where('product_id', $productId)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$branchProduct) {
-                        throw new \RuntimeException("المادة {$product->name} غير مرتبطة بالفرع الحالي.");
-                    }
-
-                    DB::table('branch_products')
-                        ->where('id', $branchProduct->id)
-                        ->update([
-                            'stock_quantity' => (float) $branchProduct->stock_quantity + $quantity,
-                            'updated_at' => now(),
-                        ] + \App\Services\StockMovementContext::referenceAttributes('purchase', $purchaseId));
                 }
 
                 /*

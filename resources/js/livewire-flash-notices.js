@@ -7,9 +7,10 @@ function showNotice(text, variant = 'error') {
     const key = `${variant}:${message}`;
     if (shown.has(key)) return;
     shown.add(key);
-    window.setTimeout(() => shown.delete(key), 5000);
+    window.setTimeout(() => shown.delete(key), 10000);
 
     const toast = document.createElement('div');
+    toast.dataset.livewireFlashToast = 'true';
     toast.setAttribute('role', variant === 'success' ? 'status' : 'alert');
     toast.dir = 'rtl';
     toast.className = `fixed left-4 top-4 z-[99999] max-w-md rounded-xl border px-4 py-3 text-sm font-bold text-white shadow-xl transition ${variant === 'success' ? 'border-emerald-200 bg-emerald-600' : 'border-rose-200 bg-rose-600'}`;
@@ -19,12 +20,12 @@ function showNotice(text, variant = 'error') {
     window.setTimeout(() => {
         toast.classList.add('opacity-0');
         window.setTimeout(() => toast.remove(), 250);
-    }, 5000);
+    }, 10000);
 }
 
 function scanVisibleNotices() {
     document.querySelectorAll('[data-flash-notice], [data-pos-notice], [role="alert"], div[class*="text-red-"][class*="bg-red-"], div[class*="text-rose-"][class*="bg-rose-"]').forEach((notice) => {
-        if (notice.hidden) return;
+        if (notice.hidden || notice.dataset.livewireFlashToast === 'true') return;
 
         const variant = notice.dataset.flashVariant || (notice.classList.contains('text-emerald-800') ? 'success' : 'error');
         const message = notice.querySelector('p')?.textContent || notice.querySelector('.text-sm')?.textContent || notice.textContent;
