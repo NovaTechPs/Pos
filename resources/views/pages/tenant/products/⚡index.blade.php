@@ -123,6 +123,8 @@ new class extends Component {
     public $offerEndAt = null;
     public bool $offerHasEndDate = true;
     public string $offerProductName = '';
+    #[Locked]
+    public ?int $offerId = null;
 
     /*
     |--------------------------------------------------------------------------
@@ -1332,6 +1334,7 @@ new class extends Component {
         }
 
         $this->offerProductId = $product->id;
+        $this->offerId = null;
         $this->offerProductName = $product->name;
         $this->offerBranchId = $this->activeBranchId();
 
@@ -1357,9 +1360,43 @@ new class extends Component {
         $this->showOfferModal = true;
     }
 
+    public function editOffer(int $offerId): void
+    {
+        $this->authorize('products.price.edit');
+        $tenantId = $this->tenantId();
+        $offer = ProductOffer::query()
+            ->where('tenant_id', $tenantId)
+            ->with('product:id,name')
+            ->findOrFail($offerId);
+
+        $this->offerId = $offer->id;
+        $this->offerProductId = $offer->product_id;
+        $this->offerProductName = $offer->product?->name ?? '';
+        $this->offerBranchId = $offer->branch_id;
+        $this->offerQuantity = (string) $offer->offer_quantity;
+        $this->offerPrice = (string) $offer->offer_price;
+        $this->offerStartAt = $offer->start_at?->format('Y-m-d\\TH:i');
+        $this->offerHasEndDate = $offer->end_at !== null;
+        $this->offerEndAt = $offer->end_at?->format('Y-m-d\\TH:i');
+        $this->resetValidation();
+        $this->showOfferModal = true;
+    }
+
+    public function deleteOffer(int $offerId): void
+    {
+        $this->authorize('products.price.edit');
+        $offer = ProductOffer::query()
+            ->where('tenant_id', $this->tenantId())
+            ->findOrFail($offerId);
+
+        $offer->delete();
+        session()->flash('message', 'تم حذف العرض.');
+    }
+
     public function closeOfferModal(): void
     {
         $this->showOfferModal = false;
+        $this->offerId = null;
         $this->offerProductId = null;
         $this->offerBranchId = null;
         $this->offerQuantity = null;
@@ -1453,6 +1490,7 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
             ->where('branch_id', $this->offerBranchId)
             ->where('product_id', $this->offerProductId)
+            ->when($this->offerId, fn ($query) => $query->where('id', '!=', $this->offerId))
             ->where('is_active', true)
             ->where('start_at', '<=', $endAt ?? now()->addYears(100))
             ->where(function ($query) use ($startAt) {
@@ -1469,8 +1507,7 @@ new class extends Component {
             return;
         }
 
-        ProductOffer::create([
-            'tenant_id' => $tenantId,
+        $offerData = [
             'branch_id' => (int) $this->offerBranchId,
             'product_id' => (int) $this->offerProductId,
             'offer_quantity' => $this->offerQuantity,
@@ -1478,11 +1515,24 @@ new class extends Component {
             'start_at' => $startAt,
             'end_at' => $endAt,
             'is_active' => true,
-            'created_by' => auth()->id(),
-        ]);
+        ];
+
+        if ($this->offerId) {
+            ProductOffer::query()
+                ->where('tenant_id', $tenantId)
+                ->whereKey($this->offerId)
+                ->update($offerData);
+            $message = 'تم تعديل العرض بنجاح.';
+        } else {
+            ProductOffer::create($offerData + [
+                'tenant_id' => $tenantId,
+                'created_by' => auth()->id(),
+            ]);
+            $message = 'تمت إضافة العرض بنجاح.';
+        }
 
         $this->closeOfferModal();
-        session()->flash('message', 'تمت إضافة العرض بنجاح.');
+        session()->flash('message', $message);
     }
 
     /*
@@ -2506,14 +2556,18 @@ new class extends Component {
                             <td class="px-5 py-4">
 
                                 <div class="flex items-center justify-center gap-1">
-
-                                    <flux:button
-                                        variant="ghost"
-                                        icon="tag"
-                                        class="text-amber-600 hover:text-amber-700"
-                                        wire:click.stop="openOfferModal({{ $product->id }})"
-                                        title="إضافة عرض"
-                                    />
+                                    @if ($currentOffer)
+                                        <flux:button variant="ghost" icon="pencil-square" class="text-amber-600 hover:text-amber-700" wire:click.stop="editOffer({{ $currentOffer->id }})" title="تعديل العرض" />
+                                        <flux:button variant="ghost" icon="trash" class="text-red-600 hover:text-red-700" wire:click.stop="deleteOffer({{ $currentOffer->id }})" wire:confirm="هل تريد حذف عرض هذا الصنف؟" title="حذف العرض" />
+                                    @else
+                                        <flux:button
+                                            variant="ghost"
+                                            icon="tag"
+                                            class="text-amber-600 hover:text-amber-700"
+                                            wire:click.stop="openOfferModal({{ $product->id }})"
+                                            title="إضافة عرض"
+                                        />
+                                    @endif
 
                                     <flux:button
                                         variant="ghost"
@@ -2782,16 +2836,20 @@ new class extends Component {
                     </div>
 
                     <div class="flex items-center gap-1">
-
-                        <flux:button
-                            size="sm"
-                            variant="subtle"
-                            icon="tag"
-                            class="text-amber-600"
-                            wire:click.stop="openOfferModal({{ $product->id }})"
-                        >
-                            عرض
-                        </flux:button>
+                        @if ($currentOffer)
+                            <flux:button size="sm" variant="subtle" icon="pencil-square" class="text-amber-600" wire:click.stop="editOffer({{ $currentOffer->id }})">تعديل العرض</flux:button>
+                            <flux:button size="sm" variant="ghost" icon="trash" class="text-red-600" wire:click.stop="deleteOffer({{ $currentOffer->id }})" wire:confirm="هل تريد حذف عرض هذا الصنف؟" />
+                        @else
+                            <flux:button
+                                size="sm"
+                                variant="subtle"
+                                icon="tag"
+                                class="text-amber-600"
+                                wire:click.stop="openOfferModal({{ $product->id }})"
+                            >
+                                إضافة عرض
+                            </flux:button>
+                        @endif
 
                         <flux:button
                             size="sm"
@@ -3824,7 +3882,7 @@ new class extends Component {
                 </div>
 
                 <div>
-                    <flux:heading size="lg">إضافة عرض</flux:heading>
+                    <flux:heading size="lg">{{ $offerId ? 'تعديل العرض' : 'إضافة عرض' }}</flux:heading>
                     <flux:subheading class="mt-1">
                         {{ $offerProductName }}
                     </flux:subheading>
@@ -3898,7 +3956,7 @@ new class extends Component {
                 <div class="flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end dark:border-zinc-800">
                     <flux:button type="button" variant="ghost" wire:click="closeOfferModal">إلغاء</flux:button>
                     <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="saveOffer">
-                        <span wire:loading.remove wire:target="saveOffer">حفظ العرض</span>
+                        <span wire:loading.remove wire:target="saveOffer">{{ $offerId ? 'حفظ التعديل' : 'حفظ العرض' }}</span>
                         <span wire:loading wire:target="saveOffer">جاري الحفظ...</span>
                     </flux:button>
                 </div>
