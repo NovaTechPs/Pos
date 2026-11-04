@@ -708,18 +708,35 @@ new class extends Component {
     {
         if ($this->currentOrderId && ! $this->invoiceEditMode) {
             $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
 
             return;
         }
 
-        $this->authorize($this->currentOrderId ? 'sales_invoices.edit' : 'sales_invoices.create');
+        try {
+            $this->authorize($this->currentOrderId ? 'sales_invoices.edit' : 'sales_invoices.create');
+        } catch (\Illuminate\Auth\Access\AuthorizationException) {
+            $this->errorMessage = 'لا تملك صلاحية حفظ أو تعديل فاتورة المبيعات.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         $this->errorMessage = null;
         $this->successMessage = null;
 
-        $this->validate(['invoiceDate' => ['required', 'date']]);
+        try {
+            $this->validate(['invoiceDate' => ['required', 'date']]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->errorMessage = $exception->validator->errors()->first() ?: 'تحقق من تاريخ الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
 
         if (empty($this->cart)) {
             $this->errorMessage = 'أضف مادة واحدة على الأقل إلى الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             $this->dispatch('focus-product-search');
             return;
         }
@@ -728,11 +745,13 @@ new class extends Component {
 
         if (!$tenantId) {
             $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             return;
         }
 
         if (!$this->selectedBranchId) {
             $this->errorMessage = 'يرجى تحديد الفرع قبل حفظ الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             return;
         }
 
@@ -747,6 +766,7 @@ new class extends Component {
 
             if (!$customer) {
                 $this->errorMessage = 'العميل المحدد غير صالح.';
+                $this->dispatch('toast', type: 'error', message: $this->errorMessage);
                 return;
             }
         }
@@ -874,10 +894,12 @@ new class extends Component {
 
             $this->startNewInvoice(false);
             $this->successMessage = 'تم حفظ الفاتورة بنجاح وفتح فاتورة جديدة.';
+            $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المبيعات بنجاح.');
 
         } catch (\Throwable $e) {
             report($e);
             $this->errorMessage = 'تعذر حفظ الفاتورة. تأكد من البيانات وحاول مرة أخرى.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
         }
     }
 

@@ -620,18 +620,35 @@ new class extends Component {
     {
         if ($this->currentPurchaseId && ! $this->invoiceEditMode) {
             $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
 
             return;
         }
 
-        $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
+        try {
+            $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
+        } catch (\Illuminate\Auth\Access\AuthorizationException) {
+            $this->errorMessage = 'لا تملك صلاحية حفظ أو تعديل فاتورة المشتريات.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         $this->errorMessage = null;
         $this->successMessage = null;
 
-        $this->validate(['invoiceDate' => ['required', 'date']]);
+        try {
+            $this->validate(['invoiceDate' => ['required', 'date']]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->errorMessage = $exception->validator->errors()->first() ?: 'تحقق من تاريخ الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
 
         if (empty($this->cart)) {
             $this->errorMessage = 'أضف مادة واحدة على الأقل إلى الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             $this->dispatch('focus-product-search');
             return;
         }
@@ -640,11 +657,13 @@ new class extends Component {
 
         if (!$tenantId) {
             $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             return;
         }
 
         if (!$this->selectedBranchId) {
             $this->errorMessage = 'يرجى تحديد الفرع قبل حفظ الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
             return;
         }
 
@@ -659,6 +678,7 @@ new class extends Component {
 
             if (!$supplier) {
                 $this->errorMessage = 'المورد المحدد غير صالح.';
+                $this->dispatch('toast', type: 'error', message: $this->errorMessage);
                 return;
             }
         }
@@ -883,12 +903,14 @@ new class extends Component {
 
             $this->startNewInvoice(false);
             $this->successMessage = 'تم حفظ فاتورة المشتريات بنجاح وفتح فاتورة جديدة.';
+            $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المشتريات بنجاح.');
 
         } catch (\Throwable $e) {
             report($e);
             $this->errorMessage = $e instanceof \DomainException
                 ? $e->getMessage()
                 : 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
         }
     }
 
