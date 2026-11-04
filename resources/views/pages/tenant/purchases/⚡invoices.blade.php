@@ -1076,10 +1076,15 @@ new class extends Component {
                 ->value('name') ?: 'مورد عام';
         }
 
+        $branchName = Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($purchase->branch_id)
+            ->value('name');
+
         $this->dispatch(
             'print-purchase-invoice',
             invoice: [
-                'store_name' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
+                'store_name' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $purchase->reference_number,
                 'date' => $purchase->invoice_date ?: $purchase->created_at,
                 'supplier' => $supplierName,
@@ -1135,14 +1140,18 @@ new class extends Component {
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $tenantId)->whereKey($purchase->supplier_id)->value('name')
             : null;
+        $branchName = Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->whereKey($purchase->branch_id)
+            ->value('name');
 
-        return response()->streamDownload(function () use ($purchase, $items, $supplierName): void {
+        return response()->streamDownload(function () use ($purchase, $items, $supplierName, $branchName): void {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.purchases.partials.invoice-pdf', [
                 'purchase' => $purchase,
                 'items' => $items,
                 'supplierName' => $supplierName ?: 'مورد عام',
-                'storeName' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
+                'storeName' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();

@@ -386,7 +386,7 @@ new class extends Component {
         $this->dispatch(
             'print-wholesale-invoice',
             data: [
-                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+                'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'title' => 'فاتورة مبيعات جملة',
                 'invoice_number' => $order->invoice_number,
                 'customer_name' => $order->customer_name

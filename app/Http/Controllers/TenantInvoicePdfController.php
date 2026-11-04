@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
 use App\Models\Tenant;
@@ -24,7 +25,7 @@ class TenantInvoicePdfController extends Controller
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
-                'storeName' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: $order->branch?->name ?: 'المتجر',
+                'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();
@@ -47,14 +48,18 @@ class TenantInvoicePdfController extends Controller
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('name')
             : null;
+        $branchName = Branch::query()
+            ->where('tenant_id', $purchase->tenant_id)
+            ->whereKey($purchase->branch_id)
+            ->value('name');
 
-        return response()->streamDownload(function () use ($purchase, $items, $supplierName): void {
+        return response()->streamDownload(function () use ($purchase, $items, $supplierName, $branchName): void {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.purchases.partials.invoice-pdf', [
                 'purchase' => $purchase,
                 'items' => $items,
                 'supplierName' => $supplierName ?: 'مورد عام',
-                'storeName' => Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
+                'storeName' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();

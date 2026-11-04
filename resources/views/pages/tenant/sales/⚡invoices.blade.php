@@ -998,7 +998,7 @@ new class extends Component {
         $this->dispatch(
             'print-sales-invoice',
             invoice: [
-                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+                'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $order->invoice_number,
                 'date' => $order->invoice_date?->format('Y-m-d') ?? $order->created_at?->format('Y-m-d H:i'),
                 'customer' => $order->customer_name ?: 'زبون عام',
@@ -1078,7 +1078,7 @@ new class extends Component {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
-                'storeName' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: $order->branch?->name ?: 'المتجر',
+                'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();

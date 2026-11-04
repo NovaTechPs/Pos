@@ -1065,7 +1065,7 @@ new class extends Component {
 
         if ($shouldPrint && $order) {
             $this->dispatch('do-kiosk-print', data: [
-                'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+                'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'header_title' => 'فاتورة مبيعات جملة',
                 'invoice_no' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
@@ -1738,7 +1738,7 @@ new class extends Component {
             $this->dispatch(
                 'do-kiosk-print',
                 data: [
-                    'store_name' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+                    'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'header_title' => 'فاتورة مبيعات جملة',
 
                     'invoice_no' => $order->invoice_number,

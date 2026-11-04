@@ -3655,7 +3655,7 @@ new class extends Component {
         $currency = (string) TenantSetting::get((int) $this->tenantId(), 'currency', 'ILS');
         $currencySymbols = ['ILS' => '₪', 'USD' => '$', 'JOD' => 'د.أ'];
         $this->receipt = [
-            'store_name' => $tenant?->name ?? $order->branch?->name ?? 'نقطة البيع',
+            'store_name' => $order->branch?->name ?: ($tenant?->name ?: 'نقطة البيع'),
             'store_phone' => $tenant?->phone,
             'store_address' => TenantSetting::get((int) $this->tenantId(), 'store_address', ''),
             'copy_type' => $order->type === 'return' ? 'فاتورة مرتجع' : 'فاتورة بيع',
@@ -3934,7 +3934,7 @@ new class extends Component {
 
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
-                'storeName' => Tenant::query()->whereKey($order->tenant_id)->value('name') ?: $order->branch?->name ?: 'المتجر',
+                'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();
