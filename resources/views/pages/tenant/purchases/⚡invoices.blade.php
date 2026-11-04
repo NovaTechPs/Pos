@@ -51,10 +51,6 @@ new class extends Component {
 
     public string $discountType = 'fixed';
 
-    public float $taxPercent = 16.0;
-
-    public bool $taxable = true;
-
     public float $paidAmount = 0.0;
 
     public string $paymentMethod = 'cash';
@@ -222,8 +218,6 @@ new class extends Component {
         $this->cart = [];
         $this->discount = 0.0;
         $this->discountType = 'fixed';
-        $this->taxable = true;
-        $this->taxPercent = 16.0;
         $this->paidAmount = 0.0;
         $this->paymentMethod = 'cash';
         $this->notes = '';
@@ -522,14 +516,7 @@ new class extends Component {
             ? min($base, $base * (max(0, $this->discount) / 100))
             : min($base, max(0, $this->discount));
 
-        $taxableAmount = max(0, $base - $invoiceDiscount);
-
-        $taxRate = max(0, $this->taxPercent);
-        $taxAmount = $taxRate > 0
-            ? $taxableAmount * ($taxRate / (100 + $taxRate))
-            : 0.0;
-
-        $grandTotal = $taxableAmount;
+        $grandTotal = max(0, $base - $invoiceDiscount);
 
         $paid = min(max(0, (float) $this->paidAmount), $grandTotal);
 
@@ -542,7 +529,7 @@ new class extends Component {
         return [
             'subtotal' => round($base, 2),
             'discount' => round($invoiceDiscount, 2),
-            'tax' => round($taxAmount, 2),
+            'tax' => 0.0,
             'total' => round($grandTotal, 2),
             'paid' => round($paid, 2),
             'remaining' => round($remaining, 2),
@@ -685,8 +672,8 @@ new class extends Component {
                             'reference_number' => $this->invoiceNumber,
                             'invoice_date' => $this->invoiceDate,
                             'total' => $totals['total'],
-                            'tax_amount' => $totals['tax'],
-                            'tax_percent' => max(0, $this->taxPercent),
+                            'tax_amount' => 0,
+                            'tax_percent' => 0,
                             'paid_amount' => $totals['paid'],
                             'payment_status' => $totals['payment_status'],
                             'updated_at' => now(),
@@ -709,8 +696,8 @@ new class extends Component {
                         'reference_number' => $this->invoiceNumber,
                         'invoice_date' => $this->invoiceDate,
                         'total' => $totals['total'],
-                        'tax_amount' => $totals['tax'],
-                        'tax_percent' => max(0, $this->taxPercent),
+                        'tax_amount' => 0,
+                        'tax_percent' => 0,
                         'paid_amount' => $totals['paid'],
                         'payment_status' => $totals['payment_status'],
                         'created_at' => now(),
@@ -919,8 +906,6 @@ new class extends Component {
         $this->selectedSupplierId = $purchase->supplier_id;
         $this->discount = 0.0;
         $this->discountType = 'fixed';
-        $this->taxPercent = max(0, (float) ($purchase->tax_percent ?? 16));
-        $this->taxable = true;
         $this->paidAmount = (float) $purchase->paid_amount;
         $this->notes = '';
 
@@ -1094,7 +1079,7 @@ new class extends Component {
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
                 'discount' => 0.0,
-                'tax' => (float) ($purchase->tax_amount ?? 0),
+                'tax' => 0.0,
                 'total' => (float) $purchase->total,
                 'paid' => (float) $purchase->paid_amount,
                 'remaining' => max(0, (float) $purchase->total - (float) $purchase->paid_amount),
@@ -1249,7 +1234,6 @@ new class extends Component {
             'selectedSupplier' => $selectedSupplier,
             'subtotal' => $totals['subtotal'],
             'invoiceDiscount' => $totals['discount'],
-            'taxAmount' => $totals['tax'],
             'grandTotal' => $totals['total'],
             'paidTotal' => $totals['paid'],
             'remainingTotal' => $totals['remaining'],
@@ -1663,20 +1647,6 @@ new class extends Component {
                             <div class="flex items-center justify-between text-sm">
                                 <span class="font-bold text-slate-500">الخصم المحتسب</span>
                                 <span class="font-black text-rose-600">- {{ number_format($invoiceDiscount, 2) }}</span>
-                            </div>
-
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="font-bold text-slate-500">قيمة الضريبة المضمنة</span>
-                                <div class="flex items-center gap-2">
-                                    <span class="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">شامل الضريبة</span>
-                                    <input type="number" min="0" step="0.01" wire:model.live.debounce.500ms="taxPercent" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-black" />
-                                    <span class="text-[10px] font-black text-slate-400">%</span>
-                                </div>
-                            </div>
-
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="font-bold text-slate-500">قيمة الضريبة</span>
-                                <span class="font-black text-slate-900">{{ number_format($taxAmount, 2) }}</span>
                             </div>
 
                             <div class="border-t border-slate-200 pt-3">
@@ -2151,7 +2121,6 @@ new class extends Component {
                 <div class="totals">
                     <div class="line"><span>المجموع الفرعي</span><strong>${money(invoice.subtotal)}</strong></div>
                     <div class="line"><span>الخصم</span><strong>${money(invoice.discount)}</strong></div>
-                    <div class="line"><span>الضريبة</span><strong>${money(invoice.tax)}</strong></div>
                     <div class="line grand"><span>الإجمالي</span><strong>${money(invoice.total)}</strong></div>
                     <div class="line"><span>المدفوع</span><strong>${money(invoice.paid)}</strong></div>
                     <div class="line"><span>المتبقي</span><strong>${money(invoice.remaining)}</strong></div>
