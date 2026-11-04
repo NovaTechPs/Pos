@@ -1266,7 +1266,6 @@ new class extends Component {
     <div
         class="mx-auto max-w-[1700px]"
         x-data="purchaseInvoiceKeyboard()"
-        x-init="init()"
     >
 
         {{-- شريط الأدوات --}}
@@ -1765,19 +1764,19 @@ new class extends Component {
         keyboardController: null,
 
         init() {
-            this.$nextTick(() => this.$refs.supplierSearch?.focus());
+            this.$nextTick(() => this.supplierInput()?.focus());
 
             this.registerKeyboard();
 
             Livewire.on('focus-product-search', () => {
                 this.$nextTick(() => {
-                    this.$refs.productSearch?.focus();
-                    this.$refs.productSearch?.select();
+                    this.productInput()?.focus();
+                    this.productInput()?.select();
                 });
             });
 
             Livewire.on('focus-supplier-search', () => {
-                this.$nextTick(() => this.$refs.supplierSearch?.focus());
+                this.$nextTick(() => this.supplierInput()?.focus());
             });
 
             Livewire.on('focus-quantity', () => {
@@ -1799,6 +1798,14 @@ new class extends Component {
 
         visibleResults(selector) {
             return [...this.$el.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0);
+        },
+
+        supplierInput() {
+            return this.$el.querySelector('#supplier-search-input');
+        },
+
+        productInput() {
+            return this.$el.querySelector('#product-search-input');
         },
 
         purchaseGridInput(row, column) {
@@ -1828,7 +1835,7 @@ new class extends Component {
                     if (key === 'ArrowUp' || key === 'ArrowDown') {
                         next = this.purchaseGridInput(row + (key === 'ArrowDown' ? 1 : -1), column);
                         if (!next && key === 'ArrowDown') {
-                            next = this.$refs.productSearch;
+                            next = this.productInput();
                         }
                     } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
                         const nextColumn = column + (key === 'ArrowRight' ? 1 : -1);
@@ -1838,7 +1845,7 @@ new class extends Component {
                     } else if (column < 2) {
                         next = this.purchaseGridInput(row, column + 1);
                     } else {
-                        next = this.purchaseGridInput(row + 1, 0) ?? this.$refs.productSearch;
+                        next = this.purchaseGridInput(row + 1, 0) ?? this.productInput();
                     }
 
                     if (next) {
@@ -1879,19 +1886,19 @@ new class extends Component {
 
                 if (key === 'F8') {
                     event.preventDefault();
-                    this.$nextTick(() => this.$refs.supplierSearch?.focus());
+                    this.$nextTick(() => this.supplierInput()?.focus());
                     return;
                 }
 
                 if (key === 'F9') {
                     event.preventDefault();
-                    this.$nextTick(() => this.$refs.productSearch?.focus());
+                    this.$nextTick(() => this.productInput()?.focus());
                     return;
                 }
 
                 if (key === 'Escape') {
-                    const supplierBox = this.$refs.supplierResults;
-                    const productBox = this.$refs.productResults;
+                    const supplierBox = this.visibleResults('[data-supplier-result]').length > 0;
+                    const productBox = this.visibleResults('[data-product-result]').length > 0;
 
                     if (supplierBox || productBox) {
                         event.preventDefault();
@@ -1908,13 +1915,13 @@ new class extends Component {
 
                 if (isTextField) {
                     if (key === 'ArrowDown' || key === 'ArrowUp') {
-                        if (target === this.$refs.supplierSearch) {
+                        if (target?.matches?.('#supplier-search-input')) {
                             event.preventDefault();
                             this.moveSupplier(key === 'ArrowDown' ? 1 : -1);
                             return;
                         }
 
-                        if (target === this.$refs.productSearch) {
+                        if (target?.matches?.('#product-search-input')) {
                             event.preventDefault();
                             this.moveProduct(key === 'ArrowDown' ? 1 : -1);
                             return;
@@ -1922,13 +1929,13 @@ new class extends Component {
                     }
 
                     if (key === 'Enter') {
-                        if (target === this.$refs.supplierSearch) {
+                        if (target?.matches?.('#supplier-search-input')) {
                             event.preventDefault();
                             this.selectActiveSupplier();
                             return;
                         }
 
-                        if (target === this.$refs.productSearch) {
+                        if (target?.matches?.('#product-search-input')) {
                             event.preventDefault();
                             const barcodeMatched = await this.$wire.selectProductByBarcode(target.value);
 
