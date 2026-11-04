@@ -1677,9 +1677,13 @@ new class extends Component {
                 <button
                     type="button"
                     wire:click="commitRowToCart"
-                    class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                    wire:loading.attr="disabled"
+                    wire:target="commitRowToCart"
+                    @disabled(!$selectedProductId || $productSearchLocked)
+                    class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    + إضافة
+                    <span wire:loading.remove wire:target="commitRowToCart">+ إضافة</span>
+                    <span wire:loading wire:target="commitRowToCart">جارٍ الإضافة...</span>
                 </button>
             </div>
 
