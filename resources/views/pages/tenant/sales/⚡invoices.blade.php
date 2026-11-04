@@ -375,8 +375,23 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
+    private function ensureInvoiceEditable(): bool
+    {
+        if ($this->currentOrderId && ! $this->invoiceEditMode) {
+            $this->errorMessage = 'الفاتورة محفوظة للعرض فقط. اضغط «تعديل» قبل تغيير الأصناف.';
+
+            return false;
+        }
+
+        return true;
+    }
+
     public function selectProduct(int $productId): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         $tenantId = $this->tenantId();
         $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
 
@@ -423,6 +438,10 @@ new class extends Component {
 
     public function selectProductByBarcode(string $barcode): bool
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return false;
+        }
+
         $barcode = trim($barcode);
         $tenantId = $this->tenantId();
 
@@ -471,6 +490,10 @@ new class extends Component {
 
     public function commitRowToCart(): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!$this->selectedProductId) {
             $this->dispatch('focus-product-search');
             return;
@@ -512,6 +535,10 @@ new class extends Component {
 
     public function removeItem(string $cartKey): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -521,6 +548,10 @@ new class extends Component {
 
     public function updateItemQuantity(string $cartKey, $quantity): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -538,6 +569,10 @@ new class extends Component {
 
     public function incrementItem(string $cartKey): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -551,6 +586,10 @@ new class extends Component {
 
     public function decrementItem(string $cartKey): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -571,6 +610,10 @@ new class extends Component {
 
     public function updateItemPrice(string $cartKey, $price): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -581,6 +624,10 @@ new class extends Component {
 
     public function updateItemTotal(string $cartKey, $total): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
@@ -590,6 +637,10 @@ new class extends Component {
 
     public function updateItemDiscount(string $cartKey, $discount): void
     {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
         if (!isset($this->cart[$cartKey])) {
             return;
         }
