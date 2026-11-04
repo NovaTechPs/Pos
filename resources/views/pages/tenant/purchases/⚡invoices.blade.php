@@ -1614,6 +1614,10 @@ new class extends Component {
                             <p class="mt-1 text-xs font-bold text-amber-700">الفاتورة للعرض فقط. اضغط «تعديل» بالأعلى لتفعيل البحث وإضافة الأصناف.</p>
                         @endif
 
+                        @if ($selectedProductId)
+                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}». أدخل الكمية والتكلفة ثم اضغط «+ إضافة» لإدخاله في الفاتورة.</p>
+                        @endif
+
                         @if (count($productResults) > 0)
                             <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <div class="max-h-80 overflow-auto" x-ref="productResults">
@@ -1626,11 +1630,15 @@ new class extends Component {
                                                     $resultPrice = (float) $product->cost_price;
                                                     $stock = (float) ($bp?->stock_quantity ?? 0);
                                                 @endphp
-                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
-                                                    <td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td>
-                                                    <td class="p-2 font-bold">{{ $product->name }}</td>
-                                                    <td class="p-2 font-mono">{{ number_format($resultPrice, 2) }}</td>
-                                                    <td class="p-2 tabular-nums">{{ number_format($stock, 2) }}</td>
+                                                <tr data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
+                                                    <td colspan="4" class="p-0">
+                                                        <button type="button" wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60">
+                                                            <span class="font-mono">{{ $product->product_number ?? $product->id }}</span>
+                                                            <span class="font-bold">{{ $product->name }}</span>
+                                                            <span class="font-mono">{{ number_format($resultPrice, 2) }}</span>
+                                                            <span class="tabular-nums">{{ number_format($stock, 2) }}</span>
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             @endforeach
                                         </tbody>
