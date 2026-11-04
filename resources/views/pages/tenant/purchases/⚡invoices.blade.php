@@ -1278,6 +1278,7 @@ new class extends Component {
         $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
 
         $branches = collect();
+        $productSearchLocked = $this->currentPurchaseId !== null && ! $this->invoiceEditMode;
 
         if ($tenantId) {
             $branches = Branch::query()
@@ -1288,7 +1289,7 @@ new class extends Component {
 
         $productResults = collect();
 
-        if ($tenantId && trim($this->rowSearch) !== '' && !$this->selectedProductId) {
+        if ($tenantId && ! $productSearchLocked && trim($this->rowSearch) !== '' && !$this->selectedProductId) {
             $search = trim($this->rowSearch);
 
             $productResults = Product::query()
@@ -1337,6 +1338,7 @@ new class extends Component {
 
         return $this->view([
             'branches' => $branches,
+            'productSearchLocked' => $productSearchLocked,
             'productResults' => $productResults,
             'supplierResults' => $supplierResults,
             'selectedSupplier' => $selectedSupplier,
@@ -1542,11 +1544,15 @@ new class extends Component {
                             x-ref="productSearch"
                             type="text"
                             wire:model.live.debounce.250ms="rowSearch"
-                            maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true"
+                            maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true" @disabled($productSearchLocked)
                             autocomplete="off"
-                            placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..."
-                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
+                            placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter...' }}"
+                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100"
                         />
+
+                        @if ($productSearchLocked)
+                            <p class="mt-1 text-xs font-bold text-amber-700">الفاتورة للعرض فقط. اضغط «تعديل» بالأعلى لتفعيل البحث وإضافة الأصناف.</p>
+                        @endif
 
                         @if (count($productResults) > 0)
                             <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
