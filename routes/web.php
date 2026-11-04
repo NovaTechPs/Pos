@@ -66,6 +66,10 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:products.view')
             ->name('product');
 
+        Route::livewire('/offers', 'pages::tenant.offers.index')
+            ->middleware('can:products.view')
+            ->name('offers');
+
         Route::livewire('/barcode/printer', 'pages::tenant.products.printer')
             ->middleware('can:products.barcode.manage')
             ->name('barcode.printer');
