@@ -935,6 +935,23 @@ new class extends Component {
 
         $this->validate();
 
+        $submittedBarcodes = array_values(array_filter(
+            array_map('trim', $this->barcodes),
+            fn (string $barcode): bool => $barcode !== ''
+        ));
+        $duplicateSubmittedBarcodes = array_values(array_unique(array_diff_assoc(
+            $submittedBarcodes,
+            array_unique($submittedBarcodes)
+        )));
+
+        if ($duplicateSubmittedBarcodes !== []) {
+            $message = 'يوجد باركود مكرر ضمن المنتج: '.implode('، ', $duplicateSubmittedBarcodes);
+            $this->addError('barcodes', $message);
+            Flux::toast(text: $message, duration: 5000, variant: 'danger');
+
+            return;
+        }
+
         $stockQuantityChanged = $this->isEditing
             ? abs((float) $this->stockQuantity - (float) $this->originalStockQuantity) >= 0.005
             : (float) $this->stockQuantity > 0;
@@ -983,11 +1000,12 @@ new class extends Component {
             ->values();
 
         if ($conflictingBarcodes->isNotEmpty()) {
+            $message = 'الباركود مستخدم مسبقاً في منتج آخر: '.$conflictingBarcodes->implode('، ');
             $this->addError(
                 'barcodes',
-                'الباركود مستخدم مسبقاً: ' .
-                $conflictingBarcodes->implode('، ')
+                $message
             );
+            Flux::toast(text: $message, duration: 5000, variant: 'danger');
 
             return;
         }
