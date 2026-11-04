@@ -456,8 +456,6 @@ new class extends Component {
             && (! $this->currentOrderId || $this->invoiceEditMode)
             && $this->selectProductByBarcode($value)
         ) {
-            $this->commitRowToCart();
-
             return;
         }
 
