@@ -333,6 +333,7 @@ new class extends Component {
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
+        $this->dispatch('purchase-product-selected');
         $this->dispatch('focus-quantity');
     }
 
@@ -439,6 +440,7 @@ new class extends Component {
         $this->rowSearch = '';
         $this->errorMessage = null;
 
+        $this->dispatch('toast', type: 'success', message: 'تمت إضافة الصنف إلى الفاتورة.');
         $this->dispatch('focus-product-search');
     }
 
@@ -1597,7 +1599,7 @@ new class extends Component {
                 <div class="min-w-0 flex-1">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
 
-                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
+                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:purchase-product-selected.window="productSearchOpen = false" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
                         <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: null })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                         <input
                             id="product-search-input"
@@ -1619,7 +1621,7 @@ new class extends Component {
                         @endif
 
                         @if (count($productResults) > 0)
-                            <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                            <div data-invoice-search-results x-cloak x-show="productSearchOpen" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <div class="max-h-80 overflow-auto" x-ref="productResults">
                                     <table class="w-full text-right text-sm">
                                         <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
@@ -1632,7 +1634,7 @@ new class extends Component {
                                                 @endphp
                                                 <tr data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
                                                     <td colspan="4" class="p-0">
-                                                        <button type="button" wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60">
+                                                        <button type="button" x-on:click.stop wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60">
                                                             <span class="font-mono">{{ $product->product_number ?? $product->id }}</span>
                                                             <span class="font-bold">{{ $product->name }}</span>
                                                             <span class="font-mono">{{ number_format($resultPrice, 2) }}</span>
