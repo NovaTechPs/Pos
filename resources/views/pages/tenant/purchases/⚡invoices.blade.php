@@ -661,13 +661,37 @@ new class extends Component {
                 ->lockForUpdate()
                 ->first();
 
-            if (! $branchProduct) {
-                if ($desiredQuantity > 0) {
-                    $productName = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->value('name');
+            if (! $branchProduct && $desiredQuantity > 0) {
+                $product = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereKey($productId)
+                    ->first();
 
-                    throw new \RuntimeException("المادة {$productName} غير مرتبطة بالفرع الحالي.");
+                if (! $product) {
+                    throw new \RuntimeException('أحد المنتجات غير موجود في المتجر.');
                 }
 
+                BranchProduct::query()->firstOrCreate(
+                    [
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $movementBranchId,
+                        'product_id' => $productId,
+                    ],
+                    [
+                        'stock_quantity' => 0,
+                        'created_by' => auth()->id(),
+                    ]
+                );
+
+                $branchProduct = DB::table('branch_products')
+                    ->where('tenant_id', $tenantId)
+                    ->where('branch_id', $movementBranchId)
+                    ->where('product_id', $productId)
+                    ->lockForUpdate()
+                    ->first();
+            }
+
+            if (! $branchProduct) {
                 throw new \RuntimeException('تعذر العثور على مخزون صنف مرتبط بفاتورة المشتريات.');
             }
 
