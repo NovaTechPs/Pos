@@ -74,7 +74,7 @@ new class extends Component
 
         $escape = static fn (string $value): string => str_replace(
 
-            ['!', '%', '\_'], ['!!', '!%', '!\_'], $value
+            ['!', '%', '_'], ['!!', '!%', '!_'], $value
 
         );
 
@@ -773,26 +773,47 @@ new class extends Component
             {{-- البحث --}}
 
             <div class="relative md:col-span-2"
+
                  x-data="{
+
                      open: false,
+
                      activeIndex: -1,
+
                      results() { return Array.from(this.$refs.resultsList?.querySelectorAll('[data-product-result]') || []); },
+
                      move(direction) {
+
                          const items = this.results();
+
                          if (!items.length) return;
+
                          this.open = true;
+
                          this.activeIndex = this.activeIndex < 0
+
                              ? (direction > 0 ? 0 : items.length - 1)
+
                              : (this.activeIndex + direction + items.length) % items.length;
+
                          this.$nextTick(() => items[this.activeIndex]?.scrollIntoView({ block: 'nearest' }));
+
                      },
+
                      choose() {
+
                          const items = this.results();
+
                          if (!this.open || !items.length) return;
+
                          const index = this.activeIndex >= 0 && this.activeIndex < items.length ? this.activeIndex : 0;
+
                          items[index].click();
+
                      }
+
                  }"
+
                  x-on:click.outside="open = false; activeIndex = -1">
 
                 <label
@@ -814,9 +835,13 @@ new class extends Component
                     autocomplete="off"
 
                     x-on:focus="open = true"
+
                     x-on:input="open = true; activeIndex = -1"
+
                     x-on:keydown.arrow-down.prevent.stop="move(1)"
+
                     x-on:keydown.arrow-up.prevent.stop="move(-1)"
+
                     x-on:keydown.enter.prevent.stop="choose()"
 
                     x-on:keydown.escape="open = false; activeIndex = -1"
@@ -844,9 +869,13 @@ new class extends Component
                                 type="button"
 
                                 wire:key="label-search-result-{{ $p->id }}"
+
                                 data-product-result
+
                                 x-on:mouseenter="activeIndex = results().indexOf($el)"
+
                                 x-bind:class="activeIndex === results().indexOf($el) ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : ''"
+
                                 wire:click="selectProduct({{ $p->id }})"
 
                                                                 x-on:click.stop="open = false; activeIndex = -1"
@@ -1381,7 +1410,7 @@ new class extends Component
 
                         class="bg-white border border-gray-400 rounded-md shadow-sm overflow-hidden"
 
-                        style="position:relative; width:{{ $labelWidth }}mm; height:{{$labelHeight }}mm; box-sizing:border-box; padding:1.5mm 2.5mm; background:#fff; color:#000; font-family:Arial, Tahoma, sans-serif;"
+                        style="position:relative; width:{{ $labelWidth }}mm; height:{{$labelHeight }}mm; box-sizing:border-box; padding:1.2mm 1.6mm; background:#fff; color:#000; font-family:Arial, Tahoma, sans-serif;"
 
                     >
 
@@ -1691,7 +1720,7 @@ new class extends Component
 
                                 script.src =
 
-                                    'https\://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+                                    'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
 
                                 script.onload =
 
@@ -1991,9 +2020,9 @@ new class extends Component
 
                             '',
 
-                            '\_blank',
+                            '\\_blank',
 
-                            'width=500,height=500'
+                            'width=650,height=500'
 
                         );
 
@@ -2102,268 +2131,20 @@ new class extends Component
     <title>طباعة ملصق</title>
 
     <style>
-
-        @page {
-
-            size:
-
-                ${width}mm
-
-                ${height}mm;
-
-            margin: 0;
-
-        }
-
-        * {
-
-            box-sizing:
-
-                border-box;
-
-        }
-
-        html,
-
-        body {
-
-            width:
-
-                ${width}mm;
-
-            height:
-
-                ${height}mm;
-
-            margin: 0;
-
-            padding: 0;
-
-            background:
-
-                #ffffff;
-
-            overflow:
-
-                hidden;
-
-            font-family:
-
-                Arial,
-
-                Tahoma,
-
-                sans-serif;
-
-        }
-
-        .label {
-
-            width:
-
-                ${width}mm;
-
-            height:
-
-                ${height}mm;
-
-            padding:
-
-                1.5mm 2.5mm;
-
-            display:
-
-                flex;
-
-            flex-direction:
-
-                column;
-
-            justify-content:
-
-                flex-start;
-
-            box-sizing:
-
-                border-box;
-
-        }
-
-        .title {
-
-            text-align:
-
-                center;
-
-            font-size:
-
-                8.5pt;
-
-            font-weight:
-
-                bold;
-
-            white-space:
-
-                nowrap;
-
-            overflow:
-
-                hidden;
-
-            text-overflow:
-
-                ellipsis;
-
-            line-height:
-
-                1.1;
-
-        }
-
-        .content {
-
-            display:
-
-                flex;
-
-            align-items:
-
-                flex-start;
-
-            justify-content:
-
-                space-between;
-
-            gap:
-
-                1.5mm;
-
-            padding-bottom:
-
-                1mm;
-
-            flex-grow:
-
-                0;
-
-        }
-
-        .left-box {
-
-            display:
-
-                flex;
-
-            flex-direction:
-
-                column;
-
-            align-items:
-
-                center;
-
-            justify-content:
-
-                flex-end;
-
-            font-weight:
-
-                bold;
-
-            line-height:
-
-                1.1;
-
-            padding-bottom:
-
-                0.5mm;
-
-            min-width:
-
-                10mm;
-
-        }
-
-        .sku-text {
-
-            font-size:
-
-                7.5pt;
-
-            color:
-
-                #333;
-
-            margin-bottom:
-
-                1mm;
-
-        }
-
-        .price-amount {
-
-            font-size:
-
-                11pt;
-
-        }
-
-        .price-currency {
-
-            font-size:
-
-                8.5pt;
-
-        }
-
-        .barcode-box {
-
-            flex-grow:
-
-                1;
-
-            display:
-
-                flex;
-
-            flex-direction:
-
-                column;
-
-            align-items:
-
-                center;
-
-            justify-content:
-
-                flex-start;
-
-        }
-
-        .barcode-box {
-
-            min-height: 0;
-
-            overflow: hidden;
-
-        }
-
-        .barcode-box svg {
-
-            display: block;
-
-            max-width: 100%;
-
-            height: auto;
-
-            max-height: 12mm;
-
-            overflow: hidden;
-
-        }
-
-    </style>
+@page { size: ${width}mm ${height}mm; margin: 0; }
+* { box-sizing: border-box; }
+html, body { width: ${width}mm; height: ${height}mm; margin: 0; padding: 0; background: #fff; overflow: hidden; font-family: Tahoma, Arial, sans-serif; }
+.label { width: 100%; height: 100%; padding: 1.2mm 1.6mm; display: flex; flex-direction: column; gap: 0.8mm; overflow: hidden; color: #000; }
+.title { width: 100%; text-align: center; direction: rtl; font-size: 9pt; font-weight: 800; line-height: 1.15; min-height: 4mm; max-height: 8mm; overflow: hidden; overflow-wrap: anywhere; }
+.content { display: flex; flex: 1; min-height: 0; align-items: stretch; gap: 1mm; direction: rtl; }
+.barcode-box { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+.barcode-box svg { display: block; width: 100%; max-width: 100%; height: 100%; max-height: 100%; }
+.left-box { flex: 0 0 11mm; min-width: 11mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.05; gap: 0.4mm; overflow: hidden; }
+.sku-text { font-size: 6pt; overflow-wrap: anywhere; }
+.price-amount { font-family: Arial, Tahoma, sans-serif; font-size: 15pt; font-weight: 900; line-height: 1; }
+.price-currency { font-size: 9pt; font-weight: 900; line-height: 1; }
+@media print { html,body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+</style>
 
 </head>
 
@@ -2501,7 +2282,7 @@ new class extends Component
 
                     barcodeScript.src =
 
-                        'https\://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+                        'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
 
                     barcodeScript.onload =
 
@@ -2541,11 +2322,11 @@ new class extends Component
 
                                                     width:
 
-                                                        1.3,
+                                                        1.0,
 
                                                     height:
 
-                                                        13,
+                                                        42,
 
                                                     displayValue:
 
@@ -2553,11 +2334,11 @@ new class extends Component
 
                                                     textPosition:
 
-                                                        'top',
+                                                        'bottom',
 
                                                     fontSize:
 
-                                                        8,
+                                                        11,
 
                                                     margin:
 
