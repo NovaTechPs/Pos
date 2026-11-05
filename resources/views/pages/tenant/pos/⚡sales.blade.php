@@ -1214,7 +1214,10 @@ new class extends Component {
             $this->quickProducts = [];
             return;
         }
-        app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
+        // An empty search means "All": do not apply the search service's no-results guard.
+        if ($search !== '') {
+            app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
+        }
 
         $resultLimit = 24;
         $matchedProducts = $query->orderBy('name')->orderBy('id')->limit($resultLimit)->get();
