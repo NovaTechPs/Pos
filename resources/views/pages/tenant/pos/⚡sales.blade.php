@@ -1019,6 +1019,23 @@ new class extends Component {
         }
     }
 
+    /** Search names/barcodes as before, and product codes case-insensitively anywhere in the code. */
+    private function applyPosCatalogSearch($query, string $search, int $tenantId): void
+    {
+        $normalized = app(PosProductSearch::class)->normalize($search);
+        if ($normalized === '') {
+            return;
+        }
+
+        // LIKE uses ! as escape, matching PosProductSearch's convention.
+        $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $normalized);
+        $query->where(function ($matches) use ($normalized, $tenantId, $escaped): void {
+            $matches->where(function ($standard) use ($normalized, $tenantId): void {
+                app(PosProductSearch::class)->apply($standard->getQuery(), $normalized, $tenantId);
+            })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", ['%' . $escaped . '%']);
+        });
+    }
+
     public function updatedInlineSearchQuery(): void
     {
         $search = app(PosProductSearch::class)->normalize($this->inlineSearchQuery);
@@ -1051,7 +1068,7 @@ new class extends Component {
                 'barcodes' => fn ($query) => $query->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
                 'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
             ]);
-        app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
+         $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
         $this->inlineSearchResults = $query->orderBy('name')->orderBy('id')
             ->limit(12)
             ->get()
@@ -1216,7 +1233,7 @@ new class extends Component {
         }
         // An empty search means "All": do not apply the search service's no-results guard.
         if ($search !== '') {
-            app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $tenantId);
+             $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
         }
 
         $resultLimit = 24;

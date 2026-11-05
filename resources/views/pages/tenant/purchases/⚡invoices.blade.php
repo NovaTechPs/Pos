@@ -1414,10 +1414,19 @@ new class extends Component {
             $search = trim($this->rowSearch);
 
             $searchService = app(\App\Services\PosProductSearch::class);
+            // Support full and partial product numbers (e.g. I00000022, 00000022, 22).
+            // Keep all matching conditions inside a group so tenant isolation remains enforced.
+            $normalizedSearch = $searchService->normalize($search);
+            $numberPattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $normalizedSearch).'%';
             $productResults = Product::query()
                 ->where('tenant_id', $tenantId)
                 ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)])
-                ->tap(fn ($query) => $searchService->apply($query->getQuery(), $search, $tenantId))
+                ->where(function ($query) use ($searchService, $search, $tenantId, $numberPattern) {
+                    $query->where(function ($prefixQuery) use ($searchService, $search, $tenantId) {
+                        $searchService->apply($prefixQuery->getQuery(), $search, (int) $tenantId);
+                    })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", [$numberPattern]);
+                })
+                ->orderBy('name')->orderBy('id')
                 ->limit(12)
                 ->get();
 
