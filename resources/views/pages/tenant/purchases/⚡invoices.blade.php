@@ -348,14 +348,6 @@ new class extends Component {
 
     public function updatedRowSearch(string $value): void
     {
-        if (
-            trim($value) !== ''
-            && (! $this->currentPurchaseId || $this->invoiceEditMode)
-            && $this->selectProductByBarcode($value)
-        ) {
-            return;
-        }
-
         if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
             $this->selectedProductId = null;
             $this->selectedProductName = '';
@@ -396,6 +388,73 @@ new class extends Component {
         $this->selectProduct((int) $productId);
 
         return true;
+    }
+
+    public function scanBarcodeToCart(string $barcode): bool
+    {
+        if (! $this->ensureInvoiceEditable()) return false;
+        $tenantId = $this->tenantId();
+        $barcode = trim($barcode);
+        if (! $tenantId || $barcode === '' || mb_strlen($barcode) > 100) return false;
+
+        $product = Product::query()->where('tenant_id', $tenantId)
+            ->where(function ($q) use ($barcode, $tenantId) {
+                $q->where('product_number', $barcode)
+                    ->orWhereHas('barcodes', fn ($b) => $b->where('tenant_id', $tenantId)->where('barcode', $barcode));
+            })->first();
+        if (! $product) return false;
+
+        foreach ($this->cart as $key => $item) {
+            if ((int) ($item['id'] ?? 0) === (int) $product->id) {
+                $this->cart[$key]['quantity'] = round((float) $item['quantity'] + 1, 2);
+                unset($this->cart[$key]['total_override']);
+                $this->rowSearch = '';
+                $this->selectedProductId = null;
+                $this->dispatch('focus-product-search');
+                return true;
+            }
+        }
+
+        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
+        $bp = BranchProduct::query()->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)->where('product_id', $product->id)->first();
+        $key = $product->id . '-' . Str::uuid()->toString();
+        $this->cart[$key] = [
+            'id' => $product->id,
+            'name' => $product->name,
+            'price' => round((float) ($product->cost_price ?? 0), 2),
+            'retail_price' => round((float) ($bp?->retail_price ?? 0), 2),
+            'quantity' => 1.0,
+            'discount' => 0.0,
+            'stock' => round((float) ($bp?->stock_quantity ?? 0), 2),
+        ];
+        $this->rowSearch = '';
+        $this->selectedProductId = null;
+        $this->dispatch('focus-product-search');
+        return true;
+    }
+
+    // Pass current DOM values in one request so blur/morphing cannot lose edits.
+    public function commitRowWithValues($quantity, $price): void
+    {
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
+        if (! is_numeric($quantity) || ! is_numeric($price)
+            || ! is_finite((float) $quantity) || ! is_finite((float) $price)
+            || (float) $quantity <= 0 || (float) $price < 0) {
+            $this->errorMessage = 'تحقق من الكمية وسعر التكلفة.';
+            return;
+        }
+
+        $this->selectedQuantity = round((float) $quantity, 2);
+        $this->selectedPurchasePrice = round((float) $price, 2);
+        if ($this->selectedQuantity <= 0) {
+            $this->errorMessage = 'الكمية يجب أن تكون أكبر من صفر.';
+            return;
+        }
+        $this->commitRowToCart();
     }
 
     public function commitRowToCart(): void
@@ -1354,17 +1413,24 @@ new class extends Component {
         if ($tenantId && ! $productSearchLocked && trim($this->rowSearch) !== '' && !$this->selectedProductId) {
             $search = trim($this->rowSearch);
 
+            $searchService = app(\App\Services\PosProductSearch::class);
             $productResults = Product::query()
                 ->where('tenant_id', $tenantId)
-                ->with([
-                    'branchProducts' => fn ($query) => $query->where('branch_id', $branchId),
-                ])
-                ->tap(function ($query) use ($search, $tenantId): void {
-                    app(\App\Services\PosProductSearch::class)->apply($query->getQuery(), $search, $tenantId);
-                })
-                ->orderBy('name')
+                ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)])
+                ->tap(fn ($query) => $searchService->apply($query->getQuery(), $search, $tenantId))
                 ->limit(12)
                 ->get();
+
+            // Preserve searching words inside product names, but avoid the costly
+            // contains scan when the indexed prefix search already found results.
+            if ($productResults->isEmpty()) {
+                $productResults = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)])
+                    ->tap(fn ($query) => $searchService->applyContains($query->getQuery(), $search))
+                    ->limit(12)
+                    ->get();
+            }
         }
 
         $supplierResults = collect();
@@ -1605,7 +1671,7 @@ new class extends Component {
                             id="product-search-input"
                             x-ref="productSearch"
                             type="text"
-                            wire:model.live.debounce.250ms="rowSearch"
+                            wire:model.live.debounce.120ms="rowSearch"
                             maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true" @disabled($productSearchLocked)
                             autocomplete="off"
                             placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter...' }}"
@@ -1655,11 +1721,13 @@ new class extends Component {
                     <label class="mb-1.5 block text-xs font-black text-slate-600">الكمية</label>
                     <input
                         x-ref="quantity"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
+                        type="text"
+                        inputmode="decimal"
                         wire:model="selectedQuantity"
-                        x-on:keydown.enter.prevent="$nextTick(() => $refs.purchasePriceInput?.focus())"
+                        x-on:focus="$event.target.select()"
+                        x-on:keydown.arrow-up.stop.prevent="$refs.purchasePriceInput?.focus()"
+                        x-on:keydown.arrow-down.stop.prevent="$refs.purchasePriceInput?.focus()"
+                        x-on:keydown.enter.stop.prevent="$refs.purchasePriceInput?.focus(); $refs.purchasePriceInput?.select()"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
                     />
                 </div>
@@ -1668,11 +1736,13 @@ new class extends Component {
                     <label class="mb-1.5 block text-xs font-black text-slate-600">سعر التكلفة</label>
                     <input
                         x-ref="purchasePriceInput"
-                        type="number"
-                        step="0.01"
-                        min="0"
-        wire:model="selectedPurchasePrice"
-                        wire:keydown.enter.prevent="commitRowToCart"
+                        type="text"
+                        inputmode="decimal"
+                        wire:model="selectedPurchasePrice"
+                        x-on:focus="$event.target.select()"
+                        x-on:keydown.arrow-up.stop.prevent="$refs.quantity?.focus()"
+                        x-on:keydown.arrow-down.stop.prevent="$refs.quantity?.focus()"
+                        x-on:keydown.enter.stop.prevent="addCurrentPurchaseRow()"
                         class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
                     />
                 </div>
@@ -1686,14 +1756,15 @@ new class extends Component {
 
                 <button
                     type="button"
-                    wire:click="commitRowToCart"
+                    x-ref="addProductButton"
+                    x-on:click="addCurrentPurchaseRow()"
                     wire:loading.attr="disabled"
-                    wire:target="commitRowToCart"
+                    wire:target="commitRowWithValues"
                     @disabled(!$selectedProductId || $productSearchLocked)
                     class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    <span wire:loading.remove wire:target="commitRowToCart">+ إضافة</span>
-                    <span wire:loading wire:target="commitRowToCart">جارٍ الإضافة...</span>
+                    <span wire:loading.remove wire:target="commitRowWithValues">+ إضافة</span>
+                    <span wire:loading wire:target="commitRowWithValues">جارٍ الإضافة...</span>
                 </button>
             </div>
 
@@ -1708,7 +1779,6 @@ new class extends Component {
                                         <th class="px-3 py-3">المادة</th>
                                         <th class="w-28 px-3 py-3">الكمية</th>
                                         <th class="w-32 px-3 py-3">التكلفة</th>
-                                        <th class="w-28 px-3 py-3">الخصم</th>
                                         <th class="w-36 px-3 py-3">الإجمالي</th>
                                         <th class="w-20 px-3 py-3"></th>
                                     </tr>
@@ -1719,7 +1789,11 @@ new class extends Component {
                                         <tr
                                             wire:key="purchase-item-{{ $key }}"
                                             data-cart-row="{{ $loop->index }}"
-                                            class="transition {{ $loop->first ? 'bg-indigo-50/20' : '' }}"
+                                            data-cart-key="{{ $key }}"
+
+
+
+                                            class="transition-colors duration-100"
                                         >
                                             <td class="px-3 py-3 text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
                                             <td class="px-3 py-3">
@@ -1730,25 +1804,20 @@ new class extends Component {
                                             </td>
                                             <td class="px-3 py-3">
                                                 <div class="flex items-center gap-1">
-                                                    <button type="button" wire:click="decrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">−</button>
-                                                    <input type="number" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
-                                                    <button type="button" wire:click="incrementItem('{{ $key }}')" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white font-black text-slate-600 hover:bg-slate-50">+</button>
+                                                    <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
                                                 </div>
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
-                                            <td class="px-3 py-3">
-                                                <input type="number" min="0" step="0.01" value="{{ $item['discount'] }}" wire:change="updateItemDiscount('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
-                                            </td>
-                                            <td class="px-3 py-3"><input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="3" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
+                                            <td class="px-3 py-3"><input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
                                             <td class="px-3 py-3 text-center">
                                                 <button type="button" wire:click="removeItem('{{ $key }}')" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button>
                                             </td>
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="7" class="px-6 py-16 text-center">
+                                            <td colspan="6" class="px-6 py-16 text-center">
                                                 <div class="mx-auto max-w-sm">
                                                     <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-2xl">＋</div>
                                                     <div class="mt-4 text-base font-black text-slate-800">ابدأ بإضافة المواد</div>
@@ -1767,7 +1836,7 @@ new class extends Component {
                     <div class="divide-y divide-slate-100 md:hidden">
                         @forelse ($cart as $key => $item)
                             @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
-                            <div wire:key="purchase-mobile-item-{{ $key }}" class="p-3">
+                            <div wire:key="purchase-mobile-item-{{ $key }}" data-cart-row="{{ $loop->index }}" data-cart-key="{{ $key }}"    class="p-3 transition-colors">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="text-sm font-black text-slate-800">{{ $loop->iteration }}. {{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button></div>
@@ -1778,19 +1847,15 @@ new class extends Component {
                                 <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
-                                        <input type="number" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
+                                        <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
-                                        <input type="number" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
-                                    </div>
-                                    <div>
-                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الخصم</label>
-                                        <input type="number" min="0" step="0.01" value="{{ $item['discount'] }}" wire:change="updateItemDiscount('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الإجمالي</label>
-                                        <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="3" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
+                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
                                     </div>
                                 </div>
                             </div>
@@ -1917,13 +1982,43 @@ new class extends Component {
     <livewire:product-price-history-modal />
 </flux:main>
 
+<style>
+    /* Strong highlight for the currently selected purchase item. */
+    .purchase-cart-selected, tr[data-cart-key]:focus-within, div[data-cart-row][data-cart-key]:focus-within { background: #bfdbfe !important; outline: 2px solid #2563eb; outline-offset: -2px; }
+    .purchase-cart-selected td, tr[data-cart-key]:focus-within td { background: transparent !important; }
+    .purchase-cart-selected input, [data-cart-key]:focus-within input { border-color: #2563eb !important; background: #eff6ff !important; }
+    .purchase-cart-selected [data-price-history-button] { color: #1d4ed8 !important; }
+    input[data-purchase-grid-input] { appearance: textfield; -moz-appearance: textfield; }
+    input[data-purchase-grid-input]::-webkit-inner-spin-button,
+    input[data-purchase-grid-input]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+</style>
+
 @script
 <script>
     Alpine.data('purchaseInvoiceKeyboard', () => ({
         supplierIndex: -1,
         productIndex: -1,
         rowIndex: 0,
+        selectedCartKey: null,
         keyboardController: null,
+        addingRow: false,
+
+        async addCurrentPurchaseRow() {
+            if (this.addingRow) return;
+            const quantity = this.$refs.quantity?.value?.trim();
+            const price = this.$refs.purchasePriceInput?.value?.trim();
+            if (!quantity || !price || !Number.isFinite(Number(quantity)) ||
+                !Number.isFinite(Number(price)) || Number(quantity) <= 0 || Number(price) < 0) {
+                this.$refs.quantity?.focus();
+                return;
+            }
+            this.addingRow = true;
+            try {
+                await this.$wire.commitRowWithValues(quantity, price);
+            } finally {
+                this.addingRow = false;
+            }
+        },
 
         init() {
             this.$nextTick(() => this.supplierInput()?.focus());
@@ -1942,7 +2037,7 @@ new class extends Component {
             });
 
             Livewire.on('focus-quantity', () => {
-                this.$nextTick(() => this.$refs.quantity?.focus());
+                this.$nextTick(() => { this.$refs.quantity?.focus(); this.$refs.quantity?.select(); });
             });
 
             Livewire.on('focus-paid-amount', () => {
@@ -1976,6 +2071,30 @@ new class extends Component {
 
         registerKeyboard() {
             this.keyboardController = new AbortController();
+
+            // Clicking anywhere on a product row activates its editable field.
+            // Clicking the product name or a blank cell defaults to quantity;
+            // clicking the cost/total cell focuses that column instead.
+            this.$el.addEventListener('click', (event) => {
+                const row = event.target.closest?.('[data-cart-key][data-cart-row]');
+                if (!row || !this.$el.contains(row) || !row.getClientRects().length) return;
+                if (event.target.closest('button, a, select, textarea, [contenteditable="true"]')) return;
+                if (event.target.closest('[data-purchase-grid-input]')) return;
+
+                let column = 0;
+                const cell = event.target.closest('td');
+                if (cell && row.tagName === 'TR') {
+                    const index = [...row.children].indexOf(cell);
+                    if (index === 3) column = 1; // Cost
+                    if (index === 4) column = 2; // Total
+                }
+                const input = row.querySelector(`[data-purchase-grid-input][data-col="${column}"]`)
+                    ?? row.querySelector('[data-purchase-grid-input][data-col="0"]');
+                if (!input || input.disabled) return;
+                input.focus({ preventScroll: true });
+                input.select();
+            }, { signal: this.keyboardController.signal });
+
             window.addEventListener('keydown', async (event) => {
                 if (!this.$el.isConnected || this.$el.getClientRects().length === 0) return;
                 const target = event.target;
@@ -1990,30 +2109,52 @@ new class extends Component {
 
                 const purchaseGridInput = target?.closest?.('[data-purchase-grid-input]');
                 if (purchaseGridInput && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
-                    const row = Number(purchaseGridInput.dataset.row);
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+
+                    const currentRow = purchaseGridInput.closest('[data-cart-key]');
                     const column = Number(purchaseGridInput.dataset.col);
-                    let next = null;
+                    const allRows = this.visibleResults('tr[data-cart-key], div[data-cart-key][data-cart-row]');
+                    const rows = allRows.filter(row => row.querySelector('[data-purchase-grid-input]'));
+                    const rowIndex = rows.indexOf(currentRow);
+                    if (rowIndex < 0) return;
+
+                    let destinationRow = currentRow;
+                    let destinationColumn = column;
 
                     if (key === 'ArrowUp' || key === 'ArrowDown') {
-                        next = this.purchaseGridInput(row + (key === 'ArrowDown' ? 1 : -1), column);
-                        if (!next && key === 'ArrowDown') {
-                            next = this.productInput();
-                        }
+                        // Vertical arrows always change PRODUCT ROW, never the field.
+                        const offset = key === 'ArrowDown' ? 1 : -1;
+                        destinationRow = rows[Math.max(0, Math.min(rows.length - 1, rowIndex + offset))];
                     } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
-                        const nextColumn = column + (key === 'ArrowRight' ? 1 : -1);
-                        if (nextColumn >= 0 && nextColumn <= 3) {
-                            next = this.purchaseGridInput(row, nextColumn);
+                        // In RTL, Right moves to the visually right field; Left to the visually left field.
+                        const columns = [0, 1, 2];
+                        const currentPosition = columns.indexOf(column);
+                        const nextPosition = currentPosition + (key === 'ArrowRight' ? -1 : 1);
+                        if (nextPosition >= 0 && nextPosition < columns.length) {
+                            destinationColumn = columns[nextPosition];
                         }
-                    } else if (column < 3) {
-                        next = this.purchaseGridInput(row, column + 1);
-                    } else {
-                        next = this.purchaseGridInput(row + 1, 0) ?? this.productInput();
+                    } else if (key === 'Enter') {
+                        const columns = [0, 1, 2];
+                        const position = columns.indexOf(column);
+                        if (position >= 0 && position < columns.length - 1) {
+                            destinationColumn = columns[position + 1];
+                        } else if (rowIndex < rows.length - 1) {
+                            destinationRow = rows[rowIndex + 1];
+                            destinationColumn = 0;
+                        } else {
+                            this.productInput()?.focus();
+                            return;
+                        }
                     }
 
-                    if (next) {
-                        event.preventDefault();
-                        next.focus();
-                        next.select?.();
+                    const next = [...destinationRow.querySelectorAll('[data-purchase-grid-input]')]
+                        .find(input => Number(input.dataset.col) === destinationColumn);
+                    if (next && next !== purchaseGridInput) {
+                        // Move actual DOM focus; CSS :focus-within highlights ONLY its row.
+                        next.focus({ preventScroll: true });
+                        next.select();
+                        destinationRow.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                     }
                     return;
                 }
@@ -2099,21 +2240,22 @@ new class extends Component {
 
                         if (target?.matches?.('#product-search-input')) {
                             event.preventDefault();
-                            const barcodeMatched = await this.$wire.selectProductByBarcode(target.value);
-
-                            if (barcodeMatched) {
+                            // If user navigated with arrows, choose the highlighted result first.
+                            const results = this.visibleResults('[data-product-result]');
+                            if (this.productIndex >= 0 && results[this.productIndex]) {
+                                results[this.productIndex].querySelector('button')?.click();
                                 this.productIndex = -1;
                                 return;
                             }
 
-                            const active = this.visibleResults('[data-product-result]')[this.productIndex];
-
-                            if (active) {
-                                active.click();
-                            } else if (this.visibleResults('[data-product-result]')[0]) {
-                                this.visibleResults('[data-product-result]')[0].click();
+                            // Barcode scanners usually send Enter. Exact code match
+                            // adds one unit, or increments an existing cart line.
+                            const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value);
+                            if (barcodeMatched) {
+                                this.productIndex = -1;
+                                return;
                             }
-
+                            this.visibleResults('[data-product-result]')[0]?.querySelector('button')?.click();
                             return;
                         }
                     }
@@ -2121,30 +2263,9 @@ new class extends Component {
                     return;
                 }
 
-                if (key === 'ArrowDown') {
-                    event.preventDefault();
-                    this.$wire.nextInvoice();
-                    return;
-                }
+                // Outside search and invoice grid, arrows never change invoices.
 
-                if (key === 'ArrowUp') {
-                    event.preventDefault();
-                    this.$wire.previousInvoice();
-                    return;
-                }
-
-                if (key === 'ArrowRight') {
-                    event.preventDefault();
-                    this.$wire.nextInvoice();
-                    return;
-                }
-
-                if (key === 'ArrowLeft') {
-                    event.preventDefault();
-                    this.$wire.previousInvoice();
-                    return;
-                }
-            }, { signal: this.keyboardController.signal });
+            }, { signal: this.keyboardController.signal, capture: true });
         },
 
         moveSupplier(direction) {

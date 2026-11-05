@@ -153,7 +153,11 @@ test('invoice product and party menus close locally outside and reopen when sear
     expect($xpath->query('//*[@*[name()="x-on:click.outside"]="productSearchOpen = false"]')->length)->toBe(1)
         ->and($xpath->query('//*[@*[name()="x-on:click.outside"]="partySearchOpen = false"]')->length)->toBe(1)
         ->and($xpath->query('//*[@*[name()="x-show"]="productSearchOpen"]')->length)->toBe(1);
-    expect($html)->toContain('wire:model.live.debounce.250ms="rowSearch"', 'x-on:focus="productSearchOpen = true"');
+    $delay = $page === 'purchases' ? 0 : 250;
+    expect($html)->toContain('wire:model.live.debounce.'.$delay.'ms="rowSearch"', 'x-on:focus="productSearchOpen = true"');
+    if ($page === 'purchases') {
+        expect($html)->not->toContain('wire:model.live="discount"', '>الخصم</th>');
+    }
     foreach (['partySearchOpen', 'productSearchOpen'] as $state) {
         $group = $xpath->query('//*[@data-invoice-search-group and @*[name()="x-data"]="{ '.$state.': false }"]')->item(0);
         expect($group)->not->toBeNull();
