@@ -1500,7 +1500,7 @@ new class extends Component {
     >
 
         {{-- شريط الأدوات --}}
-        <livewire:product-history />
+        <livewire:product-history :key="'purchase-product-history-singleton'" />
         @if ($selectedSupplierId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
             <a class="mb-3 inline-flex rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedSupplierId, 'party_type' => 'supplier']) }}" target="_blank" rel="noopener">كشف حساب المورد</a>
         @endif
@@ -1614,7 +1614,7 @@ new class extends Component {
                             <div data-invoice-search-results x-cloak x-show="partySearchOpen" x-on:click="partySearchOpen = false" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5" x-ref="supplierResults">
                                     @forelse ($supplierResults as $supplier)
-                                        <button type="button" data-supplier-result data-result-index="{{ $loop->index }}" wire:click="selectSupplier({{ $supplier->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-slate-50">
+                                        <button type="button" wire:key="purchase-search-supplier-{{ $supplier->id }}" data-supplier-result data-result-index="{{ $loop->index }}" wire:click="selectSupplier({{ $supplier->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-slate-50">
                                             <div class="min-w-0">
                                                 <div class="truncate text-sm font-black text-slate-800">{{ $supplier->name }}</div>
                                                 <div class="mt-0.5 text-[11px] font-semibold text-slate-400">{{ $supplier->phone ?: 'بدون هاتف' }}</div>
@@ -1707,7 +1707,7 @@ new class extends Component {
                                                     $resultPrice = (float) $product->cost_price;
                                                     $stock = (float) ($bp?->stock_quantity ?? 0);
                                                 @endphp
-                                                <tr data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
+                                                <tr wire:key="purchase-search-product-{{ $product->id }}" data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
                                                     <td colspan="4" class="p-0">
                                                         <button type="button" x-on:click.stop wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60">
                                                             <span class="font-mono">{{ $product->product_number ?? $product->id }}</span>
@@ -1988,7 +1988,7 @@ new class extends Component {
             </div>
         </div>
     </div>
-    <livewire:product-price-history-modal />
+    <livewire:product-price-history-modal :key="'purchase-price-history-singleton'" />
 </flux:main>
 
 <style>
@@ -2010,6 +2010,7 @@ new class extends Component {
         rowIndex: 0,
         selectedCartKey: null,
         keyboardController: null,
+        livewireCleanup: [],
         addingRow: false,
 
         async addCurrentPurchaseRow() {
@@ -2034,32 +2035,34 @@ new class extends Component {
 
             this.registerKeyboard();
 
-            Livewire.on('focus-product-search', () => {
+            this.livewireCleanup.push(Livewire.on('focus-product-search', () => {
                 this.$nextTick(() => {
                     this.productInput()?.focus();
                     this.productInput()?.select();
                 });
-            });
+            }));
 
-            Livewire.on('focus-supplier-search', () => {
+            this.livewireCleanup.push(Livewire.on('focus-supplier-search', () => {
                 this.$nextTick(() => this.supplierInput()?.focus());
-            });
+            }));
 
-            Livewire.on('focus-quantity', () => {
+            this.livewireCleanup.push(Livewire.on('focus-quantity', () => {
                 this.$nextTick(() => { this.$refs.quantity?.focus(); this.$refs.quantity?.select(); });
-            });
+            }));
 
-            Livewire.on('focus-paid-amount', () => {
+            this.livewireCleanup.push(Livewire.on('focus-paid-amount', () => {
                 this.$nextTick(() => this.$refs.paidAmount?.focus());
-            });
+            }));
 
-            Livewire.on('focus-purchase-search', () => {
+            this.livewireCleanup.push(Livewire.on('focus-purchase-search', () => {
                 this.$nextTick(() => this.$refs.purchaseSearch?.focus());
-            });
+            }));
         },
 
         destroy() {
             this.keyboardController?.abort();
+            this.livewireCleanup.forEach(cleanup => { if (typeof cleanup === 'function') cleanup(); });
+            this.livewireCleanup = [];
         },
 
         visibleResults(selector) {
@@ -2079,6 +2082,7 @@ new class extends Component {
         },
 
         registerKeyboard() {
+            this.keyboardController?.abort();
             this.keyboardController = new AbortController();
 
             // Clicking anywhere on a product row activates its editable field.
