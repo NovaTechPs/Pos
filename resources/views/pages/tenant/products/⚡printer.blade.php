@@ -1474,7 +1474,7 @@ new class extends Component
 
                                         id="preview-barcode-element"
 
-                                        style="display:block; width:100%; height:auto; max-height:15mm;"
+                                        style="display:block; width:100%; height:100%; max-height:100%;"
 
                                     ></svg>
 
@@ -1577,1017 +1577,141 @@ new class extends Component
     {{-- ============================================================ --}}
 
     @script
-
-    <script>
-
-        window.labelPrinter =
-
-            window.labelPrinter || {
-
-                barcodeLibraryPromise: null,
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | تحميل JsBarcode
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                loadBarcodeLibrary() {
-
-                    if (
-
-                        typeof window.JsBarcode !==
-
-                        'undefined'
-
-                    ) {
-
-                        return Promise.resolve();
-
+<script>
+(() => {
+    // One printer controller per browser page, without accumulating Livewire listeners.
+    if (!window.labelPrinter) {
+        window.labelPrinter = {
+            libraryPromise: null,
+            loadBarcodeLibrary() {
+                if (typeof window.JsBarcode === 'function') return Promise.resolve();
+                if (this.libraryPromise) return this.libraryPromise;
+                this.libraryPromise = new Promise((resolve, reject) => {
+                    let script = document.getElementById('label-jsbarcode-library');
+                    if (!script) {
+                        script = document.createElement('script');
+                        script.id = 'label-jsbarcode-library';
+                        script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+                        document.head.appendChild(script);
                     }
-
-                    if (
-
-                        this.barcodeLibraryPromise
-
-                    ) {
-
-                        return this.barcodeLibraryPromise;
-
-                    }
-
-                    this.barcodeLibraryPromise =
-
-                        new Promise(
-
-                            (resolve, reject) => {
-
-                                const existing =
-
-                                    document.getElementById(
-
-                                        'label-jsbarcode-library'
-
-                                    );
-
-                                if (existing) {
-
-                                    const timer =
-
-                                        setInterval(
-
-                                            () => {
-
-                                                if (
-
-                                                    typeof window.JsBarcode !==
-
-                                                    'undefined'
-
-                                                ) {
-
-                                                    clearInterval(
-
-                                                        timer
-
-                                                    );
-
-                                                    resolve();
-
-                                                }
-
-                                            },
-
-                                            50
-
-                                        );
-
-                                    setTimeout(
-
-                                        () => {
-
-                                            clearInterval(
-
-                                                timer
-
-                                            );
-
-                                            if (
-
-                                                typeof window.JsBarcode ===
-
-                                                'undefined'
-
-                                            ) {
-
-                                                reject(
-
-                                                    new Error(
-
-                                                        'JsBarcode failed to load'
-
-                                                    )
-
-                                                );
-
-                                            }
-
-                                        },
-
-                                        10000
-
-                                    );
-
-                                    return;
-
-                                }
-
-                                const script =
-
-                                    document.createElement(
-
-                                        'script'
-
-                                    );
-
-                                script.id =
-
-                                    'label-jsbarcode-library';
-
-                                script.src =
-
-                                    'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-
-                                script.onload =
-
-                                    () => {
-
-                                        resolve();
-
-                                    };
-
-                                script.onerror =
-
-                                    () => {
-
-                                        reject(
-
-                                            new Error(
-
-                                                'Unable to load JsBarcode'
-
-                                            )
-
-                                        );
-
-                                    };
-
-                                document.head.appendChild(
-
-                                    script
-
-                                );
-
-                            }
-
-                        );
-
-                    return this.barcodeLibraryPromise;
-
-                },
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | رسم الباركود في المعاينة
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                drawPreview() {
-
-                    const wrapper =
-
-                        document.getElementById(
-
-                            'preview-barcode-wrapper'
-
-                        );
-
-                    const element =
-
-                        document.getElementById(
-
-                            'preview-barcode-element'
-
-                        );
-
-                    if (
-
-                        !wrapper ||
-
-                        !element
-
-                    ) {
-
-                        return;
-
-                    }
-
-                    const code =
-
-                        wrapper.dataset.barcode ||
-
-                        '';
-
-                    if (!code) {
-
-                        element.innerHTML = '';
-
-                        return;
-
-                    }
-
-                    if (
-
-                        typeof window.JsBarcode ===
-
-                        'undefined'
-
-                    ) {
-
-                        return;
-
-                    }
-
-                    try {
-
-                        element.innerHTML = '';
-
-                        window.JsBarcode(
-
-                            element,
-
-                            String(code),
-
-                            {
-
-                                format:
-
-                                    'CODE128',
-
-                                width:
-
-                                    1.3,
-
-                                height:
-
-                                    22,
-
-                                displayValue:
-
-                                    true,
-
-                                fontSize:
-
-                                    10,
-
-                                margin:
-
-                                    0,
-
-                                textMargin:
-
-                                    1,
-
-                                background:
-
-                                    '#ffffff',
-
-                                lineColor:
-
-                                    '#000000'
-
-                            }
-
-                        );
-
-                    } catch (error) {
-
-                        console.error(
-
-                            'Barcode preview error:',
-
-                            error
-
-                        );
-
-                    }
-
-                },
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | تحديث المعاينة
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                refreshPreview() {
-
-                    this
-
-                        .loadBarcodeLibrary()
-
-                        .then(() => {
-
-                            setTimeout(
-
-                                () => {
-
-                                    this.drawPreview();
-
-                                },
-
-                                100
-
-                            );
-
-                        })
-
-                        .catch(error => {
-
-                            console.error(
-
-                                'JsBarcode loading error:',
-
-                                error
-
-                            );
-
-                        });
-
-                },
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | الطباعة
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                print(data) {
-
-                    if (!data) {
-
-                        return;
-
-                    }
-
-                    const name =
-
-                        String(
-
-                            data.name ?? ''
-
-                        );
-
-                    const barcode =
-
-                        String(
-
-                            data.barcode ?? ''
-
-                        );
-
-                    const price =
-
-                        String(
-
-                            data.price ?? ''
-
-                        );
-
-                    const sku =
-
-                        String(
-
-                            data.sku ?? ''
-
-                        );
-
-                    const width =
-
-                        Number(
-
-                            data.w ?? 50
-
-                        );
-
-                    const height =
-
-                        Number(
-
-                            data.h ?? 25
-
-                        );
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | نافذة الطباعة
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-                    const printWindow =
-
-                        window.open(
-
-                            '',
-
-                            '\\_blank',
-
-                            'width=650,height=500'
-
-                        );
-
-                    if (!printWindow) {
-
-                        alert(
-
-                            'يرجى السماح بالنوافذ المنبثقة للطباعة.'
-
-                        );
-
-                        return;
-
-                    }
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | حماية HTML
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-                    const escapeHtml =
-
-                        (value) => {
-
-                            return String(value)
-
-                                .replace(
-
-                                    /&/g,
-
-                                    '&amp;'
-
-                                )
-
-                                .replace(
-
-                                    /</g,
-
-                                    '&lt;'
-
-                                )
-
-                                .replace(
-
-                                    />/g,
-
-                                    '&gt;'
-
-                                )
-
-                                .replace(
-
-                                    /"/g,
-
-                                    '&quot;'
-
-                                )
-
-                                .replace(
-
-                                    /'/g,
-
-                                    '&#039;'
-
-                                );
-
-                        };
-
-                    const safeName =
-
-                        escapeHtml(name);
-
-                    const safePrice =
-
-                        escapeHtml(price);
-
-                    const safeSku =
-
-                        escapeHtml(sku);
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | صفحة الطباعة
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-                    const html = `
-
-<!DOCTYPE html>
-
-<html dir="rtl">
-
-<head>
-
-    <meta charset="UTF-8">
-
-    <title>طباعة ملصق</title>
-
-    <style>
-@page { size: ${width}mm ${height}mm; margin: 0; }
-* { box-sizing: border-box; }
-html, body { width: ${width}mm; height: ${height}mm; margin: 0; padding: 0; background: #fff; overflow: hidden; font-family: Tahoma, Arial, sans-serif; }
-.label { width: 100%; height: 100%; padding: 1.2mm 1.6mm; display: flex; flex-direction: column; gap: 0.8mm; overflow: hidden; color: #000; }
-.title { width: 100%; text-align: center; direction: rtl; font-size: 9pt; font-weight: 800; line-height: 1.15; min-height: 4mm; max-height: 8mm; overflow: hidden; overflow-wrap: anywhere; }
-.content { display: flex; flex: 1; min-height: 0; align-items: stretch; gap: 1mm; direction: rtl; }
-.barcode-box { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-.barcode-box svg { display: block; width: 100%; max-width: 100%; height: 100%; max-height: 100%; }
-.left-box { flex: 0 0 11mm; min-width: 11mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.05; gap: 0.4mm; overflow: hidden; }
-.sku-text { font-size: 6pt; overflow-wrap: anywhere; }
-.price-amount { font-family: Arial, Tahoma, sans-serif; font-size: 15pt; font-weight: 900; line-height: 1; }
-.price-currency { font-size: 9pt; font-weight: 900; line-height: 1; }
-@media print { html,body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-</style>
-
-</head>
-
-<body>
-
-    <div class="label">
-
-        ${
-
-            safeName
-
-                ? `
-
-                    <div class="title">
-
-                        ${safeName}
-
-                    </div>
-
-                `
-
-                : ''
-
-        }
-
-        <div class="content">
-
-            <div class="left-box">
-
-                ${
-
-                    safeSku
-
-                        ? `
-
-                            <span class="sku-text">
-
-                                #${safeSku}
-
-                            </span>
-
-                        `
-
-                        : ''
-
-                }
-
-                ${
-
-                    safePrice
-
-                        ? `
-
-                            <span class="price-amount">
-
-                                ${safePrice}
-
-                            </span>
-
-                            <span class="price-currency">
-
-                                NIS
-
-                            </span>
-
-                        `
-
-                        : ''
-
-                }
-
-            </div>
-
-            ${
-
-                barcode
-
-                    ? `
-
-                        <div class="barcode-box">
-
-                            <svg
-
-                                id="print-barcode"
-
-                            ></svg>
-
-                        </div>
-
-                    `
-
-                    : ''
-
-            }
-
-        </div>
-
-    </div>
-
-</body>
-
-</html>
-
-                    `;
-
-                    printWindow.document.open();
-
-                    printWindow.document.write(
-
-                        html
-
-                    );
-
-                    printWindow.document.close();
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | تحميل JsBarcode للطباعة
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-                    const barcodeScript =
-
-                        printWindow.document
-
-                            .createElement(
-
-                                'script'
-
-                            );
-
-                    barcodeScript.src =
-
-                        'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-
-                    barcodeScript.onload =
-
-                        () => {
-
-                            try {
-
-                                if (barcode) {
-
-                                    const svg =
-
-                                        printWindow
-
-                                            .document
-
-                                            .getElementById(
-
-                                                'print-barcode'
-
-                                            );
-
-                                    if (svg) {
-
-                                        printWindow
-
-                                            .JsBarcode(
-
-                                                svg,
-
-                                                barcode,
-
-                                                {
-
-                                                    format:
-
-                                                        'CODE128',
-
-                                                    width:
-
-                                                        1.0,
-
-                                                    height:
-
-                                                        42,
-
-                                                    displayValue:
-
-                                                        true,
-
-                                                    textPosition:
-
-                                                        'bottom',
-
-                                                    fontSize:
-
-                                                        11,
-
-                                                    margin:
-
-                                                        0,
-
-                                                    textMargin:
-
-                                                        1
-
-                                                }
-
-                                            );
-
-                                    }
-
-                                }
-
-                            } catch (error) {
-
-                                console.error(
-
-                                    'Print barcode error:',
-
-                                    error
-
-                                );
-
-                            }
-
-                            /*
-
-                            |--------------------------------------------------------------------------
-
-                            | الانتظار قبل الطباعة
-
-                            |--------------------------------------------------------------------------
-
-                            */
-
-                            setTimeout(
-
-                                () => {
-
-                                    printWindow
-
-                                        .focus();
-
-                                    printWindow
-
-                                        .print();
-
-                                },
-
-                                500
-
-                            );
-
-                        };
-
-                    barcodeScript.onerror =
-
-                        () => {
-
-                            console.error(
-
-                                'Failed to load JsBarcode'
-
-                            );
-
-                            setTimeout(
-
-                                () => {
-
-                                    printWindow
-
-                                        .focus();
-
-                                    printWindow
-
-                                        .print();
-
-                                },
-
-                                300
-
-                            );
-
-                        };
-
-                    printWindow.document.head
-
-                        .appendChild(
-
-                            barcodeScript
-
-                        );
-
-                }
-
-            };
-
-        /*
-
-        |--------------------------------------------------------------------------
-
-        | تشغيل المعاينة
-
-        |--------------------------------------------------------------------------
-
-        */
-
-        window.labelPrinter
-
-            .refreshPreview();
-
-        /*
-
-        |--------------------------------------------------------------------------
-
-        | بعد تحديث Livewire
-
-        |--------------------------------------------------------------------------
-
-        */
-
-        Livewire.hook(
-
-            'morph.updated',
-
-            () => {
-
-                setTimeout(
-
-                    () => {
-
-                        if (
-
-                            window.labelPrinter
-
-                        ) {
-
-                            window.labelPrinter
-
-                                .refreshPreview();
-
-                        }
-
-                    },
-
-                    150
-
-                );
-
-            }
-
-        );
-
-        /*
-
-        |--------------------------------------------------------------------------
-
-        | استقبال أمر الطباعة
-
-        |--------------------------------------------------------------------------
-
-        */
-
-        Livewire.on(
-
-            'start-label-print',
-
-            (params) => {
-
-                const data =
-
-                    Array.isArray(params)
-
-                        ? params[0]
-
-                        : params;
-
-                window.labelPrinter
-
-                    .loadBarcodeLibrary()
-
-                    .then(() => {
-
-                        window.labelPrinter
-
-                            .print(data);
-
-                    })
-
-                    .catch(error => {
-
-                        console.error(
-
-                            'Label printing error:',
-
-                            error
-
-                        );
-
-                        alert(
-
-                            'تعذر تحميل مكتبة الباركود.'
-
-                        );
-
-                    });
-
-            }
-
-        );
-
-        /*
-
-        |--------------------------------------------------------------------------
-
-        | إعادة رسم المعاينة
-
-        |--------------------------------------------------------------------------
-
-        */
-
-        setTimeout(
-
-            () => {
-
-                if (
-
-                    window.labelPrinter
-
-                ) {
-
-                    window.labelPrinter
-
-                        .refreshPreview();
-
-                }
-
+                    if (typeof window.JsBarcode === 'function') return resolve();
+                    script.addEventListener('load', () => {
+                        typeof window.JsBarcode === 'function' ? resolve() : reject(new Error('JsBarcode unavailable'));
+                    }, {once: true});
+                    script.addEventListener('error', () => reject(new Error('تعذر تحميل مكتبة الباركود')), {once: true});
+                    setTimeout(() => {
+                        if (typeof window.JsBarcode !== 'function') reject(new Error('انتهت مهلة تحميل مكتبة الباركود'));
+                    }, 12000);
+                }).catch(err => { this.libraryPromise = null; throw err; });
+                return this.libraryPromise;
             },
-
-            500
-
-        );
-
-    </script>
-
-    @endscript
+            drawPreview() {
+                const wrapper = document.getElementById('preview-barcode-wrapper');
+                const svg = document.getElementById('preview-barcode-element');
+                if (!wrapper || !svg || typeof window.JsBarcode !== 'function') return;
+                const barcode = String(wrapper.dataset.barcode || '');
+                if (!barcode) return;
+                try {
+                    window.JsBarcode(svg, barcode, {
+                        format: 'CODE128', width: 1.2, height: 36,
+                        displayValue: true, textPosition: 'bottom',
+                        fontSize: 12, textMargin: 3, margin: 5,
+                        background: '#fff', lineColor: '#000'
+                    });
+                } catch (error) { console.error('Barcode preview error:', error); }
+            },
+            refreshPreview() {
+                if (!document.getElementById('preview-barcode-wrapper')) return;
+                this.loadBarcodeLibrary().then(() => this.drawPreview()).catch(console.error);
+            },
+            escapeHtml(value) {
+                return String(value ?? '').replace(/[&<>"']/g, c => ({
+                    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+                })[c]);
+            },
+            async print(data) {
+                if (!data) return;
+                const barcode = String(data.barcode ?? '').trim();
+                if (!barcode) { alert('لا يوجد باركود محدد للطباعة.'); return; }
+                const w = Number(data.w || 50), h = Number(data.h || 25);
+                if (!Number.isFinite(w) || !Number.isFinite(h) || w < 10 || h < 10 || w > 300 || h > 300) return;
+                // Render the barcode ONCE with the library already loaded in the parent.
+                // Its human-readable value is inside the SVG and must not be clipped.
+                try { await this.loadBarcodeLibrary(); }
+                catch (err) { alert('تعذر تحميل مكتبة الباركود: ' + err.message); return; }
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                try {
+                    window.JsBarcode(svg, barcode, {
+                        format: 'CODE128', width: 1.5, height: 40,
+                        displayValue: true, textPosition: 'bottom',
+                        font: 'Arial', fontSize: 13, textMargin: 4,
+                        margin: 7, background: '#fff', lineColor: '#000'
+                    });
+                } catch (err) { alert('الباركود غير صالح للطباعة: ' + err.message); return; }
+                const barcodeSvg = new XMLSerializer().serializeToString(svg);
+                const name = this.escapeHtml(data.name || '');
+                const price = this.escapeHtml(data.price || '');
+                const sku = this.escapeHtml(data.sku || '');
+                const hasSide = Boolean(price || sku);
+                const printWindow = window.open('', '_blank', 'width=650,height=500');
+                if (!printWindow) { alert('يرجى السماح بالنوافذ المنبثقة للطباعة.'); return; }
+                const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+<title>طباعة ملصق</title><style>
+@page { size: ${w}mm ${h}mm; margin: 0; }
+* { box-sizing: border-box; }
+html, body { width: ${w}mm; height: ${h}mm; padding: 0; margin: 0; overflow: hidden; background: #fff; }
+body { font-family: Tahoma, Arial, sans-serif; color: #000; }
+.label { width: ${w}mm; height: ${h}mm; padding: 1mm 1.2mm 1.3mm; display: flex; flex-direction: column; gap: 0.4mm; overflow: hidden; }
+.title { flex: 0 0 auto; max-height: 8mm; font-size: 8pt; font-weight: 800; line-height: 1.05; text-align: center; overflow: hidden; overflow-wrap: anywhere; }
+.content { display: flex; flex: 1 1 0; min-height: 0; gap: 0.8mm; direction: rtl; align-items: stretch; }
+.barcode-box { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; align-items: stretch; justify-content: center; padding: 0 0.3mm; }
+.barcode-box svg { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+.side { flex: 0 0 10mm; min-width: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2mm; text-align: center; }
+.price { font: 900 14pt/1 Arial, sans-serif; }
+.currency { font: 900 8pt/1 Arial, sans-serif; }
+.sku { font: 700 6pt/1 Arial, sans-serif; overflow-wrap: anywhere; }
+@media print { html,body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+</style></head><body><div class="label">
+${name ? `<div class="title">${name}</div>` : ''}
+<div class="content">
+<div class="barcode-box">${barcodeSvg}</div>
+${hasSide ? `<div class="side">${sku ? `<div class="sku">#${sku}</div>` : ''}${price ? `<div class="price">${price}</div><div class="currency">NIS</div>` : ''}</div>` : ''}
+</div></div></body></html>`;
+                printWindow.document.open();
+                printWindow.document.write(html);
+                printWindow.document.close();
+                // Print only after layout and SVG are ready.
+                let didPrint = false;
+                const doPrint = () => {
+                    if (didPrint || printWindow.closed) return;
+                    didPrint = true;
+                    printWindow.focus();
+                    printWindow.print();
+                };
+                printWindow.addEventListener('load', () => {
+                    printWindow.requestAnimationFrame(() => printWindow.requestAnimationFrame(doPrint));
+                }, {once: true});
+                if (printWindow.document.readyState === 'complete') {
+                    setTimeout(doPrint, 350);
+                }
+            }
+        };
+    }
+    if (!window.__barcodeLabelListenersRegistered) {
+        window.__barcodeLabelListenersRegistered = true;
+        Livewire.on('start-label-print', (params) => {
+            const data = Array.isArray(params) ? params[0] : params;
+            window.labelPrinter.print(data);
+        });
+        Livewire.hook('morph.updated', ({el}) => {
+            if (!document.getElementById('preview-barcode-wrapper')) return;
+            clearTimeout(window.__barcodePreviewTimer);
+            window.__barcodePreviewTimer = setTimeout(() => window.labelPrinter.drawPreview(), 120);
+        });
+    }
+    window.labelPrinter.refreshPreview();
+})();
+</script>
+@endscript
 
 </div>
