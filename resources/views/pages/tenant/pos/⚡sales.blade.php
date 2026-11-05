@@ -1019,7 +1019,7 @@ new class extends Component {
         }
     }
 
-    /** Search names/barcodes as before, and product codes case-insensitively anywhere in the code. */
+    /** Match product names by separate words, alongside barcode and product-number search. */
     private function applyPosCatalogSearch($query, string $search, int $tenantId): void
     {
         $normalized = app(PosProductSearch::class)->normalize($search);
@@ -1027,12 +1027,30 @@ new class extends Component {
             return;
         }
 
-        // LIKE uses ! as escape, matching PosProductSearch's convention.
-        $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $normalized);
-        $query->where(function ($matches) use ($normalized, $tenantId, $escaped): void {
+        // Escape SQL LIKE wildcards so the search text is always treated literally.
+        $escape = static fn (string $value): string => str_replace(
+            ['!', '%', '_'], ['!!', '!%', '!_'], $value
+        );
+        $escaped = $escape($normalized);
+        $words = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        $query->where(function ($matches) use ($normalized, $tenantId, $escaped, $words, $escape): void {
             $matches->where(function ($standard) use ($normalized, $tenantId): void {
                 app(PosProductSearch::class)->apply($standard->getQuery(), $normalized, $tenantId);
             })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", ['%' . $escaped . '%']);
+
+            // All typed words may occur anywhere in the product name, even with
+            // extra words between them (e.g. "طقم سكملات 2 قطعة").
+            if ($words !== []) {
+                $matches->orWhere(function ($nameQuery) use ($words, $escape): void {
+                    foreach ($words as $word) {
+                        $nameQuery->whereRaw(
+                            "LOWER(products.name) LIKE ? ESCAPE '!'",
+                            ['%' . $escape($word) . '%']
+                        );
+                    }
+                });
+            }
         });
     }
 
