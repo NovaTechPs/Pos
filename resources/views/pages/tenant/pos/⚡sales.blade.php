@@ -1019,38 +1019,57 @@ new class extends Component {
         }
     }
 
-    /** Match product names by separate words, alongside barcode and product-number search. */
+    /** Search by all name words in any order, with Arabic letter normalization. */
     private function applyPosCatalogSearch($query, string $search, int $tenantId): void
     {
         $normalized = app(PosProductSearch::class)->normalize($search);
-        if ($normalized === '') {
+        if ($normalized === '' || mb_strlen($normalized) > 120) {
             return;
         }
 
-        // Escape SQL LIKE wildcards so the search text is always treated literally.
         $escape = static fn (string $value): string => str_replace(
             ['!', '%', '_'], ['!!', '!%', '!_'], $value
         );
-        $escaped = $escape($normalized);
         $words = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($words === []) {
+            return;
+        }
 
-        $query->where(function ($matches) use ($normalized, $tenantId, $escaped, $words, $escape): void {
+        // Normalize the actual product name as well as the typed query.
+        // This handles أ/إ/آ vs ا, ة vs ه, ى vs ي, and Arabic-Indic digits.
+        // REPLACE is supported by PostgreSQL and MySQL.
+        $nameSql = 'LOWER(products.name)';
+        foreach ([
+            'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا',
+            'ى' => 'ي', 'ة' => 'ه', 'ـ' => '',
+            'َ' => '', 'ً' => '', 'ُ' => '', 'ٌ' => '',
+            'ِ' => '', 'ٍ' => '', 'ْ' => '', 'ّ' => '', 'ٰ' => '',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        ] as $from => $to) {
+            $fromSql = str_replace("'", "''", $from);
+            $toSql = str_replace("'", "''", $to);
+            $nameSql = "REPLACE({$nameSql}, '{$fromSql}', '{$toSql}')";
+        }
+
+        $escaped = $escape($normalized);
+        $query->where(function ($matches) use ($normalized, $tenantId, $escaped, $words, $escape, $nameSql): void {
+            // Preserve existing exact/prefix search and numeric product ID support.
             $matches->where(function ($standard) use ($normalized, $tenantId): void {
                 app(PosProductSearch::class)->apply($standard->getQuery(), $normalized, $tenantId);
             })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", ['%' . $escaped . '%']);
 
-            // All typed words may occur anywhere in the product name, even with
-            // extra words between them (e.g. "طقم سكملات 2 قطعة").
-            if ($words !== []) {
-                $matches->orWhere(function ($nameQuery) use ($words, $escape): void {
-                    foreach ($words as $word) {
-                        $nameQuery->whereRaw(
-                            "LOWER(products.name) LIKE ? ESCAPE '!'",
-                            ['%' . $escape($word) . '%']
-                        );
-                    }
-                });
-            }
+            // Match all words, even with additional words between them.
+            $matches->orWhere(function ($nameQuery) use ($words, $escape, $nameSql): void {
+                foreach ($words as $word) {
+                    $nameQuery->whereRaw(
+                        "{$nameSql} LIKE ? ESCAPE '!'",
+                        ['%' . $escape($word) . '%']
+                    );
+                }
+            });
         });
     }
 
