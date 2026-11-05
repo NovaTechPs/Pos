@@ -1206,6 +1206,38 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
+    /** Fast product lookup without nested REPLACE expressions. */
+    private function applyPosCatalogSearch($query, string $search, int $tenantId, bool $fallback = false): void
+    {
+        $search = trim(preg_replace('/\s+/u', ' ', strtr($search, [
+            '٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9',
+            '۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9',
+        ])) ?? '');
+        if ($search === '' || mb_strlen($search) > 120) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        $escape = static fn (string $value): string => str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
+        $prefix = $escape($search) . '%';
+        $words = array_slice(preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 8);
+        $query->where(function ($matches) use ($search, $tenantId, $prefix, $words, $escape, $fallback): void {
+            $matches->whereRaw("products.product_number LIKE ? ESCAPE '!'", [$prefix])
+                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes
+                    ->where('tenant_id', $tenantId)
+                    ->whereRaw("barcode LIKE ? ESCAPE '!'", [$prefix]));
+            if (ctype_digit($search) && strlen($search) < 18) {
+                $matches->orWhere('products.id', (int) $search);
+            }
+            $matches->orWhere(function ($names) use ($words, $escape, $fallback): void {
+                foreach ($words as $index => $word) {
+                    $pattern = ($fallback || $index > 0 ? '%' : '') . $escape($word) . '%';
+                    $names->whereRaw("products.name LIKE ? ESCAPE '!'", [$pattern]);
+                }
+            });
+        });
+    }
+
     public function render()
     {
         $tenantId = $this->tenantId();
@@ -1225,18 +1257,20 @@ new class extends Component {
 
         if ($tenantId && trim($this->rowSearch) !== '' && !$this->selectedProductId) {
             $search = trim($this->rowSearch);
-
-            $productResults = Product::query()
+            $baseQuery = fn () => Product::query()
                 ->where('tenant_id', $tenantId)
-                ->with([
-                    'branchProducts' => fn ($query) => $query->where('branch_id', $branchId),
-                ])
-                ->tap(function ($query) use ($search, $tenantId): void {
-                    app(\App\Services\PosProductSearch::class)->apply($query->getQuery(), $search, $tenantId);
-                })
-                ->orderBy('name')
-                ->limit(10)
-                ->get();
+                ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)]);
+
+            $query = $baseQuery();
+            $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+            $productResults = $query->limit(24)->get();
+
+            // Slower contains search only when the fast first pass has no matches.
+            if ($productResults->isEmpty()) {
+                $query = $baseQuery();
+                $this->applyPosCatalogSearch($query, $search, (int) $tenantId, true);
+                $productResults = $query->limit(24)->get();
+            }
         }
 
         $customerResults = collect();
@@ -1599,29 +1633,32 @@ new class extends Component {
              منطقة إدخال المواد
         ================================================================= --}}
 
-        <div class="mb-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="relative z-30 mb-3 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
 
             <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-end">
 
                 <div class="min-w-0 flex-1">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
 
-                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
+                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: true }" x-on:keydown.escape.stop="productSearchOpen = false">
                         <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                         <input
                             id="product-search-input"
                             x-ref="productSearch"
                             type="text"
-                            wire:model.live.debounce.250ms="rowSearch"
-                            maxlength="120" x-on:input="productIndex = -1; refreshResultClasses(); productSearchOpen = true" x-on:focus="productSearchOpen = true"
+                            wire:model.live.debounce.120ms="rowSearch"
+                            maxlength="120" x-on:input="productIndex = -1; productSearchOpen = true; $nextTick(() => refreshResultClasses())" x-on:focus="productSearchOpen = true"
                             autocomplete="off"
                             placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..."
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
                         />
 
-                        @if (count($productResults) > 0)
-                            <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                        @if (trim($rowSearch) !== '' && !$selectedProductId)
+                            <div data-invoice-search-results x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <div class="max-h-80 overflow-auto" x-ref="productResults">
+                                    @if ($productResults->isEmpty())
+                                        <div class="p-4 text-center text-sm font-bold text-slate-500">لا توجد أصناف مطابقة للبحث.</div>
+                                    @else
                                     <table class="w-full text-right text-sm">
                                         <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
                                         <tbody>
@@ -1640,6 +1677,7 @@ new class extends Component {
                                             @endforeach
                                         </tbody>
                                     </table>
+                                    @endif
                                 </div>
                             </div>
                         @endif
