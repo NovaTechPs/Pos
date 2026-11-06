@@ -40,8 +40,7 @@ test('sales and purchase returns have separate invoice pages', function (): void
     $this->get(route('tenant.sales-returns'))
         ->assertOk()
         ->assertSee('فاتورة مردود مبيعات')
-        ->assertSee('return-balance-summary', false)
-        ->assertSee('position: static !important;', false)
+        ->assertDontSee('return-balance-summary', false)
         ->assertSee('العميل')
         ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
         ->assertSee('اختر العميل أولاً')
@@ -50,6 +49,12 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertSee(__('Sales Returns'))
         ->assertSee(__('Purchase Returns'))
         ->assertDontSee('Return type');
+
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل الملخص', 'type' => 'customer']);
+    Livewire::actingAs($user)->test('pages::tenant.returns.index')
+        ->call('selectParty', $customer->id)
+        ->assertSee('return-balance-summary', false)
+        ->assertSee('position: static !important;', false);
 
     $this->get(route('tenant.purchase-returns'))
         ->assertOk()
