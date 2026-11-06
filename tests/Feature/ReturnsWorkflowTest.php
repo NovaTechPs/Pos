@@ -157,6 +157,24 @@ function editableReturnFixture(string $kind): array
     return compact('tenant', 'branch', 'user', 'party', 'product', 'stock', 'component');
 }
 
+test('return pages select products before adding chosen quantities and prices', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+
+    $component->call('removeLine', 0)
+        ->set('productSearch', 'Return product')
+        ->assertViewHas('productResults', fn ($results): bool => count($results) === 1 && $results[0]['id'] === $product->id)
+        ->call('selectProduct', $product->id)
+        ->assertSet('selectedProductId', $product->id)
+        ->assertSet('selectedQuantity', 1.0)
+        ->assertSet('lines', [])
+        ->set('selectedQuantity', 2.5)
+        ->set('selectedPrice', 7.25)
+        ->call('addSelectedProduct')
+        ->assertSet('lines.0.quantity', 2.5)
+        ->assertSet('lines.0.price', 7.25)
+        ->assertSet('selectedProductId', null);
+})->with(['sale', 'purchase']);
+
 test('return invoices support payment discount tax editing printing and deletion without duplicate effects', function (string $kind): void {
     extract(editableReturnFixture($kind));
     $component->set('lines.0.quantity', 4)->set('discountType', 'percentage')->set('discountRate', 10)

@@ -880,7 +880,7 @@ new class extends Component
 
                                                                 x-on:click.stop="open = false; activeIndex = -1"
 
-                                class="block w-full border-b border-gray-100 px-4 py-3 text-right transition last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                                class="block w-full cursor-pointer border-b border-gray-100 px-4 py-3 text-right transition last:border-b-0 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
 
                             >
 

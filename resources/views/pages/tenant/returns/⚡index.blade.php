@@ -41,6 +41,11 @@ new class extends Component {
     public string $selectedPartyName = '';
     public string $productSearch = '';
     public array $productResults = [];
+    public ?int $selectedProductId = null;
+    public string $selectedProductName = '';
+    public float $selectedProductAvailable = 0;
+    public float $selectedQuantity = 1;
+    public float $selectedPrice = 0;
     public array $lines = [];
     public string $notes = '';
     public ?string $errorMessage = null;
@@ -82,6 +87,7 @@ new class extends Component {
         $this->partyResults = [];
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
         $this->lines = [];
         $this->notes = '';
         $this->errorMessage = null;
@@ -117,6 +123,7 @@ new class extends Component {
         $this->partyResults = [];
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
         $this->lines = [];
         $this->errorMessage = null;
         $this->successMessage = null;
@@ -127,6 +134,7 @@ new class extends Component {
     {
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
         $this->lines = [];
         $this->errorMessage = null;
     }
@@ -135,6 +143,7 @@ new class extends Component {
     {
         $this->selectedPartyId = null;
         $this->selectedPartyName = '';
+        $this->resetProductSelection();
         $this->lines = [];
         $this->productResults = [];
 
@@ -168,6 +177,7 @@ new class extends Component {
         $this->partyResults = [];
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
         $this->lines = [];
         $this->errorMessage = null;
     }
@@ -190,18 +200,24 @@ new class extends Component {
         $this->partyResults = [];
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
         $this->lines = [];
     }
 
     public function updatedProductSearch(): void
     {
+        if ($this->selectedProductId && trim($this->productSearch) !== $this->selectedProductName) {
+            $this->resetProductSelection();
+        }
+
         $this->searchProducts();
     }
 
     public function searchProducts(): void
     {
         $this->productResults = [];
-        if (!$this->selectedPartyId || trim($this->productSearch) === '') {
+        if (!$this->selectedPartyId || trim($this->productSearch) === '' || $this->selectedProductId) {
+            $this->productResults = [];
             return;
         }
 
@@ -259,6 +275,51 @@ new class extends Component {
         if ($product && count($this->productResults) === 1) {
             $this->addProduct((int) $product['id']);
         }
+    }
+
+    public function selectProduct(int $productId): void
+    {
+        $this->errorMessage = null;
+        if (!$this->selectedPartyId) {
+            $this->errorMessage = 'اختر العميل أو المورد أولاً.';
+            return;
+        }
+
+        $product = Product::query()->where('tenant_id', $this->tenantId())->whereKey($productId)->first();
+        $branchProduct = BranchProduct::query()->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->branchId())->where('product_id', $productId)->first();
+        if (!$product || !$branchProduct) {
+            $this->errorMessage = 'الصنف غير مرتبط بالفرع الحالي.';
+            return;
+        }
+
+        $available = $this->remainingQuantity($productId, $this->selectedPartyId);
+        if ($this->kind === 'purchase') {
+            $available = min($available, (float) $branchProduct->stock_quantity + $this->savedPurchaseQuantity($productId));
+        }
+        if ($available <= 0) {
+            $this->errorMessage = 'لا توجد كمية متاحة للإرجاع لهذا الصنف مع هذا الطرف.';
+            return;
+        }
+
+        $this->selectedProductId = $productId;
+        $this->selectedProductName = $product->name;
+        $this->selectedProductAvailable = $available;
+        $this->selectedQuantity = 1;
+        $this->selectedPrice = $this->latestPrice($productId, $this->selectedPartyId, $product);
+        $this->productSearch = $product->name;
+        $this->productResults = [];
+        $this->dispatch('return-product-selected');
+    }
+
+    public function addSelectedProduct(): void
+    {
+        if (!$this->selectedProductId) {
+            $this->errorMessage = 'اختر صنفاً من نتائج البحث أولاً.';
+            return;
+        }
+
+        $this->addProduct($this->selectedProductId, $this->selectedQuantity, $this->selectedPrice);
     }
 
     private function remainingQuantity(int $productId, int $partyId): float
@@ -319,7 +380,7 @@ new class extends Component {
         return $lastCost !== null ? round((float) $lastCost, 2) : (float) $product->cost_price;
     }
 
-    public function addProduct(int $productId): void
+    public function addProduct(int $productId, ?float $quantity = null, ?float $price = null): void
     {
         $this->errorMessage = null;
         $tenantId = $this->tenantId();
@@ -347,26 +408,45 @@ new class extends Component {
             return;
         }
 
+        $quantity ??= 1;
+        $price ??= $this->latestPrice($productId, $this->selectedPartyId, $product);
+        if (!is_finite($quantity) || $quantity <= 0 || !is_finite($price) || $price < 0) {
+            $this->errorMessage = 'أدخل كمية وسعراً صالحين للصنف.';
+            return;
+        }
+
         $lineIndex = collect($this->lines)->search(fn (array $line): bool => (int) $line['id'] === $productId);
         if ($lineIndex !== false) {
-            if ((float) $this->lines[$lineIndex]['quantity'] + 1 > $available) {
+            if ((float) $this->lines[$lineIndex]['quantity'] + $quantity > $available) {
                 $this->errorMessage = 'الكمية المطلوب إرجاعها أكبر من الكمية المتاحة.';
                 return;
             }
-            $this->lines[$lineIndex]['quantity'] = (float) $this->lines[$lineIndex]['quantity'] + 1;
+            $this->lines[$lineIndex]['quantity'] = (float) $this->lines[$lineIndex]['quantity'] + $quantity;
         } else {
             $this->lines[] = [
                 'id' => $productId,
                 'returned_to_stock' => true,
                 'name' => $product->name,
+                'product_number' => $product->product_number,
                 'available' => $available,
-                'quantity' => 1,
-                'price' => $this->latestPrice($productId, $this->selectedPartyId, $product),
+                'quantity' => $quantity,
+                'price' => $price,
             ];
         }
 
         $this->productSearch = '';
         $this->productResults = [];
+        $this->resetProductSelection();
+        $this->dispatch('return-product-added');
+    }
+
+    private function resetProductSelection(): void
+    {
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedProductAvailable = 0;
+        $this->selectedQuantity = 1;
+        $this->selectedPrice = 0;
     }
 
     public function removeLine(int $index): void
@@ -873,25 +953,46 @@ new class extends Component {
         </section>
 
         <section class="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="border-b border-slate-200 bg-slate-50 p-3">
-                    <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                        <label for="return-product-search" class="block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
+                <div class="relative z-30 flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-end" x-data="{}" x-on:return-product-selected.window="$nextTick(() => $refs.returnQuantity?.focus())" x-on:return-product-added.window="$nextTick(() => $refs.returnProductSearch?.focus())">
+                    <div class="relative min-w-0 flex-1" x-data="{ active: 0, rows() { return [...(this.$refs.returnResults?.querySelectorAll('[data-return-product]') ?? [])] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:keydown.arrow-down.prevent="move(1)" x-on:keydown.arrow-up.prevent="move(-1)">
+                        <label for="return-product-search" class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
                         @unless ($selectedPartyId)
-                            <span class="text-[11px] font-bold text-amber-700">اختر {{ $kind === 'sale' ? 'العميل' : 'المورد' }} أولاً لتفعيل إضافة الأصناف.</span>
+                            <span class="mb-1 block text-[11px] font-bold text-amber-700">اختر {{ $kind === 'sale' ? 'العميل' : 'المورد' }} أولاً لتفعيل إضافة الأصناف.</span>
                         @endunless
-                    </div>
-                    <div class="relative" x-data="{ active: 0, rows() { return [...(this.$refs.returnResults?.querySelectorAll('[data-return-product]') ?? [])] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:keydown.arrow-down.prevent="move(1)" x-on:keydown.arrow-up.prevent="move(-1)">
-                        <input id="return-product-search" type="text" wire:model.live.debounce.120ms="productSearch" x-on:keydown.enter.prevent="rows().length ? choose() : $wire.addFirstProduct()" x-on:input="active = 0" @disabled(!$selectedPartyId) autocomplete="off" placeholder="ابحث باسم المادة أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
-                        @if ($productSearch !== '' || count($productResults))
-                            <div x-ref="returnResults" class="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-auto rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+                        <input id="return-product-search" x-ref="returnProductSearch" type="text" wire:model.live.debounce.120ms="productSearch" x-on:keydown.enter.prevent="rows().length ? choose() : $wire.addFirstProduct()" x-on:input="active = 0" @disabled(!$selectedPartyId) autocomplete="off" placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
+                        @if ($productSearch !== '' && !$selectedProductId)
+                            <div x-ref="returnResults" class="absolute right-0 top-full z-50 mt-1 max-h-80 w-full overflow-auto rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <table class="w-full text-right text-sm"><thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">المتاح للإرجاع</th></tr></thead><tbody>
                                     @forelse ($productResults as $product)
-                                        <tr data-product-result data-return-product wire:key="return-search-{{ $product['id'] }}" x-bind:class="active === {{ $loop->index }} ? 'invoice-product-selected' : ''" wire:click="addProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50"><td class="p-2 font-mono">{{ $product['product_number'] ?: $product['id'] }}</td><td class="p-2 font-bold">{{ $product['name'] }}</td><td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td></tr>
+                                        <tr data-product-result data-return-product wire:key="return-search-{{ $product['id'] }}" x-on:mouseenter="active = {{ $loop->index }}" x-bind:class="active === {{ $loop->index }} ? 'invoice-product-selected' : ''" x-on:mousedown.prevent wire:click="selectProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50"><td class="p-2 font-mono">{{ $product['product_number'] ?: $product['id'] }}</td><td class="p-2 font-bold">{{ $product['name'] }}</td><td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td></tr>
                                     @empty<tr><td colspan="3" class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</td></tr>@endforelse
                                 </tbody></table>
                             </div>
                         @endif
+                        @if ($selectedProductId)
+                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}» — المتاح للإرجاع {{ number_format($selectedProductAvailable, 2) }}.</p>
+                        @endif
                     </div>
+
+                    <div class="w-full lg:w-32">
+                        <label class="mb-1.5 block text-xs font-black text-slate-600">الكمية</label>
+                        <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable ?: '' }}" step="0.01" wire:model="selectedQuantity" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" @disabled(!$selectedProductId) class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
+                    </div>
+
+                    <div class="w-full lg:w-36">
+                        <label class="mb-1.5 block text-xs font-black text-slate-600">{{ $kind === 'sale' ? 'سعر البيع' : 'تكلفة الشراء' }}</label>
+                        <input x-ref="returnPrice" type="number" min="0" step="0.01" wire:model="selectedPrice" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$wire.addSelectedProduct()" @disabled(!$selectedProductId) class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
+                    </div>
+
+                    <div class="w-full lg:w-36">
+                        <label class="mb-1.5 block text-xs font-black text-slate-600">الإجمالي</label>
+                        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900">{{ number_format(max(0, $selectedPrice * $selectedQuantity), 2) }}</div>
+                    </div>
+
+                    <button type="button" wire:click="addSelectedProduct" wire:loading.attr="disabled" wire:target="addSelectedProduct" @disabled(!$selectedProductId) class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+                        <span wire:loading.remove wire:target="addSelectedProduct">+ إضافة</span>
+                        <span wire:loading wire:target="addSelectedProduct">جارٍ الإضافة...</span>
+                    </button>
                 </div>
 
                 <div class="overflow-x-auto">
