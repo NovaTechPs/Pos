@@ -70,6 +70,21 @@ new class extends Component {
 
     public bool $showPurchaseSearch = false;
 
+    public bool $showPriceUpdateModal = false;
+
+    #[\Livewire\Attributes\Locked]
+    public ?int $priceUpdatePurchaseId = null;
+
+    /** @var array<int, array{name: string, purchase_cost: float, current_cost: float, retail_price: float}> */
+    #[\Livewire\Attributes\Locked]
+    public array $priceUpdateCandidates = [];
+
+    /** @var array<int, array{cost: bool, retail: bool}> */
+    public array $priceUpdateSelections = [];
+
+    /** @var array<int, float|string> */
+    public array $priceUpdateRetailPrices = [];
+
     /*
     |--------------------------------------------------------------------------
     | رسائل
@@ -1057,6 +1072,7 @@ new class extends Component {
 
             if ($wasEditingInvoice) {
                 $this->loadPurchase($purchaseId);
+                $this->preparePriceUpdateCandidates((int) $purchaseId);
                 $this->successMessage = 'تم تعديل فاتورة المشتريات بنجاح.';
                 $this->dispatch('toast', type: 'success', message: $this->successMessage);
 
@@ -1064,6 +1080,7 @@ new class extends Component {
             }
 
             $this->startNewInvoice(false);
+            $this->preparePriceUpdateCandidates((int) $purchaseId);
             $this->successMessage = 'تم حفظ فاتورة المشتريات بنجاح وفتح فاتورة جديدة.';
             $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المشتريات بنجاح.');
 
@@ -1074,6 +1091,142 @@ new class extends Component {
                 : 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
         }
+    }
+
+    private function preparePriceUpdateCandidates(int $purchaseId): void
+    {
+        $this->priceUpdatePurchaseId = null;
+        $this->priceUpdateCandidates = [];
+        $this->priceUpdateSelections = [];
+        $this->priceUpdateRetailPrices = [];
+        $this->showPriceUpdateModal = false;
+
+        if (! auth()->user()?->can('products.price.edit')) {
+            return;
+        }
+
+        $purchase = DB::table('purchases')->where('tenant_id', $this->tenantId())->where('id', $purchaseId)->first(['branch_id']);
+        if (! $purchase) {
+            return;
+        }
+
+        $latestItems = DB::table('purchase_items as pi')
+            ->join('products as p', 'p.id', '=', 'pi.product_id')
+            ->leftJoin('branch_products as bp', function ($join) use ($purchase): void {
+                $join->on('bp.product_id', '=', 'p.id')
+                    ->where('bp.tenant_id', $this->tenantId())
+                    ->where('bp.branch_id', $purchase->branch_id);
+            })
+            ->where('pi.purchase_id', $purchaseId)
+            ->where('p.tenant_id', $this->tenantId())
+            ->orderBy('pi.id')
+            ->get(['pi.product_id', 'pi.unit_cost', 'p.name', 'p.cost_price', 'bp.retail_price']);
+
+        $latestByProduct = [];
+        foreach ($latestItems as $item) {
+            $latestByProduct[(int) $item->product_id] = $item;
+        }
+
+        foreach ($latestByProduct as $productId => $item) {
+            if (abs((float) $item->unit_cost - (float) $item->cost_price) < 0.005) {
+                continue;
+            }
+
+            $retailPrice = (float) ($item->retail_price ?? 0);
+            $this->priceUpdateCandidates[$productId] = [
+                'name' => (string) $item->name,
+                'purchase_cost' => (float) $item->unit_cost,
+                'current_cost' => (float) $item->cost_price,
+                'retail_price' => $retailPrice,
+            ];
+            $this->priceUpdateSelections[$productId] = ['cost' => true, 'retail' => false];
+            $this->priceUpdateRetailPrices[$productId] = $retailPrice;
+        }
+
+        if ($this->priceUpdateCandidates !== []) {
+            $this->priceUpdatePurchaseId = $purchaseId;
+            $this->showPriceUpdateModal = true;
+        }
+    }
+
+    public function applyPurchasePriceUpdates(): void
+    {
+        $this->authorize('products.price.edit');
+
+        if (! $this->priceUpdatePurchaseId || $this->priceUpdateCandidates === []) {
+            $this->dismissPriceUpdateModal();
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+        $purchase = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->where('id', $this->priceUpdatePurchaseId)
+            ->first(['branch_id']);
+
+        if (! $purchase) {
+            $this->addError('priceUpdateCandidates', 'لم يتم العثور على فاتورة المشتريات.');
+            return;
+        }
+
+        DB::transaction(function () use ($tenantId, $purchase): void {
+            foreach ($this->priceUpdateCandidates as $productId => $candidate) {
+                $productId = (int) $productId;
+                $invoiceItem = DB::table('purchase_items')
+                    ->where('purchase_id', $this->priceUpdatePurchaseId)
+                    ->where('product_id', $productId)
+                    ->orderByDesc('id')
+                    ->first(['unit_cost']);
+                $product = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereKey($productId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $invoiceItem || ! $product) {
+                    continue;
+                }
+
+                $selection = $this->priceUpdateSelections[$productId] ?? [];
+                if (! empty($selection['cost'])) {
+                    $product->cost_price = max(0, (float) $invoiceItem->unit_cost);
+                    $product->save();
+                }
+
+                if (! empty($selection['retail'])) {
+                    $this->validate([
+                        'priceUpdateRetailPrices.'.$productId => ['required', 'numeric', 'min:0', 'max:999999999'],
+                    ]);
+
+                    $branchProduct = BranchProduct::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $purchase->branch_id)
+                        ->where('product_id', $productId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $branchProduct) {
+                        throw new \RuntimeException('الصنف غير مرتبط بفرع فاتورة المشتريات.');
+                    }
+
+                    $branchProduct->retail_price = (float) $this->priceUpdateRetailPrices[$productId];
+                    $branchProduct->save();
+                }
+            }
+        });
+
+        $this->dismissPriceUpdateModal();
+        $this->dispatch('toast', type: 'success', message: 'تم تحديث أسعار الأصناف المحددة.');
+    }
+
+    public function dismissPriceUpdateModal(): void
+    {
+        $this->showPriceUpdateModal = false;
+        $this->priceUpdatePurchaseId = null;
+        $this->priceUpdateCandidates = [];
+        $this->priceUpdateSelections = [];
+        $this->priceUpdateRetailPrices = [];
+        $this->resetValidation('priceUpdateCandidates');
     }
 
     public function saveAndPrint(): void
@@ -2050,6 +2203,46 @@ new class extends Component {
             </div>
         </div>
     </div>
+    @if ($showPriceUpdateModal)
+        <div class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-3" role="presentation">
+            <section class="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="purchase-price-update-title" dir="rtl">
+                <div class="mb-4">
+                    <h2 id="purchase-price-update-title" class="text-lg font-black text-slate-900">تحديث أسعار الأصناف؟</h2>
+                    <p class="mt-1 text-sm text-slate-600">تم حفظ فاتورة المشتريات. اختر الأسعار التي تريد تحديثها للأصناف التي تغيرت تكلفتها.</p>
+                </div>
+                <div class="max-h-[55vh] space-y-3 overflow-y-auto">
+                    @foreach ($priceUpdateCandidates as $productId => $candidate)
+                        <div wire:key="purchase-price-update-{{ $productId }}" class="rounded-xl border border-slate-200 p-4">
+                            <div class="mb-3 font-black text-slate-800">{{ $candidate['name'] }}</div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <label class="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm">
+                                    <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.cost" class="mt-1 rounded border-slate-300 text-indigo-600">
+                                    <span>تحديث سعر التكلفة إلى <strong>{{ number_format($candidate['purchase_cost'], 2) }}</strong> (الحالي {{ number_format($candidate['current_cost'], 2) }})</span>
+                                </label>
+                                <div class="rounded-lg bg-slate-50 p-3">
+                                    <label class="flex items-center gap-2 text-sm font-bold">
+                                        <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.retail" class="rounded border-slate-300 text-indigo-600">
+                                        <span>تحديث سعر البيع لهذا الفرع</span>
+                                    </label>
+                                    <input type="number" min="0" step="0.01" wire:model="priceUpdateRetailPrices.{{ $productId }}" @disabled(empty($priceUpdateSelections[$productId]['retail'])) class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100" aria-label="سعر البيع الجديد للصنف {{ $candidate['name'] }}">
+                                    @error('priceUpdateRetailPrices.'.$productId)<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+                @error('priceUpdateCandidates')<p class="mt-3 text-sm text-rose-600">{{ $message }}</p>@enderror
+                <div class="mt-5 flex flex-wrap justify-end gap-2">
+                    <button type="button" wire:click="dismissPriceUpdateModal" class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600">تخطي التحديث</button>
+                    <button type="button" wire:click="applyPurchasePriceUpdates" wire:loading.attr="disabled" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">
+                        <span wire:loading.remove wire:target="applyPurchasePriceUpdates">تحديث الأسعار المحددة</span>
+                        <span wire:loading wire:target="applyPurchasePriceUpdates">جارٍ التحديث...</span>
+                    </button>
+                </div>
+            </section>
+        </div>
+    @endif
+
     <livewire:product-price-history-modal :key="'purchase-price-history-singleton'" />
 </flux:main>
 
