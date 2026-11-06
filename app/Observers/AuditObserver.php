@@ -45,6 +45,7 @@ class AuditObserver
     {
         $request = request();
         $user = auth()->user();
+        $isSystemAdmin = $user?->isSaaSAdmin() ?? false;
         $session = $request->hasSession() ? $request->session() : null;
         $sensitiveKeys = collect(array_merge(array_keys($oldValues ?? []), array_keys($newValues ?? [])))
             ->filter(fn (string $key): bool => Str::contains(Str::lower($key), [
@@ -63,11 +64,11 @@ class AuditObserver
             ->all();
 
         AuditLog::create([
-            'tenant_id' => $session?->get('active_tenant_id')
+            'tenant_id' => $isSystemAdmin ? null : ($session?->get('active_tenant_id')
                 ?: $user?->tenant_id
                 ?: $model->getAttribute('tenant_id')
-                ?: ($model instanceof Tenant ? $model->getKey() : null),
-            'branch_id' => $session?->get('active_branch_id') ?: $user?->branch_id ?: $model->getAttribute('branch_id'),
+                ?: ($model instanceof Tenant ? $model->getKey() : null)),
+            'branch_id' => $isSystemAdmin ? null : ($session?->get('active_branch_id') ?: $user?->branch_id ?: $model->getAttribute('branch_id')),
             'user_id' => $user?->id,
             'action' => $action,
             'module' => class_basename($model),

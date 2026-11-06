@@ -40,14 +40,22 @@ new class extends Component {
     {
         $rules = [
             'tenant_name' => 'required|string|max:255',
-            'domain'      => ['required', 'string', 'max:255', Rule::unique('tenants', 'domain')->ignore($this->tenant_id)],
+            'domain'      => [$this->isEditing ? 'nullable' : 'required', 'string', 'max:255', Rule::unique('tenants', 'domain')->ignore($this->tenant_id)],
             'plan_id'     => 'required|exists:plans,id', // التحقق من وجود المعرف في جدول plans
             'is_active'   => 'boolean',
         ];
 
-        if (!$this->isEditing) {
+        if ($this->isEditing) {
+            $rules['selected_user_id'] = [
+                'required',
+                Rule::exists('users', 'id')->where('type', 'tenant_user')->where('is_active', true),
+            ];
+        } else {
             if ($this->is_existing_owner) {
-                $rules['selected_user_id'] = 'required|exists:users,id';
+                $rules['selected_user_id'] = [
+                    'required',
+                    Rule::exists('users', 'id')->where('type', 'tenant_user')->where('is_active', true),
+                ];
             } else {
                 $rules['owner_name']     = 'required|string|max:255';
                 $rules['owner_email']    = 'required|email|max:255|unique:users,email';
@@ -75,7 +83,11 @@ new class extends Component {
 
     public function loadOwners()
     {
-        $this->existing_users = User::all();
+        $this->existing_users = User::query()
+            ->where('type', 'tenant_user')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
     }
 
     public function loadPlans()
@@ -109,9 +121,12 @@ new class extends Component {
         $tenant = Tenant::findOrFail($id);
         $this->tenant_id   = $tenant->id;
         $this->tenant_name = $tenant->name;
-        $this->domain      = $tenant->domain;
+        $this->domain      = $tenant->domain ?? '';
         $this->plan_id     = $tenant->plan_id; // جلب plan_id
         $this->is_active   = (bool) $tenant->is_active;
+        $this->loadOwners();
+        $this->is_existing_owner = true;
+        $this->selected_user_id = $tenant->owner_id;
 
         $this->isEditing = true;
         $this->showModal = true;
@@ -125,20 +140,42 @@ new class extends Component {
         DB::transaction(function () {
             if ($this->isEditing) {
                 $tenant = Tenant::findOrFail($this->tenant_id);
+                $owner = User::query()
+                    ->where('type', 'tenant_user')
+                    ->where('is_active', true)
+                    ->findOrFail($this->selected_user_id);
+                $previousOwnerId = $tenant->owner_id;
+                $owner->update(['is_owner' => true]);
+
                 $tenant->update([
                     'name'      => $this->tenant_name,
                     'domain'    => $this->domain,
                     'plan_id'   => $this->plan_id, // حفظ plan_id
                     'is_active' => $this->is_active,
+                    'owner_id'  => $owner->id,
                 ]);
+
+                if ($previousOwnerId && $previousOwnerId !== $owner->id) {
+                    $previousOwner = User::find($previousOwnerId);
+                    if ($previousOwner && ! $previousOwner->ownedTenants()->exists()) {
+                        $previousOwner->update(['is_owner' => false]);
+                    }
+                }
             } else {
                 if ($this->is_existing_owner && $this->selected_user_id) {
-                    $ownerId = $this->selected_user_id;
+                    $owner = User::query()
+                        ->where('type', 'tenant_user')
+                        ->where('is_active', true)
+                        ->findOrFail($this->selected_user_id);
+                    $owner->update(['is_owner' => true]);
+                    $ownerId = $owner->id;
                 } else {
                     $owner = User::create([
                         'name'     => $this->owner_name,
                         'email'    => $this->owner_email,
                         'password' => Hash::make($this->owner_password),
+                        'type'     => 'tenant_user',
+                        'is_owner' => true,
                     ]);
                     $ownerId = $owner->id;
                 }
@@ -147,7 +184,7 @@ new class extends Component {
                     'name'      => $this->tenant_name,
                     'domain'    => $this->domain,
                     'plan_id'   => $this->plan_id, // ربط المتجر بالباقة المختارة
-                    // 'is_active' => $this->is_active,
+                    'is_active' => $this->is_active,
                     'owner_id'  => $ownerId,
                 ]);
             }
@@ -383,7 +420,21 @@ new class extends Component {
                 </flux:field>
             </div>
 
-            @if(!$isEditing)
+            @if($isEditing)
+                <div class="space-y-4 pt-2">
+                    <flux:heading level="3" size="sm" class="font-semibold text-zinc-500 border-b pb-2">مالك المتجر</flux:heading>
+                    <flux:field>
+                        <flux:label>اختر مالك المتجر</flux:label>
+                        <flux:select wire:model="selected_user_id">
+                            <flux:select.option value="">-- اختر المالك --</flux:select.option>
+                            @foreach($existing_users as $user)
+                                <flux:select.option value="{{ $user->id }}">{{ $user->name }} ({{ $user->email }})</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="selected_user_id" />
+                    </flux:field>
+                </div>
+            @else
                 <div class="space-y-4 pt-2">
                     <flux:heading level="3" size="sm" class="font-semibold text-zinc-500 border-b pb-2">بيانات مالك المتجر</flux:heading>
 
