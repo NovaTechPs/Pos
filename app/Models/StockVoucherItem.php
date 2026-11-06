@@ -10,7 +10,9 @@ class StockVoucherItem extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['tenant_id', 'stock_voucher_id', 'product_id', 'quantity'];
+    protected $fillable = ['tenant_id', 'stock_voucher_id', 'product_id', 'quantity', 'unit_cost'];
+
+    protected $casts = ['quantity' => 'decimal:3', 'unit_cost' => 'decimal:2'];
 
     /** @return BelongsTo<StockVoucher, $this> */
     public function voucher(): BelongsTo

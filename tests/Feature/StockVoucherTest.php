@@ -24,7 +24,7 @@ test('stock in and out vouchers update inventory and leave auditable ledger entr
         ->set('branchId', $this->branch->id)
         ->set('type', 'in')
         ->set('notes', 'بضاعة وصلت دون فاتورة')
-        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 5]])
+        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 5, 'unit_cost' => 7.5]])
         ->call('save')
         ->assertHasNoErrors()
         ->assertSee('تم حفظ سند الإدخال بنجاح');
@@ -32,6 +32,7 @@ test('stock in and out vouchers update inventory and leave auditable ledger entr
     $in = StockVoucher::query()->where('tenant_id', $this->tenant->id)->firstOrFail();
     expect($in->type)->toBe('in')->and($in->notes)->toBe('بضاعة وصلت دون فاتورة')
         ->and($in->items)->toHaveCount(1)
+        ->and((float) $in->items->first()->unit_cost)->toBe(7.5)
         ->and((float) $this->stock->fresh()->stock_quantity)->toBe(15.0);
     $movement = DB::table('stock_movements')->where('source_id', $in->id)->latest('id')->first();
     expect($movement->source_type)->toBe('stock_in')->and($movement->source_reference)->toBe($in->voucher_number)
@@ -40,7 +41,7 @@ test('stock in and out vouchers update inventory and leave auditable ledger entr
     Livewire::test('pages::tenant.stock-vouchers.index')
         ->set('branchId', $this->branch->id)
         ->set('type', 'out')
-        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 4]])
+        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 4, 'unit_cost' => 7.5]])
         ->call('save')
         ->assertHasNoErrors();
 
@@ -52,7 +53,7 @@ test('stock out voucher refuses a quantity larger than the branch balance', func
     Livewire::test('pages::tenant.stock-vouchers.index')
         ->set('branchId', $this->branch->id)
         ->set('type', 'out')
-        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 11]])
+        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 11, 'unit_cost' => 0]])
         ->call('save')
         ->assertHasErrors(['lines']);
 
@@ -73,7 +74,25 @@ test('stock vouchers find a product by barcode and add it to the voucher line', 
         ->call('addProduct', $this->product->id)
         ->assertSet('lines.0.product_id', (string) $this->product->id)
         ->assertSet('lines.0.quantity', 1)
+        ->assertSet('lines.0.unit_cost', 0.0)
         ->assertSet('productSearch', '')
         ->call('addProduct', $this->product->id)
         ->assertSet('errorMessage', 'الصنف موجود بالفعل في السند. عدّل كميته من الجدول.');
+});
+
+test('stock voucher line defaults to the product cost and stores an edited cost with quantity', function (): void {
+    $this->product->update(['cost_price' => 8.25]);
+    $component = Livewire::test('pages::tenant.stock-vouchers.index')
+        ->set('branchId', $this->branch->id)
+        ->call('addProduct', $this->product->id)
+        ->assertSet('lines.0.unit_cost', 8.25)
+        ->set('lines.0.quantity', 3.5)
+        ->set('lines.0.unit_cost', 9.75)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $item = StockVoucher::query()->with('items')->sole()->items->sole();
+    expect((float) $item->quantity)->toBe(3.5)
+        ->and((float) $item->unit_cost)->toBe(9.75)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(13.5);
 });

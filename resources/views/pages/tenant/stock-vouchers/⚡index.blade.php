@@ -18,8 +18,8 @@ new class extends Component
     public ?int $branchId = null;
     public string $notes = '';
     public string $productSearch = '';
-    /** @var list<array{product_id: string, quantity: float|int|string}> */
-    public array $lines = [['product_id' => '', 'quantity' => 1]];
+    /** @var list<array{product_id: string, quantity: float|int|string, unit_cost: float|int|string}> */
+    public array $lines = [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]];
     public ?string $successMessage = null;
     public ?string $errorMessage = null;
 
@@ -31,7 +31,26 @@ new class extends Component
 
     public function addLine(): void
     {
-        $this->lines[] = ['product_id' => '', 'quantity' => 1];
+        $this->authorize('products.stock.adjust');
+        $this->lines[] = ['product_id' => '', 'quantity' => 1, 'unit_cost' => 0];
+    }
+
+    public function selectLineProduct(int $index, int $productId): void
+    {
+        $this->authorize('products.stock.adjust');
+        $tenantId = auth()->user()?->tenant_id;
+        $product = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)
+            ->whereNull('deleted_at')->find($productId);
+
+        if (! isset($this->lines[$index]) || ! $product) {
+            $this->errorMessage = 'الصنف المحدد غير متاح.';
+
+            return;
+        }
+
+        $this->lines[$index]['product_id'] = (string) $product->id;
+        $this->lines[$index]['unit_cost'] = (float) $product->cost_price;
+        $this->errorMessage = null;
     }
 
     public function addProduct(int $productId): void
@@ -61,10 +80,11 @@ new class extends Component
         $emptyIndex = collect($this->lines)->search(fn (array $line): bool => blank($line['product_id']));
 
         if ($emptyIndex === false) {
-            $this->lines[] = ['product_id' => (string) $product->id, 'quantity' => 1];
+            $this->lines[] = ['product_id' => (string) $product->id, 'quantity' => 1, 'unit_cost' => (float) $product->cost_price];
         } else {
             $this->lines[$emptyIndex]['product_id'] = (string) $product->id;
             $this->lines[$emptyIndex]['quantity'] = 1;
+            $this->lines[$emptyIndex]['unit_cost'] = (float) $product->cost_price;
         }
 
         $this->productSearch = '';
@@ -73,8 +93,9 @@ new class extends Component
 
     public function removeLine(int $index): void
     {
+        $this->authorize('products.stock.adjust');
         unset($this->lines[$index]);
-        $this->lines = array_values($this->lines ?: [['product_id' => '', 'quantity' => 1]]);
+        $this->lines = array_values($this->lines ?: [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]]);
     }
 
     public function save(): void
@@ -89,6 +110,7 @@ new class extends Component
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.product_id' => ['required', 'integer', 'distinct'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999999.999'],
+            'lines.*.unit_cost' => ['required', 'numeric', 'gte:0', 'max:999999999.99'],
         ]);
 
         $user = Auth::user();
@@ -131,6 +153,7 @@ new class extends Component
                 StockVoucherItem::create([
                     'tenant_id' => $tenantId, 'stock_voucher_id' => $stockVoucher->id,
                     'product_id' => $productId, 'quantity' => $quantity,
+                    'unit_cost' => round((float) $line['unit_cost'], 2),
                 ]);
                 StockMovementContext::reference($sourceType, $stockVoucher->id, function () use ($stock, $quantity): void {
                     $this->type === 'in'
@@ -142,7 +165,7 @@ new class extends Component
 
         $this->successMessage = 'تم حفظ سند '.($this->type === 'in' ? 'الإدخال' : 'الإخراج').' بنجاح: '.$voucher;
         $this->notes = '';
-        $this->lines = [['product_id' => '', 'quantity' => 1]];
+        $this->lines = [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]];
         $this->resetValidation();
     }
 
@@ -166,48 +189,113 @@ new class extends Component
             ->with(['branchProducts' => fn ($query) => $query
                 ->where('tenant_id', $tenantId)
                 ->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
-            ->orderBy('name')->limit($search === '' ? 30 : 50)->get(['id', 'name', 'product_number']);
+            ->orderBy('name')->limit($search === '' ? 30 : 50)->get(['id', 'name', 'product_number', 'cost_price']);
+        $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->map(fn (string|int $id): int => (int) $id)->unique();
+        $lineProducts = $selectedProductIds->isEmpty() ? collect() : Product::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)->whereNull('deleted_at')->whereIn('id', $selectedProductIds)
+            ->with(['branchProducts' => fn ($query) => $query->where('tenant_id', $tenantId)->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
+            ->get(['id', 'name', 'product_number', 'cost_price']);
+        $lineOptions = $products->concat($lineProducts)->unique('id')->values();
         $recent = StockMovement::query()->where('tenant_id', $tenantId)->whereIn('source_type', ['stock_in', 'stock_out'])->when($this->branchId, fn ($query) => $query->where('branch_id', $this->branchId))->with(['product:id,name,product_number', 'branch:id,name'])->latest('id')->limit(30)->get();
 
-        return $this->view(compact('branches', 'products', 'recent'))->layout('layouts::tenant');
+        return $this->view(compact('branches', 'products', 'lineOptions', 'recent'))->layout('layouts::tenant');
     }
 };
 ?>
 
+@php
+    $selectedLineCount = collect($lines)->filter(fn ($line): bool => filled($line['product_id'] ?? null))->count();
+    $totalLineQuantity = collect($lines)->filter(fn ($line): bool => filled($line['product_id'] ?? null))->sum(fn ($line): float => (float) ($line['quantity'] ?? 0));
+    $estimatedTotalCost = collect($lines)->filter(fn ($line): bool => filled($line['product_id'] ?? null))->sum(fn ($line): float => (float) ($line['quantity'] ?? 0) * (float) ($line['unit_cost'] ?? 0));
+@endphp
+
 <flux:main dir="rtl" class="space-y-5">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div><flux:heading size="xl">سند إدخال وإخراج بضاعة</flux:heading><flux:text>السند ينشئ حركة مخزون ثابتة لكل صنف ويظهر في تقرير حركة المخزون.</flux:text></div>
-        <flux:button :href="route('tenant.stock-movements')" wire:navigate>سجل حركات المخزون</flux:button>
+    <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="flex size-12 items-center justify-center rounded-xl bg-white/10 text-2xl">📦</div>
+            <div>
+                <flux:heading size="xl" class="text-white">سند إدخال وإخراج بضاعة</flux:heading>
+                <flux:text class="mt-1 text-slate-300">أدخل الكمية والتكلفة لكل صنف، وراجع ملخص الحركة قبل الحفظ.</flux:text>
+            </div>
+        </div>
+        <flux:button :href="route('tenant.stock-movements')" wire:navigate variant="filled" class="border border-white/15 bg-white/10 text-white hover:bg-white/15">سجل حركات المخزون</flux:button>
     </div>
-    @if ($successMessage)<div class="rounded-xl bg-emerald-50 p-4 font-bold text-emerald-800">{{ $successMessage }}</div>@endif
-    @if ($errorMessage)<div class="rounded-xl bg-rose-50 p-4 font-bold text-rose-800">{{ $errorMessage }}</div>@endif
-    <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
-        <div class="grid gap-4 md:grid-cols-3">
-            <flux:select label="نوع السند" wire:model.live="type"><option value="in">سند إدخال بضاعة</option><option value="out">سند إخراج بضاعة</option></flux:select>
+
+    @if ($successMessage)<div role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 font-bold text-emerald-800">{{ $successMessage }}</div>@endif
+    @if ($errorMessage)<div role="alert" class="rounded-xl border border-rose-200 bg-rose-50 p-4 font-bold text-rose-800">{{ $errorMessage }}</div>@endif
+
+    <div class="grid gap-3 sm:grid-cols-3">
+        <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-900 dark:bg-indigo-950/40"><div class="text-xs font-bold text-indigo-600 dark:text-indigo-300">عدد الأصناف</div><div class="mt-1 text-2xl font-black tabular-nums text-indigo-950 dark:text-white">{{ $selectedLineCount }}</div></div>
+        <div class="rounded-2xl border border-sky-100 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40"><div class="text-xs font-bold text-sky-700 dark:text-sky-300">مجموع الكميات</div><div class="mt-1 text-2xl font-black tabular-nums text-sky-950 dark:text-white">{{ number_format($totalLineQuantity, 3) }}</div></div>
+        <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40"><div class="text-xs font-bold text-emerald-700 dark:text-emerald-300">إجمالي التكلفة التقديري</div><div class="mt-1 text-2xl font-black tabular-nums text-emerald-950 dark:text-white">{{ number_format($estimatedTotalCost, 2) }}</div></div>
+    </div>
+
+    <div class="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-slate-700 dark:bg-slate-900">
+        <section class="grid gap-4 border-b border-slate-100 pb-5 md:grid-cols-2 dark:border-slate-800">
+            <flux:select label="نوع السند" wire:model.live="type"><option value="in">إدخال بضاعة</option><option value="out">إخراج بضاعة</option></flux:select>
             @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
                 <flux:select label="الفرع / المخزن" wire:model="branchId"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @endif
-            <flux:input label="ابحث عن صنف" wire:model.live.debounce.250ms="productSearch" placeholder="الاسم أو رقم الصنف" />
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-            <div class="mb-2 text-xs font-bold text-slate-500">نتائج الأصناف — ابحث بالاسم أو رقم الصنف أو الباركود ثم اضغط الصنف لإضافته للسند.</div>
+        </section>
+
+        <section class="space-y-3">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div><h2 class="text-base font-black text-slate-900 dark:text-white">إضافة الأصناف</h2><p class="mt-1 text-xs text-slate-500">ابحث بالاسم أو رقم الصنف أو الباركود، ثم اضغط على الصنف.</p></div>
+                <div class="w-full sm:max-w-sm"><flux:input label="بحث الأصناف" wire:model.live.debounce.250ms="productSearch" placeholder="اكتب اسم الصنف أو امسح الباركود" /></div>
+            </div>
             <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 @forelse ($products as $product)
                     @php $stock = $product->branchProducts->first()?->stock_quantity; @endphp
-                    <button type="button" wire:click="addProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="addProduct({{ $product->id }})" class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900">
-                        <span class="min-w-0"><span class="block truncate text-sm font-black text-slate-800 dark:text-white">{{ $product->name }}</span><span class="mt-1 block font-mono text-[10px] text-slate-400">{{ $product->product_number ?: '#'.$product->id }}</span></span>
-                        <span class="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-black {{ $stock !== null && $stock <= 0 ? 'text-rose-700' : 'text-emerald-700' }} dark:bg-slate-800">{{ $stock === null ? '—' : number_format((float) $stock, 3) }}</span>
+                    <button type="button" wire:click="addProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="addProduct({{ $product->id }})" class="group flex min-h-20 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/50">
+                        <span class="min-w-0"><span class="block truncate text-sm font-black text-slate-900 dark:text-white">{{ $product->name }}</span><span class="mt-1 block font-mono text-[10px] text-slate-500">رقم الصنف: {{ $product->product_number ?: '#'.$product->id }}</span><span class="mt-1 block text-[10px] font-bold text-slate-500">التكلفة الحالية: {{ number_format((float) $product->cost_price, 2) }}</span></span>
+                        <span class="shrink-0 rounded-lg bg-white px-2.5 py-2 text-center shadow-sm dark:bg-slate-900"><span class="block text-[9px] font-bold text-slate-400">المتوفر</span><span class="font-mono text-sm font-black {{ $stock !== null && $stock <= 0 ? 'text-rose-700' : 'text-emerald-700' }}">{{ $stock === null ? '—' : number_format((float) $stock, 3) }}</span></span>
                     </button>
                 @empty
-                    <div class="col-span-full py-3 text-center text-sm text-slate-500">لا توجد أصناف مطابقة للبحث.</div>
+                    <div class="col-span-full rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 dark:border-slate-700">لا توجد أصناف مطابقة للبحث.</div>
                 @endforelse
             </div>
-        </div>
-        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table class="w-full text-right text-sm"><thead class="bg-slate-50 dark:bg-slate-800"><tr><th class="p-3">الصنف</th><th class="p-3">الكمية</th><th class="p-3">إجراء</th></tr></thead><tbody>@foreach ($lines as $index => $line)<tr wire:key="voucher-line-{{ $index }}" class="border-t border-slate-100 dark:border-slate-800"><td class="p-3 min-w-80"><select wire:model="lines.{{ $index }}.product_id" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 dark:bg-slate-900"><option value="">اختر الصنف</option>@foreach ($products as $product)<option value="{{ $product->id }}">{{ $product->product_number ? $product->product_number.' — ' : '' }}{{ $product->name }}</option>@endforeach</select>@error('lines.'.$index.'.product_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td><td class="p-3 min-w-40"><input wire:model="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-center tabular-nums dark:bg-slate-900">@error('lines.'.$index.'.quantity')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td><td class="p-3"><button type="button" wire:click="removeLine({{ $index }})" class="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">حذف</button></td></tr>@endforeach</tbody></table></div>
-        @error('lines')<p class="text-sm font-bold text-rose-600">{{ $message }}</p>@enderror
-        <div class="flex"><button type="button" wire:click="addLine" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 dark:bg-slate-800">+ إضافة صنف</button></div>
-        <flux:textarea label="سبب السند أو ملاحظات" wire:model="notes" placeholder="مثال: بضاعة وصلت دون فاتورة / تلف / استعمال داخلي" />
-        <div class="flex justify-end"><flux:button variant="primary" wire:click="save" wire:loading.attr="disabled" wire:target="save">حفظ سند {{ $type === 'in' ? 'الإدخال' : 'الإخراج' }}</flux:button></div>
+        </section>
+
+        <section class="space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="text-base font-black text-slate-900 dark:text-white">أصناف السند</h2><p class="mt-1 text-xs text-slate-500">عدّل الكمية وتكلفة الوحدة مباشرة، والإجمالي يُحسب تلقائياً.</p></div><button type="button" wire:click="addLine" class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-200">+ إضافة سطر</button></div>
+            <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                <table class="w-full min-w-[850px] text-right text-sm">
+                    <thead class="bg-slate-900 text-white"><tr><th class="w-12 p-3 text-center">#</th><th class="min-w-64 p-3">الصنف</th><th class="w-36 p-3 text-center">الكمية</th><th class="w-40 p-3 text-center">تكلفة الوحدة</th><th class="w-40 p-3 text-center">إجمالي التكلفة</th><th class="w-20 p-3 text-center">حذف</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                        @foreach ($lines as $index => $line)
+                            @php
+                                $lineProduct = $lineOptions->firstWhere('id', (int) ($line['product_id'] ?? 0));
+                                $lineTotal = (float) ($line['quantity'] ?? 0) * (float) ($line['unit_cost'] ?? 0);
+                            @endphp
+                            <tr wire:key="voucher-line-{{ $index }}" class="bg-white transition hover:bg-indigo-50/50 dark:bg-slate-900 dark:hover:bg-slate-800/70">
+                                <td class="p-3 text-center font-mono text-xs font-black text-slate-400">{{ $index + 1 }}</td>
+                                <td class="min-w-64 p-3">
+                                    <select wire:change="selectLineProduct({{ $index }}, $event.target.value)" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="">اختر الصنف</option>@foreach ($lineOptions as $product)<option value="{{ $product->id }}" @selected((int) ($line['product_id'] ?? 0) === $product->id)>{{ $product->product_number ? $product->product_number.' — ' : '' }}{{ $product->name }}</option>@endforeach</select>
+                                    @if ($lineProduct)<div class="mt-1.5 flex flex-wrap gap-x-3 text-[10px] font-semibold text-slate-500"><span>رقم: {{ $lineProduct->product_number ?: '#'.$lineProduct->id }}</span><span>المتوفر: {{ number_format((float) ($lineProduct->branchProducts->first()?->stock_quantity ?? 0), 3) }}</span></div>@endif
+                                    @error('lines.'.$index.'.product_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                                </td>
+                                <td class="p-3 text-center"><input wire:model.live.debounce.250ms="lines.{{ $index }}.quantity" type="number" min="0.001" step="0.001" inputmode="decimal" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-center font-mono font-black tabular-nums outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white">@error('lines.'.$index.'.quantity')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td>
+                                <td class="p-3 text-center"><input wire:model.live.debounce.250ms="lines.{{ $index }}.unit_cost" type="number" min="0" step="0.01" inputmode="decimal" aria-label="تكلفة الوحدة للصنف {{ $index + 1 }}" class="w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-2.5 text-center font-mono font-black tabular-nums text-amber-900 outline-none focus:border-amber-500 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">@error('lines.'.$index.'.unit_cost')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</td>
+                                <td class="p-3 text-center font-mono font-black tabular-nums text-slate-900 dark:text-white">{{ number_format($lineTotal, 2) }}</td>
+                                <td class="p-3 text-center"><button type="button" wire:click="removeLine({{ $index }})" aria-label="حذف السطر {{ $index + 1 }}" class="rounded-lg bg-rose-50 px-3 py-2 text-sm font-black text-rose-700 transition hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300">×</button></td>
+                            </tr>
+                        @endforeach
+                        @if ($selectedLineCount === 0)<tr><td colspan="6" class="p-8 text-center text-sm font-semibold text-slate-400">لم تتم إضافة أصناف بعد. اختر صنفاً من نتائج البحث أعلاه.</td></tr>@endif
+                    </tbody>
+                    <tfoot class="border-t-2 border-slate-200 bg-slate-50 font-black dark:border-slate-700 dark:bg-slate-800"><tr><td colspan="2" class="p-3">الإجمالي</td><td class="p-3 text-center font-mono tabular-nums">{{ number_format($totalLineQuantity, 3) }}</td><td></td><td class="p-3 text-center font-mono tabular-nums">{{ number_format($estimatedTotalCost, 2) }}</td><td></td></tr></tfoot>
+                </table>
+            </div>
+            @error('lines')<p class="text-sm font-bold text-rose-600">{{ $message }}</p>@enderror
+        </section>
+
+        <section class="grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end dark:border-slate-800">
+            <flux:textarea label="سبب السند أو ملاحظات" wire:model="notes" placeholder="مثال: بضاعة وصلت دون فاتورة / تلف / استعمال داخلي" />
+            <flux:button variant="primary" wire:click="save" wire:loading.attr="disabled" wire:target="save">حفظ سند {{ $type === 'in' ? 'الإدخال' : 'الإخراج' }}</flux:button>
+        </section>
     </div>
-    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table class="w-full text-right text-sm"><thead class="bg-slate-50 dark:bg-slate-800"><tr><th class="p-3">التاريخ</th><th class="p-3">السند</th><th class="p-3">النوع</th><th class="p-3">الفرع</th><th class="p-3">الصنف</th><th class="p-3">الكمية</th></tr></thead><tbody>@forelse($recent as $movement)<tr class="border-t border-slate-100 dark:border-slate-800"><td class="p-3">{{ $movement->created_at->format('Y-m-d H:i') }}</td><td class="p-3 font-mono text-xs">{{ $movement->source_reference }}</td><td class="p-3">{{ $movement->source_type === 'stock_in' ? 'إدخال' : 'إخراج' }}</td><td class="p-3">{{ $movement->branch?->name }}</td><td class="p-3">{{ $movement->product?->name }}</td><td class="p-3 tabular-nums {{ $movement->quantity > 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($movement->quantity, 3) }}</td></tr>@empty<tr><td colspan="6" class="p-6 text-center text-slate-500">لا توجد سندات إدخال أو إخراج بعد.</td></tr>@endforelse</tbody></table></div>
+
+    <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div class="border-b border-slate-100 p-4 dark:border-slate-800"><h2 class="font-black text-slate-900 dark:text-white">آخر حركات الإدخال والإخراج</h2><p class="mt-1 text-xs text-slate-500">عرض آخر 30 حركة مسجلة.</p></div>
+        <div class="overflow-x-auto"><table class="w-full min-w-[720px] text-right text-sm"><thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><tr><th class="p-3">التاريخ</th><th class="p-3">رقم السند</th><th class="p-3">النوع</th><th class="p-3">الفرع</th><th class="p-3">الصنف</th><th class="p-3 text-center">الكمية</th></tr></thead><tbody class="divide-y divide-slate-100 dark:divide-slate-800">@forelse($recent as $movement)<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td class="p-3 tabular-nums">{{ $movement->created_at->format('Y-m-d H:i') }}</td><td class="p-3 font-mono text-xs">{{ $movement->source_reference }}</td><td class="p-3"><span class="rounded-full px-2.5 py-1 text-xs font-bold {{ $movement->source_type === 'stock_in' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300' }}">{{ $movement->source_type === 'stock_in' ? 'إدخال' : 'إخراج' }}</span></td><td class="p-3">{{ $movement->branch?->name }}</td><td class="p-3 font-semibold">{{ $movement->product?->name }}</td><td class="p-3 text-center font-mono font-black tabular-nums {{ $movement->quantity > 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($movement->quantity, 3) }}</td></tr>@empty<tr><td colspan="6" class="p-8 text-center text-slate-500">لا توجد سندات إدخال أو إخراج بعد.</td></tr>@endforelse</tbody></table></div>
+    </section>
 </flux:main>
