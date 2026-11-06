@@ -73,10 +73,6 @@
     @foreach ($navigationGroups as $group)
         @php
             $visibleItems = collect($group['items'])->filter(function (array $item): bool {
-                if ($item['route'] !== 'tenant.wholesale-sales') {
-                    return false;
-                }
-
                 $user = auth()->user();
                 if (! $user?->can($item['permission'])) {
                     return false;

@@ -13,11 +13,10 @@ beforeEach(function (): void {
     $this->employee = User::query()->where('email', 'hade@fanous.com')->sole();
 });
 
-test('wholesale employee opens the wholesale sales screen after login', function (): void {
+test('wholesale employee can log in and reach the dashboard with the configured permissions', function (): void {
     $this->post(route('login.store'), ['email' => $this->employee->email, 'password' => 'Client-Initial-Password42!'])
         ->assertRedirect('/dashboard');
-    $this->get('/dashboard')->assertRedirect(route('tenant.wholesale-sales'));
-    $this->get(route('tenant.wholesale-sales'))->assertSuccessful();
+    $this->get('/dashboard')->assertSuccessful()->assertViewIs('pages.tenant.dashboard');
 });
 
 test('employee without dashboard access is sent to their permitted wholesale screen after login', function (): void {
