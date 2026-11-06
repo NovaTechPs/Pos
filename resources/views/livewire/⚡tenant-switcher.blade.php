@@ -2,12 +2,20 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use App\Models\Tenant;
 
 new class extends Component {
+    #[Locked]
     public array $tenants = [];
+
+    #[Locked]
     public ?int $currentTenantId = null;
+
+    #[Locked]
     public ?string $currentTenantSlug = null;
+
+    #[Locked]
     public bool $canSwitchTenants = false;
 
     public function mount(): void
@@ -15,20 +23,37 @@ new class extends Component {
         $user = auth()->user();
         if (!$user) return;
 
-        // التحقق مما إذا كان المستخدم مالكاً ولديه خيار التبديل
-        if (!empty($user->is_owner) && method_exists($user, 'tenants')) {
-            $this->tenants = $user->tenants->toArray();
+        if ($user->isSaaSAdmin()) {
+            $this->tenants = Tenant::query()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->toArray();
             $this->canSwitchTenants = count($this->tenants) > 1;
 
             $currentTenant = collect($this->tenants)->firstWhere('id', session('active_tenant_id'))
                 ?? ($this->tenants[0] ?? null);
 
             if ($currentTenant) {
-                $this->currentTenantId = $currentTenant['id'] ?? null;
-                $this->currentTenantSlug = $currentTenant['slug'] ?? $currentTenant['domain'] ?? (string) ($currentTenant['id'] ?? '');
+                $this->currentTenantId = (int) $currentTenant['id'];
+                $this->currentTenantSlug = $currentTenant['slug'] ?? $currentTenant['domain'] ?? (string) $currentTenant['id'];
+            }
+        } elseif ($user->isTenantOwner()) {
+            $this->tenants = $user->ownedTenants()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->toArray();
+            $this->canSwitchTenants = count($this->tenants) > 1;
+
+            $currentTenant = collect($this->tenants)->firstWhere('id', session('active_tenant_id'))
+                ?? ($this->tenants[0] ?? null);
+
+            if ($currentTenant) {
+                $this->currentTenantId = (int) $currentTenant['id'];
+                $this->currentTenantSlug = $currentTenant['slug'] ?? $currentTenant['domain'] ?? (string) $currentTenant['id'];
             }
         } else {
-            // للموظف أو المستخدم العادي (is_owner is 0 or null)
             $this->canSwitchTenants = false;
             $this->currentTenantId = $user->tenant_id;
 
@@ -48,9 +73,22 @@ new class extends Component {
 
     public function switchTenant(int $tenantId): mixed
     {
-        if (!$this->canSwitchTenants) return null;
+        $user = auth()->user();
+        if (!$user) {
+            return null;
+        }
 
-        $tenant = auth()->user()?->tenants()->where('tenants.id', $tenantId)->first();
+        $tenantQuery = Tenant::query()
+            ->whereKey($tenantId)
+            ->where('is_active', true);
+
+        if ($user->isTenantOwner()) {
+            $tenantQuery->where('owner_id', $user->id);
+        } elseif (!$user->isSaaSAdmin()) {
+            return null;
+        }
+
+        $tenant = $tenantQuery->first();
 
         if ($tenant) {
             $slug = $tenant->slug ?? $tenant->domain ?? (string) $tenant->id;
@@ -84,7 +122,7 @@ new class extends Component {
 
 <div class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
     @if ($canSwitchTenants)
-        <!-- عرض القائمة المنسدلة فقط للمالك الذي يملك أكثر من متجر -->
+        <!-- تظهر القائمة لمدير النظام أو مالك أكثر من متجر -->
         <flux:dropdown position="bottom" align="start" class="w-full">
             <flux:button variant="ghost" icon-trailing="chevron-down" class="w-full justify-between font-semibold">
                 <div class="flex items-center gap-2 truncate">
@@ -108,7 +146,7 @@ new class extends Component {
             </flux:menu>
         </flux:dropdown>
     @else
-        <!-- عرض اسم المتجر فقط بشكل ثابت للموظف أو عند وجود متجر واحد -->
+        <!-- عرض اسم المتجر فقط للموظف أو عند وجود متجر واحد -->
         <div class="flex items-center gap-2 px-2 py-1.5 font-semibold text-zinc-800 dark:text-zinc-200">
             <flux:icon name="building-storefront" class="size-4 text-indigo-600 dark:text-indigo-400" />
             <span class="truncate text-sm">{{ $this->currentTenant['name'] ?? __('لا يوجد متجر مرتبط') }}</span>
