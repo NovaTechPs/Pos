@@ -24,7 +24,6 @@ new class extends Component {
     public string $payment_status = '';
     public string $invoiceSource = '';
     public string $saleKind = '';
-    #[\Livewire\Attributes\Locked]
     public ?int $selectedBranchId = null;
 
     // ============================================================
@@ -48,7 +47,7 @@ new class extends Component {
 
         $user = Auth::user();
 
-        $this->selectedBranchId = $user?->activeBranchId();
+        $this->selectedBranchId = ($user?->isTenantOwner() || $user?->isSaaSAdmin()) ? null : $user?->activeBranchId();
     }
 
     // ============================================================
@@ -148,7 +147,7 @@ new class extends Component {
         $this->payment_status = '';
         $this->invoiceSource = '';
         $this->saleKind = '';
-        $this->selectedBranchId = $user?->activeBranchId();
+        $this->selectedBranchId = ($user?->isTenantOwner() || $user?->isSaaSAdmin()) ? null : $user?->activeBranchId();
 
         $this->resetPage();
     }
@@ -171,6 +170,12 @@ new class extends Component {
     private function validateBranchSelection(): void
     {
         $tenantId = $this->tenantId();
+        $user = Auth::user();
+
+        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
+            $this->selectedBranchId = $user?->activeBranchId();
+            return;
+        }
 
         if (!$tenantId || !$this->selectedBranchId) {
             return;
@@ -183,13 +188,23 @@ new class extends Component {
 
         if (!$exists) {
             $this->selectedBranchId = null;
-            session()->forget('active_branch_id');
         }
+    }
+
+    public function updatedSelectedBranchId(): void
+    {
+        $this->validateBranchSelection();
+        $this->resetPage();
     }
 
     private function effectiveBranchId(): ?int
     {
-        return Auth::user()?->activeBranchId() ?? ($this->selectedBranchId ? (int) $this->selectedBranchId : null);
+        $user = Auth::user();
+        if ($user?->isTenantOwner() || $user?->isSaaSAdmin()) {
+            return $this->selectedBranchId ? (int) $this->selectedBranchId : null;
+        }
+
+        return $user?->activeBranchId() ?? ($this->selectedBranchId ? (int) $this->selectedBranchId : null);
     }
 
     // ============================================================
@@ -695,6 +710,7 @@ new class extends Component {
 
         return $this->view([
             'orders' => $orders,
+            'branches' => Branch::query()->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name']),
             'stats' => $stats,
             'dailySales' => $dailySales,
             'maxDailySales' => $maxDailySales,
@@ -812,6 +828,15 @@ new class extends Component {
         </div>
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                <div>
+                    <label class="mb-1.5 block text-[11px] font-black text-slate-600">الفرع</label>
+                    <select wire:model.live="selectedBranchId" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                        <option value="">كل الفروع</option>
+                        @foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
+                    </select>
+                </div>
+            @endif
             <div class="xl:col-span-2">
                 <label class="mb-1.5 block text-[11px] font-black text-slate-600">بحث</label>
                 <div class="relative">

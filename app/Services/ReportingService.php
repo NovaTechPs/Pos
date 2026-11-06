@@ -40,14 +40,14 @@ class ReportingService
         'cashflow' => ['المقبوضات والمدفوعات', 'accounting.payments.view'],
     ];
 
-    public function __construct(public readonly User $user, ?int $branchId = null)
+    public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true)
     {
         $tenant = $user->isSaaSAdmin() ? session('active_tenant_id') : $user->tenant_id;
         abort_unless($tenant && DB::table('tenants')->where('id', $tenant)->exists(), 403, 'حدد المتجر أولاً.');
         $this->tenantId = (int) $tenant;
         $activeBranchId = $user->activeBranchId();
         $this->branchId = $user->isTenantOwner() || $user->isSaaSAdmin()
-            ? ($activeBranchId ? (int) $activeBranchId : $branchId)
+            ? ($useActiveBranchWhenUnspecified && $activeBranchId ? (int) $activeBranchId : $branchId)
             : ($user->branch_id ? (int) $user->branch_id : $branchId);
         if ($this->branchId) {
             abort_unless(Branch::withoutGlobalScopes()->where('tenant_id', $this->tenantId)->whereKey($this->branchId)->exists(), 404);

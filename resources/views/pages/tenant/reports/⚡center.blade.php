@@ -41,7 +41,9 @@ new class extends Component {
     {
         $this->from = today()->startOfMonth()->toDateString();
         $this->to = today()->toDateString();
-        $this->branchId = auth()->user()->activeBranchId();
+        $this->branchId = auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin()
+            ? null
+            : auth()->user()->activeBranchId();
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
@@ -54,7 +56,25 @@ new class extends Component {
 
     private function service(): ReportingService
     {
-        return new ReportingService(auth()->user(), $this->branchId);
+        return new ReportingService(auth()->user(), $this->branchId, false);
+    }
+
+    public function updatedBranchId($value): void
+    {
+        $user = auth()->user();
+        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
+            $this->branchId = $user?->activeBranchId();
+            return;
+        }
+
+        $branchId = $value === '' || $value === null ? null : (int) $value;
+        if ($branchId && ! \App\Models\Branch::query()->where('tenant_id', $this->service()->tenantId)->whereKey($branchId)->exists()) {
+            $this->branchId = null;
+            return;
+        }
+
+        $this->branchId = $branchId;
+        $this->resetPage();
     }
 
     public function filters(): array
@@ -212,8 +232,9 @@ new class extends Component {
                 ->with(['barcodes' => fn ($query) => $query->where('tenant_id', $service->tenantId)])
                 ->orderBy('name')->limit(30)->get(['id', 'name', 'product_number']);
         }
-        $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId] + $this->filters()) : null;
-        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        $branches = \App\Models\Branch::query()->where('tenant_id', $service->tenantId)->orderBy('name')->get(['id', 'name']);
+        $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId ?? 0] + $this->filters()) : null;
+        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -232,7 +253,11 @@ new class extends Component {
     </flux:select>
     <form wire:submit="applyFilters" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="flex items-end"><div class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><span class="text-xs text-slate-500">الفرع الحالي</span><div class="font-bold">{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'كل الفروع' }}</div></div></div>
+            @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @else
+                <div class="flex items-end"><div class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><span class="text-xs text-slate-500">الفرع</span><div class="font-bold">{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</div></div></div>
+            @endif
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
             @if (in_array($report, ['balances', 'product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif

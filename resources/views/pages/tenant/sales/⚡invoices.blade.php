@@ -34,6 +34,8 @@ new class extends Component {
 
     public ?int $selectedBranchId = null;
 
+    public ?int $invoiceBranchFilter = null;
+
     public ?int $selectedCustomerId = null;
 
     public bool $showCustomerStatementModal = false;
@@ -110,6 +112,7 @@ new class extends Component {
     {
         $this->invoiceDate = now()->format('Y-m-d');
         $this->selectedBranchId = $this->resolveBranchId();
+        $this->invoiceBranchFilter = (auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin()) ? null : $this->selectedBranchId;
         $this->startNewInvoice(false);
 
         $invoiceId = request()->integer('invoice');
@@ -227,6 +230,32 @@ new class extends Component {
         $this->selectedCost = 0;
         $this->selectedStock = 0;
         $this->rowSearch = '';
+    }
+
+    public function updatedInvoiceBranchFilter($value): void
+    {
+        $user = auth()->user();
+        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
+            $this->invoiceBranchFilter = $user?->activeBranchId();
+            return;
+        }
+
+        $branchId = $value === '' || $value === null ? null : (int) $value;
+        if ($branchId && ! Branch::query()->where('tenant_id', $this->tenantId())->whereKey($branchId)->exists()) {
+            $this->invoiceBranchFilter = null;
+            $this->errorMessage = 'الفرع المحدد غير صالح لهذا المتجر.';
+            return;
+        }
+
+        $this->invoiceBranchFilter = $branchId;
+    }
+
+    private function invoiceBranchScopeId(): ?int
+    {
+        $user = auth()->user();
+        return $user?->isTenantOwner() || $user?->isSaaSAdmin()
+            ? $this->invoiceBranchFilter
+            : ($user?->branch_id ? (int) $user->branch_id : $user?->activeBranchId());
     }
 
     /*
@@ -956,6 +985,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $tenantId)
             ->where('type', 'wholesale')
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where(function ($query) use ($search) {
                 $query->where('invoice_number', 'like', "%{$search}%")
                     ->orWhere('id', is_numeric($search) ? (int) $search : 0);
@@ -980,6 +1010,11 @@ new class extends Component {
 
         if (!$tenantId || (int) $order->tenant_id !== $tenantId) {
             $this->errorMessage = 'لا يمكنك تحميل هذه الفاتورة.';
+            return;
+        }
+
+        if ($this->invoiceBranchScopeId() && (int) $order->branch_id !== $this->invoiceBranchScopeId()) {
+            $this->errorMessage = 'لا يمكنك عرض فواتير فرع آخر ضمن نطاق الفرع المحدد.';
             return;
         }
 
@@ -1045,7 +1080,8 @@ new class extends Component {
 
         $query = Order::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'wholesale');
+            ->where('type', 'wholesale')
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId));
 
         if ($this->currentOrderId) {
             $query->where('id', '<', $this->currentOrderId);
@@ -1072,6 +1108,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $tenantId)
             ->where('type', 'wholesale')
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where('id', '>', $this->currentOrderId)
             ->orderBy('id')
             ->first();
@@ -1330,6 +1367,7 @@ new class extends Component {
 
         return $this->view([
             'branches' => $branches,
+            'invoiceBranches' => $branches,
             'productResults' => $productResults,
             'customerResults' => $customerResults,
             'selectedCustomer' => $selectedCustomer,
@@ -1492,6 +1530,12 @@ new class extends Component {
         @if ($showInvoiceSearch)
             <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 <div class="flex flex-col gap-2 sm:flex-row">
+                    @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                        <select wire:model.live="invoiceBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
+                            <option value="">كل الفروع</option>
+                            @foreach ($invoiceBranches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
+                        </select>
+                    @endif
                     <div class="relative flex-1">
                         <input
                             id="invoice-search-input"

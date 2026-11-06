@@ -11,8 +11,10 @@ class ReportPrintController extends Controller
 {
     public function __invoke(Request $request): StreamedResponse
     {
-        $request->validate(['report' => ['required', 'string'], 'branch_id' => ['nullable', 'integer', 'min:1']]);
-        $service = new ReportingService($request->user(), $request->filled('branch_id') ? $request->integer('branch_id') : null);
+        $request->validate(['report' => ['required', 'string'], 'branch_id' => ['nullable', 'integer', 'min:0']]);
+        $hasBranchFilter = $request->filled('branch_id');
+        $branchId = $hasBranchFilter && $request->integer('branch_id') > 0 ? $request->integer('branch_id') : null;
+        $service = new ReportingService($request->user(), $branchId, ! $hasBranchFilter);
         $report = $request->string('report')->toString();
         $definition = $service->prepare($report, $request->only(['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind']));
         $data = ['title' => ReportingService::REPORTS[$report][0], 'definition' => $definition,
