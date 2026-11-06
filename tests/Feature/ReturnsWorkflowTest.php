@@ -40,6 +40,8 @@ test('sales and purchase returns have separate invoice pages', function (): void
     $this->get(route('tenant.sales-returns'))
         ->assertOk()
         ->assertSee('فاتورة مردود مبيعات')
+        ->assertSee('return-balance-summary', false)
+        ->assertSee('position: static !important;', false)
         ->assertSee('العميل')
         ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
         ->assertSee('اختر العميل أولاً')
