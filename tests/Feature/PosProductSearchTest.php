@@ -213,9 +213,21 @@ test('selecting a searched product clears both search controls and restores the 
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$coffee->id]);
     $component->call('selectInlineProduct', $coffee->id)
         ->assertSet('productSearchQuery', '')->assertSet('inlineSearchQuery', '')
-        ->assertDispatched('pos-search-cleared')->assertDispatched('pos-focus-barcode');
+        ->assertDispatched('pos-search-cleared')
+        ->assertDispatched('pos-focus-product-row', productId: $coffee->id)
+        ->assertNotDispatched('pos-focus-barcode');
     expect(array_column($component->get('quickProducts'), 'id'))->toContain($coffee->id, $tea->id)
         ->and(array_column($component->get('cart'), 'id'))->toBe([$coffee->id]);
+});
+
+test('POS product rows expose a focused highlight for keyboard navigation', function (): void {
+    $template = file_get_contents(resource_path('views/pages/tenant/pos/partials/quick-product-results.blade.php'));
+    $script = file_get_contents(resource_path('views/pages/tenant/pos/⚡sales.blade.php'));
+    $styles = file_get_contents(resource_path('css/pos.css'));
+
+    expect($template)->toContain('data-product-id="{{ $product[\'id\'] }}"')
+        ->and($script)->toContain("item.classList.toggle('pos-product-focused', item === product)")
+        ->and($styles)->toContain('[data-pos-product].pos-product-focused');
 });
 
 test('pos search shows product rows and adds the requested quantity', function (): void {

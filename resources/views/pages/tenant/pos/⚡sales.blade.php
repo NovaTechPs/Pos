@@ -1184,7 +1184,8 @@ new class extends Component {
             return;
         }
 
-        $this->finishInlineProductSelection();
+        $this->finishInlineProductSelection(false);
+        $this->dispatch('pos-focus-product-row', productId: $productId);
     }
 
     public function addSearchedProduct(int $productId): void
@@ -1205,7 +1206,7 @@ new class extends Component {
         $this->finishInlineProductSelection();
     }
 
-    private function finishInlineProductSelection(): void
+    private function finishInlineProductSelection(bool $focusBarcode = true): void
     {
         $this->inlineSearchQuery = '';
         $this->productSearchQuery = '';
@@ -1215,7 +1216,9 @@ new class extends Component {
         $this->loadQuickProducts();
 
         $this->dispatch('pos-search-cleared', componentId: $this->getId());
-        $this->dispatch('pos-focus-barcode');
+        if ($focusBarcode) {
+            $this->dispatch('pos-focus-barcode');
+        }
     }
 
     public function selectCategory(?int $categoryId = null): void
@@ -4642,6 +4645,20 @@ new class extends Component {
                                 }, 50);
                             });
 
+                            window.addEventListener('pos-focus-product-row', function(event) {
+                                requestAnimationFrame(function() {
+                                    const panel = getPanel();
+                                    const products = getProducts(panel);
+                                    const product = products.find((item) =>
+                                        Number(item.dataset.productId) === Number(event.detail?.productId)
+                                    ) ?? products[0];
+
+                                    if (product) {
+                                        focusProduct(product);
+                                    }
+                                });
+                            });
+
                             function getPanel() {
                                 return document.querySelector(PANEL_SELECTOR);
                             }
@@ -4671,6 +4688,10 @@ new class extends Component {
                                     if (panel) {
                                         panel.dataset.selectedProductIndex =
                                             product.dataset.productIndex ?? '0';
+
+                                        getProducts(panel).forEach((item) => {
+                                            item.classList.toggle('pos-product-focused', item === product);
+                                        });
                                     }
                                 }
 
@@ -4797,8 +4818,19 @@ new class extends Component {
                                 if (panel) {
                                     panel.dataset.selectedProductIndex =
                                         product.dataset.productIndex ?? '0';
+
+                                    getProducts(panel).forEach((item) => {
+                                        item.classList.toggle('pos-product-focused', item === product);
+                                    });
                                 }
                             });
+
+                            document.addEventListener('click', function(event) {
+                                const product = event.target?.closest?.(PRODUCT_SELECTOR);
+                                if (product) {
+                                    focusProduct(product);
+                                }
+                            }, true);
 
                             document.addEventListener('keydown', function(event) {
                                 const key = event.key;
