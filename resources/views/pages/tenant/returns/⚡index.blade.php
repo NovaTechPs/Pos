@@ -141,6 +141,10 @@ new class extends Component {
 
     public function updatedPartySearch(): void
     {
+        if ($this->selectedPartyId && trim($this->partySearch) === $this->selectedPartyName) {
+            return;
+        }
+
         $this->selectedPartyId = null;
         $this->selectedPartyName = '';
         $this->resetProductSelection();

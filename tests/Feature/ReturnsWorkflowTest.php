@@ -58,6 +58,21 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertDontSee('Return type');
 });
 
+test('a delayed party search update keeps the selected customer enabled for item entry', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر اختيار العميل']);
+    $user = returnsTestUser($tenant);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل الاختبار', 'type' => 'customer']);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+
+    Livewire::test('pages::tenant.returns.index')
+        ->set('partySearch', $customer->name)
+        ->call('selectParty', $customer->id)
+        ->set('partySearch', $customer->name)
+        ->assertSet('selectedPartyId', $customer->id)
+        ->assertSet('selectedPartyName', $customer->name)
+        ->assertDontSee('اختر العميل أولاً لتفعيل إضافة الأصناف.');
+});
+
 test('sales return is account-based, uses the customer last sale price, and tracks aggregate return limits', function (string $partyType, float $balance): void {
     $tenant = Tenant::query()->create(['name' => 'متجر مرتجعات المبيعات']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
