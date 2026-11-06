@@ -1,5 +1,12 @@
 {
     "Platform": "المنصة",
+    "Home": "الرئيسية",
+    "People and Access": "المستخدمون والصلاحيات",
+    "Customers and Suppliers": "العملاء والموردون",
+    "Inventory and Products": "المخزون والمنتجات",
+    "Invoices": "الفواتير",
+    "Reports and Accounts": "التقارير والحسابات",
+    "Store and Tools": "المتجر والأدوات",
     "Dashboard": "لوحة التحكم",
     "Branches": "الفروع",
     "Roles": "الأدوار والصلاحيات",

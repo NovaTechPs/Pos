@@ -73,6 +73,25 @@ test('tenant and settings pages render their responsive layouts with usable tabl
     ['/settings/security', 'security'],
 ]);
 
+test('tenant sidebar groups invoice links inside a collapsible invoice section', function (): void {
+    $response = $this->get('/dashboard')->assertSuccessful();
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$response->getContent(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    $invoiceSection = null;
+
+    foreach ($xpath->query('//details[summary]') as $section) {
+        if (str_contains($section->getElementsByTagName('summary')->item(0)?->textContent ?? '', __('Invoices'))) {
+            $invoiceSection = $section;
+            break;
+        }
+    }
+
+    expect($invoiceSection)->not->toBeNull()
+        ->and($invoiceSection->getElementsByTagName('a')->length)->toBeGreaterThanOrEqual(6)
+        ->and($response->getContent())->toContain(route('tenant.sale-invoices'), route('tenant.purchase-invoices'), __('Sales Invoices'), __('Purchase Invoices'));
+});
+
 test('point of sale keeps notes outside payment and offers one copy action for a saved invoice', function (): void {
     Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'opened_by' => $this->user->id, 'opening_cash' => 0, 'status' => 'open', 'opened_at' => now()]);
     $product = Product::query()->firstOrFail();

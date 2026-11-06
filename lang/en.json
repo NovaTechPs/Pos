@@ -1,5 +1,12 @@
 {
     "Platform": "Platform",
+    "Home": "Home",
+    "People and Access": "People and access",
+    "Customers and Suppliers": "Customers and suppliers",
+    "Inventory and Products": "Inventory and products",
+    "Invoices": "Invoices",
+    "Reports and Accounts": "Reports and accounts",
+    "Store and Tools": "Store and tools",
     "Dashboard": "Dashboard",
     "Branches": "Branches",
     "Roles": "Roles and permissions",
