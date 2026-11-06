@@ -1615,7 +1615,7 @@ new class extends Component
                     window.JsBarcode(svg, barcode, {
                         format: 'CODE128', width: 1.2, height: 36,
                         displayValue: true, textPosition: 'bottom',
-                        fontSize: 12, textMargin: 3, margin: 5,
+                        fontSize: 15, textMargin: 3, margin: 5,
                         background: '#fff', lineColor: '#000'
                     });
                 } catch (error) { console.error('Barcode preview error:', error); }
@@ -1644,7 +1644,7 @@ new class extends Component
                     window.JsBarcode(svg, barcode, {
                         format: 'CODE128', width: 1.5, height: 40,
                         displayValue: true, textPosition: 'bottom',
-                        font: 'Arial', fontSize: 13, textMargin: 4,
+                        font: 'Arial', fontSize: 16, textMargin: 4,
                         margin: 7, background: '#fff', lineColor: '#000'
                     });
                 } catch (err) { alert('الباركود غير صالح للطباعة: ' + err.message); return; }
