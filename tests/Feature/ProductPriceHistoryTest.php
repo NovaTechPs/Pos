@@ -97,6 +97,38 @@ test('sales invoice retains customer search selection and original item entry wi
         ->set('customerSearch', 'الزبون الثاني')->assertSee('الزبون الثاني');
 });
 
+test('sales invoice F8 applies the latest price sold to the selected customer', function (): void {
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 10, 'retail_price' => 25]);
+    createPriceHistorySale($this->tenant->id, $this->product->id, $this->customer->id, 'OLDER-CUSTOMER-PRICE', 19);
+    createPriceHistorySale($this->tenant->id, $this->product->id, $this->customer->id, 'LATEST-CUSTOMER-PRICE', 17);
+
+    $component = Livewire::actingAs($this->user)->test('pages::tenant.sales.invoices')
+        ->call('selectCustomer', $this->customer->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('applyLastCustomerPrice')
+        ->assertSet('selectedPrice', 17);
+
+    $component->call('commitRowToCart');
+    $cartKey = array_key_first($component->get('cart'));
+    $component->call('updateItemPrice', $cartKey, 21)
+        ->call('applyLastCustomerPrice', $cartKey);
+
+    expect($component->get('cart')[$cartKey]['price'])->toBe(17.0);
+});
+
+test('sales invoice F8 requires a selected customer and reports when no prior price exists', function (): void {
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 10, 'retail_price' => 25]);
+    $component = Livewire::actingAs($this->user)->test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('applyLastCustomerPrice')
+        ->assertSet('errorMessage', 'اختر الزبون أولاً لاستخدام آخر سعر بيع له.')
+        ->call('selectCustomer', $this->customer->id)
+        ->call('applyLastCustomerPrice')
+        ->assertSet('errorMessage', 'لا يوجد سعر بيع سابق لهذا الصنف عند هذا الزبون.');
+
+    expect($component->get('selectedPrice'))->toBe(25.0);
+});
+
 test('price modal displays customer names when invoice name snapshot is empty', function (): void {
     $order = createPriceHistorySale($this->tenant->id, $this->product->id, $this->customer->id, 'EMPTY-NAME', 20);
     $order->update(['customer_name' => null]);

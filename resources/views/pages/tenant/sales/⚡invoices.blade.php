@@ -340,6 +340,62 @@ new class extends Component {
         $this->dispatch('focus-product-search');
     }
 
+    public function applyLastCustomerPrice(?string $cartKey = null): ?float
+    {
+        if (! $this->ensureInvoiceEditable()) {
+            return null;
+        }
+
+        $tenantId = $this->tenantId();
+        if (! $tenantId || ! $this->selectedCustomerId) {
+            $this->errorMessage = 'اختر الزبون أولاً لاستخدام آخر سعر بيع له.';
+
+            return null;
+        }
+
+        $productId = $cartKey !== null
+            ? ($this->cart[$cartKey]['id'] ?? null)
+            : $this->selectedProductId;
+
+        if (! $productId || ! Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->exists()) {
+            $this->errorMessage = 'اختر صنفاً صالحاً أولاً.';
+
+            return null;
+        }
+
+        $lastPrice = DB::table('order_items as items')
+            ->join('orders', 'orders.id', '=', 'items.order_id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('items.tenant_id', $tenantId)
+            ->where('items.product_id', $productId)
+            ->where('orders.customer_id', $this->selectedCustomerId)
+            ->whereNull('orders.deleted_at')
+            ->where('orders.status', 'completed')
+            ->where('orders.type', '!=', 'return')
+            ->where('items.quantity', '>', 0)
+            ->orderByDesc('orders.created_at')
+            ->orderByDesc('items.id')
+            ->value('items.unit_price');
+
+        if ($lastPrice === null) {
+            $this->errorMessage = 'لا يوجد سعر بيع سابق لهذا الصنف عند هذا الزبون.';
+
+            return null;
+        }
+
+        $price = (float) $lastPrice;
+        if ($cartKey !== null) {
+            $this->cart[$cartKey]['price'] = $price;
+            unset($this->cart[$cartKey]['total_override']);
+        } else {
+            $this->selectedPrice = $price;
+        }
+
+        $this->errorMessage = null;
+
+        return $price;
+    }
+
     public function clearCustomer(): void
     {
         $this->selectedCustomerId = null;
@@ -1485,7 +1541,7 @@ new class extends Component {
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F3</kbd> حفظ</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F6</kbd> حفظ وطباعة</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F7</kbd> استعلام</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F8</kbd> العميل</span>
+                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F8</kbd> سعر الزبون السابق / العميل</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F9</kbd> المنتج</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Enter</kbd> اختيار / التالي</span>
                 <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Esc</kbd> إغلاق القوائم</span>
@@ -1768,6 +1824,7 @@ new class extends Component {
                     <label class="mb-1.5 block text-xs font-black text-slate-600">السعر</label>
                     <input
                         x-ref="priceInput"
+                        data-customer-price-target
                         type="number"
                         step="0.01"
                         min="0"
@@ -1872,6 +1929,8 @@ new class extends Component {
                                         min="0"
                                         step="0.01"
                                         value="{{ $item['price'] }}"
+                                        data-customer-price-target
+                                        data-cart-key="{{ $key }}"
                                         data-grid-input
                                         data-row="{{ $loop->index }}"
                                         data-col="1"
@@ -2397,6 +2456,19 @@ new class extends Component {
 
             if (key === 'F8') {
                 event.preventDefault();
+                if (target?.matches?.('[data-customer-price-target]')) {
+                    const priceInput = target;
+                    const cartKey = priceInput.dataset.cartKey || null;
+
+                    this.$wire.applyLastCustomerPrice(cartKey).then((price) => {
+                        if (price !== null && document.activeElement === priceInput) {
+                            priceInput.value = Number(price).toFixed(2);
+                        }
+                    });
+
+                    return;
+                }
+
                 const input = this.$el.querySelector('#customer-search-input');
                 input?.focus({ preventScroll: true });
                 input?.select();
