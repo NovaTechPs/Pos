@@ -1,5 +1,12 @@
 <div id="pos-cart-panel" class="pos-cart flex min-w-0 min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     @php $invoiceLocked = $this->invoiceIsLocked(); @endphp
+    @if ($isReturnMode && $errors->any())
+        <div role="alert" class="shrink-0 bg-rose-50 p-3 text-sm font-bold text-rose-700">
+            @foreach ($errors->all() as $error)
+                <p>{{ $error }}</p>
+            @endforeach
+        </div>
+    @endif
 
     {{-- =========================================================
         Search
@@ -69,11 +76,11 @@
                     </span>
                 </div>
                 <div class="text-[10px] font-bold text-slate-400">
-                    {{ $mergeSimilarProducts ? 'الصنف المتكرر يجمع في سطر واحد' : 'كل إضافة تظهر كسطر مستقل' }}
+                    {{ $isReturnMode ? 'كل صنف مرتجع في سطر مستقل لتحديد حالته' : ($mergeSimilarProducts ? 'الصنف المتكرر يجمع في سطر واحد' : 'كل إضافة تظهر كسطر مستقل') }}
                 </div>
             </div>
 
-            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch" @disabled($invoiceLocked)
+            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch" @disabled($invoiceLocked || $isReturnMode)
                 aria-checked="{{ $mergeSimilarProducts ? 'true' : 'false' }}"
                 class="relative h-7 w-12 shrink-0 rounded-full transition
                     {{ $mergeSimilarProducts ? 'bg-indigo-600' : 'bg-slate-300' }}"
@@ -160,6 +167,7 @@
                     @endphp
 
                     <tr data-pos-cart-line wire:key="pos-cart-{{ $lineKey }}"
+                        @if ($item['quantity'] < 0) data-pos-return-line @endif
                         @if (! $mergeSimilarProducts) data-pos-product-color="{{ $productIdentity }}" style="--pos-cart-hue: {{ $productHue }}" @endif
                         class="{{ ! $mergeSimilarProducts ? 'pos-cart-product-row' : (empty($item['is_gift']) && ($item['offer_quantity'] ?? 0) > 0 && isset($item['offer_price']) && $item['offer_price'] < $item['offer_quantity'] * $item['price'] ? 'bg-amber-50' : ($loop->odd ? 'bg-white' : 'bg-slate-50')) }} hover:bg-indigo-50">
                         {{-- Row Number --}}
@@ -198,7 +206,7 @@
 
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">
                                 @if ($item['quantity'] < 0)
-                                    <span class="text-slate-600">
+                                    <span class="font-bold text-rose-700">
                                         مرتجع
                                     </span>
                                 @endif
@@ -209,6 +217,12 @@
                                     </span>
                                 @endif
                             </div>
+                            @if ($isReturnMode)
+                                <label class="mt-2 flex items-center gap-2 text-xs font-bold text-rose-700">
+                                    <input type="checkbox" wire:model.live="cart.{{ $lineKey }}.returned_to_stock" @checked($item['returned_to_stock'] ?? true) @disabled($invoiceLocked) class="rounded border-rose-300 text-rose-600">
+                                    {{ ($item['returned_to_stock'] ?? true) ? 'سليم — يعود للمخزون' : 'تالف — لا يعود للمخزون' }}
+                                </label>
+                            @endif
                         </td>
 
                         {{-- Quantity --}}
@@ -216,8 +230,8 @@
                             <div
                                 class="inline-flex items-center overflow-hidden
                                     rounded-lg border border-slate-200 bg-white">
-                                <input type="number" step="0.01" min="{{ $isReturnMode ? '-999999.99' : '0.01' }}"
-                                    value="{{ $item['quantity'] }}" data-pos-field="quantity"
+                                <input type="number" step="0.01" min="0.01"
+                                    value="{{ $isReturnMode ? abs((float) $item['quantity']) : $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
                                     wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)" @disabled($invoiceLocked)
                                     class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black text-slate-900 outline-none focus:ring-0"
@@ -376,6 +390,9 @@
 
 
     <style>
+        tr[data-pos-return-line], tr[data-pos-return-line]:hover { background: #fff1f2 !important; border-bottom: 1px solid #fecdd3; }
+        tr[data-pos-return-line] td, tr[data-pos-return-line] td div, tr[data-pos-return-line] input { color: #be123c !important; }
+        tr[data-pos-return-line] input { border-color: #fda4af; }
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button {
             -webkit-appearance: none;

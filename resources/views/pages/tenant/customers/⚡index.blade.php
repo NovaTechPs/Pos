@@ -554,6 +554,7 @@ new class extends Component {
                         'payment_method',
                         'order_id',
                         'purchase_id',
+                        'purchase_return_id',
                         'created_at',
                         'payment_date',
                         'notes'
@@ -683,6 +684,16 @@ new class extends Component {
         */
 
         foreach ($party->payments as $payment) {
+            if ($payment->purchase_return_id) {
+                $transactions->push([
+                    'id' => 'payment-'.$payment->id, 'source_type' => 'payment', 'source_id' => $payment->id,
+                    'date' => $payment->payment_date ?: $payment->created_at,
+                    'description' => 'دفعة مستردة من مردود مشتريات',
+                    'debit' => abs((float) $payment->amount), 'credit' => 0.00,
+                ]);
+
+                continue;
+            }
             $isRefund = $payment->type === 'payment';
             $amount = abs((float) $payment->amount);
             $isSupplierPayment = $payment->purchase_id !== null

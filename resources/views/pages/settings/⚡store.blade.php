@@ -28,6 +28,8 @@ new class extends Component
 
     public bool $mergeSimilarProducts = false;
 
+    public bool $showTax = true;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -51,6 +53,7 @@ new class extends Component
         $this->unifiedStock = TenantSetting::getBool($tenant->id, 'unified_stock');
         $this->allowNegativeStock = TenantSetting::getBool($tenant->id, 'allow_negative_stock');
         $this->mergeSimilarProducts = TenantSetting::getBool($tenant->id, 'merge_similar_products');
+        $this->showTax = TenantSetting::getBool($tenant->id, 'show_tax', true);
     }
 
     public function save(): void
@@ -65,6 +68,7 @@ new class extends Component
             'unifiedStock' => ['boolean'],
             'allowNegativeStock' => ['boolean'],
             'mergeSimilarProducts' => ['boolean'],
+            'showTax' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -80,6 +84,7 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, 'unified_stock', $validated['unifiedStock']);
             TenantSetting::setBool($this->tenantId, 'allow_negative_stock', $validated['allowNegativeStock']);
             TenantSetting::setBool($this->tenantId, 'merge_similar_products', $validated['mergeSimilarProducts']);
+            TenantSetting::setBool($this->tenantId, 'show_tax', $validated['showTax']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -140,6 +145,10 @@ new class extends Component
                 <div><h2 class="font-black text-zinc-900 dark:text-white">البيع والمخزون / Sales & inventory</h2><p class="mt-1 text-sm text-zinc-500">حدد كيف يتعامل النظام مع أرصدة الفروع وأصناف سلة البيع.</p></div>
             </div>
             <div class="space-y-3">
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">إظهار خانة الضريبة / Show tax</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد تظهر خانة الضريبة في فواتير المشتريات والمبيعات والطباعة، وعند إلغاء التحديد تختفي. هذا الخيار لا يغيّر حساب الضريبة.</span></span>
+                    <input type="checkbox" wire:model="showTax" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">مشاركة المخزون بين الفروع / Shared branch stock</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">يتيح استخدام المخزون المتاح في فروع المتجر وفق آلية البيع المعتمدة.</span></span>
                     <input type="checkbox" wire:model="unifiedStock" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">

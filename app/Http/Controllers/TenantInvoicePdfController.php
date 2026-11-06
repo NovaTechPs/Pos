@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -64,5 +65,35 @@ class TenantInvoicePdfController extends Controller
 
             echo $pdf->output();
         }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
+    }
+
+    public function returns(Request $request, string $kind, int $returnId): mixed
+    {
+        abort_unless($request->user()?->can('returns.view'), 403);
+        abort_unless(in_array($kind, ['sale', 'purchase'], true), 404);
+        $tenantId = (int) (session('active_tenant_id') ?? $request->user()->tenant_id);
+        $query = DB::table($kind === 'sale' ? 'orders' : 'purchase_returns')->where('tenant_id', $tenantId)
+            ->when($request->user()->branch_id, fn ($query, $branch) => $query->where('branch_id', $branch));
+        if ($kind === 'sale') {
+            $query->where('type', 'return')->whereNull('deleted_at')->where('source', 'web')->whereNull('original_order_id')->whereNull('shift_id');
+        } else {
+            $query->whereNull('purchase_id');
+        }
+        $return = $query->where('id', $returnId)->first();
+        abort_unless($return, 404);
+        $items = DB::table($kind === 'sale' ? 'order_items as item' : 'purchase_return_items as item')
+            ->join('products', function ($join) use ($tenantId): void {
+                $join->on('products.id', '=', 'item.product_id')->where('products.tenant_id', $tenantId);
+            })->where('item.tenant_id', $tenantId)->where($kind === 'sale' ? 'item.order_id' : 'item.purchase_return_id', $returnId)
+            ->get(['item.*', 'products.name']);
+        $party = Party::query()->where('tenant_id', $tenantId)->find($kind === 'sale' ? $return->customer_id : $return->supplier_id);
+        $branchName = Branch::query()->where('tenant_id', $tenantId)->whereKey($return->branch_id)->value('name');
+        $showTax = TenantSetting::getBool($tenantId, 'show_tax', true);
+
+        return response()->streamDownload(function () use ($return, $items, $party, $branchName, $kind, $showTax): void {
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('pages.tenant.returns.partials.invoice-pdf', compact('return', 'items', 'party', 'branchName', 'kind', 'showTax'));
+            echo $pdf->output();
+        }, 'return-'.$kind.'-'.$returnId.'.pdf');
     }
 }

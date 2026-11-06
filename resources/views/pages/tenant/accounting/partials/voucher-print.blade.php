@@ -2,13 +2,15 @@
     $isPayment = $mode === 'payment';
 @endphp
 
+@teleport('body')
 <div
-    class="app-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4"
+    dir="rtl"
+    class="voucher-print-modal app-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4"
     x-data
 >
     <div class="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
 
-        <div class="border-b border-slate-200 px-6 py-5">
+        <div class="voucher-print-controls border-b border-slate-200 px-6 py-5">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <h2 class="text-xl font-black text-slate-900">
@@ -52,7 +54,7 @@
                     </p>
 
                     <p class="mt-1 font-bold text-slate-900">
-                        {{ $voucher->payable?->name ?? '-' }}
+                        {{ $voucher->party?->name ?? '-' }}
                     </p>
                 </div>
 
@@ -77,6 +79,7 @@
                                 نقدي
                                 @break
 
+                            @case('bank_transfer')
                             @case('bank')
                                 تحويل بنكي
                                 @break
@@ -85,6 +88,7 @@
                                 بطاقة
                                 @break
 
+                            @case('cheque')
                             @case('check')
                                 شيك
                                 @break
@@ -120,12 +124,12 @@
 
             <div class="mt-8 border-t border-slate-200 pt-4 text-center text-xs text-slate-400">
                 تم إنشاء السند بواسطة
-                {{ $voucher->user?->name ?? '-' }}
+                {{ $voucher->creator?->name ?? '-' }}
             </div>
             <x-invoice-copyright />
         </div>
 
-        <div class="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+        <div class="voucher-print-controls flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
             <button
                 type="button"
                 wire:click="closePrint"
@@ -145,18 +149,42 @@
     </div>
 </div>
 
+@endteleport
+
 <style>
     @media print {
-        body > * {
+        html, body {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        body > :not(.voucher-print-modal) {
+            display: none !important;
+        }
+
+        .voucher-print-modal {
+            display: block !important;
+            position: static !important;
+            padding: 0 !important;
+            background: white !important;
+            overflow: visible !important;
+        }
+
+        .voucher-print-modal > div {
+            max-width: none !important;
+            overflow: visible !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .voucher-print-controls {
             display: none !important;
         }
 
         #voucher-print-area {
-            display: block !important;
-        }
-
-        #voucher-print-area * {
-            visibility: visible !important;
+            color: black;
+            break-inside: avoid;
         }
     }
 </style>

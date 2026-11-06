@@ -270,6 +270,7 @@ class BranchSyncOperationProcessor
                 'product_id' => $item['product_id'],
                 'quantity' => $quantity,
                 'is_gift' => (bool) ($item['is_gift'] ?? false),
+                'returned_to_stock' => (bool) ($item['restock'] ?? true),
                 'unit_price' => ! empty($item['is_gift']) ? 0 : $item['unit_price'],
                 'total_price' => ! empty($item['is_gift']) ? 0 : $item['total_price'],
                 'cost_price' => $item['cost_price'],
@@ -279,7 +280,7 @@ class BranchSyncOperationProcessor
 
             if ($quantity > 0) {
                 app(BranchStockAllocator::class)->deduct($order, (int) $item['product_id'], $quantity, TenantSetting::getBool($operation->tenant_id, 'unified_stock', false), TenantSetting::getBool($operation->tenant_id, 'allow_negative_stock', false));
-            } elseif ($quantity < 0) {
+            } elseif ($quantity < 0 && ($item['restock'] ?? true)) {
                 StockMovementContext::forDocument($order, fn () => $branchProduct->increment('stock_quantity', abs($quantity)));
             }
         }
@@ -377,6 +378,7 @@ class BranchSyncOperationProcessor
             'items.*.product_id' => ['required', 'integer'],
             'items.*.quantity' => ['required', 'numeric', 'not_in:0'],
             'items.*.is_gift' => ['sometimes', 'boolean'],
+            'items.*.restock' => ['sometimes', 'boolean'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
             'items.*.total_price' => ['required', 'numeric'],
             'items.*.cost_price' => ['required', 'numeric', 'min:0'],

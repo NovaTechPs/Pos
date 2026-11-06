@@ -329,9 +329,28 @@ new class extends Component {
 
     }
 
+    private function canChangeVoucher(?int $id): bool
+    {
+        if (!$id) {
+            return true;
+        }
+        $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
+            $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
+
+            return false;
+        }
+
+        return true;
+    }
+
     public function edit(int $id): void
 
     {
+        if (!$this->canChangeVoucher($id)) {
+            return;
+        }
+
 
         $tenantId = $this->getTenantId();
 
@@ -402,6 +421,10 @@ new class extends Component {
     public function saveReceipt(): void
 
     {
+        if (!$this->canChangeVoucher($this->paymentId)) {
+            return;
+        }
+
         $this->authorize($this->paymentId ? 'accounting.receipt.edit' : 'accounting.receipt.create');
 
         $tenantId = $this->getTenantId();
@@ -642,6 +665,10 @@ new class extends Component {
     public function confirmDelete(int $id): void
 
     {
+        if (!$this->canChangeVoucher($id)) {
+            return;
+        }
+
 
         $tenantId = $this->getTenantId();
 
@@ -662,6 +689,10 @@ new class extends Component {
     public function delete(): void
 
     {
+        if (!$this->canChangeVoucher($this->deleteId)) {
+            return;
+        }
+
         $this->authorize('accounting.receipt.delete');
 
         $tenantId = $this->getTenantId();
@@ -731,12 +762,13 @@ new class extends Component {
     public function print(int $id): void
 
     {
+        $this->authorize('accounting.receipt.view');
 
         $tenantId = $this->getTenantId();
 
         $this->printVoucher = Payment::query()
 
-            ->with(['party'])
+            ->with(['party', 'creator'])
 
             ->where('tenant_id', $tenantId)
 

@@ -187,8 +187,27 @@ new class extends Component
         $this->showForm = true;
     }
 
+    private function canChangeVoucher(?int $id): bool
+    {
+        if (!$id) {
+            return true;
+        }
+        $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
+            $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
+
+            return false;
+        }
+
+        return true;
+    }
+
     public function edit(int $id): void
     {
+        if (!$this->canChangeVoucher($id)) {
+            return;
+        }
+
         $tenantId = $this->getTenantId();
 
         $payment = Payment::query()
@@ -231,6 +250,10 @@ new class extends Component
 
     public function savePayment(): void
     {
+        if (!$this->canChangeVoucher($this->paymentId)) {
+            return;
+        }
+
         $this->authorize($this->paymentId ? 'accounting.voucher.edit' : 'accounting.voucher.create');
         $tenantId = $this->getTenantId();
 
@@ -359,6 +382,10 @@ new class extends Component
 
     public function confirmDelete(int $id): void
     {
+        if (!$this->canChangeVoucher($id)) {
+            return;
+        }
+
         $tenantId = $this->getTenantId();
 
         Payment::query()
@@ -372,6 +399,10 @@ new class extends Component
 
     public function delete(): void
     {
+        if (!$this->canChangeVoucher($this->deleteId)) {
+            return;
+        }
+
         $this->authorize('accounting.voucher.delete');
         $tenantId = $this->getTenantId();
 
@@ -414,10 +445,12 @@ new class extends Component
 
     public function print(int $id): void
     {
+        $this->authorize('accounting.voucher.view');
+
         $tenantId = $this->getTenantId();
 
         $this->printVoucher = Payment::query()
-            ->with(['party'])
+            ->with(['party', 'creator'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);

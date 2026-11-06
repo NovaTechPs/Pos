@@ -66,4 +66,10 @@ class Payment extends Model
     {
         return $this->belongsTo(Purchase::class);
     }
+
+    /** @return BelongsTo<PurchaseReturn, $this> */
+    public function purchaseReturn(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseReturn::class);
+    }
 }

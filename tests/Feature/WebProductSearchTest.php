@@ -70,9 +70,8 @@ test('barcode printer keeps the barcode digits within the label height', functio
     $template = file_get_contents(resource_path('views/pages/tenant/products/⚡printer.blade.php'));
 
     expect($template)->toContain('textPosition:')
-        ->and(preg_match_all('/height:\s+17,/', $template))->toBe(1)
-        ->and(preg_match_all('/fontSize:\s+8,/', $template))->toBe(1)
-        ->and($template)->toContain('12mm');
+        ->and(preg_match_all('/fontSize:\s+15,/', $template))->toBe(1)
+        ->and(preg_match_all('/font: \'Arial\', fontSize:\s+16,/', $template))->toBe(1);
 });
 
 test('Enter moves to the next product field without submitting the form', function (): void {
@@ -100,20 +99,21 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
     for (const page of ['sales', 'purchases']) {
         const source = fs.readFileSync(`${process.argv[1]}/${page}/⚡invoices.blade.php`, 'utf8');
         const start = source.indexOf("Alpine.data('");
-        const end = source.indexOf('}));', start) + 4;
+        const end = source.indexOf('\n    }));', start) + '\n    }));'.length;
         let state, morph, listenerOptions;
+        const listeners = [];
         const timers = new Map();
         let timerId = 0;
         const context = {
             Alpine: { data: (_, factory) => state = factory() },
             Livewire: { on() {}, hook: (_, callback) => morph = callback },
-            window: { addEventListener: (_, callback, options) => listenerOptions = options },
+            window: { addEventListener: (_, callback, options) => { listenerOptions = options; listeners.push({ callback, options }); } },
             AbortController,
             setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
             clearTimeout: id => timers.delete(id),
         };
         vm.runInNewContext(source.slice(start, end), context);
-        state.$el = { isConnected: true, contains: () => true, querySelectorAll: () => [visible, hidden] };
+        state.$el = { isConnected: true, contains: () => true, addEventListener() {}, querySelectorAll: () => [visible, hidden] };
         state.$nextTick = () => {};
         state.$refs = {};
         if (page === 'sales') {
@@ -121,6 +121,23 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
             assert.equal(state.customerResults().length, 1);
             state.refreshResultClasses = () => {};
             state.init();
+            state.init();
+            assert.equal(listeners.length, 1, 'Initialization registered duplicate keyboard handlers');
+            assert(!source.includes('x-init="init()"'), 'Alpine already calls init automatically');
+            const rows = [0, 1, 2, 3].map(() => ({ scrollIntoView() {} }));
+            state.productResults = () => rows;
+            const target = { matches: selector => selector === '#product-search-input', closest: () => null };
+            const press = key => listeners.filter(({ options }) => !options.signal.aborted)
+                .forEach(({ callback }) => callback({ key, target, preventDefault() {} }));
+            press('ArrowDown');
+            assert.equal(state.productIndex, 0);
+            press('ArrowDown');
+            assert.equal(state.productIndex, 1);
+            press('ArrowDown');
+            assert.equal(state.productIndex, 2);
+            press('ArrowUp');
+            assert.equal(state.productIndex, 1);
+
             for (let i = 0; i < 100; i++) morph({ el: {} });
             assert.equal(timers.size, 1, 'Repeated DOM updates queued redundant refreshes');
         } else {

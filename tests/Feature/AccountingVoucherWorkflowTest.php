@@ -18,6 +18,26 @@ beforeEach(function (): void {
     $this->actingAs($this->user)->withSession(['active_tenant_id' => $this->tenant->id]);
 });
 
+test('voucher amount is a plain numeric field and accepts decimal amounts', function (string $page, string $action, string $type): void {
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'الحساب', 'type' => $type, 'is_active' => true]);
+    $component = Livewire::test('pages::tenant.accounting.'.$page)->call('openCreate');
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $input = (new DOMXPath($dom))->query('//input[@id="voucher-amount"]')->item(0);
+    expect($input)->not->toBeNull()
+        ->and($input->getAttribute('type'))->toBe('number')
+        ->and($input->getAttribute('inputmode'))->toBe('decimal')
+        ->and($input->hasAttribute('placeholder'))->toBeFalse()
+        ->and($input->getAttribute('class'))->toContain('[appearance:textfield]', '[&::-webkit-inner-spin-button]:appearance-none')
+        ->and($input->parentNode->getElementsByTagName('span')->length)->toBe(0);
+    $component->set('partyId', $party->id)->set('amount', '11.64')
+        ->call($action)->assertHasNoErrors();
+    expect((float) Payment::query()->sole()->amount)->toBe(11.64);
+})->with([
+    ['receipts', 'saveReceipt', 'customer'],
+    ['payment', 'savePayment', 'supplier'],
+]);
+
 test('saving a payment voucher closes the form and dispatches one success notice', function (): void {
     $supplier = Party::query()->create([
         'tenant_id' => $this->tenant->id,
@@ -95,3 +115,55 @@ test('payment voucher created from a purchase invoice is linked and updates its 
         ->and((float) $purchase->fresh()->paid_amount)->toBe(40.0)
         ->and($purchase->fresh()->payment_status)->toBe('partial');
 });
+
+test('vouchers can be previewed for printing with their account and creator', function (string $page, string $type): void {
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Print account', 'type' => 'both', 'is_active' => true]);
+    $voucher = Payment::create([
+        'tenant_id' => $this->tenant->id,
+        'party_id' => $party->id,
+        'created_by' => $this->user->id,
+        'type' => $type,
+        'voucher_number' => 'PRINT-123',
+        'payment_date' => '2026-11-06',
+        'payment_method' => 'bank_transfer',
+        'amount' => 11.64,
+        'notes' => 'Print voucher note',
+    ]);
+
+    Livewire::test('pages::tenant.accounting.'.$page)
+        ->call('print', $voucher->id)
+        ->assertSet('showPrintModal', true)
+        ->assertSee('PRINT-123')
+        ->assertSee('Print account')
+        ->assertSee($this->user->name)
+        ->assertSee('11.64')
+        ->assertSee('تحويل بنكي')
+        ->assertSee('Print voucher note')
+        ->assertSee('voucher-print-modal', false)
+        ->assertSee('window.print()', false)
+        ->call('closePrint')
+        ->assertSet('showPrintModal', false)
+        ->assertSet('printVoucher', null);
+})->with([['receipts', 'receipt'], ['payment', 'payment']]);
+
+test('voucher printing rejects other tenants and voucher types', function (string $page, string $type, bool $otherTenant): void {
+    $tenantId = $otherTenant ? Tenant::create(['name' => 'Other voucher tenant'])->id : $this->tenant->id;
+    $voucher = Payment::create([
+        'tenant_id' => $tenantId,
+        'created_by' => $this->user->id,
+        'type' => $otherTenant ? $type : ($type === 'receipt' ? 'payment' : 'receipt'),
+        'voucher_number' => 'PRIVATE-123',
+        'payment_date' => '2026-11-06',
+        'payment_method' => 'cash',
+        'amount' => 10,
+    ]);
+
+    Livewire::test('pages::tenant.accounting.'.$page)
+        ->call('print', $voucher->id)
+        ->assertNotFound();
+})->with([
+    ['receipts', 'receipt', true],
+    ['payment', 'payment', true],
+    ['receipts', 'receipt', false],
+    ['payment', 'payment', false],
+]);

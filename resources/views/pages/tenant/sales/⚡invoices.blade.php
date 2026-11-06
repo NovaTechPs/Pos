@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Party;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -1082,6 +1083,11 @@ new class extends Component {
     {
         $order->loadMissing('items.product');
 
+        $customer = Party::query()
+            ->where('tenant_id', $order->tenant_id)
+            ->whereKey($order->customer_id)
+            ->first();
+
         $items = [];
 
         foreach ($order->items as $item) {
@@ -1107,7 +1113,11 @@ new class extends Component {
                 'subtotal' => $totals['subtotal'],
                 'discount' => $totals['discount'],
                 'tax' => $totals['tax'],
+                'show_tax' => TenantSetting::getBool((int) $order->tenant_id, 'show_tax', true),
                 'total' => $totals['total'],
+                'paid' => (float) $order->paid_amount,
+                'remaining' => round(max(0, (float) $order->total - (float) $order->paid_amount), 2),
+                'account_balance' => $customer ? (float) $customer->current_balance : null,
             ]
         );
     }
@@ -1315,6 +1325,7 @@ new class extends Component {
             'subtotal' => $totals['subtotal'],
             'invoiceDiscount' => $totals['discount'],
             'taxAmount' => $totals['tax'],
+            'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true),
             'grandTotal' => $totals['total'],
             'linkedReceiptAmount' => $linkedReceiptAmount,
             'totalCost' => $totals['total_cost'],
@@ -1330,7 +1341,6 @@ new class extends Component {
     <div
         class="mx-auto max-w-[1700px]"
         x-data="salesInvoiceKeyboard()"
-        x-init="init()"
     >
 
         <livewire:product-history />
@@ -1927,7 +1937,9 @@ new class extends Component {
                             <div class="mt-1 text-[11px] font-semibold text-slate-400">قيمة الفاتورة قبل الحفظ</div>
                         </div>
 
-                        <span class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700">الأسعار شاملة الضريبة</span>
+                        @if ($showTax)
+                            <span class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700">الأسعار شاملة الضريبة</span>
+                        @endif
                     </div>
 
                     <div class="space-y-3">
@@ -1947,6 +1959,7 @@ new class extends Component {
                             />
                         </div>
 
+                        @if ($showTax)
                         <div class="flex items-center justify-between gap-4">
                             <span class="text-xs font-bold text-slate-500">قيمة الضريبة المضمنة</span>
                             <div class="flex items-center gap-2">
@@ -1961,12 +1974,13 @@ new class extends Component {
                                 <span class="font-mono text-sm font-black text-amber-600">{{ number_format($taxAmount, 2) }}</span>
                             </div>
                         </div>
+                        @endif
 
                         <div class="border-t border-slate-100 pt-3">
                             <div class="flex items-center justify-between rounded-2xl bg-slate-950 px-4 py-4 text-white">
                                 <div>
                                     <div class="text-[11px] font-bold text-slate-400">الإجمالي النهائي</div>
-                                    <div class="mt-1 text-xs font-black text-slate-200">شامل الخصم والضريبة</div>
+                                    <div class="mt-1 text-xs font-black text-slate-200">{{ $showTax ? 'شامل الخصم والضريبة' : 'شامل الخصم' }}</div>
                                 </div>
                                 <div class="font-mono text-2xl font-black">{{ number_format($grandTotal, 2) }}</div>
                             </div>
@@ -2091,6 +2105,8 @@ new class extends Component {
         keyboardController: null,
 
         init() {
+            if (this.keyboardController && !this.keyboardController.signal.aborted) return;
+
             this.keyboardController = new AbortController();
             window.addEventListener('keydown', (event) => this.globalKeydown(event), {
                 signal: this.keyboardController.signal,
@@ -2174,7 +2190,7 @@ new class extends Component {
             const customers = this.customerResults();
 
             products.forEach((element, index) => {
-                element.classList.toggle('bg-indigo-50', index === this.productIndex);
+                element.classList.toggle('invoice-product-selected', index === this.productIndex);
                 element.classList.toggle('ring-1', index === this.productIndex);
                 element.classList.toggle('ring-inset', index === this.productIndex);
                 element.classList.toggle('ring-indigo-300', index === this.productIndex);
@@ -2537,8 +2553,11 @@ new class extends Component {
                     <div class="summary">
                         <div class="summary-row"><span>المجموع الفرعي</span><strong>${Number(invoice.subtotal ?? 0).toFixed(2)}</strong></div>
                         <div class="summary-row"><span>الخصم</span><strong>${Number(invoice.discount ?? 0).toFixed(2)}</strong></div>
-                        <div class="summary-row"><span>الضريبة</span><strong>${Number(invoice.tax ?? 0).toFixed(2)}</strong></div>
+                        ${invoice.show_tax ? `<div class="summary-row"><span>الضريبة</span><strong>${Number(invoice.tax ?? 0).toFixed(2)}</strong></div>` : ''}
                         <div class="total summary-row"><span>الإجمالي النهائي</span><strong>${Number(invoice.total ?? 0).toFixed(2)}</strong></div>
+                        <div class="summary-row"><span>المدفوع</span><strong>${Number(invoice.paid ?? 0).toFixed(2)}</strong></div>
+                        <div class="summary-row"><span>المتبقي من الفاتورة</span><strong>${Number(invoice.remaining ?? 0).toFixed(2)}</strong></div>
+                        ${invoice.account_balance != null ? `<div class="summary-row"><span>رصيد الحساب الحالي بعد الفاتورة</span><strong>${Number(invoice.account_balance).toFixed(2)}</strong></div>` : ''}
                     </div>
 
                     ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong><br>${escapeHtml(invoice.notes)}</div>` : ''}

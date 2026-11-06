@@ -17,7 +17,7 @@ class OrderItem extends Model
 
     protected function casts(): array
     {
-        return ['is_gift' => 'boolean'];
+        return ['is_gift' => 'boolean', 'returned_to_stock' => 'boolean'];
     }
 
     /** @return BelongsTo<Order, $this> */

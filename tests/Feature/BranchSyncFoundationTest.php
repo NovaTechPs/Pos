@@ -20,6 +20,31 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
+test('central return synchronization respects damaged goods and refunds cash only once', function (bool $restock): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    $payload = branchSyncSalePayload($tenant, $branch, 'CASH-RETURN');
+    $payload['order'] = array_replace($payload['order'], [
+        'type' => 'return', 'subtotal' => -25, 'total' => -25, 'paid_amount' => -25,
+        'total_cost' => $restock ? -10 : 0, 'total_profit' => $restock ? -15 : -25,
+    ]);
+    $payload['items'][0] = array_replace($payload['items'][0], [
+        'quantity' => -2, 'total_price' => -25, 'total_cost' => $restock ? -10 : 0, 'restock' => $restock,
+    ]);
+    $payload['payment']['type'] = 'payment';
+    $operation = BranchSyncOperation::create([
+        'tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'operation_uuid' => (string) Str::uuid(),
+        'operation_type' => 'sale.upsert', 'payload' => $payload,
+    ]);
+    app(BranchSyncOperationProcessor::class)->process($operation);
+    expect(fn () => app(BranchSyncOperationProcessor::class)->process($operation->fresh()))->toThrow(RuntimeException::class);
+
+    expect((float) BranchProduct::query()->sole()->stock_quantity)->toBe($restock ? 12.0 : 10.0)
+        ->and(Order::count())->toBe(1)
+        ->and(Payment::count())->toBe(1)
+        ->and(Payment::query()->sole()->type)->toBe('payment')
+        ->and((float) Payment::query()->sole()->amount)->toBe(25.0);
+})->with([true, false]);
+
 test('central shared stock synchronization consumes local stock then another branch', function (): void {
     [$tenant, $branch] = branchSyncFixtures();
     TenantSetting::setBool($tenant->id, 'unified_stock', true);

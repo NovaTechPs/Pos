@@ -315,7 +315,7 @@
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-end gap-1 opacity-70 transition group-hover:opacity-100">
 
-                                        @if (!$item->order_id)
+                                        @if (!$item->order_id && !$item->purchase_return_id)
                                             <button
                                                 type="button"
                                                 wire:click="edit({{ $item->id }})"
@@ -339,6 +339,7 @@
                                                 name="printer"
                                                 class="size-4"
                                             />
+                                        <span>طباعة</span>
                                         </button>
 
                                         <button
@@ -353,7 +354,7 @@
                                             />
                                         </button>
 
-                                        @if (!$item->order_id)
+                                        @if (!$item->order_id && !$item->purchase_return_id)
                                             <button
                                                 type="button"
                                                 wire:click="confirmDelete({{ $item->id }})"

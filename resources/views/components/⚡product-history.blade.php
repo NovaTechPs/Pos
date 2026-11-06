@@ -57,14 +57,14 @@ new class extends Component
                 ->where(fn ($query) => $query
                     ->whereIn('orders.type', auth()->user()->can('pos.view') ? ['pos', 'return'] : [])
                     ->orWhereIn('orders.type', auth()->user()->can('sales_invoices.view') ? ['wholesale'] : []))
-                ->selectRaw("orders.id as invoice_id, orders.invoice_number as reference, orders.created_at as event_date, COALESCE(NULLIF(orders.customer_name, ''), customers.name) as party_name, order_items.quantity, order_items.unit_price as price, orders.type as kind");
+                ->selectRaw("orders.id as invoice_id, orders.invoice_number as reference, orders.created_at as event_date, COALESCE(NULLIF(orders.customer_name, ''), customers.name) as party_name, order_items.quantity, order_items.unit_price as price, orders.type as kind, order_items.returned_to_stock as returned_to_stock");
             $purchases = DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
                 ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'purchases.supplier_id')->where('parties.tenant_id', $tenantId))
                 ->where('purchases.tenant_id', $tenantId)->whereNull('purchases.deleted_at')
                 ->where('purchase_items.product_id', $this->productId)
                 ->when($branchId, fn ($query) => $query->where('purchases.branch_id', $branchId))
                 ->when(! auth()->user()->can('purchases.view'), fn ($query) => $query->whereRaw('1 = 0'))
-                ->selectRaw("purchases.id as invoice_id, purchases.reference_number as reference, purchases.created_at as event_date, parties.name as party_name, purchase_items.quantity, purchase_items.unit_cost as price, 'purchase' as kind");
+                ->selectRaw("purchases.id as invoice_id, purchases.reference_number as reference, purchases.created_at as event_date, parties.name as party_name, purchase_items.quantity, purchase_items.unit_cost as price, 'purchase' as kind, NULL as returned_to_stock");
             $rows = DB::query()->fromSub($sales->unionAll($purchases), 'history')
                 ->orderByDesc('event_date')->orderByDesc('invoice_id')->paginate(20, ['*'], 'productHistoryPage');
         }
@@ -88,7 +88,7 @@ new class extends Component
                         @forelse ($rows as $row)
                             <tr wire:key="history-{{ $row->kind }}-{{ $loop->index }}" class="border-t border-slate-200">
                                 <td class="p-2">{{ $row->event_date }}</td>
-                                <td class="p-2">{{ ['pos' => 'بيع', 'wholesale' => 'بيع', 'return' => 'مرتجع', 'purchase' => 'شراء'][$row->kind] }}</td>
+                                <td class="p-2">{{ ['pos' => 'بيع', 'wholesale' => 'بيع', 'return' => $row->returned_to_stock ? 'مرتجع سليم' : 'مرتجع تالف', 'purchase' => 'شراء'][$row->kind] }}</td>
                                 <td class="p-2">{{ $row->party_name ?: ($row->kind === 'purchase' ? 'بدون مورد' : 'زبون عام') }}</td>
                                 <td class="p-2">{{ number_format($row->quantity, 2) }}</td><td class="p-2">{{ number_format($row->price, 2) }}</td>
                                 <td class="p-2"><a class="font-bold text-indigo-600" href="{{ route($row->kind === 'purchase' ? 'tenant.purchase-invoices' : ($row->kind === 'wholesale' ? 'tenant.sale-invoices' : 'tenant.pos'), ['invoice' => $row->invoice_id]) }}" target="_blank" rel="noopener">{{ $row->reference }} ↗</a></td>

@@ -133,6 +133,18 @@ new class extends Component {
     public bool $showProductsModal = false;
     public bool $selectingGift = false;
     public bool $isReturnMode = false;
+
+    public bool $showCashReturnModal = false;
+    public string $cashReturnSearch = '';
+    public ?int $cashReturnProductId = null;
+    public ?float $cashReturnQuantity = null;
+    public ?float $cashReturnPrice = null;
+    public string $cashReturnCondition = 'resellable';
+    public string $cashReturnReason = '';
+    #[Locked]
+    public string $cashReturnNumber = '';
+    #[Locked]
+    public ?int $cashReturnOrderId = null;
     #[Locked]
     public ?int $activeShiftId = null;
     #[Locked]
@@ -289,7 +301,7 @@ new class extends Component {
 
     public function toggleMergeSimilarProducts(): void
     {
-        if (!$this->ensureInvoiceEditable()) {
+        if (!$this->ensureInvoiceEditable() || $this->isReturnMode) {
             return;
         }
         $this->mergeSimilarProducts = !$this->mergeSimilarProducts;
@@ -411,6 +423,12 @@ new class extends Component {
             return;
         }
 
+        $invoice = $this->invoiceNavigationQuery()->find($this->editingInvoiceId);
+        if ($invoice?->type === 'return') {
+            $this->editCashReturn((int) $invoice->id, true);
+            return;
+        }
+
         $this->invoiceEditMode = true;
         $this->errorMessage = null;
         $this->successMessage = 'تم تفعيل تعديل الفاتورة. يمكنك الآن تغيير الأصناف والمبالغ ثم الضغط على «حفظ».';
@@ -454,7 +472,7 @@ new class extends Component {
     {
         return ['cart', 'paid_amount', 'payment_method', 'notes', 'selectedCustomerId', 'discount_amount',
             'discount_type', 'delivery_fee', 'deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress', 'deliveryCompanyId', 'deliveryNotes', 'custom_final_total', 'isReturnMode', 'currentInvoiceId',
-            'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts'];
+            'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts', 'cashReturnNumber', 'cashReturnOrderId'];
     }
 
     private function currentDraftKey(): ?string
@@ -1224,8 +1242,279 @@ new class extends Component {
 
     public function toggleReturnMode(): void
     {
-        $this->isReturnMode = false;
-        $this->errorMessage = 'سجّل المرتجعات من صفحة مردودات المبيعات، لربطها بفاتورتها وضبط الكميات والمخزون.';
+        $this->authorize('returns.create');
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+        if ($this->editingInvoiceId || $this->currentInvoiceId) {
+            $this->errorMessage = 'افتح فاتورة جديدة لتغيير نوع الفاتورة.';
+            return;
+        }
+        $this->isReturnMode = ! $this->isReturnMode;
+        $this->cashReturnNumber = $this->isReturnMode ? 'RET-CASH-'.Str::uuid() : '';
+        $this->cashReturnOrderId = null;
+        $this->showCashReturnModal = false;
+        $this->selectedCustomerId = null;
+        $this->payment_method = 'cash';
+        $this->delivery_fee = 0;
+        $this->discount_amount = 0;
+        $this->custom_final_total = null;
+        foreach ($this->cart as $key => $item) {
+            $this->cart[$key]['quantity'] = ($this->isReturnMode ? -1 : 1) * abs((float) $item['quantity']);
+            $this->cart[$key]['returned_to_stock'] = true;
+        }
+        $this->recalculatePrices();
+        $this->errorMessage = null;
+        $this->dispatch('pos-focus-barcode');
+    }
+
+    public function openCashReturnModal(): void
+    {
+        $this->authorize('returns.create');
+        $this->resetValidation();
+        $this->reset('cashReturnSearch', 'cashReturnProductId', 'cashReturnQuantity', 'cashReturnPrice', 'cashReturnCondition', 'cashReturnReason');
+        $this->cashReturnNumber = 'RET-CASH-'.Str::uuid();
+        $this->cashReturnOrderId = null;
+        $this->cashReturnQuantity = 1;
+        $this->errorMessage = null;
+        $this->showCashReturnModal = true;
+    }
+
+    public function getCashReturnProductsProperty(): \Illuminate\Support\Collection
+    {
+        if (! $this->showCashReturnModal || trim($this->cashReturnSearch) === '') {
+            return collect();
+        }
+
+        $search = trim($this->cashReturnSearch);
+        $this->authorize('returns.create');
+
+        return Product::query()->where('tenant_id', $this->tenantId())
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $this->getActiveBranchId()))
+            ->where(fn ($query) => $query->where('name', 'like', '%'.$search.'%')
+                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('barcode', $search)))
+            ->limit(10)->get();
+    }
+
+    public function selectCashReturnProduct(int $productId): void
+    {
+        $this->authorize('returns.create');
+        $stock = BranchProduct::query()->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->getActiveBranchId())->where('product_id', $productId)->firstOrFail();
+        $product = Product::query()->where('tenant_id', $this->tenantId())->findOrFail($productId);
+        $this->cashReturnProductId = $productId;
+        $this->cashReturnSearch = $product->name;
+        $this->cashReturnPrice = (float) $stock->retail_price;
+    }
+
+    public function updatedCashReturnSearch(): void
+    {
+        $this->cashReturnProductId = null;
+        $this->cashReturnPrice = null;
+    }
+
+    public function getRecentCashReturnsProperty(): \Illuminate\Support\Collection
+    {
+        if (! $this->showCashReturnModal) {
+            return collect();
+        }
+        $this->authorize('returns.create');
+
+        return Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
+            ->where('type', 'return')->where('invoice_number', 'like', 'RET-CASH-%')
+            ->latest('id')->limit(10)->get();
+    }
+
+    public function editCashReturn(int $orderId, bool $useCart = false): void
+    {
+        $this->authorize('returns.create');
+        $this->authorize('sales_invoices.edit');
+        if (config('branch-sync.mode') === 'edge') {
+            $this->errorMessage = 'عدّل المرتجع من النظام المركزي بعد المزامنة، مثل الفواتير المحفوظة.';
+            return;
+        }
+        $order = Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
+            ->where('type', 'return')->whereNull('original_order_id')->whereNull('customer_id')
+            ->where('invoice_number', 'like', 'RET-CASH-%')->with('items.product')->findOrFail($orderId);
+        $shift = Shift::query()->where('tenant_id', $this->tenantId())->find($order->shift_id);
+        if (! $shift || $shift->status !== 'open' || (int) $shift->opened_by !== (int) auth()->id()) {
+            $this->errorMessage = 'يمكن تعديل المرتجع داخل شيفتك المفتوح فقط.';
+            return;
+        }
+        if ($useCart) {
+            $this->loadInvoice($orderId);
+            $this->invoiceEditMode = true;
+            $this->cashReturnOrderId = $order->id;
+            $this->cashReturnNumber = $order->invoice_number;
+            $this->showCashReturnModal = false;
+            $this->errorMessage = null;
+            return;
+        }
+        if ($order->items->count() !== 1) {
+            $this->errorMessage = 'هذه النافذة مخصصة للمرتجع النقدي المباشر لصنف واحد.';
+            return;
+        }
+        $line = $order->items->first();
+        $this->resetValidation();
+        $this->cashReturnOrderId = $order->id;
+        $this->cashReturnNumber = $order->invoice_number;
+        $this->cashReturnProductId = $line->product_id;
+        $this->cashReturnSearch = $line->product?->name ?? '';
+        $this->cashReturnQuantity = abs((float) $line->quantity);
+        $this->cashReturnPrice = (float) $line->unit_price;
+        $this->cashReturnCondition = $line->returned_to_stock ? 'resellable' : 'damaged';
+        $this->cashReturnReason = (string) preg_replace('/^مرتجع نقدي .*?\. /u', '', (string) $order->notes);
+        $this->errorMessage = null;
+        $this->showCashReturnModal = true;
+    }
+
+    public function saveCashReturn(bool $fromCart = false): ?Order
+    {
+        $this->authorize('returns.create');
+        $this->authorize('pos.sale.checkout');
+        if ($this->cashReturnOrderId) {
+            $this->authorize('sales_invoices.edit');
+            abort_if(config('branch-sync.mode') === 'edge', 403);
+        }
+        if ($fromCart && (! $this->isReturnMode || $this->invoiceIsLocked())) {
+            return null;
+        }
+        if ((! $fromCart && ! $this->showCashReturnModal) || $this->cashReturnNumber === '') {
+            return null;
+        }
+        if ($fromCart) {
+            $validated = $this->validate([
+                'cart' => ['required', 'array', 'min:1'],
+                'cart.*.id' => ['required', 'integer'],
+                'cart.*.quantity' => ['required', 'numeric', 'min:-999999', 'max:-0.01'],
+                'cart.*.price' => ['required', 'numeric', 'min:0.01', 'max:999999'],
+                'cart.*.returned_to_stock' => ['sometimes', 'boolean'],
+                'notes' => ['nullable', 'string', 'max:500'],
+            ]);
+            $returnItems = collect($validated['cart'])->map(fn (array $item): array => [
+                'id' => $item['id'], 'quantity' => abs((float) $item['quantity']), 'price' => (float) $item['price'],
+                'restock' => (bool) ($item['returned_to_stock'] ?? true),
+            ])->all();
+            $reason = $this->notes ?: 'مرتجع نقدي من شاشة POS';
+        } else {
+            $data = $this->validate([
+            'cashReturnProductId' => ['required', 'integer'],
+            'cashReturnQuantity' => ['required', 'numeric', 'min:0.01', 'max:999999'],
+            'cashReturnPrice' => ['required', 'numeric', 'min:0.01', 'max:999999'],
+            'cashReturnCondition' => ['required', 'in:resellable,damaged'],
+            'cashReturnReason' => ['required', 'string', 'max:500'],
+        ]);
+            $returnItems = [['id' => $data['cashReturnProductId'], 'quantity' => $data['cashReturnQuantity'],
+                'price' => $data['cashReturnPrice'], 'restock' => $data['cashReturnCondition'] === 'resellable']];
+            $reason = $data['cashReturnReason'];
+        }
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->getActiveBranchId();
+
+        $order = DB::transaction(function () use ($tenantId, $branchId, $returnItems, $reason): Order {
+            $shift = \App\Services\ApiShiftLedger::activeForWrite($tenantId, $branchId, (int) auth()->id());
+            if (! $shift) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['cashReturnQuantity' => 'افتح شيفت قبل تسجيل المرتجع النقدي.']);
+            }
+            $existing = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                ->where('invoice_number', $this->cashReturnNumber)->first();
+            if ($existing && ! $this->cashReturnOrderId) {
+                return $existing;
+            }
+            $editingOrder = null;
+            $stockChanges = [];
+            $previousCosts = [];
+            if ($this->cashReturnOrderId) {
+                $editingOrder = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('shift_id', $shift->id)->where('type', 'return')->where('status', 'completed')
+                    ->whereNull('customer_id')->whereNull('original_order_id')->where('invoice_number', $this->cashReturnNumber)
+                    ->where('invoice_number', 'like', 'RET-CASH-%')->lockForUpdate()->findOrFail($this->cashReturnOrderId);
+                foreach ($editingOrder->items()->get() as $oldItem) {
+                    $previousCosts[$oldItem->product_id] = (float) $oldItem->cost_price;
+                    if ($oldItem->returned_to_stock) {
+                        $stockChanges[$oldItem->product_id] = ($stockChanges[$oldItem->product_id] ?? 0) - abs((float) $oldItem->quantity);
+                    }
+                }
+                $editingOrder->items()->delete();
+            }
+            $lines = [];
+            $total = 0.0;
+            $totalCost = 0.0;
+            foreach ($returnItems as $returnItem) {
+            $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($returnItem['id']);
+            $stock = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                ->where('product_id', $product->id)->lockForUpdate()->firstOrFail();
+            $quantity = round((float) $returnItem['quantity'], 2);
+            $price = round((float) $returnItem['price'], 2);
+            $lineTotal = round($quantity * $price, 2);
+            $restock = $returnItem['restock'];
+            if ($lineTotal <= 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['cashReturnPrice' => 'أدخل مبلغ مرتجع أكبر من صفر.']);
+            }
+            $cost = $previousCosts[$product->id] ?? (float) $product->cost_price;
+            $lineCost = $restock ? round($cost * $quantity, 2) : 0.0;
+            $total += $lineTotal;
+            $totalCost += $lineCost;
+            $lines[] = ['tenant_id' => $tenantId, 'product_id' => $product->id, 'quantity' => -$quantity,
+                'unit_price' => $price, 'total_price' => -$lineTotal, 'cost_price' => $cost, 'total_cost' => -$lineCost,
+                'discount' => 0, 'returned_to_stock' => $restock];
+            if ($restock) {
+                $stockChanges[$product->id] = ($stockChanges[$product->id] ?? 0) + $quantity;
+            }
+            }
+            $order = $editingOrder ?? new Order;
+            $order->fill([
+                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'shift_id' => $shift->id,
+                'created_by' => auth()->id(), 'customer_name' => 'زبون نقدي',
+                'invoice_number' => $this->cashReturnNumber, 'invoice_date' => $editingOrder?->invoice_date ?? today(),
+                'type' => 'return', 'source' => 'pos', 'sale_kind' => 'retail', 'status' => 'completed',
+                'subtotal' => -$total, 'total' => -$total, 'tax_amount' => 0,
+                'discount' => 0, 'discount_type' => 'fixed', 'discount_rate' => 0, 'delivery_fee' => 0,
+                'total_cost' => -$totalCost, 'total_profit' => -$total + $totalCost,
+                'paid_amount' => -$total, 'payment_status' => 'paid',
+                'notes' => $reason,
+            ]);
+            $order->save();
+            $order->items()->createMany($lines);
+            foreach ($stockChanges as $productId => $change) {
+                if (abs($change) < 0.005) {
+                    continue;
+                }
+                $changedStock = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                    ->where('product_id', $productId)->lockForUpdate()->firstOrFail();
+                if ($change < 0 && (float) $changedStock->stock_quantity + $change < 0 && ! TenantSetting::getBool($tenantId, 'allow_negative_stock')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['cashReturnQuantity' => 'لا يمكن تخفيض المرتجع: الكمية المعادة استُخدمت ولم تعد متاحة في المخزون.']);
+                }
+                \App\Services\StockMovementContext::forDocument($order, fn () => $changedStock->increment('stock_quantity', $change));
+            }
+            $payment = Payment::firstOrNew(['tenant_id' => $tenantId, 'order_id' => $order->id, 'type' => 'payment']);
+            $payment->fill([
+                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'shift_id' => $shift->id,
+                'created_by' => $payment->created_by ?? auth()->id(), 'type' => 'payment', 'voucher_number' => $payment->voucher_number ?? 'REF-'.Str::uuid(),
+                'amount' => $total, 'payment_method' => 'cash', 'payment_date' => $payment->payment_date ?? now(),
+                'order_id' => $order->id, 'notes' => $order->notes,
+            ]);
+            $payment->save();
+            $this->queueSaleForSync($order, $shift);
+
+            return $order;
+        });
+
+        $this->showCashReturnModal = false;
+        $this->invalidateActiveShiftCache();
+        if ((int) $this->currentInvoiceId === (int) $order->id) {
+            $this->loadInvoice((int) $order->id);
+        }
+        $this->loadQuickProducts(true);
+        $this->successMessage = ($this->cashReturnOrderId ? 'تم تعديل المرتجع وتحديث المخزون والمصروف النقدي إلى ' : 'تم تسجيل المرتجع النقدي وصرف ').number_format(abs((float) $order->total), 2).' للزبون.';
+        if (config('branch-sync.mode') === 'edge') {
+            $this->successMessage .= ' محفوظ محليًا وبانتظار المزامنة.';
+        }
+        $this->refreshBranchSyncStatus();
+        if ($fromCart) {
+            $this->loadInvoice((int) $order->id);
+        }
+        return $order;
     }
 
     public function loadQuickProducts(bool $force = false, bool $refreshRemoteCatalog = false): void
@@ -1509,7 +1798,7 @@ new class extends Component {
 
         $existingLineKey = null;
 
-        if ($this->mergeSimilarProducts) {
+        if ($this->mergeSimilarProducts && ! $this->isReturnMode) {
             foreach ($this->cart as $lineKey => $item) {
                 if ((bool) ($item['is_gift'] ?? false) === $isGift && (int) ($item['id'] ?? 0) === $productId && (float) ($item['quantity'] ?? 0) < 0 === $changeQty < 0) {
                     $existingLineKey = (string) $lineKey;
@@ -1533,6 +1822,7 @@ new class extends Component {
                 'name' => $product->name,
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
                 'is_gift' => $isGift,
+                'returned_to_stock' => true,
                 'price' => $isGift ? 0.0 : (float) $branchProduct->retail_price,
                 'cost_price' => (float) ($product->cost_price ?? 0),
                 'quantity' => $changeQty,
@@ -1763,6 +2053,8 @@ new class extends Component {
         $this->editingInvoiceId = null;
         $this->invoiceEditMode = false;
         $this->isReturnMode = false;
+        $this->cashReturnNumber = '';
+        $this->cashReturnOrderId = null;
         $this->notes = '';
         $this->selectedCustomerId = null;
         $this->customerSearch = '';
@@ -1841,6 +2133,7 @@ new class extends Component {
             'delivery_notes' => $this->deliveryNotes,
             'custom_final_total' => $this->custom_final_total,
             'is_return_mode' => $this->isReturnMode,
+            'cash_return_number' => $this->cashReturnNumber,
             'notes' => $this->notes,
             'selected_customer_id' => $this->selectedCustomerId,
             'time' => now()->format('Y-m-d H:i:s'),
@@ -1874,6 +2167,7 @@ new class extends Component {
         $this->deliveryNotes = (string) ($held['delivery_notes'] ?? '');
         $this->custom_final_total = isset($held['custom_final_total']) ? (float) $held['custom_final_total'] : null;
         $this->isReturnMode = (bool) ($held['is_return_mode'] ?? false);
+        $this->cashReturnNumber = $this->isReturnMode ? ($held['cash_return_number'] ?? 'RET-CASH-'.Str::uuid()) : '';
         $this->notes = $held['notes'] ?? '';
         $this->selectedCustomerId = isset($held['selected_customer_id']) ? (int) $held['selected_customer_id'] : null;
         $this->customerSearch = '';
@@ -1963,7 +2257,7 @@ new class extends Component {
         $this->cart = [];
 
         foreach ($invoice->items as $item) {
-            $lineKey = $this->mergeSimilarProducts ? (string) $item->product_id . ($item->is_gift ? '_gift' : '') : 'invoice_' . $item->id;
+            $lineKey = $this->mergeSimilarProducts && $invoice->type !== 'return' ? (string) $item->product_id . ($item->is_gift ? '_gift' : '') : 'invoice_' . $item->id;
 
             if ($this->mergeSimilarProducts && isset($this->cart[$lineKey])) {
                 $this->cart[$lineKey]['quantity'] += (float) $item->quantity;
@@ -1981,6 +2275,7 @@ new class extends Component {
                 'id' => $item->product_id,
                 'product_number' => $item->product?->product_number,
                 'is_gift' => (bool) $item->is_gift,
+                'returned_to_stock' => (bool) $item->returned_to_stock,
                 'name' => $item->product?->name ?? 'منتج غير محدد',
                 'barcode' => '',
                 'price' => (float) $item->unit_price,
@@ -2607,6 +2902,9 @@ new class extends Component {
 
     public function checkout(): ?Order
     {
+        if ($this->isReturnMode && ! $this->invoiceIsLocked()) {
+            return $this->saveCashReturn(true);
+        }
         if ($this->invoiceIsLocked()) {
             $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً.';
             return null;
@@ -2631,6 +2929,14 @@ new class extends Component {
 
     public function checkoutAndPrint(): void
     {
+        if ($this->isReturnMode && ! $this->invoiceIsLocked()) {
+            $order = $this->saveCashReturn(true);
+            if ($order) {
+                $this->prepareReceiptFromOrder($order);
+                $this->dispatch('print-receipt');
+            }
+            return;
+        }
         if ($this->invoiceIsLocked()) {
             $this->printReceipt();
             return;
@@ -3253,6 +3559,7 @@ new class extends Component {
             ->map(fn (OrderItem $item): array => [
                 'product_id' => (int) $item->product_id,
                 'is_gift' => (bool) $item->is_gift,
+                'restock' => (bool) $item->returned_to_stock,
                 'quantity' => (float) $item->quantity,
                 'unit_price' => (float) $item->unit_price,
                 'total_price' => (float) $item->total_price,
@@ -3273,7 +3580,7 @@ new class extends Component {
         if (app(DesktopPosConnection::class)->enabled()) {
             $shared = json_decode((string) TenantSetting::get((int) $order->tenant_id, 'desktop_shared_stock_'.$order->branch_id, '{}'), true) ?: [];
             foreach ($items as $item) {
-                if (array_key_exists($item['product_id'], $shared)) {
+                if (array_key_exists($item['product_id'], $shared) && ($item['quantity'] > 0 || $item['restock'])) {
                     $shared[$item['product_id']] -= $item['quantity'];
                 }
             }
@@ -3477,7 +3784,7 @@ new class extends Component {
 
             $normalTotal = $this->roundMoney($quantity * $unitPrice);
 
-            if (($item['price_manual'] ?? false) === true) {
+            if (($item['price_manual'] ?? false) === true || $this->isReturnMode) {
                 $this->cart[$id]['subtotal'] = $normalTotal;
                 $this->cart[$id]['normal_total'] = $normalTotal;
                 $this->cart[$id]['promotion_savings'] = 0;
@@ -4010,7 +4317,8 @@ new class extends Component {
         $quantities = [];
         foreach ($this->cart as $item) {
             $productId = (int) $item['id'];
-            $quantities[$productId] = ($quantities[$productId] ?? 0) + (float) $item['quantity'];
+            $quantity = (float) $item['quantity'];
+            $quantities[$productId] = ($quantities[$productId] ?? 0) + ($quantity < 0 && ! ($item['returned_to_stock'] ?? true) ? 0 : $quantity);
         }
         $stocks = BranchProduct::query()->where('tenant_id', $tenantId)
             ->whereIn('product_id', array_keys($quantities))
@@ -4026,6 +4334,7 @@ new class extends Component {
         if ($this->editingInvoiceId && $this->invoiceEditMode && Order::query()->where('tenant_id', $tenantId)
             ->where('branch_id', $branchId)->whereKey($this->editingInvoiceId)->where('status', 'completed')->exists()) {
             $original = OrderItem::query()->where('tenant_id', $tenantId)->where('order_id', $this->editingInvoiceId)
+                ->where(fn ($query) => $query->where('quantity', '>', 0)->orWhere('returned_to_stock', true))
                 ->selectRaw('product_id, SUM(quantity) as quantity')->groupBy('product_id')->pluck('quantity', 'product_id')->all();
             $localOriginal = $this->unifiedStock
                 ? DB::table('stock_movements')->where('tenant_id', $tenantId)->where('branch_id', $branchId)

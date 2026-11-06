@@ -5,6 +5,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Party;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -51,7 +52,7 @@ new class extends Component {
 
     public string $discountType = 'fixed';
 
-    public float $paidAmount = 0.0;
+    public ?float $paidAmount = 0.0;
 
     public string $paymentMethod = 'cash';
 
@@ -1280,12 +1281,14 @@ new class extends Component {
             ->all();
 
         $supplierName = 'مورد عام';
+        $supplier = null;
 
         if ($purchase->supplier_id) {
-            $supplierName = Party::query()
+            $supplier = Party::query()
                 ->where('tenant_id', $tenantId)
                 ->whereKey($purchase->supplier_id)
-                ->value('name') ?: 'مورد عام';
+                ->first();
+            $supplierName = $supplier?->name ?: 'مورد عام';
         }
 
         $branchName = Branch::query()
@@ -1304,10 +1307,12 @@ new class extends Component {
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
                 'discount' => 0.0,
-                'tax' => 0.0,
+                'tax' => (float) $purchase->tax_amount,
+                'show_tax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true),
                 'total' => (float) $purchase->total,
                 'paid' => (float) $purchase->paid_amount,
                 'remaining' => max(0, (float) $purchase->total - (float) $purchase->paid_amount),
+                'account_balance' => $supplier ? (float) $supplier->current_balance : null,
             ]
         );
     }
@@ -1473,6 +1478,30 @@ new class extends Component {
 
         $totals = $this->calculateTotals();
 
+        $accountBalanceAfterPayment = $totals['remaining'];
+
+        if ($selectedSupplier) {
+            $previousOutstanding = 0.0;
+
+            if ($this->currentPurchaseId) {
+                $savedPurchase = DB::table('purchases')
+                    ->where('tenant_id', $tenantId)
+                    ->where('supplier_id', $selectedSupplier->id)
+                    ->where('id', $this->currentPurchaseId)
+                    ->first(['total', 'paid_amount']);
+
+                if ($savedPurchase) {
+                    $previousOutstanding = max(0, (float) $savedPurchase->total - (float) $savedPurchase->paid_amount);
+                }
+            }
+
+            $accountBalanceAfterPayment = round(
+                (float) $selectedSupplier->current_balance
+                    + $selectedSupplier->purchaseBalanceDirection() * ($totals['remaining'] - $previousOutstanding),
+                2
+            );
+        }
+
         return $this->view([
             'branches' => $branches,
             'productSearchLocked' => $productSearchLocked,
@@ -1481,9 +1510,14 @@ new class extends Component {
             'selectedSupplier' => $selectedSupplier,
             'subtotal' => $totals['subtotal'],
             'invoiceDiscount' => $totals['discount'],
+            'taxAmount' => $this->currentPurchaseId
+                ? (float) DB::table('purchases')->where('tenant_id', $tenantId)->where('id', $this->currentPurchaseId)->value('tax_amount')
+                : $totals['tax'],
+            'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true),
             'grandTotal' => $totals['total'],
             'paidTotal' => $totals['paid'],
             'remainingTotal' => $totals['remaining'],
+            'accountBalanceAfterPayment' => $accountBalanceAfterPayment,
             'paymentStatus' => $totals['payment_status'],
             'totalQuantity' => $totals['total_quantity'],
             'userBranchLocked' => (bool) $user?->branch_id,
@@ -1876,16 +1910,16 @@ new class extends Component {
             </div>
 
             {{-- الملخص والدفع --}}
-            <div class="xl:col-span-12">
-                <div class="sticky top-3 space-y-3">
+            <div class="xl:col-span-12" data-purchase-summary>
+                <div class="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div class="mb-3 flex items-center justify-between">
                             <div>
                                 <div class="text-sm font-black text-slate-900">ملخص الفاتورة</div>
-                                <div class="mt-1 text-[11px] font-semibold text-slate-400">راجع الكمية والتكلفة قبل الحفظ</div>
+                                <div class="mt-1 text-xs font-semibold text-slate-600">تفاصيل المبلغ المستحق للمورد</div>
                             </div>
                             <div class="rounded-xl bg-indigo-50 px-3 py-2 text-center">
-                                <div class="text-[10px] font-bold text-indigo-500">الكمية</div>
+                                <div class="text-xs font-bold text-indigo-500">إجمالي الكمية</div>
                                 <div class="text-sm font-black text-indigo-800">{{ number_format($totalQuantity, 2) }}</div>
                             </div>
                         </div>
@@ -1898,11 +1932,11 @@ new class extends Component {
 
                             <div class="grid grid-cols-12 items-center gap-2">
                                 <div class="col-span-7">
-                                    <label class="mb-1 block text-[10px] font-black text-slate-400">خصم الفاتورة</label>
+                                    <label class="mb-1 block text-xs font-black text-slate-600">خصم الفاتورة</label>
                                     <input type="number" min="0" step="0.01" wire:model.live="discount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
                                 </div>
                                 <div class="col-span-5">
-                                    <label class="mb-1 block text-[10px] font-black text-slate-400">النوع</label>
+                                    <label class="mb-1 block text-xs font-black text-slate-600">نوع الخصم</label>
                                     <select wire:model.live="discountType" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black outline-none focus:border-indigo-400">
                                         <option value="fixed">مبلغ</option>
                                         <option value="percentage">%</option>
@@ -1915,66 +1949,41 @@ new class extends Component {
                                 <span class="font-black text-rose-600">- {{ number_format($invoiceDiscount, 2) }}</span>
                             </div>
 
-                            <div class="border-t border-slate-200 pt-3">
+                            @if ($showTax)
+                                <div class="flex items-center justify-between text-sm" data-purchase-tax>
+                                    <span class="font-bold text-slate-500">قيمة الضريبة</span>
+                                    <span class="font-black text-amber-600">{{ number_format($taxAmount, 2) }}</span>
+                                </div>
+                            @endif
+
+                            <div class="rounded-xl bg-indigo-50 p-3">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-base font-black text-slate-900">الإجمالي</span>
-                                    <span class="text-3xl font-black text-indigo-700">{{ number_format($grandTotal, 2) }}</span>
+                                    <span class="text-base font-black text-slate-900">إجمالي الفاتورة</span>
+                                    <span class="text-2xl font-black tabular-nums text-indigo-700">{{ number_format($grandTotal, 2) }}</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="mb-3 text-sm font-black text-slate-900">الدفع</div>
-
-                        <div class="grid grid-cols-2 gap-2">
-                            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                                <div class="text-[10px] font-black text-emerald-700">المدفوع</div>
-                                <div class="mt-1 text-lg font-black text-emerald-800">{{ number_format($paidTotal, 2) }}</div>
+                        <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
+                            <div>
+                                <label for="paid-amount-input" class="mb-2 block text-sm font-bold text-slate-700">الدفعة</label>
+                                <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
                             </div>
-                            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                                <div class="text-[10px] font-black text-rose-700">المتبقي</div>
-                                <div class="mt-1 text-lg font-black text-rose-800">{{ number_format($remainingTotal, 2) }}</div>
+                            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3" role="status" aria-live="polite">
+                                <div class="text-sm font-bold text-rose-700">الرصيد بعد الدفعة</div>
+                                <div class="mt-1 text-xl font-black tabular-nums text-rose-800">{{ number_format($accountBalanceAfterPayment, 2) }}</div>
                             </div>
                         </div>
-
-                        <div class="mt-3">
-                            <label class="mb-1 block text-xs font-black text-slate-500">المبلغ المدفوع</label>
-                            <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
-                        </div>
-
-                        <div class="mt-3 grid grid-cols-2 gap-2">
-                            <button type="button" wire:click="$set('paidAmount', {{ $grandTotal }})" class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-black text-emerald-700 hover:bg-emerald-100">دفع كامل</button>
-                            <button type="button" wire:click="$set('paidAmount', 0)" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-100">آجل</button>
-                        </div>
-
-                        <div class="mt-3">
-                            <label class="mb-1 block text-xs font-black text-slate-500">طريقة الدفع</label>
-                            <select wire:model="paymentMethod" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black outline-none focus:border-indigo-400">
-                                <option value="cash">نقدي</option>
-                                <option value="card">بطاقة</option>
-                                <option value="bank">تحويل بنكي</option>
-                                <option value="other">أخرى</option>
-                            </select>
-                        </div>
-
-                        <div class="mt-3 flex items-center justify-between rounded-xl border px-3 py-2.5 {{ $paymentStatus === 'paid' ? 'border-emerald-200 bg-emerald-50' : ($paymentStatus === 'partial' ? 'border-amber-200 bg-amber-50' : 'border-rose-200 bg-rose-50') }}">
-                            <span class="text-xs font-black text-slate-600">الحالة</span>
-                            <span class="text-xs font-black {{ $paymentStatus === 'paid' ? 'text-emerald-700' : ($paymentStatus === 'partial' ? 'text-amber-700' : 'text-rose-700') }}">
-                                {{ $paymentStatus === 'paid' ? 'مدفوعة' : ($paymentStatus === 'partial' ? 'جزئية' : 'آجلة') }}
-                            </span>
-                        </div>
-                        @if ($currentPurchaseId && $selectedSupplierId)
-                            <a href="{{ route('tenant.payment', ['party_id' => $selectedSupplierId, 'purchase_id' => $currentPurchaseId, 'amount' => $remainingTotal, 'notes' => 'سند دفع لفاتورة '.$invoiceNumber]) }}" class="mt-3 block rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-black text-rose-700 hover:bg-rose-100">إضافة سند صرف لهذه الفاتورة</a>
-                        @endif
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <label class="mb-1.5 block text-xs font-black text-slate-600">ملاحظات</label>
-                        <textarea wire:model="notes" rows="3" placeholder="ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
+                        <label for="purchase-notes" class="mb-1.5 block text-sm font-bold text-slate-600">ملاحظات (اختياري)</label>
+                        <textarea id="purchase-notes" wire:model="notes" rows="1" placeholder="ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid grid-cols-2 items-end gap-2 self-end">
                         <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
                             <span wire:loading.remove wire:target="saveInvoice">💾 حفظ</span>
                             <span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
@@ -2309,7 +2318,7 @@ new class extends Component {
             if (this.productIndex >= nodes.length) this.productIndex = 0;
 
             nodes.forEach((node, index) => {
-                node.classList.toggle('bg-indigo-50', index === this.productIndex);
+                node.classList.toggle('invoice-product-selected', index === this.productIndex);
                 node.classList.toggle('ring-1', index === this.productIndex);
                 node.classList.toggle('ring-indigo-200', index === this.productIndex);
             });
@@ -2447,9 +2456,11 @@ new class extends Component {
                 <div class="totals">
                     <div class="line"><span>المجموع الفرعي</span><strong>${money(invoice.subtotal)}</strong></div>
                     <div class="line"><span>الخصم</span><strong>${money(invoice.discount)}</strong></div>
+                    ${invoice.show_tax ? `<div class="line"><span>الضريبة</span><strong>${money(invoice.tax)}</strong></div>` : ''}
                     <div class="line grand"><span>الإجمالي</span><strong>${money(invoice.total)}</strong></div>
                     <div class="line"><span>المدفوع</span><strong>${money(invoice.paid)}</strong></div>
-                    <div class="line"><span>المتبقي</span><strong>${money(invoice.remaining)}</strong></div>
+                    <div class="line"><span>المتبقي من الفاتورة</span><strong>${money(invoice.remaining)}</strong></div>
+                    ${invoice.account_balance != null ? `<div class="line"><span>رصيد الحساب الحالي بعد الفاتورة</span><strong>${money(invoice.account_balance)}</strong></div>` : ''}
                 </div>
 
                 ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong> ${esc(invoice.notes)}</div>` : ''}

@@ -107,6 +107,9 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:purchases.view')
             ->name('purchase-invoices.pdf');
 
+        Route::get('/returns/{kind}/{returnId}/pdf', [TenantInvoicePdfController::class, 'returns'])
+            ->middleware('can:returns.view')->whereIn('kind', ['sale', 'purchase'])->whereNumber('returnId')->name('returns.pdf');
+
         Route::livewire('/returns', 'pages::tenant.returns.index')
             ->middleware('can:returns.view')
             ->name('returns');

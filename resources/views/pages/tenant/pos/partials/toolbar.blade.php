@@ -381,7 +381,7 @@
 
             <span class="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-black text-rose-700">
                 <span class="text-sm">↩</span>
-                <span>وضع المرتجع</span>
+                <span>مرتجع نقدي — أضف الأصناف ثم احفظ لصرف المبلغ</span>
             </span>
 
         @endif

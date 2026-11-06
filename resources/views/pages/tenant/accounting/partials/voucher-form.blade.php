@@ -697,7 +697,7 @@
 
                         <div>
 
-                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                            <label for="voucher-amount" class="mb-2 block text-sm font-semibold text-slate-700">
                                 المبلغ
                                 <span class="text-rose-500">*</span>
                             </label>
@@ -705,18 +705,14 @@
                             <div class="relative">
 
                                 <input
+                                    id="voucher-amount"
                                     type="number"
                                     step="0.01"
                                     min="0"
                                     wire:model.live="amount"
                                     inputmode="decimal"
-                                    placeholder="0.00"
-                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pe-16 text-lg font-bold text-slate-900 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
                                 />
-
-                                <span class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4 text-xs font-medium text-slate-400">
-                                    المبلغ
-                                </span>
 
                             </div>
 

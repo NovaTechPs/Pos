@@ -5,11 +5,13 @@ use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Role;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -92,7 +94,8 @@ test('sales return is account-based, uses the customer last sale price, and trac
         ->and((float) $return->total)->toBe(-20.0)
         ->and($return->items()->firstOrFail()->original_order_item_id)->toBeNull();
 
-    $component->call('addProduct', $product->id)->set('lines.0.quantity', 2)->call('saveReturn')
+    $component->call('startNewReturn')->call('selectParty', $customer->id)
+        ->call('addProduct', $product->id)->set('lines.0.quantity', 2)->call('saveReturn')
         ->assertSee('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل');
 })->with([['customer', -20.0], ['supplier', 20.0]]);
 
@@ -131,4 +134,142 @@ test('purchase return is supplier-based, uses last supplier cost, updates stock 
     Livewire::actingAs($user)->test('pages::tenant.customers.index')
         ->call('openStatementModal', $supplier->id)
         ->assertSee('مردود مشتريات #PR-');
+});
+
+function editableReturnFixture(string $kind): array
+{
+    $tenant = Tenant::create(['name' => 'Return invoice store']);
+    $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'Return branch']);
+    $user = returnsTestUser($tenant);
+    $party = Party::create(['tenant_id' => $tenant->id, 'name' => 'Return account', 'type' => $kind === 'sale' ? 'customer' : 'supplier', 'current_balance' => 200]);
+    $product = Product::create(['tenant_id' => $tenant->id, 'name' => 'Return product', 'product_number' => 'RET-PRODUCT', 'cost_price' => 5]);
+    $stock = BranchProduct::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 20, 'retail_price' => 10]);
+    if ($kind === 'sale') {
+        $invoice = Order::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'customer_id' => $party->id, 'invoice_number' => 'ORIGINAL', 'type' => 'wholesale', 'status' => 'completed', 'subtotal' => 200, 'total' => 200, 'paid_amount' => 0]);
+        OrderItem::create(['tenant_id' => $tenant->id, 'order_id' => $invoice->id, 'product_id' => $product->id, 'quantity' => 20, 'unit_price' => 10, 'total_price' => 200, 'cost_price' => 5, 'total_cost' => 100, 'discount' => 0]);
+    } else {
+        $id = DB::table('purchases')->insertGetId(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'supplier_id' => $party->id, 'reference_number' => 'ORIGINAL', 'total' => 200, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('purchase_items')->insert(['purchase_id' => $id, 'product_id' => $product->id, 'quantity' => 20, 'unit_cost' => 10, 'subtotal' => 200, 'created_at' => now(), 'updated_at' => now()]);
+    }
+    test()->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+    $component = Livewire::test('pages::tenant.returns.index')->set('kind', $kind)->call('selectParty', $party->id)->call('addProduct', $product->id);
+
+    return compact('tenant', 'branch', 'user', 'party', 'product', 'stock', 'component');
+}
+
+test('return invoices support payment discount tax editing printing and deletion without duplicate effects', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    $component->set('lines.0.quantity', 4)->set('discountType', 'percentage')->set('discountRate', 10)
+        ->set('taxPercent', 20)->set('paidAmount', 6)->call('saveReturn', true)->assertHasNoErrors()
+        ->assertSet('showPrint', true)->assertSet('printData.total', 36.0)->assertSet('printData.tax', 6.0)
+        ->assertSet('printData.paid', 6.0)->assertSet('printData.balance', 170.0);
+    $id = $component->get('currentReturnId');
+    $number = $component->get('invoiceNumber');
+    expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 24.0 : 16.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(170.0)
+        ->and((float) Payment::query()->sole()->amount)->toBe(6.0);
+    $component->call('saveReturn')->assertSet('currentReturnId', $id);
+    expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 24.0 : 16.0);
+    $component->call('editLoadedInvoice')->set('lines.0.quantity', 2)->set('paidAmount', 3)->call('saveReturn')
+        ->assertHasNoErrors()->assertSet('currentReturnId', $id)->assertSet('invoiceNumber', $number);
+    expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 22.0 : 18.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(185.0)
+        ->and((float) Payment::query()->sole()->amount)->toBe(3.0);
+    $component->call('startNewReturn')->set('returnSearch', $number)->call('searchReturn')->assertSet('currentReturnId', $id)
+        ->call('printCurrentInvoice')->assertSet('printData.total', 18.0)->assertSet('printData.balance', 185.0)
+        ->call('deleteReturn')->assertSet('currentReturnId', null);
+    expect((float) $stock->fresh()->stock_quantity)->toBe(20.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(200.0)
+        ->and(Payment::query()->count())->toBe(0);
+})->with(['sale', 'purchase']);
+
+test('return validation and failed stock changes leave saved documents and balances intact', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    $component->set('lines.0.quantity', 2)->call('saveReturn')->call('editLoadedInvoice');
+    $component->set('lines.0.quantity', 21)->call('saveReturn')->assertSee('كمية المرتجع تتجاوز');
+    expect((float) $party->fresh()->current_balance)->toBe(180.0);
+    $component->set('lines.0.quantity', 2)->set('paidAmount', 100)->call('saveReturn')->assertSee('الدفعة أو الخصم أكبر');
+    $stock->update(['stock_quantity' => 0]);
+    if ($kind === 'sale') {
+        $component->call('deleteReturn')->assertSee('المخزون غير كافٍ');
+    } else {
+        $component->set('lines.0.quantity', 3)->set('paidAmount', 0)->call('saveReturn')->assertSee('المخزون غير كافٍ');
+    }
+    expect((float) $party->fresh()->current_balance)->toBe(180.0)
+        ->and((float) $stock->fresh()->stock_quantity)->toBe(0.0);
+})->with(['sale', 'purchase']);
+
+test('return search navigation is scoped to tenant and saved values are used for printing', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    $component->call('saveReturn');
+    $first = $component->get('currentReturnId');
+    $component->call('startNewReturn')->call('selectParty', $party->id)->call('addProduct', $product->id)->call('saveReturn');
+    $second = $component->get('currentReturnId');
+    $component->call('previousInvoice')->assertSet('currentReturnId', $first)->call('nextInvoice')->assertSet('currentReturnId', $second)
+        ->call('editLoadedInvoice')->set('lines.0.price', 999)->call('printCurrentInvoice')->assertSet('printData.total', 10.0);
+    $other = Tenant::create(['name' => 'Other store']);
+    test()->withSession(['active_tenant_id' => $other->id]);
+    Livewire::test('pages::tenant.returns.index')->set('kind', $kind)->call('loadReturn', $first)->assertNotFound();
+})->with(['sale', 'purchase']);
+
+test('return tax follows the store visibility preference', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    TenantSetting::setBool($tenant->id, 'show_tax', false);
+    $component->set('taxPercent', 20)->call('saveReturn', true)->assertSet('printData.tax', 0.0)
+        ->assertSet('printData.total', 10.0)->assertDontSee('نسبة الضريبة المضمنة');
+})->with(['sale', 'purchase']);
+
+test('return PDFs are downloadable and tenant scoped', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    $component->set('paidAmount', 3)->call('saveReturn');
+    $id = $component->get('currentReturnId');
+    $url = route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $id]);
+    $response = $this->get($url)->assertOk()->assertDownload('return-'.$kind.'-'.$id.'.pdf');
+    expect($response->streamedContent())->toStartWith('%PDF');
+    $component->call('shareInvoicePdf')->assertDispatched('share-return-pdf');
+    $other = Tenant::create(['name' => 'Other PDF store']);
+    $this->withSession(['active_tenant_id' => $other->id])->get($url)->assertNotFound();
+})->with(['sale', 'purchase']);
+
+test('damaged sales returns change account balances without adding saleable stock', function (): void {
+    extract(editableReturnFixture('sale'));
+    $component->set('lines.0.quantity', 3)->set('lines.0.returned_to_stock', false)->call('saveReturn');
+    expect((float) $stock->fresh()->stock_quantity)->toBe(20.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(170.0);
+    $component->call('editLoadedInvoice')->set('lines.0.returned_to_stock', true)->call('saveReturn');
+    expect((float) $stock->fresh()->stock_quantity)->toBe(23.0);
+    $component->call('deleteReturn');
+    expect((float) $stock->fresh()->stock_quantity)->toBe(20.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(200.0);
+});
+
+test('linked return payments cannot be independently changed through vouchers', function (string $kind, string $page, string $save): void {
+    extract(editableReturnFixture($kind));
+    $component->set('paidAmount', 5)->call('saveReturn');
+    $payment = Payment::query()->sole();
+    $user->update(['is_owner' => true]);
+    Livewire::test('pages::tenant.accounting.'.$page)->call('edit', $payment->id)->assertSet('showForm', false)
+        ->set('paymentId', $payment->id)->set('amount', 999)->call($save)
+        ->set('deleteId', $payment->id)->call('delete');
+    expect((float) $payment->fresh()->amount)->toBe(5.0)
+        ->and((float) $party->fresh()->current_balance)->toBe(195.0);
+})->with([['sale', 'payment', 'savePayment'], ['purchase', 'receipts', 'saveReceipt']]);
+
+test('supplier return refunds appear as debit payments in the supplier statement', function (): void {
+    extract(editableReturnFixture('purchase'));
+    $component->set('paidAmount', 5)->call('saveReturn');
+    $instance = Livewire::test('pages::tenant.customers.index')->instance();
+    $transactions = (new ReflectionMethod($instance, 'buildStatementTransactions'))->invoke($instance, $party->fresh());
+    $payment = $transactions->firstWhere('id', 'payment-'.Payment::query()->sole()->id);
+    expect((float) $payment['debit'])->toBe(5.0)->and((float) $payment['credit'])->toBe(0.0);
+});
+
+test('return schema migration can be resumed without overwriting existing invoice values', function (): void {
+    extract(editableReturnFixture('purchase'));
+    $component->set('discountRate', 2)->set('paidAmount', 3)->call('saveReturn');
+    $migration = require database_path('migrations/2026_11_06_165932_add_invoice_fields_to_purchase_returns.php');
+    $migration->up();
+    $return = DB::table('purchase_returns')->first();
+    expect((float) $return->subtotal)->toBe(10.0)->and((float) $return->total)->toBe(8.0)
+        ->and((float) $return->paid_amount)->toBe(3.0);
 });

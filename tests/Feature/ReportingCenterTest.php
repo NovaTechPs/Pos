@@ -75,6 +75,34 @@ test('product history filters actual sales and purchases by product date and bra
     expect((new ReportingService($this->user, $this->branch->id))->prepare('product-history', $filters)['query']->count())->toBe(1);
 });
 
+test('product reports distinguish damaged returns from usable returns per invoice line', function (): void {
+    $order = ($this->makeOrder)(['type' => 'return', 'total' => -170]);
+    foreach ([[15, false], [2, true]] as [$quantity, $restocked]) {
+        $order->items()->create([
+            'tenant_id' => $this->tenant->id, 'product_id' => $this->product->id,
+            'quantity' => -$quantity, 'unit_price' => 10, 'total_price' => -$quantity * 10,
+            'cost_price' => 5, 'total_cost' => $restocked ? -$quantity * 5 : 0,
+            'returned_to_stock' => $restocked,
+        ]);
+    }
+    $definition = (new ReportingService($this->user))->prepare('product-sales', $this->filters);
+    $row = $definition['query']->sole();
+    expect((float) $row->returned)->toBe(17.0)
+        ->and((float) $row->returned_damaged)->toBe(15.0)
+        ->and((float) $row->returned_usable)->toBe(2.0)
+        ->and((float) $definition['summary']['مرتجع تالف'])->toBe(15.0)
+        ->and((float) $definition['summary']['مرتجع سليم'])->toBe(2.0);
+
+    Livewire::test('product-history')->call('openHistory', $this->product->id)
+        ->assertSee('مرتجع تالف')->assertSee('مرتجع سليم')
+        ->assertViewHas('rows', fn ($rows): bool => $rows->count() === 2);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')
+        ->assertSee('مرتجع تالف')->assertSee('مرتجع سليم');
+    $response = $this->get(route('tenant.reports.print', ['report' => 'product-sales'] + $this->filters))->assertSuccessful();
+    expect($response->streamedContent())->toContain('مرتجع تالف', 'مرتجع سليم');
+});
+
 test('product history searches barcodes and rejects products from another tenant', function (): void {
     ProductBarcode::create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '9876543210123']);
     Livewire::test('pages::tenant.reports.center')->set('report', 'product-history')->set('productSearch', '9876543210123')
