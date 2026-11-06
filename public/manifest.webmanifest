@@ -4,7 +4,7 @@
     "short_name": "WaslaPOS",
     "lang": "ar",
     "dir": "rtl",
-    "start_url": "/dashboard",
+    "start_url": "/dashboard/wholesale-sales",
     "scope": "/",
     "display": "standalone",
     "background_color": "#ffffff",

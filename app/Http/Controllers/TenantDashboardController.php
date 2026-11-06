@@ -15,6 +15,10 @@ class TenantDashboardController extends Controller
     {
         $user = $request->user();
 
+        if ($user->can('wholesale_sales.view')) {
+            return redirect()->route('tenant.wholesale-sales');
+        }
+
         if ($user->can('dashboard.view')) {
             return view('pages.tenant.dashboard');
         }

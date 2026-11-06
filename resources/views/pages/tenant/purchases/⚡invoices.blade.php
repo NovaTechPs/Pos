@@ -3,6 +3,7 @@
 use Livewire\Component;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Payment;
 use App\Models\Party;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
@@ -915,10 +916,18 @@ new class extends Component {
         }
 
         $totals = $this->calculateTotals();
+        $enteredPaidAmount = (float) ($this->paidAmount ?? 0);
+        if (! is_finite($enteredPaidAmount) || $enteredPaidAmount < 0 || $enteredPaidAmount > $totals['total']) {
+            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         $wasEditingInvoice = $this->currentPurchaseId !== null;
 
         try {
-            $purchaseId = DB::transaction(function () use ($tenantId, $supplier, $totals) {
+            $purchaseId = DB::transaction(function () use ($tenantId, $supplier, $totals, $wasEditingInvoice) {
 
                 $purchase = null;
 
@@ -1037,6 +1046,23 @@ new class extends Component {
                         'updated_at' => now(),
                     ]);
 
+                }
+
+                if (! $wasEditingInvoice && $totals['paid'] > 0) {
+                    Payment::query()->create([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $this->selectedBranchId,
+                        'shift_id' => null,
+                        'created_by' => auth()->id(),
+                        'party_id' => $supplier?->id,
+                        'type' => 'payment',
+                        'voucher_number' => 'PAY-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
+                        'amount' => $totals['paid'],
+                        'payment_method' => $this->paymentMethod,
+                        'purchase_id' => $purchaseId,
+                        'notes' => 'دفعة على فاتورة المشتريات رقم: '.$this->invoiceNumber,
+                        'payment_date' => now(),
+                    ]);
                 }
 
                 /*
@@ -2163,15 +2189,28 @@ new class extends Component {
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
-                            <div>
-                                <label for="paid-amount-input" class="mb-2 block text-sm font-bold text-slate-700">الدفعة</label>
-                                <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
+                        @if (! $currentPurchaseId)
+                            <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label for="paid-amount-input" class="mb-2 block text-sm font-bold text-slate-700">الدفعة</label>
+                                    <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
+                                </div>
+                                <div>
+                                    <label for="payment-method-input" class="mb-2 block text-sm font-bold text-slate-700">طريقة الدفع</label>
+                                    <select id="payment-method-input" wire:model="paymentMethod" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400 focus:bg-white">
+                                        <option value="cash">نقداً</option>
+                                        <option value="card">بطاقة</option>
+                                        <option value="bank_transfer">تحويل بنكي</option>
+                                        <option value="cheque">شيك</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3" role="status" aria-live="polite">
-                                <div class="text-sm font-bold text-rose-700">الرصيد بعد الدفعة</div>
-                                <div class="mt-1 text-xl font-black tabular-nums text-rose-800">{{ number_format($accountBalanceAfterPayment, 2) }}</div>
-                            </div>
+                        @else
+                            <p class="text-sm font-semibold text-slate-500">لتسجيل دفعة جديدة على هذه الفاتورة، أضف سند دفع مرتبطاً بها.</p>
+                        @endif
+                        <div class="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3" role="status" aria-live="polite">
+                            <div class="text-sm font-bold text-rose-700">الرصيد بعد الدفعة</div>
+                            <div class="mt-1 text-xl font-black tabular-nums text-rose-800">{{ number_format($accountBalanceAfterPayment, 2) }}</div>
                         </div>
                     </div>
 

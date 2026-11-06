@@ -19,7 +19,7 @@ test('purchase summary keeps discounts and payment totals reactive in the compac
         ->assertSee('إجمالي الفاتورة')
         ->assertSee('الدفعة')
         ->assertSee('الرصيد بعد الدفعة')
-        ->assertDontSee('طريقة الدفع')
+        ->assertSee('طريقة الدفع')
         ->assertDontSee('دفع كامل')
         ->assertDontSee('المتبقي للمورد')
         ->set('cart', [['id' => 1, 'name' => 'الصنف', 'quantity' => 2, 'price' => 100, 'discount' => 0]])

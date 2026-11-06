@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\Shift;
@@ -39,6 +40,51 @@ test('saving a sales or purchase invoice immediately starts a fresh invoice afte
     ['sales', Order::class, 'currentOrderId'],
     ['purchases', Purchase::class, 'currentPurchaseId'],
 ]);
+
+test('new sales invoice records only the entered payment as a receipt voucher', function (): void {
+    $component = Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $order = Order::query()->sole();
+    expect((float) $order->paid_amount)->toBe(0.0)
+        ->and(Payment::query()->where('order_id', $order->id)->exists())->toBeFalse();
+
+    $component->call('startNewInvoice', false)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->set('paidAmount', 4)
+        ->set('paymentMethod', 'card')
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $paidOrder = Order::query()->orderByDesc('id')->firstOrFail();
+    $receipt = Payment::query()->where('order_id', $paidOrder->id)->sole();
+    expect($receipt->type)->toBe('receipt')
+        ->and((float) $receipt->amount)->toBe(4.0)
+        ->and($receipt->payment_method)->toBe('card');
+});
+
+test('new purchase invoice records only the entered payment as a payment voucher', function (): void {
+    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'المورد', 'type' => 'supplier']);
+    $component = Livewire::test('pages::tenant.purchases.invoices')
+        ->set('selectedSupplierId', $supplier->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->set('paidAmount', 1.5)
+        ->set('paymentMethod', 'bank_transfer')
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $purchase = Purchase::query()->sole();
+    $voucher = Payment::query()->where('purchase_id', $purchase->id)->sole();
+    expect($voucher->type)->toBe('payment')
+        ->and((float) $voucher->amount)->toBe(1.5)
+        ->and($voucher->payment_method)->toBe('bank_transfer')
+        ->and((float) $purchase->paid_amount)->toBe(1.5);
+});
 
 test('saving a sales or purchase invoice without printing starts a fresh invoice', function (string $page, string $model, string $idField): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')

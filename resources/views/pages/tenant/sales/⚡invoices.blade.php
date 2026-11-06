@@ -28,6 +28,10 @@ new class extends Component {
     #[\Livewire\Attributes\Locked]
     public float $savedPaidAmount = 0.0;
 
+    public float $paidAmount = 0.0;
+
+    public string $paymentMethod = 'cash';
+
     public string $invoiceNumber = '';
 
     public string $invoiceDate = '';
@@ -268,6 +272,8 @@ new class extends Component {
     {
         $this->invoiceEditMode = true;
         $this->savedPaidAmount = 0.0;
+        $this->paidAmount = 0.0;
+        $this->paymentMethod = 'cash';
         $this->currentOrderId = null;
         $this->invoiceNumber = $this->makeInvoiceNumber();
         $this->invoiceDate = now()->format('Y-m-d');
@@ -869,10 +875,18 @@ new class extends Component {
         }
 
         $totals = $this->calculateTotals();
+        $paidAmount = round(max(0, (float) $this->paidAmount), 2);
+        if (! is_finite($paidAmount) || $paidAmount > $totals['total']) {
+            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         $wasEditingInvoice = $this->currentOrderId !== null;
 
         try {
-            $order = DB::transaction(function () use ($tenantId, $customer, $totals) {
+            $order = DB::transaction(function () use ($tenantId, $customer, $totals, $paidAmount) {
                 if ($this->currentOrderId) {
                     $order = Order::query()
                         ->where('tenant_id', $tenantId)
@@ -883,6 +897,8 @@ new class extends Component {
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة المطلوب تعديلها غير موجودة.');
                     }
+
+                    $existingPaidAmount = (float) $order->paid_amount;
 
                     $order->update([
                         'branch_id' => $this->selectedBranchId,
@@ -935,8 +951,8 @@ new class extends Component {
                         'total' => $totals['total'],
                         'total_cost' => $totals['total_cost'],
                         'total_profit' => $totals['profit'],
-                        'paid_amount' => $totals['total'],
-                        'payment_status' => 'paid',
+                        'paid_amount' => $existingPaidAmount,
+                        'payment_status' => $existingPaidAmount >= $totals['total'] && $totals['total'] > 0 ? 'paid' : ($existingPaidAmount > 0 ? 'partial' : 'unpaid'),
                         'notes' => $this->notes ?: null,
                     ]);
                 }
@@ -961,6 +977,23 @@ new class extends Component {
                         'cost_price' => $cost,
                         'discount' => $lineDiscount,
                         'total_cost' => $cost * $quantity,
+                    ]);
+                }
+
+                if (! $this->currentOrderId && $paidAmount > 0) {
+                    Payment::query()->create([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $this->selectedBranchId,
+                        'shift_id' => null,
+                        'created_by' => auth()->id(),
+                        'party_id' => $customer?->id,
+                        'type' => 'receipt',
+                        'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
+                        'amount' => $paidAmount,
+                        'payment_method' => $this->paymentMethod,
+                        'order_id' => $order->id,
+                        'notes' => 'دفعة على الفاتورة رقم: '.$order->invoice_number,
+                        'payment_date' => now(),
                     ]);
                 }
 
@@ -2101,6 +2134,24 @@ new class extends Component {
                                 <div class="font-mono text-2xl font-black">{{ number_format($grandTotal, 2) }}</div>
                             </div>
                         </div>
+                        @if (! $currentOrderId)
+                            <div class="grid grid-cols-2 gap-2 pt-2">
+                                <div>
+                                    <label for="sales-paid-amount" class="mb-1 block text-xs font-bold text-slate-600">الدفعة</label>
+                                    <input id="sales-paid-amount" type="number" min="0" max="{{ $grandTotal }}" step="0.01" wire:model.live="paidAmount" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center font-black outline-none focus:border-emerald-400 focus:bg-white" />
+                                </div>
+                                <div>
+                                    <label for="sales-payment-method" class="mb-1 block text-xs font-bold text-slate-600">طريقة الدفع</label>
+                                    <select id="sales-payment-method" wire:model="paymentMethod" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-bold outline-none focus:border-emerald-400 focus:bg-white">
+                                        <option value="cash">نقداً</option>
+                                        <option value="card">بطاقة</option>
+                                        <option value="bank_transfer">تحويل بنكي</option>
+                                        <option value="cheque">شيك</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-between text-xs font-bold text-rose-600"><span>المتبقي بعد الدفعة</span><span>{{ number_format(max(0, $grandTotal - (float) $paidAmount), 2) }}</span></div>
+                        @endif
                     </div>
                 </div>
             </div>
