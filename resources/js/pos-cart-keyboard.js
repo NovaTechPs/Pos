@@ -200,6 +200,11 @@
         const current = event.target?.closest?.(FIELD_SELECTOR);
         const key = event.key;
 
+        // Leave product search and result navigation to the product panel.
+        if (event.target?.closest?.('[data-pos-products-panel], [data-pos-product-panel-search], [data-pos-product]')) {
+            return;
+        }
+
         // الضغط على سهم الأعلى خارج السلة يأخذك مباشرة إلى كمية آخر منتج
         if (!current && key === 'ArrowUp') {
             const allRows = rows();

@@ -64,10 +64,11 @@ test('POS product results fit the panel and add by selecting a wrapped result ro
 
 test('F10 and product search reset keyboard navigation to the first result', function (): void {
     $component = Livewire::test('pages::tenant.pos.sales');
+    $cartKeyboard = file_get_contents(resource_path('js/pos-cart-keyboard.js'));
 
     expect($component->html())->toContain("panel.dataset.selectedProductIndex = '0'")
         ->and($component->html())->toContain("dataset.selectedProductIndex = '0'")
-        ->and($component->html())->toContain("key === 'ArrowUp'");
+        ->and($cartKeyboard)->toContain('[data-pos-products-panel], [data-pos-product-panel-search], [data-pos-product]');
 });
 test('Enter does not implicitly submit forms anywhere in the app', function (): void {
     $script = file_get_contents(resource_path('js/prevent-enter-submit.js'));
