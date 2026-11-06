@@ -18,8 +18,13 @@ new class extends Component
     public ?int $branchId = null;
     public string $notes = '';
     public string $productSearch = '';
+    public ?int $selectedProductId = null;
+    public string $selectedProductName = '';
+    public float $selectedQuantity = 1.0;
+    public float $selectedUnitCost = 0.0;
+    public float $selectedStock = 0.0;
     /** @var list<array{product_id: string, quantity: float|int|string, unit_cost: float|int|string}> */
-    public array $lines = [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]];
+    public array $lines = [];
     public ?string $successMessage = null;
     public ?string $errorMessage = null;
 
@@ -53,14 +58,16 @@ new class extends Component
         $this->errorMessage = null;
     }
 
-    public function addProduct(int $productId): void
+    public function selectProduct(int $productId): void
     {
         $this->authorize('products.stock.adjust');
         $tenantId = auth()->user()?->tenant_id;
-
         $product = Product::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
             ->whereNull('deleted_at')
+            ->with(['branchProducts' => fn ($query) => $query
+                ->where('tenant_id', $tenantId)
+                ->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
             ->find($productId);
 
         if (! $product) {
@@ -69,33 +76,112 @@ new class extends Component
             return;
         }
 
-        foreach ($this->lines as $line) {
-            if ((int) ($line['product_id'] ?? 0) === $product->id) {
-                $this->errorMessage = 'الصنف موجود بالفعل في السند. عدّل كميته من الجدول.';
+        $this->selectedProductId = $product->id;
+        $this->selectedProductName = $product->name;
+        $this->selectedQuantity = 1.0;
+        $this->selectedUnitCost = (float) $product->cost_price;
+        $this->selectedStock = (float) ($product->branchProducts->first()?->stock_quantity ?? 0);
+        $this->productSearch = $product->name;
+        $this->errorMessage = null;
+        $this->dispatch('stock-voucher-product-selected');
+        $this->dispatch('stock-voucher-focus-quantity');
+    }
 
-                return;
-            }
+    public function updatedProductSearch(string $value): void
+    {
+        if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
+            $this->selectedProductId = null;
+            $this->selectedProductName = '';
+            $this->selectedQuantity = 1.0;
+            $this->selectedUnitCost = 0.0;
+            $this->selectedStock = 0.0;
+        }
+    }
+
+    public function selectProductByBarcode(string $barcode): bool
+    {
+        $barcode = trim($barcode);
+        $tenantId = auth()->user()?->tenant_id;
+
+        if ($barcode === '' || mb_strlen($barcode) > 100 || ! $tenantId) {
+            return false;
+        }
+
+        $productId = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)
+            ->whereNull('deleted_at')
+            ->where(function ($query) use ($barcode, $tenantId): void {
+                $query->where('product_number', $barcode)
+                    ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
+                        ->where('tenant_id', $tenantId)->where('barcode', $barcode));
+            })->value('id');
+
+        if (! $productId) {
+            return false;
+        }
+
+        $this->selectProduct((int) $productId);
+
+        return true;
+    }
+
+    public function addSelectedProduct(): void
+    {
+        $this->authorize('products.stock.adjust');
+        $this->validate([
+            'selectedProductId' => ['required', 'integer'],
+            'selectedQuantity' => ['required', 'numeric', 'gt:0', 'max:999999999.999'],
+            'selectedUnitCost' => ['required', 'numeric', 'gte:0', 'max:999999999.99'],
+        ]);
+
+        $tenantId = auth()->user()?->tenant_id;
+        $product = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)
+            ->whereNull('deleted_at')->find($this->selectedProductId);
+
+        if (! $product) {
+            $this->errorMessage = 'الصنف المحدد غير متاح.';
+
+            return;
         }
 
         $emptyIndex = collect($this->lines)->search(fn (array $line): bool => blank($line['product_id']));
+        $newLine = [
+            'product_id' => (string) $product->id,
+            'quantity' => round((float) $this->selectedQuantity, 3),
+            'unit_cost' => round((float) $this->selectedUnitCost, 2),
+        ];
 
         if ($emptyIndex === false) {
-            $this->lines[] = ['product_id' => (string) $product->id, 'quantity' => 1, 'unit_cost' => (float) $product->cost_price];
+            $this->lines[] = $newLine;
         } else {
-            $this->lines[$emptyIndex]['product_id'] = (string) $product->id;
-            $this->lines[$emptyIndex]['quantity'] = 1;
-            $this->lines[$emptyIndex]['unit_cost'] = (float) $product->cost_price;
+            $this->lines[$emptyIndex] = $newLine;
         }
 
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedQuantity = 1.0;
+        $this->selectedUnitCost = 0.0;
+        $this->selectedStock = 0.0;
         $this->productSearch = '';
         $this->errorMessage = null;
+        $this->dispatch('stock-voucher-focus-product-search');
+    }
+
+    public function addProduct(int $productId): void
+    {
+        $this->selectProduct($productId);
+
+        if (! $this->selectedProductId) {
+            return;
+        }
+
+        $this->addSelectedProduct();
     }
 
     public function removeLine(int $index): void
     {
         $this->authorize('products.stock.adjust');
         unset($this->lines[$index]);
-        $this->lines = array_values($this->lines ?: [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]]);
+        $this->lines = array_values($this->lines);
     }
 
     public function save(): void
@@ -108,7 +194,7 @@ new class extends Component
             'branchId' => ['required', 'integer'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'lines' => ['required', 'array', 'min:1', 'max:100'],
-            'lines.*.product_id' => ['required', 'integer', 'distinct'],
+            'lines.*.product_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999999.999'],
             'lines.*.unit_cost' => ['required', 'numeric', 'gte:0', 'max:999999999.99'],
         ]);
@@ -165,7 +251,13 @@ new class extends Component
 
         $this->successMessage = 'تم حفظ سند '.($this->type === 'in' ? 'الإدخال' : 'الإخراج').' بنجاح: '.$voucher;
         $this->notes = '';
-        $this->lines = [['product_id' => '', 'quantity' => 1, 'unit_cost' => 0]];
+        $this->lines = [];
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedQuantity = 1.0;
+        $this->selectedUnitCost = 0.0;
+        $this->selectedStock = 0.0;
+        $this->productSearch = '';
         $this->resetValidation();
     }
 
@@ -238,21 +330,45 @@ new class extends Component
             @endif
         </section>
 
-        <section class="space-y-3">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-                <div><h2 class="text-base font-black text-slate-900 dark:text-white">إضافة الأصناف</h2><p class="mt-1 text-xs text-slate-500">ابحث بالاسم أو رقم الصنف أو الباركود، ثم اضغط على الصنف.</p></div>
-                <div class="w-full sm:max-w-sm"><flux:input label="بحث الأصناف" wire:model.live.debounce.250ms="productSearch" placeholder="اكتب اسم الصنف أو امسح الباركود" /></div>
+        <section class="space-y-3" x-data="{ productSearchOpen: false }" x-on:stock-voucher-product-selected.window="productSearchOpen = false" x-on:stock-voucher-focus-product-search.window="$nextTick(() => $refs.productSearch?.focus())" x-on:stock-voucher-focus-quantity.window="$nextTick(() => $refs.quantity?.focus())" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
+            <div><h2 class="text-base font-black text-slate-900 dark:text-white">إضافة صنف للسند</h2><p class="mt-1 text-xs text-slate-500">ابحث عن الصنف واختره، ثم أدخل الكمية والتكلفة واضغط إضافة.</p></div>
+            <div class="relative">
+                <label for="stock-voucher-product-search" class="mb-1.5 block text-xs font-black text-slate-600 dark:text-slate-300">الصنف / الباركود</label>
+                <input id="stock-voucher-product-search" x-ref="productSearch" type="text" wire:model.live.debounce.120ms="productSearch" maxlength="120" autocomplete="off" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true" x-on:keydown.arrow-down.prevent="$nextTick(() => $el.parentElement.querySelector('[data-stock-voucher-product-result]')?.focus())" x-on:keydown.enter.prevent="$wire.selectProductByBarcode($el.value).then((selected) => { if (!selected) $nextTick(() => $el.closest('section')?.querySelector('[data-stock-voucher-product-result]')?.click()) })" placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                @if ($selectedProductId)
+                    <p role="status" class="mt-1 text-xs font-bold text-indigo-700 dark:text-indigo-300">تم اختيار «{{ $selectedProductName }}». أدخل الكمية والتكلفة ثم اضغط «+ إضافة».</p>
+                @endif
+                @if (trim($productSearch) !== '' && ! $selectedProductId)
+                    <div x-cloak x-show="productSearchOpen" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                        @if ($products->isNotEmpty())
+                            <div class="max-h-80 overflow-auto">
+                                <table class="w-full text-right text-sm">
+                                    <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2 text-center">التكلفة</th><th class="p-2 text-center">المخزون</th></tr></thead>
+                                    <tbody>
+                                        @foreach ($products as $product)
+                                            @php $stock = (float) ($product->branchProducts->first()?->stock_quantity ?? 0); @endphp
+                                            <tr wire:key="stock-voucher-search-{{ $product->id }}" class="border-t border-slate-100 dark:border-slate-800">
+                                                <td colspan="4" class="p-0"><button type="button" data-stock-voucher-product-result wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1fr_2fr_1fr_1fr] items-center gap-2 px-3 py-2.5 text-right transition hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none dark:hover:bg-indigo-950 dark:focus:bg-indigo-950">
+                                                    <span class="font-mono text-xs">{{ $product->product_number ?: '#'.$product->id }}</span><span class="font-bold">{{ $product->name }}</span><span class="text-center font-mono">{{ number_format((float) $product->cost_price, 2) }}</span><span class="text-center font-mono tabular-nums">{{ number_format($stock, 3) }}</span>
+                                                </button></td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @else
+                            <p role="status" class="p-5 text-center text-sm font-semibold text-slate-500">لا توجد أصناف مطابقة للبحث.</p>
+                        @endif
+                    </div>
+                @endif
             </div>
-            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                @forelse ($products as $product)
-                    @php $stock = $product->branchProducts->first()?->stock_quantity; @endphp
-                    <button type="button" wire:click="addProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="addProduct({{ $product->id }})" class="group flex min-h-20 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/50">
-                        <span class="min-w-0"><span class="block truncate text-sm font-black text-slate-900 dark:text-white">{{ $product->name }}</span><span class="mt-1 block font-mono text-[10px] text-slate-500">رقم الصنف: {{ $product->product_number ?: '#'.$product->id }}</span><span class="mt-1 block text-[10px] font-bold text-slate-500">التكلفة الحالية: {{ number_format((float) $product->cost_price, 2) }}</span></span>
-                        <span class="shrink-0 rounded-lg bg-white px-2.5 py-2 text-center shadow-sm dark:bg-slate-900"><span class="block text-[9px] font-bold text-slate-400">المتوفر</span><span class="font-mono text-sm font-black {{ $stock !== null && $stock <= 0 ? 'text-rose-700' : 'text-emerald-700' }}">{{ $stock === null ? '—' : number_format((float) $stock, 3) }}</span></span>
-                    </button>
-                @empty
-                    <div class="col-span-full rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 dark:border-slate-700">لا توجد أصناف مطابقة للبحث.</div>
-                @endforelse
+
+            <div class="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(12rem,1.5fr)_minmax(8rem,0.7fr)_minmax(9rem,0.8fr)_minmax(8rem,0.7fr)_auto]">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800"><div class="text-[10px] font-bold text-slate-500">الصنف المختار</div><div class="mt-1 truncate text-sm font-black text-slate-900 dark:text-white">{{ $selectedProductName ?: 'لم يتم اختيار صنف' }}</div>@if ($selectedProductId)<div class="mt-1 text-[10px] text-slate-500">المتوفر بالفرع: {{ number_format($selectedStock, 3) }}</div>@endif</div>
+                <div><label for="voucher-selected-quantity" class="mb-1.5 block text-xs font-black text-slate-600 dark:text-slate-300">الكمية</label><input id="voucher-selected-quantity" x-ref="quantity" type="number" min="0.001" step="0.001" inputmode="decimal" wire:model.live.debounce.200ms="selectedQuantity" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.unitCost?.focus(); $refs.unitCost?.select()" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black tabular-nums outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />@error('selectedQuantity')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</div>
+                <div><label for="voucher-selected-cost" class="mb-1.5 block text-xs font-black text-slate-600 dark:text-slate-300">تكلفة الوحدة</label><input id="voucher-selected-cost" x-ref="unitCost" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.200ms="selectedUnitCost" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$wire.addSelectedProduct()" class="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-center font-mono text-sm font-black tabular-nums text-amber-900 outline-none focus:border-amber-500 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100" />@error('selectedUnitCost')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror</div>
+                <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center dark:border-slate-700 dark:bg-slate-800"><div class="text-[10px] font-bold text-slate-500">إجمالي السطر</div><div class="mt-1 font-mono text-sm font-black tabular-nums text-slate-900 dark:text-white">{{ number_format(max(0, $selectedQuantity * $selectedUnitCost), 2) }}</div></div>
+                <button type="button" wire:click="addSelectedProduct" wire:loading.attr="disabled" wire:target="addSelectedProduct" @disabled(!$selectedProductId) class="h-12 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">+ إضافة</button>
             </div>
         </section>
 

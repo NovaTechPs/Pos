@@ -60,7 +60,7 @@ test('stock out voucher refuses a quantity larger than the branch balance', func
     expect(StockVoucher::count())->toBe(0)->and((float) $this->stock->fresh()->stock_quantity)->toBe(10.0);
 });
 
-test('stock vouchers find a product by barcode and add it to the voucher line', function (): void {
+test('stock vouchers find products by barcode and add them through the invoice-style entry controls', function (): void {
     ProductBarcode::create([
         'tenant_id' => $this->tenant->id,
         'product_id' => $this->product->id,
@@ -71,13 +71,29 @@ test('stock vouchers find a product by barcode and add it to the voucher line', 
         ->set('branchId', $this->branch->id)
         ->set('productSearch', '9876543210123')
         ->assertViewHas('products', fn ($products): bool => $products->pluck('id')->all() === [$this->product->id])
-        ->call('addProduct', $this->product->id)
+        ->call('selectProduct', $this->product->id)
+        ->assertSet('selectedProductId', $this->product->id)
+        ->assertSet('selectedProductName', $this->product->name)
+        ->assertSet('selectedUnitCost', 0.0)
+        ->set('selectedQuantity', 2)
+        ->call('addSelectedProduct')
         ->assertSet('lines.0.product_id', (string) $this->product->id)
-        ->assertSet('lines.0.quantity', 1)
+        ->assertSet('lines.0.quantity', 2.0)
         ->assertSet('lines.0.unit_cost', 0.0)
         ->assertSet('productSearch', '')
-        ->call('addProduct', $this->product->id)
-        ->assertSet('errorMessage', 'الصنف موجود بالفعل في السند. عدّل كميته من الجدول.');
+        ->call('selectProduct', $this->product->id)
+        ->call('addSelectedProduct')
+        ->assertSet('lines.1.product_id', (string) $this->product->id);
+});
+
+test('stock voucher uses a searchable dropdown with editable quantity and cost before adding the line', function (): void {
+    $component = Livewire::test('pages::tenant.stock-vouchers.index')->set('productSearch', 'صنف سند');
+    $html = $component->html();
+
+    expect($html)->toContain('data-stock-voucher-product-result')
+        ->toContain('wire:model.live.debounce.200ms="selectedQuantity"')
+        ->toContain('wire:model.live.debounce.200ms="selectedUnitCost"')
+        ->toContain('wire:click="addSelectedProduct"');
 });
 
 test('stock voucher line defaults to the product cost and stores an edited cost with quantity', function (): void {
