@@ -73,7 +73,7 @@ new class extends Component {
     public bool $showPriceUpdateModal = false;
 
     #[\Livewire\Attributes\Locked]
-    public ?int $priceUpdatePurchaseId = null;
+    public ?int $priceUpdateBranchId = null;
 
     /** @var array<int, array{name: string, purchase_cost: float, current_cost: float, retail_price: float}> */
     #[\Livewire\Attributes\Locked]
@@ -546,6 +546,10 @@ new class extends Component {
             'stock' => round((float) $this->selectedStock, 2),
         ];
 
+        $productId = $this->selectedProductId;
+        $purchaseCost = round((float) $this->selectedPurchasePrice, 2);
+        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
+
         $this->selectedProductId = null;
         $this->selectedProductName = '';
         $this->selectedPurchasePrice = 0.0;
@@ -554,6 +558,8 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->rowSearch = '';
         $this->errorMessage = null;
+
+        $this->preparePriceUpdateCandidate($productId, $purchaseCost, $branchId);
 
         $this->dispatch('toast', type: 'success', message: 'تمت إضافة الصنف إلى الفاتورة.');
         $this->dispatch('focus-product-search');
@@ -644,8 +650,14 @@ new class extends Component {
             return;
         }
 
-        $this->cart[$cartKey]['price'] = max(0, round((float) $price, 2));
+        $updatedPrice = max(0, round((float) $price, 2));
+        $priceChanged = abs((float) $this->cart[$cartKey]['price'] - $updatedPrice) >= 0.005;
+        $this->cart[$cartKey]['price'] = $updatedPrice;
         unset($this->cart[$cartKey]['total_override']);
+
+        if ($priceChanged) {
+            $this->preparePriceUpdateCandidate((int) $this->cart[$cartKey]['id'], $updatedPrice, $this->selectedBranchId ?: $this->resolveBranchId());
+        }
     }
 
     public function updateItemTotal(string $cartKey, $total): void
@@ -1072,7 +1084,6 @@ new class extends Component {
 
             if ($wasEditingInvoice) {
                 $this->loadPurchase($purchaseId);
-                $this->preparePriceUpdateCandidates((int) $purchaseId);
                 $this->successMessage = 'تم تعديل فاتورة المشتريات بنجاح.';
                 $this->dispatch('toast', type: 'success', message: $this->successMessage);
 
@@ -1080,7 +1091,6 @@ new class extends Component {
             }
 
             $this->startNewInvoice(false);
-            $this->preparePriceUpdateCandidates((int) $purchaseId);
             $this->successMessage = 'تم حفظ فاتورة المشتريات بنجاح وفتح فاتورة جديدة.';
             $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المشتريات بنجاح.');
 
@@ -1093,9 +1103,9 @@ new class extends Component {
         }
     }
 
-    private function preparePriceUpdateCandidates(int $purchaseId): void
+    private function preparePriceUpdateCandidate(int $productId, float $purchaseCost, ?int $branchId): void
     {
-        $this->priceUpdatePurchaseId = null;
+        $this->priceUpdateBranchId = null;
         $this->priceUpdateCandidates = [];
         $this->priceUpdateSelections = [];
         $this->priceUpdateRetailPrices = [];
@@ -1105,91 +1115,66 @@ new class extends Component {
             return;
         }
 
-        $purchase = DB::table('purchases')->where('tenant_id', $this->tenantId())->where('id', $purchaseId)->first(['branch_id']);
-        if (! $purchase) {
+        $tenantId = $this->tenantId();
+        if (! $tenantId || ! $branchId) {
             return;
         }
 
-        $latestItems = DB::table('purchase_items as pi')
-            ->join('products as p', 'p.id', '=', 'pi.product_id')
-            ->leftJoin('branch_products as bp', function ($join) use ($purchase): void {
-                $join->on('bp.product_id', '=', 'p.id')
-                    ->where('bp.tenant_id', $this->tenantId())
-                    ->where('bp.branch_id', $purchase->branch_id);
-            })
-            ->where('pi.purchase_id', $purchaseId)
-            ->where('p.tenant_id', $this->tenantId())
-            ->orderBy('pi.id')
-            ->get(['pi.product_id', 'pi.unit_cost', 'p.name', 'p.cost_price', 'bp.retail_price']);
-
-        $latestByProduct = [];
-        foreach ($latestItems as $item) {
-            $latestByProduct[(int) $item->product_id] = $item;
+        $product = Product::query()->where('tenant_id', $tenantId)->find($productId);
+        if (! $product || abs($purchaseCost - (float) $product->cost_price) < 0.005) {
+            return;
         }
 
-        foreach ($latestByProduct as $productId => $item) {
-            if (abs((float) $item->unit_cost - (float) $item->cost_price) < 0.005) {
-                continue;
-            }
-
-            $retailPrice = (float) ($item->retail_price ?? 0);
-            $this->priceUpdateCandidates[$productId] = [
-                'name' => (string) $item->name,
-                'purchase_cost' => (float) $item->unit_cost,
-                'current_cost' => (float) $item->cost_price,
-                'retail_price' => $retailPrice,
-            ];
-            $this->priceUpdateSelections[$productId] = ['cost' => true, 'retail' => false];
-            $this->priceUpdateRetailPrices[$productId] = $retailPrice;
-        }
-
-        if ($this->priceUpdateCandidates !== []) {
-            $this->priceUpdatePurchaseId = $purchaseId;
-            $this->showPriceUpdateModal = true;
-        }
+        $branchProduct = BranchProduct::query()
+            ->where('tenant_id', $tenantId)
+            ->where('branch_id', $branchId)
+            ->where('product_id', $productId)
+            ->first();
+        $retailPrice = (float) ($branchProduct?->retail_price ?? 0);
+        $this->priceUpdateCandidates[$productId] = [
+            'name' => (string) $product->name,
+            'purchase_cost' => $purchaseCost,
+            'current_cost' => (float) $product->cost_price,
+            'retail_price' => $retailPrice,
+        ];
+        $this->priceUpdateSelections[$productId] = ['cost' => true, 'retail' => false];
+        $this->priceUpdateRetailPrices[$productId] = $retailPrice;
+        $this->priceUpdateBranchId = $branchId;
+        $this->showPriceUpdateModal = true;
     }
 
     public function applyPurchasePriceUpdates(): void
     {
         $this->authorize('products.price.edit');
 
-        if (! $this->priceUpdatePurchaseId || $this->priceUpdateCandidates === []) {
+        if (! $this->priceUpdateBranchId || $this->priceUpdateCandidates === []) {
             $this->dismissPriceUpdateModal();
             return;
         }
 
         $tenantId = $this->tenantId();
-        $purchase = DB::table('purchases')
-            ->where('tenant_id', $tenantId)
-            ->where('id', $this->priceUpdatePurchaseId)
-            ->first(['branch_id']);
-
-        if (! $purchase) {
-            $this->addError('priceUpdateCandidates', 'لم يتم العثور على فاتورة المشتريات.');
+        $branchExists = Branch::query()->where('tenant_id', $tenantId)->whereKey($this->priceUpdateBranchId)->exists();
+        if (! $tenantId || ! $branchExists) {
+            $this->addError('priceUpdateCandidates', 'الفرع المحدد غير صالح لهذا المتجر.');
             return;
         }
 
-        DB::transaction(function () use ($tenantId, $purchase): void {
+        DB::transaction(function () use ($tenantId): void {
             foreach ($this->priceUpdateCandidates as $productId => $candidate) {
                 $productId = (int) $productId;
-                $invoiceItem = DB::table('purchase_items')
-                    ->where('purchase_id', $this->priceUpdatePurchaseId)
-                    ->where('product_id', $productId)
-                    ->orderByDesc('id')
-                    ->first(['unit_cost']);
                 $product = Product::query()
                     ->where('tenant_id', $tenantId)
                     ->whereKey($productId)
                     ->lockForUpdate()
                     ->first();
 
-                if (! $invoiceItem || ! $product) {
+                if (! $product) {
                     continue;
                 }
 
                 $selection = $this->priceUpdateSelections[$productId] ?? [];
                 if (! empty($selection['cost'])) {
-                    $product->cost_price = max(0, (float) $invoiceItem->unit_cost);
+                    $product->cost_price = max(0, (float) $candidate['purchase_cost']);
                     $product->save();
                 }
 
@@ -1200,13 +1185,19 @@ new class extends Component {
 
                     $branchProduct = BranchProduct::query()
                         ->where('tenant_id', $tenantId)
-                        ->where('branch_id', $purchase->branch_id)
+                        ->where('branch_id', $this->priceUpdateBranchId)
                         ->where('product_id', $productId)
                         ->lockForUpdate()
                         ->first();
 
                     if (! $branchProduct) {
-                        throw new \RuntimeException('الصنف غير مرتبط بفرع فاتورة المشتريات.');
+                        $branchProduct = BranchProduct::query()->create([
+                            'tenant_id' => $tenantId,
+                            'branch_id' => $this->priceUpdateBranchId,
+                            'product_id' => $productId,
+                            'stock_quantity' => 0,
+                            'retail_price' => 0,
+                        ]);
                     }
 
                     $branchProduct->retail_price = (float) $this->priceUpdateRetailPrices[$productId];
@@ -1222,7 +1213,7 @@ new class extends Component {
     public function dismissPriceUpdateModal(): void
     {
         $this->showPriceUpdateModal = false;
-        $this->priceUpdatePurchaseId = null;
+        $this->priceUpdateBranchId = null;
         $this->priceUpdateCandidates = [];
         $this->priceUpdateSelections = [];
         $this->priceUpdateRetailPrices = [];
