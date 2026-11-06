@@ -113,7 +113,7 @@ new class extends Component {
              * سندات القبض القادمة من مبيعات الجملة لها order_id،
              * لذلك لا نستبعدها هنا. نعرض السند المستقل وسند الفاتورة معًا.
              */
-            ->with(['party'])
+            ->with(['party', 'order:id,type'])
 
             ->where('tenant_id', $tenantId)
 
@@ -344,6 +344,34 @@ new class extends Component {
         return true;
     }
 
+    private function syncLinkedOrderPaymentStatus(int $tenantId, ?int $orderId): void
+    {
+        if (!$orderId) {
+            return;
+        }
+
+        $order = Order::query()
+            ->where('tenant_id', $tenantId)
+            ->lockForUpdate()
+            ->findOrFail($orderId);
+
+        abort_unless($order->type !== 'return', 404);
+
+        $receiptTotal = (float) Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('order_id', $order->id)
+            ->where('type', 'receipt')
+            ->sum('amount');
+        $paidAmount = min(max(0, (float) $order->total), $receiptTotal + (float) $order->delivery_fee);
+
+        $order->update([
+            'paid_amount' => $paidAmount,
+            'payment_status' => $paidAmount >= (float) $order->total
+                ? 'paid'
+                : ($paidAmount > 0 ? 'partial' : 'unpaid'),
+        ]);
+    }
+
     public function edit(int $id): void
 
     {
@@ -499,6 +527,15 @@ new class extends Component {
 
                 $oldAmount = (float) $receipt->amount;
 
+                if ($receipt->order_id) {
+                    $linkedOrder = Order::query()
+                        ->where('tenant_id', $tenantId)
+                        ->lockForUpdate()
+                        ->findOrFail($receipt->order_id);
+
+                    abort_unless($linkedOrder->type !== 'return' && (int) $linkedOrder->customer_id === (int) $newParty->id, 404);
+                }
+
                 /*
 
                  * نفس العميل
@@ -578,6 +615,8 @@ new class extends Component {
                     'notes' => $validated['notes'] ?? null,
 
                 ]);
+
+                $this->syncLinkedOrderPaymentStatus($tenantId, $receipt->order_id);
 
             /*
 
@@ -738,6 +777,8 @@ new class extends Component {
             $party->save();
 
             $receipt->delete();
+
+            $this->syncLinkedOrderPaymentStatus($tenantId, $receipt->order_id);
 
         });
 

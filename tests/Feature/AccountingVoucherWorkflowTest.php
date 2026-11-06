@@ -98,6 +98,62 @@ test('receipt voucher created from a sales invoice is linked and updates its pai
         ->and($order->fresh()->payment_status)->toBe('partial');
 });
 
+test('linked receipt vouchers can be edited and deleted while keeping the invoice paid amount in sync', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Receipt branch']);
+    $customer = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Receipt customer',
+        'type' => 'customer',
+        'is_active' => true,
+        'current_balance' => -25,
+    ]);
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => $customer->id,
+        'invoice_number' => 'RECEIPT-EDIT',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 25,
+        'payment_status' => 'partial',
+    ]);
+    $receipt = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'party_id' => $customer->id,
+        'order_id' => $order->id,
+        'created_by' => $this->user->id,
+        'type' => 'receipt',
+        'voucher_number' => 'RECEIPT-EDIT-1',
+        'payment_date' => '2026-11-06',
+        'payment_method' => 'cash',
+        'amount' => 25,
+    ]);
+
+    $component = Livewire::test('pages::tenant.accounting.receipts')
+        ->assertSee('wire:click="edit('.$receipt->id.')"', false)
+        ->assertSee('wire:click="confirmDelete('.$receipt->id.')"', false)
+        ->call('edit', $receipt->id)
+        ->set('amount', '40')
+        ->call('saveReceipt')
+        ->assertHasNoErrors()
+        ->assertSet('showForm', false);
+
+    expect((float) $customer->fresh()->current_balance)->toBe(-40.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(40.0)
+        ->and($order->fresh()->payment_status)->toBe('partial')
+        ->and((float) $receipt->fresh()->amount)->toBe(40.0);
+
+    $component->call('confirmDelete', $receipt->id)->call('delete');
+
+    expect((float) $customer->fresh()->current_balance)->toBe(0.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(0.0)
+        ->and($order->fresh()->payment_status)->toBe('unpaid')
+        ->and(Payment::withTrashed()->findOrFail($receipt->id)->trashed())->toBeTrue();
+});
+
 test('payment voucher created from a purchase invoice is linked and updates its paid amount', function (): void {
     $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Voucher branch']);
     $supplier = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Invoice supplier', 'type' => 'supplier', 'is_active' => true]);
