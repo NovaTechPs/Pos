@@ -5,6 +5,7 @@ use Livewire\Component;
 use App\Models\Product;
 
 use App\Models\ProductBarcode;
+use App\Services\PosProductSearch;
 
 new class extends Component
 
@@ -50,122 +51,62 @@ new class extends Component
 
     }
 
-    /** Search by name, SKU or barcode, including Arabic names and partial codes. */
-
-    public function getProductsProperty()
-
+    /** Search by name, SKU, or barcode using the indexed shared catalog search. */
+    public function getProductsProperty(): \Illuminate\Support\Collection
     {
-
         $search = trim(preg_replace('/\s+/u', ' ', $this->productSearch) ?? '');
-
         if (mb_strlen($search) < 2 || mb_strlen($search) > 120) {
-
             return collect();
-
         }
 
         $tenantId = $this->getCurrentTenantId();
+        if (! $tenantId) {
+            return collect();
+        }
 
         $branchId = $this->getCurrentBranchId();
-
-        $driver = \Illuminate\Support\Facades\DB::connection()->getDriverName();
-
-        $like = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
-
-        $escape = static fn (string $value): string => str_replace(
-
-            ['!', '%', '_'], ['!!', '!%', '!_'], $value
-
-        );
-
-        $prefix = $escape($search) . '%';
-
-        $contains = '%' . $escape($search) . '%';
-
-        $barcodeMatch = static function ($query, string $pattern) use ($tenantId, $like): void {
-
-            $query->whereRaw("barcode {$like} ? ESCAPE '!'", [$pattern]);
-
-            if ($tenantId !== null) {
-
-                $query->where('tenant_id', $tenantId);
-
-            }
-
+        $searchService = app(PosProductSearch::class);
+        $normalizedSearch = $searchService->normalize($search);
+        $baseQuery = function () use ($tenantId, $branchId) {
+            return Product::query()
+                ->where('products.tenant_id', $tenantId)
+                ->select(['products.id', 'products.tenant_id', 'products.name', 'products.product_number'])
+                ->with([
+                    'barcodes' => fn ($query) => $query->where('tenant_id', $tenantId)->select(['id', 'tenant_id', 'product_id', 'barcode']),
+                    'branchProducts' => fn ($query) => $query
+                        ->where('tenant_id', $tenantId)
+                        ->when($branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $branchId))
+                        ->select(['id', 'tenant_id', 'branch_id', 'product_id', 'retail_price', 'wholesale_price', 'stock_quantity']),
+                ]);
         };
 
-        // Exact barcode or product number first.
+        $query = $baseQuery();
+        $searchService->apply($query->getQuery(), $normalizedSearch, $tenantId);
+        $products = $query->orderBy('products.name')->orderBy('products.id')->limit(15)->get();
 
-        $products = Product::query()
-
-            ->where(function ($query) use ($search, $tenantId) {
-
-                $query->where('products.product_number', $search)
-
-                    ->orWhereHas('barcodes', function ($b) use ($search, $tenantId) {
-
-                        $b->where('barcode', $search);
-
-                        if ($tenantId !== null) {
-
-                            $b->where('tenant_id', $tenantId);
-
-                        }
-
+        if ($products->isEmpty()) {
+            $driver = \Illuminate\Support\Facades\DB::connection()->getDriverName();
+            $like = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
+            $escape = static fn (string $value): string => str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
+            $contains = '%'.$escape($normalizedSearch).'%';
+            $query = $baseQuery();
+            $query->where(function ($matches) use ($searchService, $normalizedSearch, $contains, $like, $tenantId): void {
+                $matches->where(function ($names) use ($searchService, $normalizedSearch): void {
+                    $searchService->applyContains($names->getQuery(), $normalizedSearch);
+                })
+                    ->orWhereRaw("products.product_number {$like} ? ESCAPE '!'", [$contains])
+                    ->orWhereExists(function ($barcodes) use ($tenantId, $like, $contains): void {
+                        $barcodes->selectRaw('1')->from('product_barcodes as pb')
+                            ->whereColumn('pb.product_id', 'products.id')
+                            ->where('pb.tenant_id', $tenantId)
+                            ->whereRaw("pb.barcode {$like} ? ESCAPE '!'", [$contains]);
                     });
-
-            })->limit(15)->get();
-
-        // Then prefix matches for names, codes and barcodes.
-
-        if ($products->isEmpty()) {
-
-            $products = Product::query()
-
-                ->where(function ($query) use ($prefix, $like, $barcodeMatch) {
-
-                    $query->whereRaw("products.name {$like} ? ESCAPE '!'", [$prefix])
-
-                        ->orWhereRaw("products.product_number {$like} ? ESCAPE '!'", [$prefix])
-
-                        ->orWhereHas('barcodes', fn ($b) => $barcodeMatch($b, $prefix));
-
-                })->limit(15)->get();
-
+            });
+            $products = $query->orderBy('products.name')->orderBy('products.id')->limit(15)->get();
         }
-
-        // For names such as "موقد غاز", find "غاز" even if not the first word.
-
-        if ($products->isEmpty()) {
-
-            $products = Product::query()
-
-                ->where(function ($query) use ($contains, $like, $barcodeMatch) {
-
-                    $query->whereRaw("products.name {$like} ? ESCAPE '!'", [$contains])
-
-                        ->orWhereRaw("products.product_number {$like} ? ESCAPE '!'", [$contains])
-
-                        ->orWhereHas('barcodes', fn ($b) => $barcodeMatch($b, $contains));
-
-                })->limit(15)->get();
-
-        }
-
-        $products->load([
-
-            'barcodes',
-
-            'branchProducts' => fn ($query) => $query->where('tenant_id', $tenantId)
-
-                ->when($branchId, fn ($b) => $b->where('branch_id', $branchId)),
-
-        ]);
 
         return $products;
-
     }
-
     private function getCurrentBranchId(): ?int
 
     {

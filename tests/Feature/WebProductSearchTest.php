@@ -64,6 +64,12 @@ test('barcode printer selects products from a search dropdown', function (): voi
     expect($component->get('productSearch'))->toBe($this->product->name);
 });
 
+test('barcode printer search matches normalized names product numbers and barcodes', function (string $search): void {
+    Livewire::test('pages::tenant.products.printer')
+        ->set('productSearch', $search)
+        ->assertSee('wire:click="selectProduct('.$this->product->id.')"', false);
+})->with(['قهوه', 'فاتحه', 'coffee-42', '1234567890123']);
+
 test('barcode labels use the selected branch retail price instead of cost price', function (): void {
     $component = Livewire::test('pages::tenant.products.printer')->call('selectProduct', $this->product->id);
 
