@@ -4492,7 +4492,7 @@ new class extends Component {
             "
             x-on:keydown.window.f4.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.clearCart()"
             x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
-            x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus())"
+            x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) { const panel = $el.querySelector('[data-pos-products-panel]'); if (panel) panel.dataset.selectedProductIndex = '0'; $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus()) }"
             class="pos-layout flex min-w-0 flex-col gap-2">
             @include('pages.tenant.pos.partials.toolbar')
 
@@ -4555,6 +4555,7 @@ new class extends Component {
                                         x-on:pos-search-cleared.window="if ($event.detail.componentId === $wire.$id) $el.value = ''"
                                         x-on:keydown.f2.window.prevent="$el.focus(); $el.select()"
                                         x-on:keydown.escape.prevent="$wire.set('productSearchQuery', ''); $el.focus()"
+                                        x-on:input="$el.closest('aside')?.querySelector('[data-pos-products-panel]') && ($el.closest('aside').querySelector('[data-pos-products-panel]').dataset.selectedProductIndex = '0')"
                                         x-on:keydown.arrow-down.prevent="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
                                         x-on:keydown.enter.prevent="$wire.submitProductSearch($el.value)"
                                         x-on:pos-search-results-ready.window="$nextTick(() => $el.closest('aside')?.querySelector('[data-pos-product]')?.focus())"
