@@ -166,7 +166,7 @@
                             empty($item['is_gift']) && $item['quantity'] > 0 && (float) $item['price'] < (float) ($item['cost_price'] ?? 0);
                     @endphp
 
-                    <tr data-pos-cart-line wire:key="pos-cart-{{ $lineKey }}"
+                    <tr data-pos-cart-line data-row-index="{{ $loop->index }}" tabindex="0" wire:key="pos-cart-{{ $lineKey }}"
                         @if ($item['quantity'] < 0) data-pos-return-line @endif
                         @if (! $mergeSimilarProducts) data-pos-product-color="{{ $productIdentity }}" style="--pos-cart-hue: {{ $productHue }}" @endif
                         class="{{ ! $mergeSimilarProducts ? 'pos-cart-product-row' : (empty($item['is_gift']) && ($item['offer_quantity'] ?? 0) > 0 && isset($item['offer_price']) && $item['offer_price'] < $item['offer_quantity'] * $item['price'] ? 'bg-amber-50' : ($loop->odd ? 'bg-white' : 'bg-slate-50')) }} hover:bg-indigo-50">

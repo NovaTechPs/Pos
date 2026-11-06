@@ -33,6 +33,33 @@
             }));
     }
 
+    function cartRows() {
+        return Array.from(document.querySelectorAll('[data-pos-cart-line]'));
+    }
+
+    function focusCartRow(row) {
+        if (!row || !document.contains(row)) return;
+        row.focus({ preventScroll: true });
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function updateFocusedCartRow(row) {
+        cartRows().forEach(function(cartRow) {
+            cartRow.classList.toggle('pos-cart-row-focused', cartRow === row);
+        });
+    }
+
+    document.addEventListener('focusin', function(event) {
+        const row = event.target?.closest?.('[data-pos-cart-line]');
+        if (row) updateFocusedCartRow(row);
+    });
+
+    document.addEventListener('click', function(event) {
+        const row = event.target?.closest?.('[data-pos-cart-line]');
+        if (!row || event.target?.closest?.('input, button, a, select, textarea, [data-pos-field]')) return;
+        focusCartRow(row);
+    }, true);
+
     function focusInput(input) {
         if (!input || !document.contains(input)) return;
         input.focus({ preventScroll: true });
@@ -199,9 +226,25 @@
 
         const current = event.target?.closest?.(FIELD_SELECTOR);
         const key = event.key;
+        const cartRow = event.target?.closest?.('[data-pos-cart-line]');
 
         // Leave product search and result navigation to the product panel.
         if (event.target?.closest?.('[data-pos-products-panel], [data-pos-product-panel-search], [data-pos-product]')) {
+            return;
+        }
+
+        if (cartRow && !current && ['ArrowUp', 'ArrowDown'].includes(key)) {
+            const allCartRows = cartRows();
+            const currentIndex = allCartRows.indexOf(cartRow);
+            const targetIndex = key === 'ArrowUp' ? currentIndex - 1 : currentIndex + 1;
+            const targetRow = allCartRows[targetIndex];
+
+            if (targetRow) {
+                event.preventDefault();
+                event.stopPropagation();
+                focusCartRow(targetRow);
+            }
+
             return;
         }
 

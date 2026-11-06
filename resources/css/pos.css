@@ -24,10 +24,13 @@
     .pos-products [data-pos-search-field] { display: block; width: 100%; min-width: 0; }
     .pos-products [data-pos-product-panel-search] { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 2.5rem; margin-top: 0; }
 
-    .pos-products [data-pos-product].pos-product-focused {
-        background-color: #eef2ff;
+    .pos-cart [data-pos-cart-line].pos-cart-row-focused {
         outline: 2px solid #6366f1;
         outline-offset: -2px;
+    }
+
+    .pos-cart [data-pos-cart-line].pos-cart-row-focused > td {
+        background-color: #eef2ff !important;
     }
 
     .pos-cart-scroll {

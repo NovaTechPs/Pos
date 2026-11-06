@@ -213,21 +213,27 @@ test('selecting a searched product clears both search controls and restores the 
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$coffee->id]);
     $component->call('selectInlineProduct', $coffee->id)
         ->assertSet('productSearchQuery', '')->assertSet('inlineSearchQuery', '')
-        ->assertDispatched('pos-search-cleared')
-        ->assertDispatched('pos-focus-product-row', productId: $coffee->id)
-        ->assertNotDispatched('pos-focus-barcode');
+        ->assertDispatched('pos-search-cleared')->assertDispatched('pos-focus-barcode');
     expect(array_column($component->get('quickProducts'), 'id'))->toContain($coffee->id, $tea->id)
         ->and(array_column($component->get('cart'), 'id'))->toBe([$coffee->id]);
 });
 
-test('POS product rows expose a focused highlight for keyboard navigation', function (): void {
-    $template = file_get_contents(resource_path('views/pages/tenant/pos/partials/quick-product-results.blade.php'));
-    $script = file_get_contents(resource_path('views/pages/tenant/pos/⚡sales.blade.php'));
+test('cart item rows can be focused and navigated without focusing the price field', function (): void {
+    $product = searchablePosProduct($this, 'Cart navigation item');
+    Shift::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opened_by' => $this->user->id, 'opened_at' => now(), 'status' => 'open', 'opening_cash' => 0]);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $product->id);
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $row = (new DOMXPath($dom))->query('//*[@data-pos-cart-line]')->item(0);
+    $keyboard = file_get_contents(resource_path('js/pos-cart-keyboard.js'));
     $styles = file_get_contents(resource_path('css/pos.css'));
 
-    expect($template)->toContain('data-product-id="{{ $product[\'id\'] }}"')
-        ->and($script)->toContain("item.classList.toggle('pos-product-focused', item === product)")
-        ->and($styles)->toContain('[data-pos-product].pos-product-focused');
+    expect($row)->not->toBeNull()
+        ->and($row->getAttribute('tabindex'))->toBe('0')
+        ->and($keyboard)->toContain("cartRow && !current && ['ArrowUp', 'ArrowDown'].includes(key)")
+        ->and($keyboard)->toContain('focusCartRow(targetRow)')
+        ->and($styles)->toContain('pos-cart-row-focused > td');
 });
 
 test('pos search shows product rows and adds the requested quantity', function (): void {

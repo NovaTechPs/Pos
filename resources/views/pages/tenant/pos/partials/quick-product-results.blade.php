@@ -9,7 +9,7 @@
         </thead>
         <tbody class="divide-y divide-slate-100">
             @forelse ($quickProducts as $product)
-                <tr data-pos-product data-product-id="{{ $product['id'] }}" data-product-index="{{ $loop->index }}"
+                <tr data-pos-product data-product-index="{{ $loop->index }}"
                     wire:key="pos-product-row-{{ $product['id'] }}"
                     @unless ($this->invoiceIsLocked()) wire:click="selectInlineProduct({{ $product['id'] }})" @endunless
                     @if ($this->invoiceIsLocked()) aria-disabled="true" tabindex="-1" @else role="button" tabindex="0" @endif
