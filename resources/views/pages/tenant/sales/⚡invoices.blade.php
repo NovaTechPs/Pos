@@ -886,7 +886,10 @@ new class extends Component {
         $wasEditingInvoice = $this->currentOrderId !== null;
 
         try {
-            $order = DB::transaction(function () use ($tenantId, $customer, $totals, $paidAmount) {
+            $order = DB::transaction(function () use ($tenantId, $customer, $totals, $paidAmount, $wasEditingInvoice) {
+                $oldCustomerId = null;
+                $oldOutstandingBalance = 0.0;
+
                 if ($this->currentOrderId) {
                     $order = Order::query()
                         ->where('tenant_id', $tenantId)
@@ -898,7 +901,13 @@ new class extends Component {
                         throw new \RuntimeException('الفاتورة المطلوب تعديلها غير موجودة.');
                     }
 
-                    $existingPaidAmount = (float) $order->paid_amount;
+                    $oldCustomerId = $order->customer_id ? (int) $order->customer_id : null;
+                    $oldReceiptAmount = (float) Payment::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('order_id', $order->id)
+                        ->where('type', 'receipt')
+                        ->sum('amount');
+                    $oldOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $oldReceiptAmount;
 
                     $order->update([
                         'branch_id' => $this->selectedBranchId,
@@ -926,6 +935,12 @@ new class extends Component {
                     ]);
 
                     $order->items()->delete();
+
+                    Payment::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('order_id', $order->id)
+                        ->where('type', 'receipt')
+                        ->update(['party_id' => $customer?->id]);
                 } else {
                     $order = Order::query()->create([
                         'tenant_id' => $tenantId,
@@ -951,8 +966,8 @@ new class extends Component {
                         'total' => $totals['total'],
                         'total_cost' => $totals['total_cost'],
                         'total_profit' => $totals['profit'],
-                        'paid_amount' => $existingPaidAmount,
-                        'payment_status' => $existingPaidAmount >= $totals['total'] && $totals['total'] > 0 ? 'paid' : ($existingPaidAmount > 0 ? 'partial' : 'unpaid'),
+                        'paid_amount' => $paidAmount,
+                        'payment_status' => $paidAmount >= $totals['total'] && $totals['total'] > 0 ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid'),
                         'notes' => $this->notes ?: null,
                     ]);
                 }
@@ -995,6 +1010,52 @@ new class extends Component {
                         'notes' => 'دفعة على الفاتورة رقم: '.$order->invoice_number,
                         'payment_date' => now(),
                     ]);
+                }
+
+                $newReceiptAmount = (float) Payment::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('order_id', $order->id)
+                    ->where('type', 'receipt')
+                    ->sum('amount');
+                $newOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $newReceiptAmount;
+
+                if ($wasEditingInvoice && $oldCustomerId !== (int) ($customer?->id ?? 0)) {
+                    if ($oldCustomerId) {
+                        $oldCustomer = Party::query()
+                            ->where('tenant_id', $tenantId)
+                            ->lockForUpdate()
+                            ->find($oldCustomerId);
+
+                        if ($oldCustomer) {
+                            $oldCustomer->current_balance = round((float) $oldCustomer->current_balance - $oldCustomer->saleBalanceDirection() * $oldOutstandingBalance, 2);
+                            $oldCustomer->save();
+                        }
+                    }
+
+                    if ($customer) {
+                        $newCustomer = Party::query()
+                            ->where('tenant_id', $tenantId)
+                            ->lockForUpdate()
+                            ->find($customer->id);
+
+                        if ($newCustomer) {
+                            $newCustomer->current_balance = round((float) $newCustomer->current_balance + $newCustomer->saleBalanceDirection() * $newOutstandingBalance, 2);
+                            $newCustomer->save();
+                        }
+                    }
+                } elseif ($customer) {
+                    $lockedCustomer = Party::query()
+                        ->where('tenant_id', $tenantId)
+                        ->lockForUpdate()
+                        ->find($customer->id);
+
+                    if ($lockedCustomer) {
+                        $balanceChange = $wasEditingInvoice
+                            ? $newOutstandingBalance - $oldOutstandingBalance
+                            : $newOutstandingBalance;
+                        $lockedCustomer->current_balance = round((float) $lockedCustomer->current_balance + $lockedCustomer->saleBalanceDirection() * $balanceChange, 2);
+                        $lockedCustomer->save();
+                    }
                 }
 
                 return $order->fresh(['items.product']);

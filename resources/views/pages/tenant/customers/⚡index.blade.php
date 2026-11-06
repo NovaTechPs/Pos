@@ -833,6 +833,30 @@ new class extends Component {
         $this->showStatementModal = true;
     }
 
+    public function reconcilePartyBalance(int $id): void
+    {
+        $user = auth()->user();
+        abort_unless($user?->isTenantOwner() || $user?->isSaaSAdmin(), 403);
+
+        $tenantId = $this->getTenantId();
+        abort_unless($tenantId, 404);
+
+        $party = DB::transaction(function () use ($tenantId, $id): Party {
+            $party = Party::query()
+                ->where('tenant_id', $tenantId)
+                ->lockForUpdate()
+                ->findOrFail($id);
+            $transactions = $this->buildStatementTransactions($party);
+            $party->current_balance = round($this->calculateStatementBalance($party, $transactions), 2);
+            $party->save();
+
+            return $party->fresh();
+        });
+
+        $this->selectedPartyForStatement = $party;
+        $this->dispatch('toast', type: 'success', message: 'تمت تسوية الرصيد مع حركات كشف الحساب.');
+    }
+
 
     /**
      * إغلاق كشف الحساب.
@@ -2271,6 +2295,17 @@ new class extends Component {
                                     </strong>
                                     شيكل.
                                 </div>
+
+                                @if (auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin())
+                                    <button
+                                        type="button"
+                                        wire:click="reconcilePartyBalance({{ $selectedPartyForStatement->id }})"
+                                        wire:confirm="سيتم تحديث الرصيد الحالي ليطابق رصيد كشف الحركات. هل تريد المتابعة؟"
+                                        class="mt-3 rounded-lg bg-amber-700 px-3 py-2 font-bold text-white hover:bg-amber-800"
+                                    >
+                                        تسوية الرصيد حسب الكشف
+                                    </button>
+                                @endif
 
                             </div>
 

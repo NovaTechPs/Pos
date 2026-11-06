@@ -42,7 +42,9 @@ test('saving a sales or purchase invoice immediately starts a fresh invoice afte
 ]);
 
 test('new sales invoice records only the entered payment as a receipt voucher', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون مدفوعات البيع', 'type' => 'customer']);
     $component = Livewire::test('pages::tenant.sales.invoices')
+        ->set('selectedCustomerId', $customer->id)
         ->call('selectProduct', $this->product->id)
         ->call('commitRowToCart')
         ->call('saveInvoice')
@@ -50,9 +52,11 @@ test('new sales invoice records only the entered payment as a receipt voucher', 
 
     $order = Order::query()->sole();
     expect((float) $order->paid_amount)->toBe(0.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(10.0)
         ->and(Payment::query()->where('order_id', $order->id)->exists())->toBeFalse();
 
     $component->call('startNewInvoice', false)
+        ->set('selectedCustomerId', $customer->id)
         ->call('selectProduct', $this->product->id)
         ->call('commitRowToCart')
         ->set('paidAmount', 4)
@@ -64,7 +68,8 @@ test('new sales invoice records only the entered payment as a receipt voucher', 
     $receipt = Payment::query()->where('order_id', $paidOrder->id)->sole();
     expect($receipt->type)->toBe('receipt')
         ->and((float) $receipt->amount)->toBe(4.0)
-        ->and($receipt->payment_method)->toBe('card');
+        ->and($receipt->payment_method)->toBe('card')
+        ->and((float) $customer->fresh()->current_balance)->toBe(16.0);
 });
 
 test('new purchase invoice records only the entered payment as a payment voucher', function (): void {
@@ -84,6 +89,41 @@ test('new purchase invoice records only the entered payment as a payment voucher
         ->and((float) $voucher->amount)->toBe(1.5)
         ->and($voucher->payment_method)->toBe('bank_transfer')
         ->and((float) $purchase->paid_amount)->toBe(1.5);
+});
+
+test('owner can reconcile a customer balance to the account statement movements', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون فرق الرصيد', 'type' => 'customer', 'current_balance' => -195]);
+    $order = Order::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'customer_id' => $customer->id,
+        'customer_name' => $customer->name,
+        'invoice_number' => 'SAL-RECONCILE-195',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 195,
+        'total' => 195,
+        'paid_amount' => 195,
+    ]);
+    Payment::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'party_id' => $customer->id,
+        'type' => 'receipt',
+        'voucher_number' => 'RCV-RECONCILE-195',
+        'amount' => 195,
+        'payment_method' => 'cash',
+        'order_id' => $order->id,
+        'payment_date' => now(),
+    ]);
+
+    Livewire::test('pages::tenant.customers.index')
+        ->call('openStatementModal', $customer->id)
+        ->assertSee('195.00')
+        ->call('reconcilePartyBalance', $customer->id)
+        ->assertDispatched('toast', type: 'success', message: 'تمت تسوية الرصيد مع حركات كشف الحساب.');
+
+    expect((float) $customer->fresh()->current_balance)->toBe(0.0);
 });
 
 test('saving a sales or purchase invoice without printing starts a fresh invoice', function (string $page, string $model, string $idField): void {
