@@ -12,7 +12,7 @@
     <div class="pos-toolbar-actions flex flex-wrap items-center gap-2">
 
         {{-- الفرع --}}
-        @if (!Auth::user()->branch_id)
+        @if (!Auth::user()->branch_id && !Auth::user()->isTenantOwner() && !Auth::user()->isSaaSAdmin())
 
             <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
 

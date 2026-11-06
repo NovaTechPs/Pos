@@ -26,7 +26,7 @@ new class extends Component
     public function mount(): void
     {
         $this->authorize('products.stock.adjust');
-        $this->branchId = auth()->user()?->branch_id;
+        $this->branchId = auth()->user()?->activeBranchId();
     }
 
     public function addLine(): void
@@ -151,7 +151,10 @@ new class extends Component
         $this->authorize('products.stock.adjust');
         $tenantId = auth()->user()?->tenant_id;
         abort_unless($tenantId, 403);
-        $branches = Branch::withoutGlobalScopes()->where('tenant_id', $tenantId)->when(auth()->user()?->branch_id, fn ($query) => $query->whereKey(auth()->user()->branch_id))->orderBy('name')->get(['id', 'name']);
+        $user = auth()->user();
+        $branches = Branch::withoutGlobalScopes()->where('tenant_id', $tenantId)
+            ->when($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin(), fn ($query) => $query->whereKey($user->branch_id))
+            ->orderBy('name')->get(['id', 'name']);
         $search = trim($this->productSearch);
         $products = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereNull('deleted_at')
             ->when($search !== '', fn ($query) => $query->where(fn ($productQuery) => $productQuery
@@ -181,7 +184,9 @@ new class extends Component
     <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div class="grid gap-4 md:grid-cols-3">
             <flux:select label="نوع السند" wire:model.live="type"><option value="in">سند إدخال بضاعة</option><option value="out">سند إخراج بضاعة</option></flux:select>
-            <flux:select label="الفرع / المخزن" wire:model="branchId"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
+                <flux:select label="الفرع / المخزن" wire:model="branchId"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @endif
             <flux:input label="ابحث عن صنف" wire:model.live.debounce.250ms="productSearch" placeholder="الاسم أو رقم الصنف" />
         </div>
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">

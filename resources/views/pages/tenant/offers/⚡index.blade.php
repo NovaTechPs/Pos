@@ -61,8 +61,8 @@ new class extends Component {
     {
         $this->authorize('products.price.edit');
         $this->resetForm();
-        $this->branchId = auth()->user()?->branch_id
-            ?: (int) (session('active_branch_id') ?: Branch::query()->where('tenant_id', $this->tenantId())->value('id'));
+        $this->branchId = auth()->user()?->activeBranchId()
+            ?: (int) Branch::query()->where('tenant_id', $this->tenantId())->value('id');
         $this->showModal = true;
     }
 

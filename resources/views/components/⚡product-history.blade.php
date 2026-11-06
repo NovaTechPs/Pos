@@ -43,7 +43,7 @@ new class extends Component
         $rows = null;
         if ($this->showHistory && $this->productId) {
             $tenantId = $this->tenantId();
-            $branchId = auth()->user()->branch_id ?: session('active_branch_id');
+            $branchId = auth()->user()->activeBranchId();
             if ($branchId) {
                 abort_unless(Branch::query()->where('tenant_id', $tenantId)->whereKey($branchId)->exists(), 404);
             }

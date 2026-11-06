@@ -57,7 +57,7 @@ new class extends Component {
 
     public function mount(): void
     {
-        $this->branchFilter = $this->getUserBranchId();
+        $this->branchFilter = $this->getUserBranchId() ?? auth()->user()?->activeBranchId();
     }
 
     /*
@@ -77,8 +77,10 @@ new class extends Component {
 
     private function getUserBranchId(): ?int
     {
-        return auth()->user()?->branch_id
-            ? (int) auth()->user()->branch_id
+        $user = auth()->user();
+
+        return $user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()
+            ? (int) $user->branch_id
             : null;
     }
 
@@ -200,7 +202,7 @@ new class extends Component {
         $this->paymentStatusFilter = '';
         $this->dateFrom = '';
         $this->dateTo = '';
-        $this->branchFilter = $this->getUserBranchId();
+        $this->branchFilter = $this->getUserBranchId() ?? auth()->user()?->activeBranchId();
 
         $this->resetPage();
     }
@@ -854,7 +856,7 @@ new class extends Component {
 
 
                 {{-- Branch --}}
-                @if ($branches->isNotEmpty())
+                @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin() && $branches->isNotEmpty())
 
                     <flux:select
                         wire:model.live="branchFilter"

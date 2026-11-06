@@ -124,6 +124,21 @@ class User extends Authenticatable implements PasskeyUser
         return ! is_null($this->tenant_id) && $this->is_owner === false;
     }
 
+    public function activeBranchId(): ?int
+    {
+        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+            $selectedBranchId = session('active_branch_id');
+
+            if ($selectedBranchId) {
+                return (int) $selectedBranchId;
+            }
+        }
+
+        $branchId = $this->branch_id ?: session('active_branch_id');
+
+        return $branchId ? (int) $branchId : null;
+    }
+
     public function isCashier(): bool
     {
         return ! $this->is_owner && $this->role?->name === 'Cashier';

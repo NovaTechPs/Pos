@@ -24,6 +24,7 @@ new class extends Component {
     public string $payment_status = '';
     public string $invoiceSource = '';
     public string $saleKind = '';
+    #[\Livewire\Attributes\Locked]
     public ?int $selectedBranchId = null;
 
     // ============================================================
@@ -47,9 +48,7 @@ new class extends Component {
 
         $user = Auth::user();
 
-        $this->selectedBranchId = $user?->branch_id
-            ?? session('active_branch_id')
-            ?? null;
+        $this->selectedBranchId = $user?->activeBranchId();
     }
 
     // ============================================================
@@ -85,20 +84,6 @@ new class extends Component {
 
     public function updatedSaleKind(): void
     {
-        $this->resetPage();
-    }
-
-    public function updatedSelectedBranchId(): void
-    {
-        $user = Auth::user();
-
-        if ($user?->branch_id) {
-            $this->selectedBranchId = (int) $user->branch_id;
-        } elseif ($this->selectedBranchId) {
-            $this->validateBranchSelection();
-            session(['active_branch_id' => $this->selectedBranchId]);
-        }
-
         $this->resetPage();
     }
 
@@ -163,9 +148,7 @@ new class extends Component {
         $this->payment_status = '';
         $this->invoiceSource = '';
         $this->saleKind = '';
-        $this->selectedBranchId = $user?->branch_id
-            ?? session('active_branch_id')
-            ?? null;
+        $this->selectedBranchId = $user?->activeBranchId();
 
         $this->resetPage();
     }
@@ -206,13 +189,7 @@ new class extends Component {
 
     private function effectiveBranchId(): ?int
     {
-        $user = Auth::user();
-
-        if ($user?->branch_id) {
-            return (int) $user->branch_id;
-        }
-
-        return $this->selectedBranchId ? (int) $this->selectedBranchId : null;
+        return Auth::user()?->activeBranchId() ?? ($this->selectedBranchId ? (int) $this->selectedBranchId : null);
     }
 
     // ============================================================
@@ -398,7 +375,6 @@ new class extends Component {
         if (!$tenantId) {
             return $this->view([
                 'orders' => Order::query()->whereRaw('1 = 0')->paginate(20),
-                'branches' => collect(),
                 'stats' => $this->emptyStats(),
                 'dailySales' => collect(),
                 'topProducts' => collect(),
@@ -413,20 +389,6 @@ new class extends Component {
         }
 
         $this->validateBranchSelection();
-
-        // --------------------------------------------------------
-        // Branches
-        // --------------------------------------------------------
-
-        $branchesQuery = Branch::query()
-            ->where('tenant_id', $tenantId)
-            ->orderBy('name');
-
-        if ($user?->branch_id) {
-            $branchesQuery->whereKey($user->branch_id);
-        }
-
-        $branches = $branchesQuery->get();
 
         // --------------------------------------------------------
         // Sales statistics
@@ -733,7 +695,6 @@ new class extends Component {
 
         return $this->view([
             'orders' => $orders,
-            'branches' => $branches,
             'stats' => $stats,
             'dailySales' => $dailySales,
             'maxDailySales' => $maxDailySales,
@@ -895,27 +856,8 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div class="md:col-span-1">
-                <label class="mb-1.5 block text-[11px] font-black text-slate-600">الفرع</label>
-                <select
-                    wire:model.live="selectedBranchId"
-                    @disabled(Auth::user()?->branch_id)
-                    class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                >
-                    @if(!Auth::user()?->branch_id)
-                        <option value="">كل الفروع</option>
-                    @endif
-                    @foreach($branches as $branch)
-                        <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                    @endforeach
-                </select>
-                @if(Auth::user()?->branch_id)
-                    <div class="mt-1 text-[10px] font-bold text-slate-400">الفرع مقيد حسب صلاحية المستخدم.</div>
-                @endif
-            </div>
-
-            <div class="md:col-span-2 flex items-end">
+        <div class="mt-3 grid grid-cols-1 gap-3">
+            <div class="flex items-end">
                 <button
                     type="button"
                     wire:click="$toggle('showAdvanced')"

@@ -161,7 +161,13 @@ new class extends Component {
             return null;
         }
 
-        if ($user?->branch_id) {
+        if ($user?->isTenantOwner() || $user?->isSaaSAdmin()) {
+            $activeBranchId = $user->activeBranchId();
+
+            if ($activeBranchId && Branch::query()->where('tenant_id', $tenantId)->whereKey($activeBranchId)->exists()) {
+                return $activeBranchId;
+            }
+        } elseif ($user?->branch_id) {
             return (int) $user->branch_id;
         }
 
@@ -190,8 +196,13 @@ new class extends Component {
             return;
         }
 
-        if ($user?->branch_id) {
+        if ($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
             $this->selectedBranchId = (int) $user->branch_id;
+            return;
+        }
+
+        if ($user?->isTenantOwner() || $user?->isSaaSAdmin()) {
+            $this->selectedBranchId = $user->activeBranchId();
             return;
         }
 
@@ -1330,7 +1341,7 @@ new class extends Component {
             'linkedReceiptAmount' => $linkedReceiptAmount,
             'totalCost' => $totals['total_cost'],
             'profit' => $totals['profit'],
-            'userBranchLocked' => (bool) $user?->branch_id,
+            'userBranchLocked' => (bool) ($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()),
         ])->layout('layouts::tenant');
     }
 };
@@ -1604,6 +1615,7 @@ new class extends Component {
                 </div>
 
                 {{-- الفرع --}}
+                @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
                 <div class="lg:col-span-3">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
 
@@ -1617,6 +1629,7 @@ new class extends Component {
                         @endforeach
                     </select>
                 </div>
+                @endif
 
                 {{-- التاريخ --}}
                 <div class="lg:col-span-2">

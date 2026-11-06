@@ -108,7 +108,7 @@ new class extends Component {
     private function branchId(): ?int
     {
         $tenantId = $this->tenantId();
-        $branchId = auth()->user()?->branch_id ?: $this->selectedBranchId ?: session('active_branch_id');
+        $branchId = auth()->user()?->activeBranchId() ?: $this->selectedBranchId;
 
         $branch = Branch::query()->where('tenant_id', $tenantId)->when($branchId, fn ($query) => $query->whereKey($branchId))->first();
 
@@ -132,6 +132,11 @@ new class extends Component {
 
     public function updatedSelectedBranchId(): void
     {
+        $user = auth()->user();
+        if ($user?->isTenantOwner() || $user?->isSaaSAdmin()) {
+            $this->selectedBranchId = $user->activeBranchId();
+        }
+
         $this->productSearch = '';
         $this->productResults = [];
         $this->resetProductSelection();
@@ -499,7 +504,14 @@ new class extends Component {
     {
         $query = DB::table($this->kind === 'sale' ? 'orders' : 'purchase_returns')
             ->where('tenant_id', $this->tenantId())
-            ->when(auth()->user()?->branch_id, fn ($query, $branch) => $query->where('branch_id', $branch));
+            ->when(
+                auth()->user()?->branch_id && ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin(),
+                fn ($query, $branch) => $query->where('branch_id', $branch)
+            )
+            ->when(
+                auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin(),
+                fn ($query) => $query->where('branch_id', $this->branchId())
+            );
         if ($this->kind === 'sale') {
             $query->where('type', 'return')->whereNull('deleted_at')->where('source', 'web')
                 ->whereNull('original_order_id')->whereNull('shift_id');
@@ -937,6 +949,7 @@ new class extends Component {
                         @endif
                     @endif
                 </div>
+                @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
                 <div class="lg:col-span-3">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
                     <select wire:model.live="selectedBranchId" @disabled(auth()->user()?->branch_id) class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 disabled:opacity-60">
@@ -945,6 +958,7 @@ new class extends Component {
                         @endforeach
                     </select>
                 </div>
+                @endif
                 <div class="lg:col-span-2">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">التاريخ</label>
                     <input type="date" wire:model="invoiceDate" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700">

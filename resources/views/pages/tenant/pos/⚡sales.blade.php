@@ -189,7 +189,7 @@ new class extends Component {
     public function mount(): void
     {
         $user = Auth::user();
-        $this->selectedBranchId = $user?->branch_id ?: session('active_branch_id');
+        $this->selectedBranchId = $user?->activeBranchId();
         $tenantId = $this->tenantId();
 
         if ($tenantId) {
@@ -283,10 +283,12 @@ new class extends Component {
                 break;
 
             case 'price':
+                $this->authorize('pos.price.edit');
                 $this->updateUnitPrice($lineKey, $value);
                 break;
 
             case 'subtotal':
+                $this->authorize('pos.price.edit');
                 $this->updateLineTotal($lineKey, $value);
                 break;
 
@@ -459,7 +461,7 @@ new class extends Component {
             return null;
         }
 
-        $branchId = $user->branch_id ?: $this->selectedBranchId ?: session('active_branch_id');
+        $branchId = $user->activeBranchId() ?: $this->selectedBranchId;
 
         if (!$branchId) {
             return null;
@@ -661,7 +663,7 @@ new class extends Component {
     {
         $user = Auth::user();
 
-        if ($user?->branch_id) {
+        if ($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
             $this->selectedBranchId = (int) $user->branch_id;
             return;
         }
@@ -1885,6 +1887,8 @@ new class extends Component {
 
     public function updateUnitPrice(string $lineKey, $newPrice): void
     {
+        $this->authorize('pos.price.edit');
+
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
@@ -1908,6 +1912,8 @@ new class extends Component {
 
     public function updateLineTotal(string $lineKey, $newTotal): void
     {
+        $this->authorize('pos.price.edit');
+
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
@@ -2866,6 +2872,10 @@ new class extends Component {
 
     public function confirmCustomerPayment(): ?Order
     {
+        if ($this->preventUnauthorizedBelowCostSale()) {
+            return null;
+        }
+
         $amountDue = abs((float) $this->amountDue);
         $paid = (float) $this->customerPaymentAmount;
 
@@ -2912,6 +2922,9 @@ new class extends Component {
         if ($this->needsDeliveryDetails('checkout')) {
             return null;
         }
+        if ($this->preventUnauthorizedBelowCostSale()) {
+            return null;
+        }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
             $this->openCustomerPaymentModal('checkout');
             return null;
@@ -2944,6 +2957,9 @@ new class extends Component {
         if ($this->needsDeliveryDetails('checkoutAndPrint')) {
             return;
         }
+        if ($this->preventUnauthorizedBelowCostSale()) {
+            return;
+        }
         if ($this->selectedCustomerId && !$this->customerPaymentConfirmed) {
             $this->openCustomerPaymentModal('checkoutAndPrint');
             return;
@@ -2966,6 +2982,8 @@ new class extends Component {
 
     public function confirmBelowCostCheckout(): void
     {
+        $this->authorize('pos.sell_below_cost');
+
         $mode = $this->pendingCheckoutMode;
         $this->showBelowCostModal = false;
         $order = $this->processCheckout();
@@ -2974,6 +2992,18 @@ new class extends Component {
             $this->prepareReceiptFromOrder($order);
             $this->dispatch('print-receipt');
         }
+    }
+
+    private function preventUnauthorizedBelowCostSale(): bool
+    {
+        if (! $this->has_below_cost_item || auth()->user()?->can('pos.sell_below_cost')) {
+            return false;
+        }
+
+        $this->showBelowCostModal = false;
+        $this->errorMessage = 'لا تملك صلاحية البيع بأقل من التكلفة.';
+
+        return true;
     }
 
     private function refreshCheckoutData(): bool
@@ -3061,6 +3091,13 @@ new class extends Component {
             return null;
         }
 
+        if ($this->has_below_cost_item && ! $user->can('pos.sell_below_cost')) {
+            $this->showBelowCostModal = false;
+            $this->errorMessage = 'لا تملك صلاحية البيع بأقل من التكلفة.';
+
+            return null;
+        }
+
         if (!in_array($this->payment_method, ['cash', 'card', 'bank_transfer', 'cheque'], true)) {
             $this->errorMessage = 'طريقة الدفع غير صالحة.';
             return null;
@@ -3129,6 +3166,24 @@ new class extends Component {
                     ->when(!$this->unifiedStock, fn ($query) => $query->where('branch_id', $branchId))
                     ->orderBy('product_id')->orderBy('id')->lockForUpdate()->get()->groupBy('product_id');
 
+                if (! $user->can('pos.price.edit')) {
+                    foreach ($this->cart as $lineKey => $cartItem) {
+                        if (! empty($cartItem['is_gift'])) {
+                            continue;
+                        }
+
+                        $branchProduct = $checkoutStocks->get((int) $cartItem['id'], collect())->firstWhere('branch_id', $branchId);
+                        if (! $branchProduct) {
+                            throw new \RuntimeException('أحد الأصناف غير مرتبط بالفرع الحالي.');
+                        }
+
+                        $this->cart[$lineKey]['price'] = (float) $branchProduct->retail_price;
+                        $this->cart[$lineKey]['price_manual'] = false;
+                    }
+
+                    $this->recalculatePrices();
+                }
+
                 $validatedItems = [];
                 $saleQuantities = [];
                 $subtotal = 0;
@@ -3157,6 +3212,13 @@ new class extends Component {
                     if (!$product) {
                         throw new \RuntimeException('أحد المنتجات لم يعد متاحاً.');
                     }
+
+                    $activeBranchProduct = $checkoutStocks->get($productId, collect())->firstWhere('branch_id', $branchId);
+                    if (! $activeBranchProduct) {
+                        throw new \RuntimeException("المنتج {$product->name} غير مرتبط بالفرع الحالي.");
+                    }
+
+                    $price = $isGift ? 0.0 : max(0, (float) ($rawItem['price'] ?? $activeBranchProduct->retail_price));
 
                     $costPrice = max(0, (float) ($rawItem['cost_price'] ?? ($product->cost_price ?? 0)));
 

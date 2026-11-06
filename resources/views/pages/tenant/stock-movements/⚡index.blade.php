@@ -20,7 +20,7 @@ new class extends Component
         $this->authorize('products.view');
         $this->dateFrom = today()->startOfMonth()->toDateString();
         $this->dateTo = today()->toDateString();
-        $this->branchId = auth()->user()?->branch_id;
+        $this->branchId = auth()->user()?->activeBranchId();
     }
 
     public function updated(): void { $this->resetPage(); }
@@ -30,7 +30,8 @@ new class extends Component
         $this->authorize('products.view');
         $tenantId = auth()->user()?->tenant_id ?? session('active_tenant_id');
         abort_unless($tenantId, 403);
-        $branchId = auth()->user()?->branch_id ?? $this->branchId;
+        $user = auth()->user();
+        $branchId = $user?->activeBranchId() ?? $this->branchId;
         $search = trim($this->search);
         $query = StockMovement::query()
             ->select('stock_movements.*')
@@ -48,7 +49,8 @@ new class extends Component
                 ));
         return $this->view([
             'movements' => $query->with(['product', 'branch'])->latest('id')->paginate(30),
-            'branches' => Branch::query()->where('tenant_id', $tenantId)->when(auth()->user()?->branch_id, fn ($q) => $q->whereKey(auth()->user()->branch_id))->get(),
+            'branches' => Branch::query()->where('tenant_id', $tenantId)
+                ->when($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin(), fn ($q) => $q->whereKey($user->branch_id))->get(),
         ])->layout('layouts::tenant');
     }
 };
@@ -59,7 +61,9 @@ new class extends Component
     <flux:text>كل حركة تعرض الرصيد قبلها وبعدها والمستند المرتبط بها. التصحيح يُسجّل كحركة جديدة.</flux:text>
     <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
         <flux:input label="الصنف" placeholder="اسم الصنف أو رقمه" wire:model.live.debounce.250ms="search" />
-        <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع المسموحة</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+        @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
+            <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع المسموحة</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+        @endif
         <flux:input type="date" label="من" wire:model.live="dateFrom" />
         <flux:input type="date" label="إلى" wire:model.live="dateTo" />
         <flux:select label="مصدر الحركة" wire:model.live="sourceType"><option value="">الكل</option>@foreach (['opening' => 'رصيد افتتاحي', 'manual' => 'تعديل مخزون', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'order' => 'فاتورة مبيعات', 'purchase' => 'فاتورة مشتريات', 'sales_return' => 'مردود مبيعات', 'purchase_return' => 'مردود مشتريات', 'stock_transfer' => 'تحويل مخزون', 'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس فاتورة', 'sync' => 'مزامنة'] as $key => $label)<option value="{{ $key }}">{{ $label }}</option>@endforeach</flux:select>

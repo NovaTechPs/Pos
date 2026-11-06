@@ -288,7 +288,7 @@ new class extends Component {
             return null;
         }
 
-        $branchId = auth()->user()?->branch_id ?: session('active_branch_id');
+        $branchId = auth()->user()?->activeBranchId();
         $branchQuery = DB::table('branches')->where('tenant_id', $tenantId);
 
         if ($branchId && $branchQuery->where('id', $branchId)->exists()) {

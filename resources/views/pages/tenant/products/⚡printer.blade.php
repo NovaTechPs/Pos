@@ -170,7 +170,7 @@ new class extends Component
 
     {
 
-        $branchId = auth()->user()?->branch_id ?? session('active_branch_id');
+        $branchId = auth()->user()?->activeBranchId();
 
         return $branchId ? (int) $branchId : null;
 

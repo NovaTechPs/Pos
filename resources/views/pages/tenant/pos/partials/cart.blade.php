@@ -241,22 +241,17 @@
 
                         {{-- Selling Price --}}
                         <td class="px-2 py-2 text-center">
-                            <input type="number" step="0.01" min="0" value="{{ $item['price'] }}"
-                                data-pos-field="price" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
-                                data-row-index="{{ $loop->index }}"
-                                wire:change="updateCartField(
-                                    '{{ $lineKey }}',
-                                    'price',
-                                    $event.target.value
-                                )"
-                                @disabled($invoiceLocked || ! empty($item['is_gift']))
-                                class="
-                                    pos-cart-field w-20 rounded-lg border
-                                    {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }}
-                                    px-1 py-1 text-center font-mono text-[11px] font-black
-                                    focus:border-indigo-500 focus:outline-none
-                                "
-                                inputmode="decimal" autocomplete="off">
+                            @can('pos.price.edit')
+                                <input type="number" step="0.01" min="0" value="{{ $item['price'] }}"
+                                    data-pos-field="price" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
+                                    data-row-index="{{ $loop->index }}"
+                                    wire:change="updateCartField('{{ $lineKey }}', 'price', $event.target.value)"
+                                    @disabled($invoiceLocked || ! empty($item['is_gift']))
+                                    class="pos-cart-field w-20 rounded-lg border {{ $belowCost ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-800' }} px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none"
+                                    inputmode="decimal" autocomplete="off">
+                            @else
+                                <span data-pos-field="price" class="font-mono font-black">{{ number_format((float) $item['price'], 2) }}</span>
+                            @endcan
                         </td>
 
                         {{-- Subtotal --}}
@@ -289,20 +284,17 @@
 
                             <div class="flex min-w-[118px] flex-col items-center leading-tight">
                                 <div class="relative">
-                                    <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
-                                        data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
-                                        data-row-index="{{ $loop->index }}"
-                                        wire:change="updateCartField(
-                                            '{{ $lineKey }}',
-                                            'subtotal',
-                                            $event.target.value
-                                        )"
-                                        @disabled($invoiceLocked || ! empty($item['is_gift']))
-                                        class="pos-cart-field w-24 rounded-lg border px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none
-                                            {{ $item['subtotal'] < 0
-                                                ? 'border-rose-300 bg-rose-50 text-rose-700'
-                                                : ($hasPromotion ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-indigo-700') }}"
-                                        inputmode="decimal" autocomplete="off">
+                                    @can('pos.price.edit')
+                                        <input type="number" step="0.01" value="{{ $item['subtotal'] }}"
+                                            data-pos-field="subtotal" data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}"
+                                            data-row-index="{{ $loop->index }}"
+                                            wire:change="updateCartField('{{ $lineKey }}', 'subtotal', $event.target.value)"
+                                            @disabled($invoiceLocked || ! empty($item['is_gift']))
+                                            class="pos-cart-field w-24 rounded-lg border px-1 py-1 text-center font-mono text-[11px] font-black focus:border-indigo-500 focus:outline-none {{ $item['subtotal'] < 0 ? 'border-rose-300 bg-rose-50 text-rose-700' : ($hasPromotion ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-indigo-700') }}"
+                                            inputmode="decimal" autocomplete="off">
+                                    @else
+                                        <span data-pos-field="subtotal" class="font-mono font-black">{{ number_format((float) $item['subtotal'], 2) }}</span>
+                                    @endcan
                                 </div>
 
                                 @if ($hasPromotion)

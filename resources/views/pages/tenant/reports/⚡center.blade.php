@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
 use App\Models\Payment;
@@ -42,7 +41,7 @@ new class extends Component {
     {
         $this->from = today()->startOfMonth()->toDateString();
         $this->to = today()->toDateString();
-        $this->branchId = auth()->user()->branch_id;
+        $this->branchId = auth()->user()->activeBranchId();
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
@@ -188,7 +187,6 @@ new class extends Component {
             $valid = false;
             $definition = ['query' => DB::table('orders')->whereRaw('1 = 0'), 'columns' => [], 'summary' => [], 'notes' => []];
         }
-        $branches = Branch::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->when(auth()->user()->branch_id, fn ($q) => $q->whereKey(auth()->user()->branch_id))->orderBy('name')->get(['id', 'name']);
         $parties = collect();
         $statementParties = null;
         $products = collect();
@@ -215,7 +213,7 @@ new class extends Component {
                 ->orderBy('name')->limit(30)->get(['id', 'name', 'product_number']);
         }
         $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId] + $this->filters()) : null;
-        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'branches' => $branches, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        return $this->view(['definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -234,9 +232,7 @@ new class extends Component {
     </flux:select>
     <form wire:submit="applyFilters" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <flux:select label="الفرع" wire:model="branchId" :disabled="(bool) auth()->user()->branch_id">
-                <option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
-            </flux:select>
+            <div class="flex items-end"><div class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><span class="text-xs text-slate-500">الفرع الحالي</span><div class="font-bold">{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'كل الفروع' }}</div></div></div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
             @if (in_array($report, ['balances', 'product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif

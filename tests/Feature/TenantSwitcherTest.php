@@ -98,6 +98,22 @@ test('store owners can switch between branches in their active store', function 
     expect(session('active_branch_id'))->toBe($secondBranch->id);
 });
 
+test('owner branch selection takes precedence over their assigned home branch', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر الاختبار']);
+    $homeBranch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع الأساسي']);
+    $selectedBranch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع المحدد']);
+    $owner = User::factory()->create([
+        'type' => 'tenant_user',
+        'tenant_id' => $tenant->id,
+        'branch_id' => $homeBranch->id,
+        'is_owner' => true,
+    ]);
+
+    $this->actingAs($owner)->withSession(['active_branch_id' => $selectedBranch->id]);
+
+    expect($owner->activeBranchId())->toBe($selectedBranch->id);
+});
+
 test('system administrators can link an existing store to its owner', function (): void {
     $admin = User::factory()->create(['type' => 'saas_admin', 'tenant_id' => null]);
     $owner = User::factory()->create(['type' => 'tenant_user', 'is_owner' => true]);
