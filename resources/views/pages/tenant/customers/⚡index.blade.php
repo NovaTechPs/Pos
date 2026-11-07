@@ -540,6 +540,7 @@ new class extends Component {
                         'delivery_fee',
                         'invoice_date',
                         'invoice_number',
+                        'notes',
                         'created_at'
                     );
                 },
@@ -569,6 +570,7 @@ new class extends Component {
                         'reference_number',
                         'total',
                         'paid_amount',
+                        'notes',
                         'created_at'
                     );
                 },
@@ -579,6 +581,7 @@ new class extends Component {
                         'supplier_id',
                         'reference_number',
                         'total',
+                        'notes',
                         'created_at'
                     );
                 },
@@ -624,6 +627,8 @@ new class extends Component {
                     ? 'مردود مبيعات #' . ($order->invoice_number ?: $order->id)
                     : 'فاتورة مبيعات #' . ($order->invoice_number ?: $order->id),
 
+                'notes' => $order->notes,
+
                 // فاتورة البيع تزيد مديونية العميل.
                 'debit' => $isReturn ? 0.00 : $amount,
 
@@ -646,6 +651,7 @@ new class extends Component {
                         'source_id' => $order->id,
                         'date' => $order->invoice_date ?? $order->created_at,
                         'description' => 'رسوم توصيل فاتورة #' . ($order->invoice_number ?: $order->id),
+                        'notes' => $order->notes,
                         'debit' => (float) $order->delivery_fee,
                         'credit' => 0.00,
                     ]);
@@ -659,6 +665,7 @@ new class extends Component {
                 'source_id' => $purchase->id,
                 'date' => $purchase->created_at,
                 'description' => 'فاتورة مشتريات #' . ($purchase->reference_number ?: $purchase->id),
+                'notes' => $purchase->notes,
                 'debit' => abs((float) $purchase->total),
                 'credit' => abs((float) $purchase->paid_amount),
             ]);
@@ -671,6 +678,7 @@ new class extends Component {
                 'source_id' => $purchaseReturn->id,
                 'date' => $purchaseReturn->created_at,
                 'description' => 'مردود مشتريات #' . ($purchaseReturn->reference_number ?: $purchaseReturn->id),
+                'notes' => $purchaseReturn->notes,
                 'debit' => 0.00,
                 'credit' => abs((float) $purchaseReturn->total),
             ]);
@@ -689,6 +697,7 @@ new class extends Component {
                     'id' => 'payment-'.$payment->id, 'source_type' => 'payment', 'source_id' => $payment->id,
                     'date' => $payment->payment_date ?: $payment->created_at,
                     'description' => 'دفعة مستردة من مردود مشتريات',
+                    'notes' => $payment->notes,
                     'debit' => abs((float) $payment->amount), 'credit' => 0.00,
                 ]);
 
@@ -708,6 +717,7 @@ new class extends Component {
                     'source_id' => $payment->id,
                     'date' => $payment->payment_date ?: $payment->created_at,
                     'description' => $this->paymentDescription($payment, true),
+                    'notes' => $payment->notes,
                     'debit' => 0.00,
                     'credit' => $amount,
                 ]);
@@ -725,6 +735,8 @@ new class extends Component {
                 'date' => $payment->payment_date ?: $payment->created_at,
 
                 'description' => $this->paymentDescription($payment),
+
+                'notes' => $payment->notes,
 
                 // قبض من العميل يقلل مديونيته.
                 'debit' => $isRefund ? $amount : 0.00,
@@ -762,10 +774,6 @@ new class extends Component {
 
         if (!empty($payment->order_id)) {
             $description .= ' للفاتورة #' . $payment->order_id;
-        }
-
-        if (!empty($payment->notes)) {
-            $description .= ' (' . $payment->notes . ')';
         }
 
         return $description;
@@ -996,6 +1004,10 @@ new class extends Component {
                     2
                 )
                 . "\n";
+
+            if (trim((string) ($transaction['notes'] ?? '')) !== '') {
+                $msg .= "  ملاحظات: {$transaction['notes']}\n";
+            }
         }
 
 
@@ -1068,6 +1080,8 @@ new class extends Component {
                     : '-',
 
                 'desc' => $transaction['description'],
+
+                'notes' => $transaction['notes'] ?? '',
 
                 'debit' => number_format(
                     $transaction['debit'],
@@ -2321,7 +2335,7 @@ new class extends Component {
                             <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
 
                             <table
-                                class="w-full text-right text-xs min-w-[650px] dark:text-gray-300"
+                            class="w-full text-right text-xs min-w-[800px] dark:text-gray-300"
                             >
 
                                 <thead>
@@ -2336,6 +2350,10 @@ new class extends Component {
 
                                         <th class="p-3">
                                             البيان
+                                        </th>
+
+                                        <th class="p-3">
+                                            ملاحظات
                                         </th>
 
                                         <th class="p-3">
@@ -2376,6 +2394,8 @@ new class extends Component {
                                         >
                                             رصيد افتتاحي
                                         </td>
+
+                                        <td class="p-3 text-gray-500">—</td>
 
                                         <td
                                             class="p-3 whitespace-nowrap"
@@ -2444,6 +2464,10 @@ new class extends Component {
                                                 {{ $item['description'] }}
                                             </td>
 
+                                            <td class="p-3 min-w-48 whitespace-pre-line text-gray-600 dark:text-gray-300">
+                                                {{ $item['notes'] ?: '—' }}
+                                            </td>
+
 
                                             <td
                                                 class="p-3 whitespace-nowrap text-red-600 dark:text-red-400"
@@ -2504,7 +2528,7 @@ new class extends Component {
                                         <tr>
 
                                             <td
-                                                colspan="5"
+                                                colspan="6"
                                                 class="p-8 text-center text-gray-400"
                                             >
                                                 لا توجد حركات مالية بعد الرصيد الافتتاحي.
@@ -2656,6 +2680,10 @@ new class extends Component {
                 " | " +
                 item.desc +
                 "\n";
+
+            if (item.notes) {
+                text += "  ملاحظات: " + item.notes + "\n";
+            }
 
             text +=
                 "  مدين: " +

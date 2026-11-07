@@ -39,6 +39,9 @@ new class extends Component {
 
     public ?int $selectedProductId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public ?string $editingCartKey = null;
+
     public string $selectedProductName = '';
 
     public float $selectedPurchasePrice = 0.0;
@@ -271,6 +274,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
+        $this->editingCartKey = null;
 
         $this->cart = [];
         $this->discount = 0.0;
@@ -386,7 +390,9 @@ new class extends Component {
         $this->selectedPurchasePrice = (float) ($product->cost_price ?? 0);
         $this->selectedRetailPrice = (float) ($branchProduct?->retail_price ?? 0);
         $this->selectedStock = (float) ($branchProduct?->stock_quantity ?? 0);
-        $this->selectedQuantity = 1.0;
+        $this->selectedQuantity = $this->editingCartKey !== null
+            ? (float) ($this->cart[$this->editingCartKey]['quantity'] ?? 1)
+            : 1.0;
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
@@ -461,6 +467,16 @@ new class extends Component {
         $tenantId = $this->tenantId();
         $barcode = trim($barcode);
         if (! $tenantId || $barcode === '' || mb_strlen($barcode) > 100) return false;
+
+        if ($this->editingCartKey !== null) {
+            if (! $this->selectProductByBarcode($barcode)) {
+                return false;
+            }
+
+            $this->commitRowToCart();
+
+            return true;
+        }
 
         $product = Product::query()->where('tenant_id', $tenantId)
             ->where(function ($q) use ($barcode, $tenantId) {
@@ -543,7 +559,14 @@ new class extends Component {
             return;
         }
 
-        $cartKey = $this->selectedProductId . '-' . Str::uuid()->toString();
+        $wasEditingCartItem = $this->editingCartKey !== null;
+        if ($wasEditingCartItem && ! isset($this->cart[$this->editingCartKey])) {
+            $this->errorMessage = 'تعذر العثور على سطر الفاتورة المراد تعديله.';
+            $this->editingCartKey = null;
+            return;
+        }
+
+        $cartKey = $this->editingCartKey ?? ($this->selectedProductId . '-' . Str::uuid()->toString());
 
         $this->cart[$cartKey] = [
             'id' => $this->selectedProductId,
@@ -566,11 +589,12 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->rowSearch = '';
+        $this->editingCartKey = null;
         $this->errorMessage = null;
 
         $this->preparePriceUpdateCandidate($productId, $purchaseCost, $branchId);
 
-        $this->dispatch('toast', type: 'success', message: 'تمت إضافة الصنف إلى الفاتورة.');
+        $this->dispatch('toast', type: 'success', message: $wasEditingCartItem ? 'تم استبدال الصنف في الفاتورة.' : 'تمت إضافة الصنف إلى الفاتورة.');
         $this->dispatch('focus-product-search');
     }
 
@@ -585,6 +609,41 @@ new class extends Component {
         }
 
         unset($this->cart[$cartKey]);
+
+        if ($this->editingCartKey === $cartKey) {
+            $this->cancelCartItemEdit();
+        }
+    }
+
+    public function editCartItem(string $cartKey): void
+    {
+        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->editingCartKey = $cartKey;
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0.0;
+        $this->selectedRetailPrice = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = (float) $this->cart[$cartKey]['quantity'];
+        $this->rowSearch = '';
+        $this->errorMessage = null;
+        $this->dispatch('focus-product-search');
+    }
+
+    public function cancelCartItemEdit(): void
+    {
+        $this->editingCartKey = null;
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPurchasePrice = 0.0;
+        $this->selectedRetailPrice = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = 1.0;
+        $this->rowSearch = '';
+        $this->dispatch('focus-product-search');
     }
 
     public function updateItemQuantity(string $cartKey, $quantity): void
@@ -981,6 +1040,7 @@ new class extends Component {
                             'tax_percent' => 0,
                             'paid_amount' => $totals['paid'],
                             'payment_status' => $totals['payment_status'],
+                            'notes' => trim($this->notes) !== '' ? trim($this->notes) : null,
                             'updated_at' => now(),
                         ]);
                 } else {
@@ -1005,6 +1065,7 @@ new class extends Component {
                         'tax_percent' => 0,
                         'paid_amount' => $totals['paid'],
                         'payment_status' => $totals['payment_status'],
+                        'notes' => trim($this->notes) !== '' ? trim($this->notes) : null,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -1342,7 +1403,7 @@ new class extends Component {
         $this->discount = 0.0;
         $this->discountType = 'fixed';
         $this->paidAmount = (float) $purchase->paid_amount;
-        $this->notes = '';
+        $this->notes = (string) ($purchase->notes ?? '');
 
         if ($this->selectedSupplierId) {
             $supplier = Party::query()
@@ -1525,7 +1586,7 @@ new class extends Component {
                 'number' => $purchase->reference_number,
                 'date' => $purchase->invoice_date ?: $purchase->created_at,
                 'supplier' => $supplierName,
-                'notes' => null,
+                'notes' => $purchase->notes ?? null,
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
                 'discount' => 0.0,
@@ -1957,7 +2018,14 @@ new class extends Component {
                         @endif
 
                         @if ($selectedProductId)
-                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}». أدخل الكمية والتكلفة ثم اضغط «+ إضافة» لإدخاله في الفاتورة.</p>
+                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}». أدخل الكمية والتكلفة ثم اضغط «{{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}».</p>
+                        @endif
+
+                        @if ($editingCartKey !== null)
+                            <div class="mt-1 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800">
+                                <span>اختر المادة البديلة للسطر المحدد، ثم احفظ التعديل.</span>
+                                <button type="button" wire:click="cancelCartItemEdit" class="shrink-0 rounded px-2 py-1 text-amber-900 hover:bg-amber-100">إلغاء</button>
+                            </div>
                         @endif
 
                         @if (count($productResults) > 0)
@@ -2037,8 +2105,8 @@ new class extends Component {
                     @disabled(!$selectedProductId || $productSearchLocked)
                     class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    <span wire:loading.remove wire:target="commitRowWithValues">+ إضافة</span>
-                    <span wire:loading wire:target="commitRowWithValues">جارٍ الإضافة...</span>
+                    <span wire:loading.remove wire:target="commitRowWithValues">{{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}</span>
+                    <span wire:loading wire:target="commitRowWithValues">{{ $editingCartKey !== null ? 'جارٍ حفظ التعديل...' : 'جارٍ الإضافة...' }}</span>
                 </button>
             </div>
 
@@ -2067,11 +2135,11 @@ new class extends Component {
 
 
 
-                                            class="transition-colors duration-100"
+                                            class="transition-colors duration-100 {{ $editingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
                                         >
                                             <td class="px-3 py-3 text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
                                             <td class="px-3 py-3">
-                                                <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: null })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button></div>
+                                                <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: null })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($productSearchLocked) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال المادة</button></div>
                                                 @if(isset($item['stock']))
                                                     <div class="mt-1 text-[10px] font-semibold text-slate-400">المخزون الحالي: {{ number_format((float) $item['stock'], 2) }}</div>
                                                 @endif
@@ -2113,7 +2181,7 @@ new class extends Component {
                             <div wire:key="purchase-mobile-item-{{ $key }}" data-cart-row="{{ $loop->index }}" data-cart-key="{{ $key }}"    class="p-3 transition-colors">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
-                                        <div class="text-sm font-black text-slate-800">{{ $loop->iteration }}. {{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button></div>
+                                        <div class="text-sm font-black text-slate-800">{{ $loop->iteration }}. {{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($productSearchLocked) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال</button></div>
                                         <div class="mt-1 text-xs font-semibold text-slate-400">الإجمالي: {{ number_format($lineTotal, 2) }}</div>
                                     </div>
                                     <button type="button" wire:click="removeItem('{{ $key }}')" class="text-xs font-black text-rose-600">حذف</button>

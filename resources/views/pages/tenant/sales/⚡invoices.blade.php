@@ -59,6 +59,9 @@ new class extends Component {
 
     public ?int $selectedProductId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public ?string $editingCartKey = null;
+
     public string $selectedProductName = '';
 
     public float $selectedPrice = 0.0;
@@ -289,6 +292,7 @@ new class extends Component {
         $this->selectedCost = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
+        $this->editingCartKey = null;
 
         $this->cart = [];
         $this->discount = 0.0;
@@ -533,7 +537,9 @@ new class extends Component {
             $this->selectedPrice = 0.0;
         }
 
-        $this->selectedQuantity = 1.0;
+        $this->selectedQuantity = $this->editingCartKey !== null
+            ? (float) ($this->cart[$this->editingCartKey]['quantity'] ?? 1)
+            : 1.0;
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
@@ -613,7 +619,13 @@ new class extends Component {
             return;
         }
 
-        $cartKey = $this->selectedProductId . '-' . Str::uuid()->toString();
+        if ($this->editingCartKey !== null && ! isset($this->cart[$this->editingCartKey])) {
+            $this->errorMessage = 'تعذر العثور على سطر الفاتورة المراد تعديله.';
+            $this->editingCartKey = null;
+            return;
+        }
+
+        $cartKey = $this->editingCartKey ?? ($this->selectedProductId . '-' . Str::uuid()->toString());
 
         $this->cart[$cartKey] = [
             'id' => $this->selectedProductId,
@@ -632,6 +644,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->rowSearch = '';
+        $this->editingCartKey = null;
         $this->errorMessage = null;
 
         $this->dispatch('focus-product-search');
@@ -648,6 +661,41 @@ new class extends Component {
         }
 
         unset($this->cart[$cartKey]);
+
+        if ($this->editingCartKey === $cartKey) {
+            $this->cancelCartItemEdit();
+        }
+    }
+
+    public function editCartItem(string $cartKey): void
+    {
+        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->editingCartKey = $cartKey;
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPrice = 0.0;
+        $this->selectedCost = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = (float) $this->cart[$cartKey]['quantity'];
+        $this->rowSearch = '';
+        $this->errorMessage = null;
+        $this->dispatch('focus-product-search');
+    }
+
+    public function cancelCartItemEdit(): void
+    {
+        $this->editingCartKey = null;
+        $this->selectedProductId = null;
+        $this->selectedProductName = '';
+        $this->selectedPrice = 0.0;
+        $this->selectedCost = 0.0;
+        $this->selectedStock = 0.0;
+        $this->selectedQuantity = 1.0;
+        $this->rowSearch = '';
+        $this->dispatch('focus-product-search');
     }
 
     public function updateItemQuantity(string $cartKey, $quantity): void
@@ -1863,6 +1911,13 @@ new class extends Component {
                             class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500"
                         />
 
+                        @if ($editingCartKey !== null)
+                            <div class="mt-1 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800">
+                                <span>اختر الصنف البديل للسطر المحدد، ثم احفظ التعديل.</span>
+                                <button type="button" wire:click="cancelCartItemEdit" class="shrink-0 rounded px-2 py-1 text-amber-900 hover:bg-amber-100">إلغاء</button>
+                            </div>
+                        @endif
+
                         @if (trim($rowSearch) !== '' && !$selectedProductId)
                             <div data-invoice-search-results x-on:click="if ($event.target.closest('[data-product-result]')) productSearchOpen = false" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
                                 <div class="max-h-80 overflow-auto" x-ref="productResults">
@@ -1933,7 +1988,7 @@ new class extends Component {
                     wire:click="commitRowToCart"
                     class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:opacity-50"
                 >
-                    + إضافة
+                    {{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}
                 </button>
             </div>
 
@@ -1971,7 +2026,7 @@ new class extends Component {
                             <tr
                                 data-invoice-row="{{ $loop->index }}"
                                 wire:key="invoice-item-{{ $key }}"
-                                class="group transition hover:bg-slate-50"
+                                class="group transition hover:bg-slate-50 {{ $editingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
                             >
                                 <td class="px-3 py-2.5 text-center">
                                     <div class="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">
@@ -1984,7 +2039,7 @@ new class extends Component {
                                 </td>
 
                                 <td class="px-3 py-2.5">
-                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button></div>
+                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($currentOrderId && !$invoiceEditMode) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال الصنف</button></div>
                                     <div class="mt-0.5 text-[10px] font-semibold text-slate-400">
                                         تكلفة الوحدة: {{ number_format((float) $item['cost'], 2) }}
                                     </div>
