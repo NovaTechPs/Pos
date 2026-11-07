@@ -405,6 +405,14 @@ new class extends Component {
 
     public function updatedRowSearch(string $value): void
     {
+        if (
+            trim($value) !== ''
+            && (! $this->currentPurchaseId || $this->invoiceEditMode)
+            && $this->selectProductByBarcode($value)
+        ) {
+            return;
+        }
+
         if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
             $this->selectedProductId = null;
             $this->selectedProductName = '';

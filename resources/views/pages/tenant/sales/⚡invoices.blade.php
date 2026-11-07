@@ -10,6 +10,7 @@ use App\Models\Party;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\Product;
+use App\Services\PosProductSearch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -1414,38 +1415,30 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    /** Fast product lookup without nested REPLACE expressions. */
+    /** Fast product lookup with the POS catalog matching rules. */
     private function applyPosCatalogSearch($query, string $search, int $tenantId, bool $fallback = false): void
     {
-        $search = trim(preg_replace('/\s+/u', ' ', strtr($search, [
-            '٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9',
-            '۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9',
-        ])) ?? '');
+        $searchService = app(PosProductSearch::class);
+        $search = $searchService->normalize($search);
         if ($search === '' || mb_strlen($search) > 120) {
             $query->whereRaw('1 = 0');
             return;
         }
 
         $escape = static fn (string $value): string => str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
-        $prefix = $escape($search) . '%';
-        $words = array_slice(preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 8);
-        $query->where(function ($matches) use ($search, $tenantId, $prefix, $words, $escape, $fallback): void {
-            $matches->whereRaw("products.product_number LIKE ? ESCAPE '!'", [$prefix])
-                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes
-                    ->where('tenant_id', $tenantId)
-                    ->whereRaw("barcode LIKE ? ESCAPE '!'", [$prefix]));
-            if (ctype_digit($search) && strlen($search) < 18) {
-                $matches->orWhere('products.id', (int) $search);
+        $numberPattern = '%' . $escape($search) . '%';
+        $query->where(function ($matches) use ($search, $searchService, $tenantId, $numberPattern, $fallback): void {
+            $matches->where(function ($standard) use ($search, $searchService, $tenantId): void {
+                $searchService->apply($standard->getQuery(), $search, $tenantId);
+            })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", [$numberPattern]);
+
+            if ($fallback) {
+                $matches->orWhere(function ($names) use ($search, $searchService): void {
+                    $searchService->applyContains($names->getQuery(), $search);
+                });
             }
-            $matches->orWhere(function ($names) use ($words, $escape, $fallback): void {
-                foreach ($words as $index => $word) {
-                    $pattern = ($fallback || $index > 0 ? '%' : '') . $escape($word) . '%';
-                    $names->whereRaw("products.name LIKE ? ESCAPE '!'", [$pattern]);
-                }
-            });
         });
     }
-
     public function render()
     {
         $tenantId = $this->tenantId();
