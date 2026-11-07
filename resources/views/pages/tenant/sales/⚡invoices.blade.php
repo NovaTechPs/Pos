@@ -74,6 +74,11 @@ new class extends Component {
     #[\Livewire\Attributes\Locked]
     public ?string $editingCartKey = null;
 
+    #[\Livewire\Attributes\Locked]
+    public ?string $replacingCartKey = null;
+
+    public string $replacementSearch = '';
+
     public string $selectedProductName = '';
 
     public float $selectedPrice = 0.0;
@@ -295,6 +300,8 @@ new class extends Component {
         $this->posDeliveryFee = 0.0;
         $this->voucherPaidAmount = 0.0;
         $this->posShiftId = null;
+        $this->replacingCartKey = null;
+        $this->replacementSearch = '';
         $this->invoiceNumber = $this->makeInvoiceNumber();
         $this->invoiceDate = now()->format('Y-m-d');
 
@@ -659,6 +666,8 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->rowSearch = '';
         $this->editingCartKey = null;
+        $this->replacingCartKey = null;
+        $this->replacementSearch = '';
         $this->errorMessage = null;
 
         $this->dispatch('focus-product-search');
@@ -676,27 +685,93 @@ new class extends Component {
 
         unset($this->cart[$cartKey]);
 
+        if ($this->replacingCartKey === $cartKey) {
+            $this->cancelInlineReplacement();
+        }
+
         if ($this->editingCartKey === $cartKey) {
             $this->cancelCartItemEdit();
         }
     }
 
-    public function editCartItem(string $cartKey): void
+    public function openInlineReplacement(string $cartKey): void
     {
-        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+        if (! isset($this->cart[$cartKey])) {
             return;
         }
 
-        $this->editingCartKey = $cartKey;
-        $this->selectedProductId = null;
-        $this->selectedProductName = '';
-        $this->selectedPrice = 0.0;
-        $this->selectedCost = 0.0;
-        $this->selectedStock = 0.0;
-        $this->selectedQuantity = (float) $this->cart[$cartKey]['quantity'];
-        $this->rowSearch = '';
+        if ($this->currentOrderId && ! $this->invoiceEditMode) {
+            $this->editLoadedInvoice();
+        }
+
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
+        $this->replacingCartKey = $cartKey;
+        $this->replacementSearch = '';
         $this->errorMessage = null;
-        $this->dispatch('focus-product-search');
+    }
+
+    public function replaceCartItem(int $productId): void
+    {
+        $cartKey = $this->replacingCartKey;
+        if (! $this->ensureInvoiceEditable()) {
+            return;
+        }
+
+        if ($cartKey === null || ! isset($this->cart[$cartKey])) {
+            $this->errorMessage = 'اختر سطر الفاتورة الذي تريد استبداله أولاً.';
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
+        if (! $tenantId || ! $branchId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر أو الفرع الحالي.';
+            return;
+        }
+
+        $product = Product::query()
+            ->where('tenant_id', $tenantId)
+            ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)])
+            ->find($productId);
+
+        $branchProduct = $product?->branchProducts->first();
+        if (! $product || ! $branchProduct) {
+            $this->errorMessage = 'الصنف المحدد غير مرتبط بفرع الفاتورة.';
+            return;
+        }
+
+        $price = $this->currentOrderType === 'pos'
+            ? (float) $branchProduct->retail_price
+            : (float) ($branchProduct->wholesale_price > 0 ? $branchProduct->wholesale_price : $branchProduct->retail_price);
+
+        foreach (['total_override', 'is_gift', 'offer_id', 'offer_quantity', 'offer_price', 'normal_subtotal', 'promotion_savings'] as $field) {
+            unset($this->cart[$cartKey][$field]);
+        }
+
+        $this->cart[$cartKey] = [
+            ...$this->cart[$cartKey],
+            'id' => (int) $product->id,
+            'name' => $product->name,
+            'price' => round($price, 2),
+            'cost' => round((float) $product->cost_price, 2),
+            'discount' => 0.0,
+            'stock' => round((float) $branchProduct->stock_quantity, 2),
+        ];
+
+        $this->replacingCartKey = null;
+        $this->replacementSearch = '';
+        $this->successMessage = "تم استبدال الصنف بـ {$product->name}. راجع الفاتورة ثم احفظ التعديل.";
+        $this->errorMessage = null;
+        $this->dispatch('toast', type: 'success', message: $this->successMessage);
+    }
+
+    public function cancelInlineReplacement(): void
+    {
+        $this->replacingCartKey = null;
+        $this->replacementSearch = '';
     }
 
     public function cancelCartItemEdit(): void
@@ -1273,12 +1348,19 @@ new class extends Component {
                 $query->where('type', 'wholesale')
                     ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
             })
+            ->where('status', 'completed')
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where(function ($query) use ($search) {
                 $query->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhere('id', is_numeric($search) ? (int) $search : 0);
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%");
+
+                if (is_numeric($search)) {
+                    $query->orWhere('id', (int) $search);
+                }
             })
             ->orderByRaw('CASE WHEN invoice_number = ? THEN 0 ELSE 1 END', [$search])
+            ->orderByDesc('invoice_date')
             ->orderByDesc('id')
             ->first();
 
@@ -1290,6 +1372,29 @@ new class extends Component {
         $this->loadOrder($order);
         $this->searchInvoiceQuery = '';
         $this->showInvoiceSearch = false;
+    }
+
+    public function openInvoiceFromSearch(int $orderId): void
+    {
+        $order = Order::query()
+            ->where('tenant_id', $this->tenantId())
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->where(function ($query): void {
+                $query->where('type', 'wholesale')
+                    ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
+            })
+            ->where('status', 'completed')
+            ->find($orderId);
+
+        if (! $order) {
+            $this->errorMessage = 'الفاتورة غير موجودة أو ليست ضمن نطاقك.';
+            return;
+        }
+
+        $this->loadOrder($order);
+        if ($this->currentOrderId === $order->id) {
+            $this->showInvoiceSearch = false;
+        }
     }
 
     public function loadOrder(Order $order): void
@@ -1342,6 +1447,8 @@ new class extends Component {
         $this->notes = $order->notes ?? '';
 
         $this->cart = [];
+        $this->replacingCartKey = null;
+        $this->replacementSearch = '';
 
         foreach ($order->items as $item) {
             $key = $item->product_id . '-' . Str::uuid()->toString();
@@ -1634,6 +1741,25 @@ new class extends Component {
             }
         }
 
+        $replacementProductResults = collect();
+        if ($tenantId && $this->replacingCartKey !== null && trim($this->replacementSearch) !== '') {
+            $search = trim($this->replacementSearch);
+            $baseQuery = fn () => Product::query()
+                ->where('tenant_id', $tenantId)
+                ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branchId))
+                ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)]);
+
+            $query = $baseQuery();
+            $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+            $replacementProductResults = $query->limit(12)->get();
+
+            if ($replacementProductResults->isEmpty()) {
+                $query = $baseQuery();
+                $this->applyPosCatalogSearch($query, $search, (int) $tenantId, true);
+                $replacementProductResults = $query->limit(12)->get();
+            }
+        }
+
         $customerResults = collect();
 
         if ($tenantId && $this->selectedCustomerId === null && trim($this->customerSearch) !== '') {
@@ -1668,10 +1794,42 @@ new class extends Component {
             ? (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $this->currentOrderId)->where('type', 'receipt')->sum('amount')
             : 0.0;
 
+        $invoiceSearchResults = collect();
+        if ($tenantId && $this->showInvoiceSearch) {
+            $search = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+            $invoiceSearchResults = Order::query()
+                ->where('tenant_id', $tenantId)
+                ->where('status', 'completed')
+                ->where(function ($query): void {
+                    $query->where('type', 'wholesale')
+                        ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id'));
+                })
+                ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+                ->when($search !== '', function ($query) use ($search): void {
+                    $query->where(function ($matches) use ($search): void {
+                        $matches->where('invoice_number', 'like', "%{$search}%")
+                            ->orWhere('customer_name', 'like', "%{$search}%")
+                            ->orWhere('customer_phone', 'like', "%{$search}%");
+
+                        if (is_numeric($search)) {
+                            $matches->orWhere('id', (int) $search);
+                        }
+                    });
+                })
+                ->orderByDesc('invoice_date')
+                ->orderByDesc('id')
+                ->limit(100)
+                ->get(['id', 'branch_id', 'type', 'invoice_number', 'invoice_date', 'customer_name', 'total', 'paid_amount', 'payment_status']);
+
+            $invoiceSearchResults->load('branch:id,name');
+        }
+
         return $this->view([
             'branches' => $branches,
             'invoiceBranches' => $branches,
+            'invoiceSearchResults' => $invoiceSearchResults,
             'productResults' => $productResults,
+            'replacementProductResults' => $replacementProductResults,
             'customerResults' => $customerResults,
             'selectedCustomer' => $selectedCustomer,
             'subtotal' => $totals['subtotal'],
@@ -1690,12 +1848,12 @@ new class extends Component {
 
 <flux:main class="min-h-[calc(100vh-4rem)] bg-slate-100 p-2 sm:p-3 md:p-4" dir="rtl">
 
-    <div
+        <div
         class="mx-auto max-w-[1700px]"
         x-data="salesInvoiceKeyboard()"
     >
 
-        <livewire:product-history />
+        <livewire:product-history :key="'sales-product-history-singleton'" />
         {{-- ================================================================
              شريط الأدوات الرئيسي
         ================================================================= --}}
@@ -1834,41 +1992,44 @@ new class extends Component {
         ================================================================= --}}
 
         @if ($showInvoiceSearch)
-            <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div class="flex flex-col gap-2 sm:flex-row">
-                    @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
-                        <select wire:model.live="invoiceBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
-                            <option value="">كل الفروع</option>
-                            @foreach ($invoiceBranches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
-                        </select>
-                    @endif
-                    <div class="relative flex-1">
-                        <input
-                            id="invoice-search-input"
-                            x-ref="invoiceSearch"
-                            type="text"
-                            wire:model.live.debounce.200ms="searchInvoiceQuery"
-                            wire:keydown.enter="searchInvoice"
-                            placeholder="رقم الفاتورة أو رقمها الداخلي..."
-                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white"
-                        />
+            <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="sales-invoice-search-title">
+                <div class="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+                        <div>
+                            <h2 id="sales-invoice-search-title" class="text-base font-black text-slate-900">استعلام عن فواتير المبيعات السابقة</h2>
+                            <p class="mt-1 text-xs font-semibold text-slate-500">اختر فاتورة من النتائج لفتحها في شاشة المبيعات.</p>
+                        </div>
+                        <button type="button" wire:click="$set('showInvoiceSearch', false)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-100" aria-label="إغلاق">✕</button>
                     </div>
 
-                    <button
-                        type="button"
-                        wire:click="searchInvoice"
-                        class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800"
-                    >
-                        بحث
-                    </button>
+                    <div class="grid gap-2 border-b border-slate-200 p-3 sm:grid-cols-[1fr_13rem_auto] sm:p-4">
+                        @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                            <select wire:model.live="invoiceBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
+                                <option value="">كل الفروع</option>
+                                @foreach ($invoiceBranches as $branch)<option wire:key="sales-invoice-filter-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
+                            </select>
+                        @endif
+                        <input id="invoice-search-input" x-ref="invoiceSearch" type="search" wire:model.live.debounce.250ms="searchInvoiceQuery" wire:keydown.enter="searchInvoice" placeholder="ابحث برقم الفاتورة أو اسم الزبون أو هاتفه..." class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-400 focus:bg-white" />
+                        <button type="button" wire:click="searchInvoice" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">فتح المطابقة الأولى</button>
+                    </div>
 
-                    <button
-                        type="button"
-                        wire:click="$set('showInvoiceSearch', false)"
-                        class="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 hover:bg-slate-50"
-                    >
-                        إغلاق
-                    </button>
+                    <div class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+                        <div class="mb-2 text-xs font-bold text-slate-500">أحدث {{ $invoiceSearchResults->count() }} فاتورة (حتى 100 نتيجة)</div>
+                        <div class="space-y-2">
+                            @forelse ($invoiceSearchResults as $invoice)
+                                <button type="button" wire:key="sales-invoice-result-{{ $invoice->id }}" wire:click="openInvoiceFromSearch({{ $invoice->id }})" class="grid w-full grid-cols-2 items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 sm:grid-cols-[1.1fr_1.3fr_1fr_0.8fr_1fr_auto] sm:gap-4">
+                                    <span class="font-mono text-sm font-black text-indigo-700">{{ $invoice->invoice_number }}</span>
+                                    <span class="col-span-1 truncate text-sm font-bold text-slate-800 sm:col-span-1">{{ $invoice->customer_name ?: 'زبون عام' }}</span>
+                                    <span class="text-xs font-semibold text-slate-500">{{ $invoice->invoice_date?->format('Y-m-d') ?? '—' }}</span>
+                                    <span class="hidden truncate text-xs font-semibold text-slate-500 sm:block">{{ $invoice->branch?->name ?? '—' }}</span>
+                                    <span class="text-xs font-bold text-slate-700">الإجمالي: {{ number_format((float) $invoice->total, 2) }}</span>
+                                    <span class="hidden rounded-lg bg-indigo-100 px-3 py-2 text-xs font-black text-indigo-700 sm:inline-flex">فتح</span>
+                                </button>
+                            @empty
+                                <div class="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm font-bold text-slate-500">لا توجد فواتير مطابقة للبحث.</div>
+                            @endforelse
+                        </div>
+                    </div>
                 </div>
             </div>
         @endif
@@ -1934,6 +2095,7 @@ new class extends Component {
                                     @forelse ($customerResults as $customer)
                                         <button
                                             type="button"
+                                            wire:key="sales-customer-result-{{ $customer->id }}"
                                             data-customer-result
                                             data-result-index="{{ $loop->index }}"
                                             wire:click="selectCustomer({{ $customer->id }})"
@@ -1975,7 +2137,7 @@ new class extends Component {
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         @foreach ($branches as $branch)
-                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            <option wire:key="sales-selected-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -2050,7 +2212,7 @@ new class extends Component {
                                                         : (float) ($bp?->wholesale_price > 0 ? $bp?->wholesale_price : ($bp?->retail_price ?? 0));
                                                     $stock = (float) ($bp?->stock_quantity ?? 0);
                                                 @endphp
-                                                <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
+                                                <tr wire:key="sales-product-result-{{ $product->id }}" data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
                                                     <td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td>
                                                     <td class="p-2 font-bold">{{ $product->name }}</td>
                                                     <td class="p-2 font-mono">{{ number_format($resultPrice, 2) }}</td>
@@ -2143,7 +2305,7 @@ new class extends Component {
                             <tr
                                 data-invoice-row="{{ $loop->index }}"
                                 wire:key="invoice-item-{{ $key }}"
-                                class="group transition hover:bg-slate-50 {{ $editingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
+                                class="group transition hover:bg-slate-50 {{ $editingCartKey === $key || $replacingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
                             >
                                 <td class="px-3 py-2.5 text-center">
                                     <div class="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">
@@ -2156,7 +2318,33 @@ new class extends Component {
                                 </td>
 
                                 <td class="px-3 py-2.5">
-                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($currentOrderId && !$invoiceEditMode) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال الصنف</button></div>
+                                    <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="openInlineReplacement('{{ $key }}')" class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50">{{ $replacingCartKey === $key ? 'اختيار بديل' : 'استبدال الصنف' }}</button></div>
+                                    @if ($replacingCartKey === $key)
+                                        <div class="mt-2 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5">
+                                            <div class="flex gap-2">
+                                                <input type="search" wire:model.live.debounce.180ms="replacementSearch" x-init="$nextTick(() => $el.focus())" placeholder="ابحث عن الصنف البديل بالاسم أو الرقم أو الباركود..." class="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400" />
+                                                <button type="button" wire:click="cancelInlineReplacement" class="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-800">إلغاء</button>
+                                            </div>
+                                            @if (trim($replacementSearch) !== '')
+                                                <div class="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-amber-100 bg-white p-1.5">
+                                                    @forelse ($replacementProductResults as $replacementProduct)
+                                                        @php
+                                                            $replacementBranchProduct = $replacementProduct->branchProducts->first();
+                                                            $replacementPrice = $currentOrderType === 'pos'
+                                                                ? (float) ($replacementBranchProduct?->retail_price ?? 0)
+                                                                : (float) ($replacementBranchProduct?->wholesale_price > 0 ? $replacementBranchProduct?->wholesale_price : ($replacementBranchProduct?->retail_price ?? 0));
+                                                        @endphp
+                                                        <button type="button" wire:key="replacement-product-{{ $key }}-{{ $replacementProduct->id }}" wire:click="replaceCartItem({{ $replacementProduct->id }})" wire:loading.attr="disabled" class="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-right text-xs hover:bg-indigo-50 disabled:opacity-50">
+                                                            <span class="min-w-0 truncate font-black text-slate-800">{{ $replacementProduct->name }} <span class="font-mono font-semibold text-slate-400">({{ $replacementProduct->product_number ?? $replacementProduct->id }})</span></span>
+                                                            <span class="shrink-0 font-mono font-bold text-indigo-700">{{ number_format($replacementPrice, 2) }}</span>
+                                                        </button>
+                                                    @empty
+                                                        <div class="p-3 text-center text-xs font-bold text-slate-500">لا توجد أصناف مطابقة.</div>
+                                                    @endforelse
+                                                </div>
+                                            @endif
+                                        </div>
+                                    @endif
                                     <div class="mt-0.5 text-[10px] font-semibold text-slate-400">
                                         تكلفة الوحدة: {{ number_format((float) $item['cost'], 2) }}
                                     </div>
@@ -2484,7 +2672,7 @@ new class extends Component {
                         <tbody class="divide-y divide-slate-100">
                             <tr class="bg-slate-50 font-bold"><td class="p-3">—</td><td class="p-3">رصيد افتتاحي</td><td class="p-3">{{ $customerStatementOpeningBalance > 0 ? number_format($customerStatementOpeningBalance, 2) : '—' }}</td><td class="p-3">{{ $customerStatementOpeningBalance < 0 ? number_format(abs($customerStatementOpeningBalance), 2) : '—' }}</td><td class="p-3">{{ number_format($customerStatementOpeningBalance, 2) }}</td></tr>
                             @forelse ($customerStatementRows as $transaction)
-                                <tr><td class="whitespace-nowrap p-3">{{ \Illuminate\Support\Carbon::parse($transaction['date'])->format('Y-m-d H:i') }}</td><td class="p-3">{{ $transaction['description'] }}</td><td class="p-3 tabular-nums">{{ $transaction['debit'] > 0 ? number_format($transaction['debit'], 2) : '—' }}</td><td class="p-3 tabular-nums">{{ $transaction['credit'] > 0 ? number_format($transaction['credit'], 2) : '—' }}</td><td class="p-3 font-bold tabular-nums">{{ number_format($transaction['balance'], 2) }}</td></tr>
+                                <tr wire:key="sales-statement-row-{{ $loop->index }}"><td class="whitespace-nowrap p-3">{{ \Illuminate\Support\Carbon::parse($transaction['date'])->format('Y-m-d H:i') }}</td><td class="p-3">{{ $transaction['description'] }}</td><td class="p-3 tabular-nums">{{ $transaction['debit'] > 0 ? number_format($transaction['debit'], 2) : '—' }}</td><td class="p-3 tabular-nums">{{ $transaction['credit'] > 0 ? number_format($transaction['credit'], 2) : '—' }}</td><td class="p-3 font-bold tabular-nums">{{ number_format($transaction['balance'], 2) }}</td></tr>
                             @empty
                                 <tr><td colspan="5" class="p-8 text-center font-semibold text-slate-400">لا توجد حركات بعد الرصيد الافتتاحي.</td></tr>
                             @endforelse
@@ -2494,7 +2682,7 @@ new class extends Component {
             </div>
         </div>
     @endif
-    <livewire:product-price-history-modal />
+    <livewire:product-price-history-modal :key="'sales-price-history-singleton'" />
 </flux:main>
 
 @script

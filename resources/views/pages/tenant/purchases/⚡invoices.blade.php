@@ -1349,6 +1349,14 @@ new class extends Component {
             ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where(function ($q) use ($search) {
                 $q->where('reference_number', 'like', "%{$search}%");
+                $supplierIds = Party::query()
+                    ->where('tenant_id', $this->tenantId())
+                    ->where(function ($partyQuery) use ($search): void {
+                        $partyQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    })
+                    ->select('id');
+                $q->orWhereIn('supplier_id', $supplierIds);
 
                 if (is_numeric($search)) {
                     $q->orWhere('id', (int) $search);
@@ -1368,6 +1376,31 @@ new class extends Component {
         $this->loadPurchase((int) $purchaseId);
         $this->searchPurchaseQuery = '';
         $this->showPurchaseSearch = false;
+    }
+
+    public function openPurchaseFromSearch(int $purchaseId): void
+    {
+        $tenantId = $this->tenantId();
+        if (! $tenantId) {
+            $this->errorMessage = 'لم يتم تحديد المتجر الحالي.';
+            return;
+        }
+
+        $exists = DB::table('purchases')
+            ->where('tenant_id', $tenantId)
+            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->where('id', $purchaseId)
+            ->exists();
+
+        if (! $exists) {
+            $this->errorMessage = 'الفاتورة غير موجودة أو ليست ضمن نطاقك.';
+            return;
+        }
+
+        $this->loadPurchase($purchaseId);
+        if ($this->currentPurchaseId === $purchaseId) {
+            $this->showPurchaseSearch = false;
+        }
     }
 
     public function loadPurchase(int $purchaseId): void
@@ -1761,6 +1794,38 @@ new class extends Component {
 
         $totals = $this->calculateTotals();
 
+        $purchaseSearchResults = collect();
+        if ($tenantId && $this->showPurchaseSearch) {
+            $search = trim(strtr(trim($this->searchPurchaseQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+            $purchaseSearchResults = DB::table('purchases as p')
+                ->leftJoin('parties as s', function ($join): void {
+                    $join->on('s.id', '=', 'p.supplier_id')->on('s.tenant_id', '=', 'p.tenant_id');
+                })
+                ->leftJoin('branches as b', function ($join): void {
+                    $join->on('b.id', '=', 'p.branch_id')->on('b.tenant_id', '=', 'p.tenant_id');
+                })
+                ->where('p.tenant_id', $tenantId)
+                ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('p.branch_id', $branchId))
+                ->when($this->purchaseBranchFilter, fn ($query, $branchId) => $query->where('p.branch_id', (int) $branchId))
+                ->when($search !== '', function ($query) use ($search): void {
+                    $query->where(function ($matches) use ($search): void {
+                        $matches->where('p.reference_number', 'like', "%{$search}%")
+                            ->orWhere('s.name', 'like', "%{$search}%")
+                            ->orWhere('s.phone', 'like', "%{$search}%");
+
+                        if (is_numeric($search)) {
+                            $matches->orWhere('p.id', (int) $search);
+                        }
+                    });
+                })
+                ->orderByDesc('p.id')
+                ->limit(100)
+                ->get([
+                    'p.id', 'p.branch_id', 'p.reference_number', 'p.invoice_date', 'p.total', 'p.paid_amount',
+                    's.name as supplier_name', 'b.name as branch_name',
+                ]);
+        }
+
         $accountBalanceAfterPayment = $totals['remaining'];
 
         if ($selectedSupplier) {
@@ -1788,6 +1853,7 @@ new class extends Component {
         return $this->view([
             'branches' => $branches,
             'purchaseBranches' => $branches,
+            'purchaseSearchResults' => $purchaseSearchResults,
             'productSearchLocked' => $productSearchLocked,
             'productResults' => $productResults,
             'supplierResults' => $supplierResults,
@@ -1893,17 +1959,44 @@ new class extends Component {
 
         {{-- البحث عن فاتورة --}}
         @if ($showPurchaseSearch)
-            <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div class="flex flex-col gap-2 sm:flex-row">
-                    @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
-                        <select wire:model.live="purchaseBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
-                            <option value="">كل الفروع</option>
-                            @foreach ($purchaseBranches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
-                        </select>
-                    @endif
-                    <input id="purchase-search-input" x-ref="purchaseSearch" type="text" wire:model.live.debounce.200ms="searchPurchaseQuery" wire:keydown.enter="searchPurchase" placeholder="رقم فاتورة المشتريات أو رقم فاتورة المورد..." class="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
-                    <button type="button" wire:click="searchPurchase" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">بحث</button>
-                    <button type="button" wire:click="$set('showPurchaseSearch', false)" class="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">إغلاق</button>
+            <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="purchase-invoice-search-title">
+                <div class="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+                        <div>
+                            <h2 id="purchase-invoice-search-title" class="text-base font-black text-slate-900">استعلام عن فواتير المشتريات السابقة</h2>
+                            <p class="mt-1 text-xs font-semibold text-slate-500">اختر فاتورة من النتائج لفتحها في شاشة المشتريات.</p>
+                        </div>
+                        <button type="button" wire:click="$set('showPurchaseSearch', false)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-100" aria-label="إغلاق">✕</button>
+                    </div>
+
+                    <div class="grid gap-2 border-b border-slate-200 p-3 sm:grid-cols-[1fr_13rem_auto] sm:p-4">
+                        @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                            <select wire:model.live="purchaseBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
+                                <option value="">كل الفروع</option>
+                                @foreach ($purchaseBranches as $branch)<option wire:key="purchase-invoice-filter-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
+                            </select>
+                        @endif
+                        <input id="purchase-search-input" x-ref="purchaseSearch" type="search" wire:model.live.debounce.250ms="searchPurchaseQuery" wire:keydown.enter="searchPurchase" placeholder="ابحث برقم الفاتورة أو اسم المورد أو هاتفه..." class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-400 focus:bg-white" />
+                        <button type="button" wire:click="searchPurchase" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">فتح المطابقة الأولى</button>
+                    </div>
+
+                    <div class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+                        <div class="mb-2 text-xs font-bold text-slate-500">أحدث {{ $purchaseSearchResults->count() }} فاتورة (حتى 100 نتيجة)</div>
+                        <div class="space-y-2">
+                            @forelse ($purchaseSearchResults as $purchase)
+                                <button type="button" wire:key="purchase-invoice-result-{{ $purchase->id }}" wire:click="openPurchaseFromSearch({{ $purchase->id }})" class="grid w-full grid-cols-2 items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 sm:grid-cols-[1.1fr_1.3fr_1fr_0.8fr_1fr_auto] sm:gap-4">
+                                    <span class="font-mono text-sm font-black text-indigo-700">{{ $purchase->reference_number }}</span>
+                                    <span class="truncate text-sm font-bold text-slate-800">{{ $purchase->supplier_name ?: 'مورد غير محدد' }}</span>
+                                    <span class="text-xs font-semibold text-slate-500">{{ $purchase->invoice_date ? \Carbon\Carbon::parse($purchase->invoice_date)->format('Y-m-d') : '—' }}</span>
+                                    <span class="hidden truncate text-xs font-semibold text-slate-500 sm:block">{{ $purchase->branch_name ?? '—' }}</span>
+                                    <span class="text-xs font-bold text-slate-700">الإجمالي: {{ number_format((float) $purchase->total, 2) }}</span>
+                                    <span class="hidden rounded-lg bg-indigo-100 px-3 py-2 text-xs font-black text-indigo-700 sm:inline-flex">فتح</span>
+                                </button>
+                            @empty
+                                <div class="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm font-bold text-slate-500">لا توجد فواتير مطابقة للبحث.</div>
+                            @endforelse
+                        </div>
+                    </div>
                 </div>
             </div>
         @endif
@@ -1967,7 +2060,7 @@ new class extends Component {
                     <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
                     <select wire:model.live="selectedBranchId" @disabled($userBranchLocked) class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60">
                         @foreach ($branches as $branch)
-                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            <option wire:key="purchase-selected-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>
                         @endforeach
                     </select>
                 </div>
