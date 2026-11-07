@@ -53,6 +53,9 @@
         ? \Illuminate\Support\Str::headline(str_replace('.', ' ', preg_replace('/^(tenant|admin)\\./', '', $activeRouteName)))
         : $appName;
     $pageTitle = $routeTitles[$activeRouteName][$locale] ?? $title ?? $fallbackTitle;
+    if ($activeRouteName === 'tenant.wholesale-sales' && str_contains((string) request()->userAgent(), 'Android')) {
+        $pageTitle = $locale === 'ar' ? 'مبيعات' : 'Sales';
+    }
 @endphp
 
 <title>{{ $pageTitle === $appName ? $appName : $pageTitle.' - '.$appName }}</title>

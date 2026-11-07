@@ -24,6 +24,18 @@ new class extends Component {
 
     public ?int $currentOrderId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public string $currentOrderType = '';
+
+    #[\Livewire\Attributes\Locked]
+    public float $posDeliveryFee = 0.0;
+
+    #[\Livewire\Attributes\Locked]
+    public float $voucherPaidAmount = 0.0;
+
+    #[\Livewire\Attributes\Locked]
+    public ?int $posShiftId = null;
+
     public bool $invoiceEditMode = true;
 
     #[\Livewire\Attributes\Locked]
@@ -279,6 +291,10 @@ new class extends Component {
         $this->paidAmount = 0.0;
         $this->paymentMethod = 'cash';
         $this->currentOrderId = null;
+        $this->currentOrderType = '';
+        $this->posDeliveryFee = 0.0;
+        $this->voucherPaidAmount = 0.0;
+        $this->posShiftId = null;
         $this->invoiceNumber = $this->makeInvoiceNumber();
         $this->invoiceDate = now()->format('Y-m-d');
 
@@ -528,11 +544,9 @@ new class extends Component {
         $this->selectedStock = (float) ($branchProduct?->stock_quantity ?? 0);
 
         if ($branchProduct) {
-            $this->selectedPrice = (float) (
-                $branchProduct->wholesale_price > 0
-                    ? $branchProduct->wholesale_price
-                    : $branchProduct->retail_price
-            );
+            $this->selectedPrice = $this->currentOrderType === 'pos'
+                ? (float) $branchProduct->retail_price
+                : (float) ($branchProduct->wholesale_price > 0 ? $branchProduct->wholesale_price : $branchProduct->retail_price);
         } else {
             $this->selectedPrice = 0.0;
         }
@@ -838,7 +852,8 @@ new class extends Component {
             ? $taxableAmount * ($taxRate / (100 + $taxRate))
             : 0.0;
 
-        $grandTotal = $taxableAmount;
+        $deliveryFee = $this->currentOrderType === 'pos' ? max(0, $this->posDeliveryFee) : 0.0;
+        $grandTotal = $taxableAmount + $deliveryFee;
 
         return [
             'subtotal' => round($subtotal, 2),
@@ -846,7 +861,7 @@ new class extends Component {
             'tax' => round($taxAmount, 2),
             'total' => round($grandTotal, 2),
             'total_cost' => round($totalCost, 2),
-            'profit' => round($grandTotal - $taxAmount - $totalCost, 2),
+            'profit' => round($grandTotal - $deliveryFee - $taxAmount - $totalCost, 2),
         ];
     }
 
@@ -925,7 +940,7 @@ new class extends Component {
 
         $totals = $this->calculateTotals();
         $paidAmount = round(max(0, (float) $this->paidAmount), 2);
-        if (! is_finite($paidAmount) || $paidAmount > $totals['total']) {
+        if ($this->currentOrderType !== 'pos' && (! is_finite($paidAmount) || $paidAmount > $totals['total'])) {
             $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
 
@@ -938,6 +953,9 @@ new class extends Component {
             $order = DB::transaction(function () use ($tenantId, $customer, $totals, $paidAmount, $wasEditingInvoice) {
                 $oldCustomerId = null;
                 $oldOutstandingBalance = 0.0;
+                $isPosOrder = false;
+                $deliveryFee = 0.0;
+                $receiptAmount = 0.0;
 
                 if ($this->currentOrderId) {
                     $order = Order::query()
@@ -950,36 +968,72 @@ new class extends Component {
                         throw new \RuntimeException('الفاتورة المطلوب تعديلها غير موجودة.');
                     }
 
+                    $isPosOrder = $order->type === 'pos';
+                    if (! in_array($order->type, ['wholesale', 'pos'], true) || ($isPosOrder && ! $order->customer_id)) {
+                        throw new \DomainException('لا يمكن تعديل هذا النوع من الفواتير من شاشة المبيعات.');
+                    }
+
+                    if ($isPosOrder) {
+                        if (config('branch-sync.mode') === 'edge' || app(\App\Services\DesktopPosConnection::class)->enabled()) {
+                            throw new \DomainException('عدّل فاتورة نقطة البيع من جهاز نقطة البيع المرتبط بها.');
+                        }
+
+                        if ((int) $this->selectedBranchId !== (int) $order->branch_id || $this->invoiceNumber !== $order->invoice_number) {
+                            throw new \DomainException('لا يمكن تغيير فرع فاتورة نقطة البيع أو رقمها، حفاظاً على ارتباط الشيفت وسند القبض.');
+                        }
+
+                        $deliveryFee = max(0, (float) $order->delivery_fee);
+                        $receipts = Payment::query()
+                            ->where('tenant_id', $tenantId)
+                            ->where('order_id', $order->id)
+                            ->where('type', 'receipt')
+                            ->lockForUpdate()
+                            ->get();
+                        $receiptAmount = (float) $receipts->sum(fn (Payment $payment): float => (float) $payment->amount);
+                        $voucherShiftIds = $receipts->pluck('shift_id')->filter()->unique()->values();
+                        $voucherShiftId = $voucherShiftIds->first();
+                        if ($voucherShiftId !== null && (int) $order->shift_id !== (int) $voucherShiftId) {
+                            $order->shift_id = (int) $voucherShiftId;
+                        }
+
+                        app(\App\Services\BranchStockAllocator::class)->restore($order);
+                    }
+
                     $oldCustomerId = $order->customer_id ? (int) $order->customer_id : null;
-                    $oldReceiptAmount = (float) Payment::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('order_id', $order->id)
-                        ->where('type', 'receipt')
-                        ->sum('amount');
-                    $oldOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $oldReceiptAmount;
+                    $oldReceiptAmount = $isPosOrder ? $receiptAmount : (float) Payment::query()
+                        ->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount');
+                    $oldOutstandingBalance = max(0, max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $oldReceiptAmount);
+
+                    $effectivePaidAmount = $isPosOrder
+                        ? min((float) $totals['total'], $receiptAmount + $deliveryFee)
+                        : (float) $order->paid_amount;
 
                     $order->update([
-                        'branch_id' => $this->selectedBranchId,
+                        'branch_id' => $isPosOrder ? $order->branch_id : $this->selectedBranchId,
                         'customer_id' => $customer?->id,
                         'customer_name' => $customer?->name ?? 'زبون عام',
                         'customer_phone' => $customer?->phone,
                         'customer_address' => $customer?->address,
-                        'invoice_number' => $this->invoiceNumber,
+                        'invoice_number' => $isPosOrder ? $order->invoice_number : $this->invoiceNumber,
                         'invoice_date' => $this->invoiceDate,
-                        'type' => 'wholesale',
-                        'sale_kind' => 'retail',
+                        'type' => $isPosOrder ? 'pos' : 'wholesale',
+                        'source' => $isPosOrder ? 'pos' : $order->source,
+                        'shift_id' => $isPosOrder ? $voucherShiftId : $order->shift_id,
+                        'sale_kind' => $isPosOrder ? $order->sale_kind : 'retail',
                         'status' => 'completed',
                         'subtotal' => $totals['subtotal'],
-                        'tax_amount' => $totals['tax'],
-                        'tax_percent' => max(0, $this->taxPercent),
-                        'discount_type' => 'fixed',
-                        'discount_rate' => 0,
+                        'tax_amount' => $isPosOrder ? 0 : $totals['tax'],
+                        'tax_percent' => $isPosOrder ? 0 : max(0, $this->taxPercent),
+                        'discount_type' => $isPosOrder ? $order->discount_type : 'fixed',
+                        'discount_rate' => $isPosOrder ? $order->discount_rate : 0,
                         'discount' => $totals['discount'],
                         'total' => $totals['total'],
                         'total_cost' => $totals['total_cost'],
                         'total_profit' => $totals['profit'],
-                        'paid_amount' => (float) $order->paid_amount,
-                        'payment_status' => (float) $order->paid_amount >= $totals['total'] ? 'paid' : ((float) $order->paid_amount > 0 ? 'partial' : 'unpaid'),
+                        'delivery_fee' => $isPosOrder ? $deliveryFee : 0,
+                        'delivery_party_id' => $isPosOrder ? $order->delivery_party_id : null,
+                        'paid_amount' => $effectivePaidAmount,
+                        'payment_status' => $effectivePaidAmount >= $totals['total'] ? 'paid' : ($effectivePaidAmount > 0 ? 'partial' : 'unpaid'),
                         'notes' => $this->notes ?: null,
                     ]);
 
@@ -1041,7 +1095,31 @@ new class extends Component {
                         'cost_price' => $cost,
                         'discount' => $lineDiscount,
                         'total_cost' => $cost * $quantity,
+                        'is_gift' => $isPosOrder && ! empty($item['is_gift']),
+                        'offer_id' => $isPosOrder ? ($item['offer_id'] ?? null) : null,
+                        'offer_quantity' => $isPosOrder ? ($item['offer_quantity'] ?? null) : null,
+                        'offer_price' => $isPosOrder ? ($item['offer_price'] ?? null) : null,
+                        'normal_subtotal' => $isPosOrder ? (float) ($item['normal_subtotal'] ?? $lineTotal) : $lineTotal,
+                        'promotion_savings' => $isPosOrder ? (float) ($item['promotion_savings'] ?? 0) : 0,
                     ]);
+                }
+
+                if ($isPosOrder) {
+                    $saleQuantities = [];
+                    foreach ($this->cart as $item) {
+                        $productId = (int) ($item['id'] ?? 0);
+                        $quantity = max(0, (float) ($item['quantity'] ?? 0));
+                        if ($productId > 0 && $quantity > 0) {
+                            $saleQuantities[$productId] = ($saleQuantities[$productId] ?? 0) + $quantity;
+                        }
+                    }
+
+                    app(\App\Services\BranchStockAllocator::class)->deductMany(
+                        $order,
+                        $saleQuantities,
+                        TenantSetting::getBool((int) $tenantId, 'unified_stock'),
+                        TenantSetting::getBool((int) $tenantId, 'allow_negative_stock'),
+                    );
                 }
 
                 if (! $this->currentOrderId && $paidAmount > 0) {
@@ -1066,7 +1144,7 @@ new class extends Component {
                     ->where('order_id', $order->id)
                     ->where('type', 'receipt')
                     ->sum('amount');
-                $newOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $newReceiptAmount;
+                $newOutstandingBalance = max(0, max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $newReceiptAmount);
 
                 if ($wasEditingInvoice && $oldCustomerId !== (int) ($customer?->id ?? 0)) {
                     if ($oldCustomerId) {
@@ -1111,14 +1189,22 @@ new class extends Component {
             });
 
             $this->currentOrderId = $order->id;
+            $this->currentOrderType = $order->type;
+            $this->posDeliveryFee = $order->type === 'pos' ? (float) $order->delivery_fee : 0.0;
             $this->savedPaidAmount = (float) $order->paid_amount;
+            $this->voucherPaidAmount = $order->type === 'pos'
+                ? (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount')
+                : 0.0;
+            $this->posShiftId = $order->type === 'pos'
+                ? (int) (Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->whereNotNull('shift_id')->orderBy('id')->value('shift_id') ?? 0) ?: null
+                : null;
             $this->invoiceNumber = $order->invoice_number;
             $this->lastSavedOrderId = $order->id;
             $this->lastSavedCustomerId = $order->customer_id;
             $this->lastSavedInvoiceNumber = $order->invoice_number;
             $this->lastSavedReceiptAmount = max(
                 0,
-                (float) $order->total - (float) Payment::query()
+                (float) $order->total - ($order->type === 'pos' ? (float) $order->delivery_fee : 0) - (float) Payment::query()
                     ->where('tenant_id', $tenantId)
                     ->where('order_id', $order->id)
                     ->where('type', 'receipt')
@@ -1183,7 +1269,10 @@ new class extends Component {
 
         $order = Order::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'wholesale')
+            ->where(function ($query): void {
+                $query->where('type', 'wholesale')
+                    ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
+            })
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where(function ($query) use ($search) {
                 $query->where('invoice_number', 'like', "%{$search}%")
@@ -1217,24 +1306,39 @@ new class extends Component {
             return;
         }
 
-        if ($order->type !== 'wholesale') {
-            $this->errorMessage = 'هذه ليست فاتورة مبيعات من هذا النوع.';
+        if (! in_array($order->type, ['wholesale', 'pos'], true) || ($order->type === 'pos' && ! $order->customer_id)) {
+            $this->errorMessage = 'هذه الفاتورة ليست فاتورة مبيعات مرتبطة بزبون.';
+            return;
+        }
+
+        if ($order->type === 'pos' && $order->status !== 'completed') {
+            $this->errorMessage = 'لا يمكن تحميل فاتورة نقطة بيع غير مكتملة.';
             return;
         }
 
         $order->load('items.product');
 
         $this->currentOrderId = $order->id;
+        $this->currentOrderType = $order->type;
         $this->invoiceEditMode = false;
         $this->invoiceNumber = $order->invoice_number;
         $this->invoiceDate = $order->invoice_date?->format('Y-m-d') ?? $order->created_at?->format('Y-m-d') ?? now()->format('Y-m-d');
         $this->selectedBranchId = $order->branch_id;
         $this->selectedCustomerId = $order->customer_id;
-        $this->savedPaidAmount = (float) $order->paid_amount;
+        $this->posDeliveryFee = $order->type === 'pos' ? (float) $order->delivery_fee : 0.0;
+        $posReceipts = $order->type === 'pos'
+            ? Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->orderBy('id')->get()
+            : collect();
+        $this->voucherPaidAmount = (float) $posReceipts->sum(fn (Payment $payment): float => (float) $payment->amount);
+        $this->posShiftId = (int) ($posReceipts->first(fn (Payment $payment): bool => $payment->shift_id !== null)?->shift_id ?? 0) ?: null;
+        $this->savedPaidAmount = $order->type === 'pos'
+            ? min((float) $order->total, $this->voucherPaidAmount + $this->posDeliveryFee)
+            : (float) $order->paid_amount;
+        $this->paidAmount = $this->savedPaidAmount;
         $this->customerSearch = $order->customer_name ?: '';
         $this->discount = (float) ($order->discount ?? 0);
-        $this->taxPercent = max(0, (float) ($order->tax_percent ?? 16));
-        $this->taxable = true;
+        $this->taxPercent = $order->type === 'pos' ? 0.0 : max(0, (float) ($order->tax_percent ?? 16));
+        $this->taxable = $order->type !== 'pos';
         $this->notes = $order->notes ?? '';
 
         $this->cart = [];
@@ -1250,6 +1354,12 @@ new class extends Component {
                 'quantity' => (float) $item->quantity,
                 'discount' => (float) $item->discount,
                 'stock' => 0,
+                'is_gift' => (bool) $item->is_gift,
+                'offer_id' => $item->offer_id,
+                'offer_quantity' => $item->offer_quantity,
+                'offer_price' => $item->offer_price,
+                'normal_subtotal' => (float) $item->normal_subtotal,
+                'promotion_savings' => (float) $item->promotion_savings,
             ];
 
             $calculatedLineTotal = max(0, ((float) $item->unit_price * (float) $item->quantity) - (float) $item->discount);
@@ -1265,7 +1375,9 @@ new class extends Component {
         $this->selectedStock = 0;
         $this->selectedQuantity = 1;
         $this->rowSearch = '';
-        $this->successMessage = "تم تحميل الفاتورة {$order->invoice_number}.";
+        $this->successMessage = $order->type === 'pos'
+            ? "تم تحميل فاتورة نقطة البيع {$order->invoice_number}، والتحصيل والشيفت مرتبطان بسند القبض."
+            : "تم تحميل الفاتورة {$order->invoice_number}.";
         $this->errorMessage = null;
     }
 
@@ -1279,7 +1391,7 @@ new class extends Component {
 
         $query = Order::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'wholesale')
+            ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId));
 
         if ($this->currentOrderId) {
@@ -1306,7 +1418,7 @@ new class extends Component {
 
         $order = Order::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'wholesale')
+            ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->where('id', '>', $this->currentOrderId)
             ->orderBy('id')
@@ -1565,7 +1677,7 @@ new class extends Component {
             'subtotal' => $totals['subtotal'],
             'invoiceDiscount' => $totals['discount'],
             'taxAmount' => $totals['tax'],
-            'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true),
+            'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true) && $this->currentOrderType !== 'pos',
             'grandTotal' => $totals['total'],
             'linkedReceiptAmount' => $linkedReceiptAmount,
             'totalCost' => $totals['total_cost'],
@@ -1659,6 +1771,9 @@ new class extends Component {
                     </button>
 
                     @if ($currentOrderId)
+                        @if ($currentOrderType === 'pos')
+                            <span class="rounded-xl border border-emerald-300/30 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-100">فاتورة نقطة بيع مرتبطة بزبون</span>
+                        @endif
                         <button type="button" wire:click="printCurrentInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🖨 طباعة</button>
                         <button type="button" wire:click="downloadInvoicePdf" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">📄 PDF</button>
                         <button type="button" wire:click="shareInvoicePdf" class="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/30">🟢 واتساب PDF</button>
@@ -1797,7 +1912,7 @@ new class extends Component {
                                     <button type="button" wire:click="openCustomerStatement" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-indigo-700 shadow-sm">كشف الحساب</button>
                                 @endif
                                 @if ($currentOrderId)
-                                    <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-emerald-700 shadow-sm">إضافة سند قبض</a>
+                                    <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - ($currentOrderType === 'pos' ? $posDeliveryFee : 0) - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-emerald-700 shadow-sm">إضافة سند قبض</a>
                                 @endif
                                 <button type="button" wire:click="clearCustomer" class="rounded-lg px-2 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100">تغيير</button>
                             </div>
@@ -1856,7 +1971,7 @@ new class extends Component {
 
                     <select
                         wire:model.live="selectedBranchId"
-                        @disabled($userBranchLocked)
+                        @disabled($userBranchLocked || ($currentOrderId && $currentOrderType === 'pos'))
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         @foreach ($branches as $branch)
@@ -1930,7 +2045,9 @@ new class extends Component {
                                             @foreach ($productResults as $product)
                                                 @php
                                                     $bp = $product->branchProducts->first();
-                                                    $resultPrice = (float) ($bp?->wholesale_price > 0 ? $bp?->wholesale_price : ($bp?->retail_price ?? 0));
+                                                    $resultPrice = $currentOrderType === 'pos'
+                                                        ? (float) ($bp?->retail_price ?? 0)
+                                                        : (float) ($bp?->wholesale_price > 0 ? $bp?->wholesale_price : ($bp?->retail_price ?? 0));
                                                     $stock = (float) ($bp?->stock_quantity ?? 0);
                                                 @endphp
                                                 <tr data-product-result data-result-index="{{ $loop->index }}" x-on:mousedown.prevent wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" class="cursor-pointer border-t border-slate-100 hover:bg-indigo-50">
@@ -2273,11 +2390,19 @@ new class extends Component {
 
                     @if ($currentOrderId)
                         <div class="mb-4 space-y-2 rounded-xl bg-slate-50 p-3 text-sm font-bold">
-                            <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($savedPaidAmount, 2) }}</span></div>
+                            @if ($currentOrderType === 'pos')
+                                <div class="flex justify-between"><span>المقبوض حسب سند نقطة البيع</span><span>{{ number_format($voucherPaidAmount, 2) }}</span></div>
+                                @if ($posDeliveryFee > 0)
+                                    <div class="flex justify-between text-slate-500"><span>رسوم التوصيل المحسوبة</span><span>{{ number_format($posDeliveryFee, 2) }}</span></div>
+                                @endif
+                                <div class="flex justify-between text-slate-500"><span>الشيفت من سند القبض</span><span>{{ $posShiftId ?? 'غير محدد' }}</span></div>
+                            @else
+                                <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($savedPaidAmount, 2) }}</span></div>
+                            @endif
                             <div class="flex justify-between text-rose-600"><span>المتبقي على الزبون</span><span>{{ number_format(max(0, $grandTotal - $savedPaidAmount), 2) }}</span></div>
                         </div>
                         @if ($selectedCustomerId)
-                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="mb-4 block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-black text-emerald-700 hover:bg-emerald-100">إضافة سند قبض لهذه الفاتورة</a>
+                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - ($currentOrderType === 'pos' ? $posDeliveryFee : 0) - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="mb-4 block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-black text-emerald-700 hover:bg-emerald-100">إضافة سند قبض لهذه الفاتورة</a>
                         @endif
                     @endif
 
@@ -2343,7 +2468,7 @@ new class extends Component {
                     </div>
                     <div class="flex items-center gap-2">
                         @if ($currentOrderId && $selectedCustomerId)
-                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">إضافة سند قبض</a>
+                            <a href="{{ route('tenant.receipts', ['party_id' => $selectedCustomerId, 'order_id' => $currentOrderId, 'amount' => max(0, $grandTotal - ($currentOrderType === 'pos' ? $posDeliveryFee : 0) - $linkedReceiptAmount), 'notes' => 'سند قبض لفاتورة '.$invoiceNumber]) }}" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">إضافة سند قبض</a>
                         @endif
                         <button type="button" wire:click="closeCustomerStatement" class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-50" aria-label="إغلاق">✕</button>
                     </div>

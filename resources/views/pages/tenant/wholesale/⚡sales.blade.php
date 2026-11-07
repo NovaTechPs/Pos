@@ -1066,7 +1066,7 @@ new class extends Component {
         if ($shouldPrint && $order) {
             $this->dispatch('do-kiosk-print', data: [
                 'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
-                'header_title' => 'فاتورة مبيعات جملة',
+                'header_title' => str_contains((string) request()->userAgent(), 'Android') ? 'فاتورة مبيعات' : 'فاتورة مبيعات جملة',
                 'invoice_no' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
                 'customer_phone' => $order->customer_phone,
@@ -1739,7 +1739,7 @@ new class extends Component {
                 'do-kiosk-print',
                 data: [
                     'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
-                'header_title' => 'فاتورة مبيعات جملة',
+                    'header_title' => str_contains((string) request()->userAgent(), 'Android') ? 'فاتورة مبيعات' : 'فاتورة مبيعات جملة',
 
                     'invoice_no' => $order->invoice_number,
 
@@ -1791,7 +1791,8 @@ new class extends Component {
 
         $this->isSaving = false;
 
-        session()->flash('message', "تم حفظ فاتورة الجملة رقم {$invoiceNumber} بنجاح.");
+        $invoiceLabel = str_contains((string) request()->userAgent(), 'Android') ? 'فاتورة المبيعات' : 'فاتورة الجملة';
+        session()->flash('message', "تم حفظ {$invoiceLabel} رقم {$invoiceNumber} بنجاح.");
     }
 
     /*
@@ -1876,7 +1877,8 @@ new class extends Component {
 
         $text = "مرحباً {$order->customer_name}،\n";
 
-        $text .= "تم إصدار فاتورة مبيعات جملة رقم {$order->invoice_number}.\n\n";
+        $invoiceLabel = str_contains((string) request()->userAgent(), 'Android') ? 'فاتورة مبيعات' : 'فاتورة مبيعات جملة';
+        $text .= "تم إصدار {$invoiceLabel} رقم {$order->invoice_number}.\n\n";
 
         foreach ($items as $index => $item) {
             $number = $index + 1;
@@ -2697,7 +2699,11 @@ new class extends Component {
 
                                 <div>
                                     <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                                        فاتورة مبيعات جملة
+                                        @if (str_contains((string) request()->userAgent(), 'Android'))
+                                            فاتورة مبيعات
+                                        @else
+                                            فاتورة مبيعات جملة
+                                        @endif
                                     </div>
 
                                     <div class="text-xs text-zinc-500">
