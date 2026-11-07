@@ -1110,11 +1110,6 @@ new class extends Component {
             return;
         }
 
-        if (mb_strlen($search) < 2 && !ctype_digit($search)) {
-            $this->inlineSearchResults = [];
-            return;
-        }
-
         $remoteIds = $this->refreshRemoteCatalog(filters: ['search' => $search]);
         $query = Product::query()
             ->select(['id', 'tenant_id', 'name', 'product_number'])
@@ -1555,10 +1550,6 @@ new class extends Component {
         }
 
         $search = app(PosProductSearch::class)->normalize($this->productSearchQuery);
-        if ($search !== '' && mb_strlen($search) < 2 && !ctype_digit($search)) {
-            $this->quickProducts = [];
-            return;
-        }
         // An empty search means "All": do not apply the search service's no-results guard.
         if ($search !== '') {
              $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
@@ -2644,6 +2635,34 @@ new class extends Component {
         $this->custom_final_total = $this->roundMoney(
             max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee)
         );
+    }
+
+    public string $deliveryPartySearch = '';
+
+    public function getDeliveryPartiesProperty(): \Illuminate\Support\Collection
+    {
+        $search = trim($this->deliveryPartySearch);
+
+        return Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'supplier', 'both'])
+            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
+                $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
+            }))
+            ->orderBy('name')->limit(20)->get(['id', 'name', 'phone']);
+    }
+
+    public function selectDeliveryParty(int $partyId): void
+    {
+        $this->authorize('pos.view');
+        $party = Party::query()->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)->whereIn('type', ['customer', 'supplier', 'both'])->findOrFail($partyId);
+        $this->deliveryCustomerName = $party->name;
+        $this->deliveryCustomerPhone = (string) ($party->phone ?? '');
+        $this->deliveryCustomerAddress = (string) ($party->address ?? '');
+        $this->deliveryPartySearch = '';
+        $this->resetValidation(['deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress']);
     }
 
     public function getDeliveryCompaniesProperty(): \Illuminate\Support\Collection
@@ -3976,11 +3995,12 @@ new class extends Component {
             if ($productId <= 0) {
                 $groupKey = 'item_' . $item->id;
             } else {
-                $groupKey = 'product_' . $productId . ($item->is_gift ? '_gift' : '');
+                $groupKey = 'product_' . $productId . '_price_' . number_format($unitPrice, 2, '.', '') . ($item->is_gift ? '_gift' : '');
             }
 
             if (!isset($groupedItems[$groupKey])) {
                 $groupedItems[$groupKey] = [
+                    'product_id' => $productId,
                     'is_gift' => (bool) $item->is_gift,
                     'name' => ($item->product?->name ?? 'منتج غير محدد') . ($item->is_gift ? ' — هدية' : ''),
                     'qty' => $quantity,
@@ -4000,7 +4020,7 @@ new class extends Component {
         $totalPromotionSavings = 0;
         $index = 1;
 
-        foreach ($groupedItems as $groupKey => $groupedItem) {
+        foreach ($groupedItems as $groupedItem) {
             $quantity = (float) $groupedItem['qty'];
             $total = (float) $groupedItem['total'];
             $normalTotal = $this->roundMoney((float) $groupedItem['normal_total']);
@@ -4011,9 +4031,7 @@ new class extends Component {
 
             $totalQty += abs($quantity);
 
-            $productId = str_starts_with($groupKey, 'product_')
-                ? (int) str_replace('product_', '', $groupKey)
-                : 0;
+            $productId = $groupedItem['product_id'];
 
             $promotionSavings = 0;
             $offerQuantity = 0;
@@ -4098,6 +4116,7 @@ new class extends Component {
             'delivery_fee' => number_format($this->customerInvoiceCopy ? 0 : (float) ($order->delivery_fee ?? 0), 2),
             'total_amount' => number_format(max(0, abs((float) $order->total) - ($this->customerInvoiceCopy ? (float) $order->delivery_fee : 0)), 2),
             'paid' => number_format(max(0, (float) $order->paid_amount - ($this->customerInvoiceCopy ? (float) $order->delivery_fee : 0)), 2),
+            'account_balance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
             'change' => number_format(max(0, (float) $order->paid_amount - abs((float) $order->total)), 2),
             'currency' => $currencySymbols[$currency] ?? '₪',
             'notice' => TenantSetting::get((int) $this->tenantId(), 'receipt_footer', 'شكراً لتعاملكم معنا'),
@@ -4360,6 +4379,7 @@ new class extends Component {
 
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
+                'accountBalance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
                 'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 

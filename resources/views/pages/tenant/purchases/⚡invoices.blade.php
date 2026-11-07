@@ -1655,7 +1655,7 @@ new class extends Component {
         $tenantId = $this->tenantId();
         $purchase = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->whereKey($this->currentPurchaseId)
+            ->where('id', $this->currentPurchaseId)
             ->first();
 
         if (! $purchase) {
@@ -1684,6 +1684,7 @@ new class extends Component {
                 'purchase' => $purchase,
                 'items' => $items,
                 'supplierName' => $supplierName ?: 'مورد عام',
+                'accountBalance' => $purchase->supplier_id ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('current_balance') : null,
                 'storeName' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
@@ -2218,7 +2219,7 @@ new class extends Component {
                                         <th class="w-20 px-3 py-3"></th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-slate-100">
+                                <tbody class="divide-y-2 divide-slate-500">
                                     @forelse ($cart as $key => $item)
                                         @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
                                         <tr
@@ -2268,7 +2269,7 @@ new class extends Component {
                     </div>
 
                     {{-- Mobile --}}
-                    <div class="divide-y divide-slate-100 md:hidden">
+                    <div class="divide-y-2 divide-slate-500 md:hidden">
                         @forelse ($cart as $key => $item)
                             @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
                             <div wire:key="purchase-mobile-item-{{ $key }}" data-cart-row="{{ $loop->index }}" data-cart-key="{{ $key }}"    class="p-3 transition-colors">
@@ -2745,7 +2746,7 @@ new class extends Component {
             if (this.supplierIndex >= nodes.length) this.supplierIndex = 0;
 
             nodes.forEach((node, index) => {
-                node.classList.toggle('bg-indigo-50', index === this.supplierIndex);
+                node.classList.toggle('search-result-active', index === this.supplierIndex);
                 node.classList.toggle('ring-1', index === this.supplierIndex);
                 node.classList.toggle('ring-indigo-200', index === this.supplierIndex);
             });
@@ -2763,7 +2764,7 @@ new class extends Component {
             if (this.productIndex >= nodes.length) this.productIndex = 0;
 
             nodes.forEach((node, index) => {
-                node.classList.toggle('invoice-product-selected', index === this.productIndex);
+                node.classList.toggle('search-result-active', index === this.productIndex);
                 node.classList.toggle('ring-1', index === this.productIndex);
                 node.classList.toggle('ring-indigo-200', index === this.productIndex);
             });

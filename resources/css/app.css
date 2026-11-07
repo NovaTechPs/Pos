@@ -147,10 +147,12 @@ select:focus[data-flux-control] {
 } */
 
 /* Keep the selected search result legible above table striping and hover styles. */
-[data-product-result].invoice-product-selected,
-[data-product-result].invoice-product-selected td,
-[data-product-result].invoice-product-selected button,
-[data-product-result].invoice-product-selected span {
-    background-color: #1d4ed8 !important;
+body .search-result-active,
+body .search-result-active *,
+body [data-pos-product]:focus,
+body [data-pos-product]:focus *,
+body [data-stock-voucher-product-result]:focus,
+body [data-stock-voucher-product-result]:focus * {
+    background-color: #1e40af !important;
     color: #ffffff !important;
 }

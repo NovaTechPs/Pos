@@ -1375,6 +1375,7 @@ new class extends Component {
             'offerEndAt',
         ]);
 
+        $this->loadOfferRetailPrice();
         $this->showOfferModal = true;
     }
 
@@ -1397,6 +1398,7 @@ new class extends Component {
         $this->offerHasEndDate = $offer->end_at !== null;
         $this->offerEndAt = $offer->end_at?->format('Y-m-d\\TH:i');
         $this->resetValidation();
+        $this->loadOfferRetailPrice();
         $this->showOfferModal = true;
     }
 
@@ -1445,6 +1447,22 @@ new class extends Component {
         }
     }
 
+    public bool $updateOfferRetailPrice = false;
+    public string $offerRetailPrice = '';
+
+    private function loadOfferRetailPrice(): void
+    {
+        $this->updateOfferRetailPrice = false;
+        $this->offerRetailPrice = (string) (\App\Models\BranchProduct::query()
+            ->where('tenant_id', $this->tenantId())->where('branch_id', $this->offerBranchId)
+            ->where('product_id', $this->offerProductId)->value('retail_price') ?? '0.00');
+    }
+
+    public function updatedOfferBranchId(): void
+    {
+        $this->loadOfferRetailPrice();
+    }
+
     public function saveOffer(): void
     {
         $this->authorize('products.price.edit');
@@ -1463,6 +1481,7 @@ new class extends Component {
                     $q->where('tenant_id', $tenantId)
                 ),
             ],
+            'offerRetailPrice' => [$this->updateOfferRetailPrice ? 'required' : 'nullable', 'numeric', 'min:0', 'max:999999999'],
             'offerQuantity' => ['required', 'numeric', 'gt:0'],
             'offerPrice' => ['required', 'numeric', 'min:0'],
             'offerStartAt' => ['required', 'date'],
@@ -1535,22 +1554,30 @@ new class extends Component {
             'is_active' => true,
         ];
 
-        if ($this->offerId) {
-            ProductOffer::query()
-                ->where('tenant_id', $tenantId)
-                ->whereKey($this->offerId)
-                ->update($offerData);
-            $message = 'تم تعديل العرض بنجاح.';
-        } else {
-            ProductOffer::create($offerData + [
-                'tenant_id' => $tenantId,
-                'created_by' => auth()->id(),
-            ]);
-            $message = 'تمت إضافة العرض بنجاح.';
-        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($tenantId, $offerData): void {
+            if ($this->offerId) {
+                ProductOffer::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereKey($this->offerId)
+                    ->update($offerData);
+                session()->flash('message', 'تم تعديل العرض بنجاح.');
+            } else {
+                ProductOffer::create($offerData + [
+                    'tenant_id' => $tenantId,
+                    'created_by' => auth()->id(),
+                ]);
+                session()->flash('message', 'تمت إضافة العرض بنجاح.');
+            }
+
+            if ($this->updateOfferRetailPrice) {
+                \App\Models\BranchProduct::query()->updateOrCreate([
+                    'tenant_id' => $tenantId, 'branch_id' => $this->offerBranchId, 'product_id' => $this->offerProductId,
+                ], ['retail_price' => $this->offerRetailPrice]);
+                Product::query()->where('tenant_id', $tenantId)->whereKey($this->offerProductId)->update(['is_price_unified' => false]);
+            }
+        });
 
         $this->closeOfferModal();
-        session()->flash('message', $message);
     }
 
     /*
@@ -3908,10 +3935,16 @@ new class extends Component {
             </div>
 
             <form wire:submit.prevent="saveOffer" class="mt-6 space-y-4">
+                <flux:checkbox wire:model.live="updateOfferRetailPrice" label="تعديل سعر البيع لهذا الفرع" />
+                @if ($updateOfferRetailPrice)
+                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
+                    <flux:error name="offerRetailPrice" />
+                @endif
+
                 <flux:field>
                     <flux:label>الفرع</flux:label>
                     <select
-                        wire:model="offerBranchId"
+                        wire:model.live="offerBranchId"
                         class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                     >
                         @foreach ($allBranches as $branch)

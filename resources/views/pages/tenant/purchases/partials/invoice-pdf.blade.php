@@ -61,6 +61,9 @@
         <tr class="final"><td>{{ $ar('الإجمالي النهائي') }}</td><td class="number">{{ number_format((float) $purchase->total, 2) }}</td></tr>
         <tr><td>{{ $ar('المدفوع') }}</td><td class="number">{{ number_format((float) $purchase->paid_amount, 2) }}</td></tr>
         <tr><td>{{ $ar('المتبقي') }}</td><td class="number">{{ number_format($remaining, 2) }}</td></tr>
+        @if (isset($accountBalance))
+            <tr><td>{{ $ar('رصيد الحساب الحالي بعد الفاتورة') }}</td><td class="number">{{ number_format((float) $accountBalance, 2) }}</td></tr>
+        @endif
     </table>
     <div class="footer">{{ $ar('تم إنشاء الفاتورة بواسطة WaslaPOS') }}</div>
 </body>

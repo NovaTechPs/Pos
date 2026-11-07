@@ -151,6 +151,9 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/exchange-rates', 'pages::tenant.accounting.exchange-rates')
             ->middleware('can:currency_rates.manage')
             ->name('currency-rates');
+        Route::get('/vouchers/{type}/{paymentId}/pdf', [TenantInvoicePdfController::class, 'voucher'])
+            ->whereIn('type', ['receipt', 'payment'])->whereNumber('paymentId')->name('vouchers.pdf');
+
         Route::livewire('/receipts', 'pages::tenant.accounting.receipts')
             ->middleware('can:accounting.receipt.view')
             ->name('receipts');

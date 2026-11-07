@@ -63,6 +63,7 @@ new class extends Component {
         $this->resetForm();
         $this->branchId = auth()->user()?->activeBranchId()
             ?: (int) Branch::query()->where('tenant_id', $this->tenantId())->value('id');
+        $this->loadOfferRetailPrice();
         $this->showModal = true;
     }
 
@@ -75,6 +76,7 @@ new class extends Component {
         $this->productId = $product->id;
         $this->productName = $product->name;
         $this->productSearch = $product->name;
+        $this->loadOfferRetailPrice();
     }
 
     public function edit(int $offerId): void
@@ -97,7 +99,24 @@ new class extends Component {
         $this->endAt = $offer->end_at?->format('Y-m-d\\TH:i') ?? '';
         $this->isActive = $offer->is_active;
         $this->resetValidation();
+        $this->loadOfferRetailPrice();
         $this->showModal = true;
+    }
+
+    public bool $updateOfferRetailPrice = false;
+    public string $offerRetailPrice = '';
+
+    private function loadOfferRetailPrice(): void
+    {
+        $this->updateOfferRetailPrice = false;
+        $this->offerRetailPrice = (string) (\App\Models\BranchProduct::query()
+            ->where('tenant_id', $this->tenantId())->where('branch_id', $this->branchId)
+            ->where('product_id', $this->productId)->value('retail_price') ?? '0.00');
+    }
+
+    public function updatedBranchId(): void
+    {
+        $this->loadOfferRetailPrice();
     }
 
     public function save(): void
@@ -108,6 +127,7 @@ new class extends Component {
         $this->validate([
             'productId' => ['required', 'integer', Rule::exists('products', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId))],
             'branchId' => ['required', 'integer', Rule::exists('branches', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId))],
+            'offerRetailPrice' => [$this->updateOfferRetailPrice ? 'required' : 'nullable', 'numeric', 'min:0', 'max:999999999'],
             'quantity' => ['required', 'numeric', 'gt:0'],
             'price' => ['required', 'numeric', 'min:0'],
             'startAt' => ['required', 'date'],
@@ -150,13 +170,22 @@ new class extends Component {
             'is_active' => $this->isActive,
         ];
 
-        if ($this->offerId) {
-            ProductOffer::query()->where('tenant_id', $tenantId)->whereKey($this->offerId)->update($data);
-            session()->flash('message', 'تم تعديل العرض بنجاح.');
-        } else {
-            ProductOffer::query()->create($data + ['tenant_id' => $tenantId, 'created_by' => auth()->id()]);
-            session()->flash('message', 'تمت إضافة العرض بنجاح.');
-        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($tenantId, $data): void {
+            if ($this->offerId) {
+                ProductOffer::query()->where('tenant_id', $tenantId)->whereKey($this->offerId)->update($data);
+                session()->flash('message', 'تم تعديل العرض بنجاح.');
+            } else {
+                ProductOffer::query()->create($data + ['tenant_id' => $tenantId, 'created_by' => auth()->id()]);
+                session()->flash('message', 'تمت إضافة العرض بنجاح.');
+            }
+
+            if ($this->updateOfferRetailPrice) {
+                \App\Models\BranchProduct::query()->updateOrCreate([
+                    'tenant_id' => $tenantId, 'branch_id' => $this->branchId, 'product_id' => $this->productId,
+                ], ['retail_price' => $this->offerRetailPrice]);
+                Product::query()->where('tenant_id', $tenantId)->whereKey($this->productId)->update(['is_price_unified' => false]);
+            }
+        });
 
         $this->closeModal();
     }
@@ -261,6 +290,11 @@ new class extends Component {
         <div class="space-y-4">
             <div><flux:heading size="lg">{{ $offerId ? 'تعديل العرض' : 'إضافة عرض' }}</flux:heading><flux:subheading>حدد الصنف والفرع والكمية والسعر ومدة العرض.</flux:subheading></div>
             <form wire:submit="save" class="space-y-4">
+                <flux:checkbox wire:model.live="updateOfferRetailPrice" label="تعديل سعر البيع لهذا الفرع" />
+                @if ($updateOfferRetailPrice)
+                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
+                    <flux:error name="offerRetailPrice" />
+                @endif
                 <div class="relative">
                     <label class="mb-1 block text-sm font-bold">الصنف</label>
                     <input type="search" wire:model.live.debounce.200ms="productSearch" @disabled($offerId) placeholder="ابحث باسم الصنف أو رقمه..." class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
@@ -273,7 +307,7 @@ new class extends Component {
                         </div>
                     @endif
                 </div>
-                <div><label class="mb-1 block text-sm font-bold">الفرع</label><select wire:model="branchId" class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select>@error('branchId')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div>
+                <div><label class="mb-1 block text-sm font-bold">الفرع</label><select wire:model.live="branchId" class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select>@error('branchId')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div>
                 <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">كمية العرض</label><input type="number" min="0.01" step="0.001" wire:model="quantity" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('quantity')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div><div><label class="mb-1 block text-sm font-bold">سعر العرض</label><input type="number" min="0" step="0.01" wire:model="price" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('price')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div></div>
                 <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">بداية العرض</label><input type="datetime-local" wire:model="startAt" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('startAt')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div><div><label class="mb-1 block text-sm font-bold">نهاية العرض</label><label class="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" wire:model.live="hasEndDate" />له تاريخ انتهاء</label>@if ($hasEndDate)<input type="datetime-local" wire:model="endAt" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('endAt')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror@else<div class="rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">العرض بدون تاريخ انتهاء</div>@endif</div></div>
                 <label class="flex items-center gap-2 text-sm font-bold"><input type="checkbox" wire:model="isActive" />العرض مفعّل</label>

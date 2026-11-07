@@ -2,6 +2,64 @@
 
 use Symfony\Component\Process\Process;
 
+test('sidebar selection follows workspace tab switching closing and restored URLs', function (): void {
+    $script = <<<'JAVASCRIPT'
+    import fs from 'node:fs';
+    import assert from 'node:assert/strict';
+    const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
+    const { WorkspaceTabState, syncWorkspaceNavigation } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const base = 'https://pos.example/dashboard';
+    const homeGroup = {open: true};
+    const invoiceGroup = {open: false};
+    function link(href, group, current = false) {
+        const attrs = new Map([['href', href]]);
+        if (current) attrs.set('data-current', '');
+        return {
+            getAttribute: key => attrs.get(key), hasAttribute: key => attrs.has(key),
+            setAttribute: (key, value) => attrs.set(key, value),
+            removeAttribute: key => attrs.delete(key),
+            toggleAttribute: (key, enabled) => enabled ? attrs.set(key, '') : attrs.delete(key),
+            closest: () => group,
+        };
+    }
+    const home = link(base, homeGroup, true);
+    const sales = link(base + '/sales', invoiceGroup);
+    const purchases = link(base + '/purchases', invoiceGroup);
+    const external = link('https://other.example/dashboard/sales', null);
+    const links = [home, sales, purchases, external];
+    const page = {querySelectorAll: () => links};
+    const state = new WorkspaceTabState(base, 'Home');
+    function draw(expected) {
+        syncWorkspaceNavigation(page, state.tabs.find(tab => tab.id === state.active)?.url);
+        for (const item of links) {
+            assert.equal(item.hasAttribute('data-current'), item === expected);
+            assert.equal(item.getAttribute('aria-current'), item === expected ? 'page' : undefined);
+        }
+    }
+    draw(home);
+    const saleTab = state.open(base + '/sales?invoice=12&_workspace=frame', 'Sales');
+    draw(sales);
+    assert.equal(invoiceGroup.open, true, 'The active menu group must expand');
+    invoiceGroup.open = false;
+    draw(sales);
+    assert.equal(invoiceGroup.open, false, 'Redrawing the same tab must respect manual collapse');
+    const purchaseTab = state.open(base + '/purchases/', 'Purchases');
+    draw(purchases);
+    assert.equal(invoiceGroup.open, true);
+    state.select(saleTab.id); draw(sales);
+    state.select(purchaseTab.id); draw(purchases);
+    state.close(purchaseTab.id); draw(sales);
+    state.select('initial'); draw(home);
+    state.open(base + '/unknown', 'Unknown'); draw(null);
+    JAVASCRIPT;
+
+    $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
+    $process->run();
+
+    expect($process->getErrorOutput())->toBe('');
+    expect($process->isSuccessful())->toBeTrue();
+});
+
 test('workspace deduplicates pages preserves tab identities and closes to adjacent tabs', function (): void {
     $script = <<<'JAVASCRIPT'
     import fs from 'node:fs';

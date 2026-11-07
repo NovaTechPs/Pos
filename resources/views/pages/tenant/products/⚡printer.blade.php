@@ -815,7 +815,7 @@ new class extends Component
 
                                 x-on:mouseenter="activeIndex = results().indexOf($el)"
 
-                                x-bind:class="activeIndex === results().indexOf($el) ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : ''"
+                                x-bind:class="activeIndex === results().indexOf($el) ? 'search-result-active' : ''"
 
                                 wire:click="selectProduct({{ $p->id }})"
 

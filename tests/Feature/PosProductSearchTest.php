@@ -50,6 +50,21 @@ test('pos search understands Arabic spelling and unordered words in both search 
     ['Premium Long Grain Rice', 'rice PREMIUM'],
 ]);
 
+test('both POS search controls find products from the first typed letter', function (string $search): void {
+    $product = searchablePosProduct($this, 'غسالة صغيرة');
+    searchablePosProduct($this, 'صحن كبير');
+
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->set('productSearchQuery', $search)
+        ->assertDontSee('لم نجد صنفاً مطابقاً');
+
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$product->id]);
+
+    $component->set('inlineSearchQuery', $search);
+
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$product->id]);
+})->with(['غ', 'غس', 'غسا', 'غسال']);
+
 test('POS product results fit the panel and add by selecting a wrapped result row', function (): void {
     $template = file_get_contents(resource_path('views/pages/tenant/pos/partials/quick-product-results.blade.php'));
 

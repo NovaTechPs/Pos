@@ -52,6 +52,25 @@ export function workspaceUsesFullWidth(url) {
     return Boolean(url && /\/dashboard\/pos\/?$/.test(new URL(url).pathname));
 }
 
+export function syncWorkspaceNavigation(page, activeUrl) {
+    if (!activeUrl) return;
+    const active = new URL(activeUrl);
+    const path = active.pathname.replace(/\/$/, '');
+    for (const link of page.querySelectorAll('[data-flux-sidebar] a[data-flux-sidebar-item][href]')) {
+        const target = new URL(link.getAttribute('href'), active);
+        const selected = target.origin === active.origin && target.pathname.replace(/\/$/, '') === path;
+        const wasSelected = link.hasAttribute('data-current');
+        link.toggleAttribute('data-current', selected);
+        if (selected) {
+            link.setAttribute('aria-current', 'page');
+            const group = link.closest('details');
+            if (group && !wasSelected) group.open = true;
+        } else {
+            link.removeAttribute('aria-current');
+        }
+    }
+}
+
 export function readWorkspaceSnapshot(raw, base) {
     try {
         const data = JSON.parse(raw);
@@ -231,6 +250,7 @@ function mountWorkspace(root) {
             list.append(group);
         }
         syncWorkspacePanels(panels, state.active);
+        syncWorkspaceNavigation(document, active?.url);
         document.body.classList.toggle('workspace-pos-active', workspaceUsesFullWidth(state.tabs.find(tab => tab.id === state.active)?.url));
         const loading = root.querySelector('[data-workspace-loading]');
         if (loading) {

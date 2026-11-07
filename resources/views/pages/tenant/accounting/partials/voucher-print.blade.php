@@ -110,6 +110,13 @@
                 </div>
             </div>
 
+            @if ($voucher->party)
+                <div class="mt-4 rounded-xl border border-slate-200 p-4">
+                    <p class="text-xs text-slate-500">رصيد الحساب الحالي بعد السند</p>
+                    <p class="mt-1 text-xl font-black text-slate-900" dir="ltr">{{ number_format((float) $voucher->party->current_balance, 2) }}</p>
+                </div>
+            @endif
+
             @if($voucher->notes)
                 <div class="mt-4 rounded-xl border border-slate-200 p-4">
                     <p class="text-xs text-slate-400">
@@ -145,6 +152,7 @@
             >
                 طباعة
             </button>
+            <a href="{{ route('tenant.vouchers.pdf', ['type' => $voucher->type, 'paymentId' => $voucher->id]) }}" class="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">تنزيل PDF</a>
         </div>
     </div>
 </div>

@@ -177,6 +177,13 @@
         </div>
     @endif
 
+    @if (isset($receipt['account_balance']))
+        <div class="info-box">
+            <span>رصيد الحساب الحالي بعد الفاتورة :</span>
+            <strong>{{ number_format((float) $receipt['account_balance'], 2) }}</strong>
+        </div>
+    @endif
+
     @if ($showChange)
         <div class="info-box">
             <span>الباقي :</span>
@@ -229,8 +236,8 @@
         padding: 3px;
         box-sizing: border-box;
         font-family: Tahoma, Arial, sans-serif;
-        font-size: 11px;
-        font-weight: 400;
+        font-size: 14px;
+        font-weight: 500;
         color: #000;
         direction: rtl;
         text-align: center;
@@ -238,20 +245,20 @@
     }
 
     .header .store-title {
-        font-size: 16px;
-        font-weight: 600;
+        font-size: 20px;
+        font-weight: 700;
         margin: 0 0 2px;
     }
 
     .header .notice {
-        font-size: 11px;
+        font-size: 14px;
         margin: 1px 0;
         font-weight: 400;
     }
 
     .header .copy-type {
-        font-size: 11px;
-        font-weight: 400;
+        font-size: 13px;
+        font-weight: 500;
         margin: 2px 0 6px;
     }
 
@@ -261,14 +268,14 @@
         flex-wrap: wrap;
         overflow-wrap: anywhere;
         gap: 4px;
-        font-size: 10px;
-        font-weight: 400;
+        font-size: 12px;
+        font-weight: 500;
         margin-bottom: 4px;
         padding: 0 2px;
     }
 
     .cashier {
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 400;
         margin-bottom: 5px;
     }
@@ -285,7 +292,7 @@
         border: 1px solid #000;
         padding: 3px 2px;
         text-align: center;
-        font-size: 9.5px;
+        font-size: 12px;
         overflow-wrap: anywhere;
         vertical-align: middle;
     }
@@ -304,15 +311,15 @@
 
     .items-table .item-name {
         text-align: right;
-        font-size: 10px;
-        line-height: 1.2;
+        font-size: 13px;
+        line-height: 1.3;
         word-break: break-word;
     }
 
 
     .receipt-promotion-label {
         margin-top: 2px;
-        font-size: 9px;
+        font-size: 11px;
         font-weight: 400;
         line-height: 1.25;
     }
@@ -323,14 +330,14 @@
 
     .receipt-original-total {
         margin-top: 1px;
-        font-size: 9px;
+        font-size: 11px;
         text-decoration: line-through;
         font-weight: 400;
     }
 
     .receipt-savings {
         margin-top: 1px;
-        font-size: 9px;
+        font-size: 11px;
         font-weight: 400;
     }
 
@@ -343,12 +350,12 @@
     }
 
     .promotion-total-title {
-        font-size: 10px;
+        font-size: 12px;
     }
 
     .promotion-total-value {
         margin-top: 2px;
-        font-size: 13px;
+        font-size: 15px;
     }
 
     .info-box {
@@ -360,8 +367,8 @@
         flex-wrap: wrap;
         overflow-wrap: anywhere;
         gap: 4px 10px;
-        font-size: 11px;
-        font-weight: 400;
+        font-size: 13px;
+        font-weight: 500;
     }
 
     .notes-box {
@@ -369,7 +376,7 @@
         padding: 5px 6px;
         margin: 5px 0;
         text-align: right;
-        font-size: 11px;
+        font-size: 13px;
         line-height: 1.45;
         font-weight: 400;
         white-space: normal;
@@ -396,17 +403,17 @@
         flex-wrap: wrap;
         overflow-wrap: anywhere;
         gap: 4px 8px;
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 15px;
+        font-weight: 700;
     }
 
     .net-value {
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 16px;
+        font-weight: 700;
     }
 
     .receipt-box strong {
-        font-weight: 600;
+        font-weight: 700;
     }
 
     .barcode-section {
@@ -436,12 +443,12 @@
     }
 
     .system-name {
-        font-size: 10px;
+        font-size: 12px;
         margin: 2px 0 0;
     }
 
     .print-time {
-        font-size: 9px;
+        font-size: 11px;
         margin: 1px 0;
     }
 

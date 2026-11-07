@@ -329,6 +329,7 @@
                                             </button>
                                         @endif
 
+                                        <a href="{{ route('tenant.vouchers.pdf', ['type' => $item->type, 'paymentId' => $item->id]) }}" class="rounded-lg px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100">تنزيل PDF</a>
                                         <button
                                             type="button"
                                             wire:click="print({{ $item->id }})"

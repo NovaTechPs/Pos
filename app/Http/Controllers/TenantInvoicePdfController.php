@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class TenantInvoicePdfController extends Controller
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
+                'accountBalance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
                 'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
@@ -39,7 +41,7 @@ class TenantInvoicePdfController extends Controller
 
         $purchase = DB::table('purchases')
             ->where('tenant_id', $request->user()->tenant_id)
-            ->whereKey($purchaseId)
+            ->where('id', $purchaseId)
             ->firstOrFail();
         $items = DB::table('purchase_items as pi')
             ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
@@ -60,11 +62,27 @@ class TenantInvoicePdfController extends Controller
                 'purchase' => $purchase,
                 'items' => $items,
                 'supplierName' => $supplierName ?: 'مورد عام',
+                'accountBalance' => $purchase->supplier_id ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('current_balance') : null,
                 'storeName' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
             echo $pdf->output();
         }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
+    }
+
+    public function voucher(Request $request, string $type, int $paymentId): mixed
+    {
+        abort_unless(in_array($type, ['receipt', 'payment'], true), 404);
+        abort_unless($request->user()?->can($type === 'receipt' ? 'accounting.receipt.view' : 'accounting.voucher.view'), 403);
+        $tenantId = (int) (session('active_tenant_id') ?? $request->user()->tenant_id);
+        $voucher = Payment::query()->where('tenant_id', $tenantId)->where('type', $type)
+            ->with(['party', 'creator', 'branch', 'tenant'])->findOrFail($paymentId);
+
+        return response()->streamDownload(function () use ($voucher): void {
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('pages.tenant.accounting.partials.voucher-pdf', ['voucher' => $voucher]);
+            echo $pdf->output();
+        }, 'voucher-'.$type.'-'.$voucher->id.'.pdf', ['Content-Type' => 'application/pdf']);
     }
 
     public function returns(Request $request, string $kind, int $returnId): mixed

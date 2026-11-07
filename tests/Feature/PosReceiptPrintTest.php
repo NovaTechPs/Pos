@@ -1,5 +1,47 @@
 <?php
 
+use App\Models\Branch;
+use App\Models\Order;
+use App\Models\Product;
+use App\Models\Tenant;
+use App\Models\User;
+use Livewire\Livewire;
+
+test('POS receipt groups matching product prices and keeps different prices separate', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'Receipt store']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'Main']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'Same product']);
+    $order = Order::query()->create([
+        'tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'created_by' => $user->id,
+        'invoice_number' => 'PRICE-GROUPS', 'type' => 'pos', 'status' => 'completed',
+        'subtotal' => 55, 'total' => 55, 'paid_amount' => 55,
+    ]);
+
+    foreach ([[1, 10], [2, 12.5], [2, 10]] as [$quantity, $price]) {
+        $order->items()->create([
+            'tenant_id' => $tenant->id, 'product_id' => $product->id,
+            'quantity' => $quantity, 'unit_price' => $price, 'total_price' => $quantity * $price,
+        ]);
+    }
+
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->set('currentInvoiceId', $order->id)
+        ->call('printReceipt')
+        ->assertDispatched('print-receipt');
+    $receipt = $component->get('receipt');
+
+    expect($receipt['items'])->toHaveCount(2)
+        ->and(array_column($receipt['items'], 'price'))->toBe(['10.00', '12.50'])
+        ->and(array_column($receipt['items'], 'qty'))->toBe([3.0, 2.0])
+        ->and(array_column($receipt['items'], 'total'))->toBe(['30.00', '25.00'])
+        ->and($receipt['total_amount'])->toBe('55.00')
+        ->and($order->items()->count())->toBe(3);
+
+    $component->call('printReceipt')->assertSet('receipt', $receipt);
+});
+
 function posReceiptPrintView(array $overrides = []): string
 {
     $receipt = array_merge([

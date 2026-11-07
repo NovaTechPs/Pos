@@ -1,4 +1,22 @@
 @media screen {
+    [data-flux-sidebar] [data-flux-sidebar-item][data-current] {
+        background-color: #1d4ed8 !important;
+        border-color: #1d4ed8 !important;
+        color: #fff !important;
+    }
+
+    [data-flux-sidebar] [data-flux-sidebar-item][data-current] svg {
+        color: #fff !important;
+    }
+
+    [data-flux-sidebar] details:has([data-flux-sidebar-item][data-current]) > summary {
+        background-color: #dbeafe;
+        color: #1e40af;
+    }
+
+    [data-flux-sidebar] details:has([data-flux-sidebar-item][data-current]) > summary svg {
+        color: inherit;
+    }
     .workspace-shell { grid-area: main; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100dvh; overflow: hidden; }
     .workspace-toolbar { flex: none; display: flex; align-items: stretch; gap: 6px; padding: 6px 8px 0; background: #e8edf5; border-bottom: 1px solid #cbd5e1; }
     .workspace-tab-list { display: flex; align-items: stretch; flex: 1; min-width: 0; gap: 5px; overflow-x: auto; scrollbar-width: thin; }

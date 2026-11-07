@@ -358,6 +358,10 @@
     </table>
 
 
+    @if (isset($accountBalance))
+        <table class="summary"><tr><td class="number">{{ number_format((float) $accountBalance, 2) }}</td><td>{{ $ar('رصيد الحساب الحالي بعد الفاتورة') }}</td></tr></table>
+    @endif
+
     {{-- الملاحظات --}}
     @if ($order->notes)
 

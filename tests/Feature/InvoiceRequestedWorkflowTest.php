@@ -22,6 +22,17 @@ beforeEach(function (): void {
     BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 50, 'retail_price' => 10, 'wholesale_price' => 10]);
 });
 
+test('invoice item rows have prominent separators', function (string $page): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->assertSee('<tbody class="divide-y-2 divide-slate-500">', false);
+
+    if ($page === 'purchases') {
+        $component->assertSee('<div class="divide-y-2 divide-slate-500 md:hidden">', false);
+    }
+})->with(['sales', 'purchases']);
+
 test('saving a sales or purchase invoice immediately starts a fresh invoice after printing the saved data', function (string $page, string $model, string $idField): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
         ->set('invoiceDate', '2026-01-15')

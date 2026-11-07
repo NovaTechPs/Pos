@@ -281,7 +281,7 @@ new class extends Component {
                         <div class="max-h-72 overflow-auto" x-ref="rows">
                             <table class="w-full text-right text-sm"><thead class="sticky top-0 bg-slate-100 text-xs dark:bg-slate-800"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">الباركود</th></tr></thead><tbody>
                                 @forelse ($products as $product)
-                                    <tr data-report-product wire:key="report-product-{{ $product->id }}" x-bind:class="active === {{ $loop->index }} ? 'bg-indigo-50 dark:bg-slate-800' : ''" wire:click="selectReportProduct({{ $product->id }})" x-on:click="open = false" class="cursor-pointer border-t hover:bg-indigo-50 dark:hover:bg-slate-800"><td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td><td class="p-2">{{ $product->name }}</td><td class="p-2 font-mono">{{ $product->barcodes->first()?->barcode ?? '—' }}</td></tr>
+                                    <tr data-report-product wire:key="report-product-{{ $product->id }}" x-bind:class="active === {{ $loop->index }} ? 'search-result-active' : ''" wire:click="selectReportProduct({{ $product->id }})" x-on:click="open = false" class="cursor-pointer border-t hover:bg-indigo-50 dark:hover:bg-slate-800"><td class="p-2 font-mono">{{ $product->product_number ?? $product->id }}</td><td class="p-2">{{ $product->name }}</td><td class="p-2 font-mono">{{ $product->barcodes->first()?->barcode ?? '—' }}</td></tr>
                                 @empty<tr><td colspan="3" class="p-4 text-center text-slate-500">لا توجد أصناف مطابقة.</td></tr>@endforelse
                             </tbody></table>
                         </div>

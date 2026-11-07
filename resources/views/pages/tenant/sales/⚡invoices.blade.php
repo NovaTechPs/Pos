@@ -1653,6 +1653,7 @@ new class extends Component {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('pages.tenant.pos.partials.invoice-pdf', [
                 'order' => $order,
+                'accountBalance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
                 'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
             ]);
 
@@ -1824,6 +1825,16 @@ new class extends Component {
             $invoiceSearchResults->load('branch:id,name');
         }
 
+        $accountBalanceAfterInvoice = null;
+        if ($selectedCustomer) {
+            $savedOrder = $this->currentOrderId ? Order::query()->where('tenant_id', $tenantId)->find($this->currentOrderId) : null;
+            $previousOutstanding = $savedOrder && $savedOrder->customer_id === $selectedCustomer->id
+                ? max(0, (float) $savedOrder->total - (float) $savedOrder->paid_amount) : 0;
+            $effectivePaid = $savedOrder ? (float) $savedOrder->paid_amount : max(0, (float) $this->paidAmount);
+            $accountBalanceAfterInvoice = round((float) $selectedCustomer->current_balance
+                + $selectedCustomer->saleBalanceDirection() * (max(0, $totals['total'] - $effectivePaid) - $previousOutstanding), 2);
+        }
+
         return $this->view([
             'branches' => $branches,
             'invoiceBranches' => $branches,
@@ -1832,6 +1843,7 @@ new class extends Component {
             'replacementProductResults' => $replacementProductResults,
             'customerResults' => $customerResults,
             'selectedCustomer' => $selectedCustomer,
+            'accountBalanceAfterInvoice' => $accountBalanceAfterInvoice,
             'subtotal' => $totals['subtotal'],
             'invoiceDiscount' => $totals['discount'],
             'taxAmount' => $totals['tax'],
@@ -2293,7 +2305,7 @@ new class extends Component {
                         </tr>
                     </thead>
 
-                    <tbody class="divide-y divide-slate-100">
+                    <tbody class="divide-y-2 divide-slate-500">
 
                         @forelse ($cart as $key => $item)
                             @php
@@ -2575,6 +2587,10 @@ new class extends Component {
                 <div class="h-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 
                     <div class="mb-4 text-sm font-black text-slate-900">ملخص الفاتورة</div>
+                    @if ($accountBalanceAfterInvoice !== null)
+                        <div class="mb-4 rounded-xl bg-indigo-50 p-3 text-sm font-bold text-indigo-800"><span>الرصيد بعد الفاتورة</span><span class="block mt-1" dir="ltr">{{ number_format($accountBalanceAfterInvoice, 2) }}</span></div>
+                    @endif
+
 
                     @if ($currentOrderId)
                         <div class="mb-4 space-y-2 rounded-xl bg-slate-50 p-3 text-sm font-bold">
@@ -2779,14 +2795,14 @@ new class extends Component {
             const customers = this.customerResults();
 
             products.forEach((element, index) => {
-                element.classList.toggle('invoice-product-selected', index === this.productIndex);
+                element.classList.toggle('search-result-active', index === this.productIndex);
                 element.classList.toggle('ring-1', index === this.productIndex);
                 element.classList.toggle('ring-inset', index === this.productIndex);
                 element.classList.toggle('ring-indigo-300', index === this.productIndex);
             });
 
             customers.forEach((element, index) => {
-                element.classList.toggle('bg-slate-50', index === this.customerIndex);
+                element.classList.toggle('search-result-active', index === this.customerIndex);
                 element.classList.toggle('ring-1', index === this.customerIndex);
                 element.classList.toggle('ring-inset', index === this.customerIndex);
                 element.classList.toggle('ring-slate-300', index === this.customerIndex);

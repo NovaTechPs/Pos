@@ -73,13 +73,11 @@ test('save and print reads the account balance after saving the invoice', functi
         ->set($page === 'sales' ? 'selectedPrice' : 'selectedPurchasePrice', 100)
         ->call('commitRowToCart');
 
-    if ($page === 'purchases') {
-        $component->set('paidAmount', 40);
-    }
+    $component->set('paidAmount', 40);
 
     $component->call('saveAndPrint')->assertHasNoErrors()->assertSet('errorMessage', null)
-        ->assertDispatched($page === 'sales' ? 'print-sales-invoice' : 'print-purchase-invoice', function (string $event, array $params) use ($party, $page): bool {
+        ->assertDispatched($page === 'sales' ? 'print-sales-invoice' : 'print-purchase-invoice', function (string $event, array $params) use ($party): bool {
             return (float) $params['invoice']['account_balance'] === (float) $party->fresh()->current_balance
-                && (float) $params['invoice']['account_balance'] === ($page === 'sales' ? 50.0 : 110.0);
+                && (float) $params['invoice']['account_balance'] === 110.0;
         });
 })->with(['sales', 'purchases']);

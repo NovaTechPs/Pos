@@ -568,7 +568,7 @@
                                                 x-on:click="closeList()"
                                                 x-on:mouseenter="activeIndex = {{ $loop->index }}"
                                                 x-bind:class="activeIndex === {{ $loop->index }}
-                                                    ? 'bg-' + '{{ $accent }}' + '-50 border-s-4 border-' + '{{ $accent }}' + '-500'
+                                                    ? 'search-result-active border-s-4 border-blue-800'
                                                     : 'border-s-4 border-transparent'"
                                                 class="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-start transition hover:bg-slate-50"
                                             >

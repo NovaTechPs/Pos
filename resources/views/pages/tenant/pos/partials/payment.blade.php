@@ -963,6 +963,16 @@
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="sm:col-span-2">
+                        <label class="text-xs font-black text-slate-700">اختيار من الموردين والزبائن
+                            <input type="search" wire:model.live.debounce.300ms="deliveryPartySearch" placeholder="ابحث بالاسم أو الهاتف" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                        </label>
+                        <div class="mt-2 max-h-36 overflow-y-auto">
+                            @foreach ($this->deliveryParties as $party)
+                                <button type="button" wire:key="delivery-party-{{ $party->id }}" wire:click="selectDeliveryParty({{ $party->id }})" class="flex w-full justify-between rounded-lg px-3 py-2 text-right text-sm hover:bg-indigo-50"><span>{{ $party->name }}</span><span dir="ltr">{{ $party->phone }}</span></button>
+                            @endforeach
+                        </div>
+                    </div>
                     <label class="text-xs font-black text-slate-700">الاسم
                         <input autofocus type="text" wire:model="deliveryCustomerName" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
                         @error('deliveryCustomerName')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
