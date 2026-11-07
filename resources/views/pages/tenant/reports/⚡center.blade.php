@@ -30,6 +30,7 @@ new class extends Component {
     public string $stockFilter = 'all';
     public string $source = '';
     public string $saleKind = '';
+    public string $costMethod = 'recorded';
     public string $partySearch = '';
     public string $statementPartyType = 'customer';
     public string $productSearch = '';
@@ -81,7 +82,7 @@ new class extends Component {
     {
         return ['from' => $this->from, 'to' => $this->to, 'party_id' => $this->partyId, 'product_id' => $this->productId,
             'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
-            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind];
+            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod];
     }
 
     public function applyFilters(): void
@@ -224,7 +225,7 @@ new class extends Component {
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
         }
-        if (in_array($this->report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory'], true) && trim($this->productSearch) !== '') {
+        if (in_array($this->report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory'], true) && trim($this->productSearch) !== '') {
             $products = Product::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->tap(function ($query) use ($service): void {
                     app(PosProductSearch::class)->apply($query->getQuery(), trim($this->productSearch), $service->tenantId);
@@ -260,7 +261,7 @@ new class extends Component {
             @endif
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (in_array($report, ['balances', 'product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
+            @if (in_array($report, ['balances', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
         @if (in_array($report, ['statement', 'balances']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -270,7 +271,7 @@ new class extends Component {
                 @if ($report === 'balances')<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
             </div>
         @endif
-        @if (in_array($report, ['product-history', 'product-sales', 'movements', 'movement-summary', 'inventory']))
+        @if (in_array($report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))
             <div class="relative" x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
                 <div class="flex items-end gap-2">
                     <flux:input label="الصنف" wire:model.live.debounce.250ms="productSearch" x-on:focus="open = true" x-on:input="open = true; active = 0" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود" />
@@ -289,11 +290,18 @@ new class extends Component {
                 @endif
             </div>
         @endif
-        @if (in_array($report, ['sales', 'product-sales', 'profit']))
+        @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'profit']))
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:select label="مصدر الفاتورة" wire:model="source"><option value="">الكل</option><option value="pos">نقطة البيع</option><option value="web">الويب</option><option value="api">التطبيق / API</option><option value="online">المتجر الإلكتروني</option></flux:select>
                 <flux:select label="نوع البيع" wire:model="saleKind"><option value="">الكل</option><option value="retail">مفرق</option><option value="wholesale">جملة</option></flux:select>
             </div>
+        @endif
+        @if (in_array($report, ['profit', 'product-profit']))
+            <flux:select label="طريقة احتساب تكلفة الصنف" wire:model="costMethod">
+                <option value="recorded">التكلفة المسجلة وقت البيع</option>
+                <option value="latest_purchase">آخر سعر شراء</option>
+                <option value="weighted_average">متوسط أسعار الشراء المرجّح بالكميات</option>
+            </flux:select>
         @endif
         @if ($report === 'inventory')<flux:select label="حالة المخزون" wire:model="stockFilter"><option value="all">الكل</option><option value="low">أقل من حد التنبيه</option><option value="zero">نافد</option><option value="negative">رصيد سالب</option></flux:select>@endif
         <div class="flex flex-wrap gap-2">

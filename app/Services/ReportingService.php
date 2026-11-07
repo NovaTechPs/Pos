@@ -28,6 +28,7 @@ class ReportingService
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
         'sales' => ['ملخص المبيعات اليومي', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
+        'product-profit' => ['أرباح الأصناف خلال فترة', 'reports.profit'],
         'product-history' => ['حركة صنف — مبيعات ومشتريات', 'reports.inventory'],
         'profit' => ['الأرباح والمصروفات', 'reports.profit'],
         'shifts' => ['تقرير الشيفتات: البيع والربح', 'reports.profit'],
@@ -80,6 +81,7 @@ class ReportingService
             'stock_filter' => ['required', Rule::in(['all', 'low', 'zero', 'negative'])],
             'source' => ['nullable', Rule::in(['', 'pos', 'web', 'api', 'online'])],
             'sale_kind' => ['nullable', Rule::in(['', 'retail', 'wholesale'])],
+            'cost_method' => ['nullable', Rule::in(['recorded', 'latest_purchase', 'weighted_average'])],
         ])->validate();
         foreach (['party_id' => 'parties', 'product_id' => 'products'] as $key => $table) {
             if (! empty($this->filters[$key])) {
@@ -90,7 +92,7 @@ class ReportingService
         return match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
             'sales' => $this->sales(), 'product-sales' => $this->productSales(),
-            'product-history' => $this->productHistory(),
+            'product-history' => $this->productHistory(), 'product-profit' => $this->productProfit(),
             'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
@@ -316,6 +318,66 @@ class ReportingService
         return $this->definition($query, ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'sold' => 'الكمية المباعة', 'gift_quantity' => 'كمية الهدايا', 'returned' => 'الكمية المرتجعة', 'returned_usable' => 'مرتجع سليم', 'returned_damaged' => 'مرتجع تالف', 'net_quantity' => 'صافي الكمية', 'revenue' => 'قيمة السطور الصافية'], ['الكمية المباعة' => $totals->sold, 'الهدايا' => $totals->gift_quantity, 'الكمية المرتجعة' => $totals->returned, 'مرتجع سليم' => $totals->returned_usable, 'مرتجع تالف' => $totals->returned_damaged, 'صافي الكمية' => $totals->net_quantity, 'قيمة السطور' => $totals->revenue], ['اختر التاريخ نفسه للبداية والنهاية لتقرير يوم واحد. قيمة السطور قبل توزيع خصم الفاتورة العام والضريبة والتوصيل؛ الهدايا معروضة في عمود مستقل؛ صافي الكمية يشمل الهدايا والمردودات.']);
     }
 
+    /** @return ReportDefinition */
+    private function productProfit(): array
+    {
+        $sales = $this->productSales();
+        $costs = DB::query()->fromSub($this->itemCosts(), 'cost_lines')->select('product_id')->selectRaw('SUM(signed_cost) as cost')->groupBy('product_id');
+        $query = DB::query()->fromSub($sales['query']->reorder(), 'product_sales')
+            ->leftJoinSub($costs, 'product_costs', 'product_costs.product_id', '=', 'product_sales.id')
+            ->select('product_sales.*')->selectRaw('COALESCE(product_costs.cost, 0) as cost, revenue - COALESCE(product_costs.cost, 0) as gross_profit')
+            ->orderByDesc('gross_profit')->orderBy('product_sales.id');
+        $totals = DB::query()->fromSub(clone $query, 'product_profit_totals')
+            ->selectRaw('COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit')->first();
+
+        return $this->definition($query, $sales['columns'] + ['cost' => 'التكلفة', 'gross_profit' => 'ربح السطور'],
+            $sales['summary'] + ['التكلفة' => $totals->cost, 'ربح السطور' => $totals->gross_profit],
+            [...$sales['notes'], ...$this->costNotes(), 'ربح السطور قبل توزيع خصم الفاتورة العام والمصروفات.']);
+    }
+
+    private function itemCosts(): Builder
+    {
+        $items = $this->orders()->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->where('order_items.tenant_id', $this->tenantId)
+            ->select('order_items.product_id', 'orders.type', 'order_items.quantity', 'order_items.total_cost');
+        $method = $this->filters['cost_method'] ?? 'recorded';
+        if ($method === 'recorded') {
+            return DB::query()->fromSub($items, 'cost_items')->select('product_id')
+                ->selectRaw("CASE WHEN type = 'return' THEN -ABS(total_cost) ELSE ABS(total_cost) END as signed_cost");
+        }
+
+        $purchaseCost = $this->branch($this->table('purchases'), 'purchases.branch_id')
+            ->join('purchase_items', 'purchase_items.purchase_id', '=', 'purchases.id')
+            ->whereColumn('purchase_items.product_id', 'order_items.product_id')
+            ->where('purchase_items.quantity', '>', 0)
+            ->whereRaw('COALESCE(purchases.invoice_date, purchases.created_at) < ?', [Carbon::parse($this->filters['to'])->addDay()->toDateString()]);
+        if ($method === 'latest_purchase') {
+            $purchaseCost->select('purchase_items.unit_cost')->orderByRaw('COALESCE(purchases.invoice_date, purchases.created_at) DESC')
+                ->orderByDesc('purchases.id')->orderByDesc('purchase_items.id')->limit(1);
+        } else {
+            $purchaseCost->selectRaw('1.0 * SUM(purchase_items.quantity * purchase_items.unit_cost) / NULLIF(SUM(purchase_items.quantity), 0)');
+        }
+        $items->selectSub($purchaseCost, 'purchase_cost');
+
+        return DB::query()->fromSub($items, 'cost_items')->select('product_id')
+            ->selectRaw("(CASE WHEN type = 'return' THEN -1 ELSE 1 END) * COALESCE(ABS(quantity) * purchase_cost, ABS(total_cost)) as signed_cost");
+    }
+
+    /** @return list<string> */
+    private function costNotes(): array
+    {
+        $method = $this->filters['cost_method'] ?? 'recorded';
+        if ($method === 'recorded') {
+            return ['طريقة التكلفة: التكلفة المسجلة وقت البيع.'];
+        }
+
+        return [
+            $method === 'latest_purchase' ? 'طريقة التكلفة: آخر سعر شراء.' : 'طريقة التكلفة: متوسط أسعار الشراء المرجّح بالكميات = مجموع (سعر الوحدة × الكمية المشتراة) ÷ مجموع الكميات المشتراة.',
+            'تُستخدم فواتير الشراء غير المحذوفة للفرع المختار حتى نهاية الفترة، بما فيها المشتريات السابقة لبداية الفترة. عند اختيار كل الفروع تُجمع مشترياتها. لا تُطرح مردودات الشراء من أوزان المتوسط.',
+            'عند عدم وجود مشتريات للصنف تُستخدم تكلفته المسجلة وقت البيع. تشمل التكلفة الهدايا وتُعكس تكلفة مردودات البيع. هذا تقييم تقديري ولا يغيّر تكاليف الفواتير المحفوظة.',
+        ];
+    }
+
     private function productFilters(Builder $query, string $idColumn): void
     {
         $query->when(! empty($this->filters['product_id']), fn (Builder $q): Builder => $q->where($idColumn, $this->filters['product_id']))
@@ -362,7 +424,9 @@ class ReportingService
         $sales = (clone $orders)->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN -(ABS(total) - ABS(tax_amount)) ELSE total - tax_amount END),0) as revenue, COALESCE(SUM(CASE WHEN type != 'return' THEN total_cost ELSE 0 END),0) as cost, COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END),0) as returns")->first();
         $returnCost = (clone $orders)->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)->sum(DB::raw('ABS(order_items.total_cost)'));
         $expenses = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payment_date')->where('type', 'payment')->whereNull('party_id')->whereNull('order_id')->whereNull('purchase_id')->sum('amount');
-        $cost = (float) $sales->cost - (float) $returnCost;
+        $cost = ($this->filters['cost_method'] ?? 'recorded') === 'recorded'
+            ? (float) $sales->cost - (float) $returnCost
+            : (float) DB::query()->fromSub($this->itemCosts(), 'cost_lines')->sum('signed_cost');
         $gross = (float) $sales->revenue - $cost;
         $rows = [
             ['label' => 'صافي المبيعات دون ضريبة (يشمل التوصيل)', 'amount' => $sales->revenue],
@@ -384,7 +448,8 @@ class ReportingService
         }
 
         return $this->definition(DB::query()->fromSub($query, 'profit')->orderBy('row_index'), ['label' => 'البند', 'amount' => 'القيمة'], [], [
-            'تقرير إداري تقديري بحسب التكاليف المحفوظة وقت البيع. لا يعيد تسعير الفواتير بتكلفة الصنف الحالية، ولا يعتبر شراء المخزون مصروفاً فورياً.',
+            ...$this->costNotes(),
+            'تقرير إداري تقديري؛ لا يعتبر شراء المخزون مصروفاً فورياً.',
             'الرواتب هنا على أساس الصرف، وليست تسوية استحقاق محاسبية. السلف وسداد الموردين ليست مصروفات تشغيلية. لا تسجّل الراتب نفسه مرة ثانية كمصروف عام.',
             'التكاليف التاريخية الناقصة أو المصروفات غير المسجلة تؤثر على الدقة. لا يُحسب هذا التقرير من المقبوضات بدلاً من المبيعات.',
         ]);

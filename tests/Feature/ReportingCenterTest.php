@@ -21,6 +21,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
@@ -359,4 +360,60 @@ test('product report separates gifted units from paid sales', function (): void 
     OrderItem::create(['tenant_id' => $this->tenant->id, 'order_id' => $sale->id, 'product_id' => $this->product->id, 'quantity' => 1, 'unit_price' => 0, 'total_price' => 0, 'is_gift' => true]);
     $row = (new ReportingService($this->user))->prepare('product-sales', $this->filters)['query']->first();
     expect((float) $row->sold)->toBe(2.0)->and((float) $row->gift_quantity)->toBe(1.0)->and((float) $row->net_quantity)->toBe(3.0);
+});
+
+test('profit costing supports latest purchase and quantity weighted averages through the report end date', function (string $method, float $expectedCost): void {
+    $sale = ($this->makeOrder)(['total_cost' => 35]);
+    $sale->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 5, 'unit_price' => 40, 'total_price' => 200, 'cost_price' => 7, 'total_cost' => 35]);
+    foreach ([['2026-09-01', 1, 10], ['2026-10-19', 3, 20], ['2026-10-21', 50, 500]] as [$date, $quantity, $price]) {
+        $purchase = Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'reference_number' => 'COST-'.$date, 'invoice_date' => $date, 'total' => $quantity * $price]);
+        $purchase->items()->create(['product_id' => $this->product->id, 'quantity' => $quantity, 'unit_cost' => $price, 'subtotal' => $quantity * $price]);
+    }
+    $filters = $this->filters + ['cost_method' => $method];
+    $service = new ReportingService($this->user, $this->branch->id, false);
+    $definition = $service->prepare('product-profit', $filters);
+    $row = $definition['query']->sole();
+    expect((float) $row->cost)->toBe($expectedCost)->and((float) $row->gross_profit)->toBe(200 - $expectedCost)
+        ->and((float) $definition['summary']['التكلفة'])->toBe($expectedCost);
+    $profit = $service->prepare('profit', $filters)['query']->get()->keyBy('label');
+    expect((float) $profit['تكلفة البضاعة بعد عكس تكلفة المردود']->amount)->toBe($expectedCost);
+    expect((float) $sale->fresh()->total_cost)->toBe(35.0);
+})->with([['recorded', 35.0], ['latest_purchase', 100.0], ['weighted_average', 87.5]]);
+
+test('purchase costing isolates branches tenants and deleted purchases and falls back to recorded cost', function (string $method): void {
+    $sale = ($this->makeOrder)();
+    $sale->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 2, 'unit_price' => 40, 'total_price' => 80, 'cost_price' => 7, 'total_cost' => 14]);
+    $otherTenant = Tenant::create(['name' => 'متجر آخر']);
+    $foreignBranch = Branch::create(['tenant_id' => $otherTenant->id, 'name' => 'فرع آخر']);
+    $foreignProduct = Product::create(['tenant_id' => $otherTenant->id, 'name' => $this->product->name, 'cost_price' => 900]);
+    foreach ([[$this->tenant->id, $this->otherBranch->id, null], [$otherTenant->id, $foreignBranch->id, null], [$this->tenant->id, $this->branch->id, now()]] as [$tenant, $branch, $deleted]) {
+        $purchase = Purchase::withoutEvents(fn () => Purchase::create(['tenant_id' => $tenant, 'branch_id' => $branch, 'reference_number' => 'EXCLUDED-'.str()->uuid(), 'invoice_date' => '2026-10-10', 'total' => 900, 'deleted_at' => $deleted]));
+        $purchase->items()->create(['product_id' => $tenant === $otherTenant->id ? $foreignProduct->id : $this->product->id, 'quantity' => 1, 'unit_cost' => 900, 'subtotal' => 900]);
+    }
+    $filters = $this->filters + ['cost_method' => $method];
+    $row = (new ReportingService($this->user, $this->branch->id, false))->prepare('product-profit', $filters)['query']->sole();
+    expect((float) $row->cost)->toBe(14.0);
+    $row = (new ReportingService($this->user, null, false))->prepare('product-profit', $filters)['query']->sole();
+    expect((float) $row->cost)->toBe(1800.0);
+})->with(['latest_purchase', 'weighted_average']);
+
+test('purchase based costs include gifts and reverse fractional sales returns', function (string $method): void {
+    $purchase = Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'reference_number' => 'FRACTION', 'invoice_date' => '2026-10-01', 'total' => 30]);
+    $purchase->items()->create(['product_id' => $this->product->id, 'quantity' => 2.5, 'unit_cost' => 12, 'subtotal' => 30]);
+    foreach ([[false, 2.5, 100, false], [false, 1, 0, true], [true, -0.5, -20, false]] as [$returned, $quantity, $total, $gift]) {
+        $order = ($this->makeOrder)(['type' => $returned ? 'return' : 'pos']);
+        $order->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => $quantity, 'unit_price' => $gift ? 0 : 40, 'total_price' => $total, 'cost_price' => 7, 'total_cost' => $quantity * 7, 'is_gift' => $gift]);
+    }
+    $row = (new ReportingService($this->user))->prepare('product-profit', $this->filters + ['cost_method' => $method])['query']->sole();
+    expect((float) $row->cost)->toBe(36.0)->and((float) $row->gross_profit)->toBe(44.0);
+})->with(['latest_purchase', 'weighted_average']);
+
+test('costing choice is validated and shared by the report screen print and csv export', function (): void {
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-profit')->set('costMethod', 'weighted_average')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')
+        ->assertSee('متوسط أسعار الشراء المرجّح بالكميات')->assertSee('cost_method=weighted_average')
+        ->call('exportCsv')->assertFileDownloaded('report-product-profit-2026-10-10-2026-10-20.csv');
+    $response = $this->get(route('tenant.reports.print', ['report' => 'product-profit', 'cost_method' => 'weighted_average'] + $this->filters))->assertSuccessful();
+    expect($response->streamedContent())->toContain('متوسط أسعار الشراء المرجّح بالكميات');
+    expect(fn () => (new ReportingService($this->user))->prepare('profit', $this->filters + ['cost_method' => 'invalid']))->toThrow(ValidationException::class);
 });
