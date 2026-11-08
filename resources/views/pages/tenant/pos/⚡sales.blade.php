@@ -2655,34 +2655,6 @@ new class extends Component {
         );
     }
 
-    public string $deliveryPartySearch = '';
-
-    public function getDeliveryPartiesProperty(): \Illuminate\Support\Collection
-    {
-        $search = trim($this->deliveryPartySearch);
-
-        return Party::query()
-            ->where('tenant_id', $this->tenantId())
-            ->where('is_active', true)
-            ->whereIn('type', ['customer', 'supplier', 'both'])
-            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
-                $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
-            }))
-            ->orderBy('name')->limit(20)->get(['id', 'name', 'phone']);
-    }
-
-    public function selectDeliveryParty(int $partyId): void
-    {
-        $this->authorize('pos.view');
-        $party = Party::query()->where('tenant_id', $this->tenantId())
-            ->where('is_active', true)->whereIn('type', ['customer', 'supplier', 'both'])->findOrFail($partyId);
-        $this->deliveryCustomerName = $party->name;
-        $this->deliveryCustomerPhone = (string) ($party->phone ?? '');
-        $this->deliveryCustomerAddress = (string) ($party->address ?? '');
-        $this->deliveryPartySearch = '';
-        $this->resetValidation(['deliveryCustomerName', 'deliveryCustomerPhone', 'deliveryCustomerAddress']);
-    }
-
     public function getDeliveryCompaniesProperty(): \Illuminate\Support\Collection
     {
         return Party::query()

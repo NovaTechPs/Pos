@@ -42,37 +42,25 @@ test('offers optionally update only the selected branch retail price', function 
         ->and((float) $prices[$this->branch->id]->stock_quantity)->toBe(7.0);
 })->with(['products', 'offers'])->with([true, false]);
 
-test('delivery details can be copied from either account type without changing the invoice customer', function (string $type): void {
-    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'حساب التوصيل', 'type' => $type, 'phone' => '0599123456', 'address' => 'الخليل', 'is_active' => true]);
-    Livewire::test('pages::tenant.pos.sales')->call('openDeliveryDetails')
-        ->set('deliveryPartySearch', '0599123456')->assertSee('حساب التوصيل')
-        ->call('selectDeliveryParty', $party->id)->assertSet('deliveryCustomerName', $party->name)
-        ->assertSet('deliveryCustomerPhone', $party->phone)->assertSet('deliveryCustomerAddress', $party->address)
-        ->assertSet('selectedCustomerId', null);
-})->with(['customer', 'supplier', 'both']);
-
-test('delivery party picker searches customers and suppliers and supports arrow selection', function (): void {
-    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'phone' => '0591000001', 'is_active' => true]);
-    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد التوصيل', 'type' => 'supplier', 'phone' => '0591000002', 'is_active' => true]);
+test('delivery details use invoice recipient fields and keep customer records managed separately', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'phone' => '0591000001', 'address' => 'الخليل', 'is_active' => true]);
+    $company = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'شركة التوصيل', 'type' => 'supplier', 'is_active' => true]);
 
     $component = Livewire::test('pages::tenant.pos.sales')
+        ->set('selectedCustomerId', $customer->id)
         ->call('openDeliveryDetails')
-        ->set('deliveryPartySearch', 'التوصيل')
-        ->assertSee($customer->name)
-        ->assertSee($supplier->name)
-        ->assertSee('x-on:keydown.arrow-down.prevent', false)
-        ->assertSee('x-on:keydown.arrow-up.prevent', false)
-        ->assertSee('x-on:keydown.enter.prevent', false)
-        ->call('selectDeliveryParty', $supplier->id)
-        ->assertSet('deliveryCustomerName', $supplier->name)
-        ->assertSet('deliveryCustomerPhone', $supplier->phone);
-});
+        ->assertDontSee('اختيار من الموردين والزبائن')
+        ->assertSee('wire:model="deliveryCustomerName"', false)
+        ->assertSee('wire:model="deliveryCustomerPhone"', false)
+        ->assertSee('wire:model="deliveryCustomerAddress"', false)
+        ->assertSee($company->name)
+        ->set('deliveryCustomerName', 'اسم للمستلم بالفاتورة');
 
-test('delivery selection rejects inactive and foreign accounts', function (bool $foreign): void {
-    $other = Tenant::create(['name' => 'آخر']);
-    $party = Party::create(['tenant_id' => $foreign ? $other->id : $this->tenant->id, 'name' => 'محظور', 'type' => 'customer', 'is_active' => $foreign]);
-    Livewire::test('pages::tenant.pos.sales')->call('selectDeliveryParty', $party->id)->assertNotFound();
-})->with([true, false]);
+    expect($customer->fresh()->name)->toBe('زبون التوصيل')
+        ->and($customer->fresh()->phone)->toBe('0591000001')
+        ->and($customer->fresh()->address)->toBe('الخليل')
+        ->and($component->get('deliveryCustomerName'))->toBe('اسم للمستلم بالفاتورة');
+});
 
 test('voucher print and download include the signed account balance', function (string $type, float $balance): void {
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'الحساب', 'type' => $type === 'receipt' ? 'customer' : 'supplier', 'current_balance' => $balance]);
