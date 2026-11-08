@@ -267,7 +267,7 @@ new class extends Component {
         return $this->applyOrderFilters(
             Order::query(),
             ['pos', 'wholesale', 'online']
-        );
+        )->where('orders.source', 'pos')->whereNull('orders.customer_id');
     }
 
     private function returnsQuery()
@@ -275,7 +275,7 @@ new class extends Component {
         return $this->applyOrderFilters(
             Order::query(),
             ['return']
-        );
+        )->where('orders.source', 'pos')->whereNull('orders.customer_id');
     }
 
     // ============================================================
@@ -441,6 +441,7 @@ new class extends Component {
             ->whereNull('orders.deleted_at');
 
         $this->applyOrderFilters($quantityQuery, ['pos', 'wholesale', 'online']);
+        $quantityQuery->where('orders.source', 'pos')->whereNull('orders.customer_id');
 
         $totalUnits = (float) $quantityQuery->sum('order_items.quantity');
 
@@ -516,6 +517,7 @@ new class extends Component {
             ->leftJoin('products', 'products.id', '=', 'order_items.product_id');
 
         $this->applyOrderFilters($topProductsQuery, ['pos', 'wholesale', 'online']);
+        $topProductsQuery->where('orders.source', 'pos')->whereNull('orders.customer_id');
 
         $topProducts = $topProductsQuery
             ->groupBy('order_items.product_id', 'products.name')

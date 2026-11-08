@@ -267,14 +267,19 @@ class ReportingService
             ->when(! empty($this->filters['sale_kind']), fn (Builder $q): Builder => $q->where('orders.sale_kind', $this->filters['sale_kind']));
     }
 
+    private function shopSalesOrders(): Builder
+    {
+        return $this->orders()->where('orders.source', 'pos')->whereNull('orders.customer_id');
+    }
+
     /** @return ReportDefinition */
     private function sales(): array
     {
-        $query = $this->orders()->selectRaw("DATE(orders.created_at) as day, SUM(CASE WHEN type != 'return' THEN 1 ELSE 0 END) as invoices, SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END) as sales, SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END) as returns, SUM(CASE WHEN type = 'return' THEN -ABS(total) ELSE total END) as net")
+        $query = $this->shopSalesOrders()->selectRaw("DATE(orders.created_at) as day, SUM(CASE WHEN type != 'return' THEN 1 ELSE 0 END) as invoices, SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END) as sales, SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END) as returns, SUM(CASE WHEN type = 'return' THEN -ABS(total) ELSE total END) as net")
             ->groupByRaw('DATE(orders.created_at)')->orderBy('day');
         $totals = DB::query()->fromSub(clone $query, 'daily_totals')->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(net),0) as net')->first();
 
-        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['الفواتير المكتملة فقط؛ صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
+        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['فواتير البيع المكتملة غير المرتبطة بعميل أو مورد مسجل فقط؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي. صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
     }
 
     /** @return ReportDefinition */

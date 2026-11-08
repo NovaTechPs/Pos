@@ -118,6 +118,10 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
 
             ->where('type', 'receipt')
+            ->where(function ($query): void {
+                $query->whereNull('order_id')
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+            })
             ->tap(fn ($query) => $this->applyVoucherFilters($query))
 
             ->when(trim($this->tableSearch) !== '', function ($query) {
@@ -204,6 +208,10 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
 
             ->where('type', 'receipt')
+            ->where(function ($query): void {
+                $query->whereNull('order_id')
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+            })
 
             ->count();
 
@@ -228,6 +236,10 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
 
             ->where('type', 'receipt')
+            ->where(function ($query): void {
+                $query->whereNull('order_id')
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+            })
 
             ->whereDate('payment_date', today())
 
@@ -335,6 +347,11 @@ new class extends Component {
             return true;
         }
         $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        if ($payment->order_id && $payment->order?->type === 'pos') {
+            $this->dispatch('toast', type: 'error', message: 'دفعة نقطة البيع محفوظة ضمن الفاتورة ولا تعد سند قبض مستقلًا.');
+
+            return false;
+        }
         if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
             $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
 

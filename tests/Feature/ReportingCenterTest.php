@@ -202,7 +202,7 @@ test('shift report shows sales profit and operating expenses for each shift', fu
 });
 
 test('branch-bound users cannot widen reports or import a different tenant from session', function (): void {
-    ($this->makeOrder)(['total' => 25]);
+    ($this->makeOrder)(['source' => 'pos', 'total' => 25]);
     ($this->makeOrder)(['branch_id' => $this->otherBranch->id, 'total' => 500]);
     $outsider = Tenant::create(['name' => 'متجر آخر']);
     $this->withSession(['active_tenant_id' => $outsider->id]);
@@ -210,12 +210,40 @@ test('branch-bound users cannot widen reports or import a different tenant from 
     $this->user->save();
     $service = new ReportingService($this->user, $this->otherBranch->id);
     expect($service->tenantId)->toBe($this->tenant->id)->and($service->branchId)->toBe($this->branch->id);
-    $row = $service->prepare('sales', $this->filters)['query']->first();
-    expect((float) $row->net)->toBe(25.0);
+    expect($service->prepare('sales', $this->filters)['query']->count())->toBe(0);
     // Shared parties remain available to their branch without allocating global opening balances.
     $statement = $service->prepare('statement', array_replace($this->filters, ['party_id' => $this->customer->id]));
     expect((float) $statement['summary']['رصيد آخر الفترة'])->toBe(25.0);
     expect($statement['summary'])->not->toHaveKey('الرصيد المسجل حالياً');
+});
+
+test('shop sales report includes only walk-in point-of-sale invoices and returns', function (): void {
+    ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SHOP-POS-1', 'total' => 80]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'NAMED-POS-1', 'total' => 120]);
+    ($this->makeOrder)(['customer_id' => null, 'type' => 'wholesale', 'invoice_number' => 'WHOLESALE-1', 'total' => 200]);
+    ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'type' => 'return', 'invoice_number' => 'SHOP-RETURN-1', 'total' => -10]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'type' => 'return', 'invoice_number' => 'NAMED-RETURN-1', 'total' => -15]);
+
+    $report = (new ReportingService($this->user))->prepare('sales', $this->filters);
+    $rows = $report['query']->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and((float) $rows->sole()->sales)->toBe(80.0)
+        ->and((float) $rows->sole()->returns)->toBe(10.0)
+        ->and((float) $rows->sole()->net)->toBe(70.0)
+        ->and($report['notes'][0])->toContain('غير المرتبطة بعميل أو مورد مسجل');
+});
+
+test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {
+    ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SHOP-WALKIN', 'total' => 80]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'SHOP-NAMED', 'total' => 120]);
+
+    Livewire::test('pages::tenant.reports.analytics')
+        ->set('date_from', $this->filters['from'])
+        ->set('date_to', $this->filters['to'])
+        ->assertViewHas('stats', fn (array $stats): bool => (int) $stats['orders_count'] === 1 && (float) $stats['total'] === 80.0)
+        ->assertSee('SHOP-WALKIN')
+        ->assertDontSee('SHOP-NAMED');
 });
 
 test('every report renders and exports its columns without changing financial data', function (string $report): void {

@@ -98,6 +98,55 @@ test('receipt voucher created from a sales invoice is linked and updates its pai
         ->and($order->fresh()->payment_status)->toBe('partial');
 });
 
+test('POS payments stay in the accounting ledger but are not shown as separate receipt vouchers', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'POS receipt branch']);
+    $customer = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'POS customer', 'type' => 'customer', 'is_active' => true]);
+    $posOrder = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => null,
+        'invoice_number' => 'POS-RECEIPT-LINK',
+        'type' => 'pos',
+        'source' => 'pos',
+        'status' => 'completed',
+        'subtotal' => 50,
+        'total' => 50,
+        'paid_amount' => 50,
+        'payment_status' => 'paid',
+    ]);
+    $posPayment = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'order_id' => $posOrder->id,
+        'type' => 'receipt',
+        'voucher_number' => 'POS-RECEIPT-LINK',
+        'payment_date' => now(),
+        'payment_method' => 'cash',
+        'amount' => 50,
+    ]);
+    $manualReceipt = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'party_id' => $customer->id,
+        'type' => 'receipt',
+        'voucher_number' => 'MANUAL-RECEIPT',
+        'payment_date' => now(),
+        'payment_method' => 'cash',
+        'amount' => 20,
+    ]);
+
+    $component = Livewire::test('pages::tenant.accounting.receipts');
+
+    expect($component->get('items')->total())->toBe(1)
+        ->and((int) $component->get('items')->first()->id)->toBe($manualReceipt->id);
+
+    $component->call('edit', $posPayment->id)
+        ->assertSet('showForm', false)
+        ->assertDispatched('toast');
+
+    expect(Payment::query()->whereKey($posPayment->id)->exists())->toBeTrue();
+});
+
 test('linked receipt vouchers can be edited and deleted while keeping the invoice paid amount in sync', function (): void {
     $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Receipt branch']);
     $customer = Party::query()->create([
