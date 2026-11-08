@@ -2655,14 +2655,42 @@ new class extends Component {
         );
     }
 
+    public string $deliveryCompanySearch = '';
+
+    public function updatedDeliveryCompanySearch(): void
+    {
+        $this->deliveryCompanyId = null;
+        $this->resetValidation('deliveryCompanyId');
+    }
+
     public function getDeliveryCompaniesProperty(): \Illuminate\Support\Collection
     {
         return Party::query()
             ->where('tenant_id', $this->tenantId())
             ->where('is_active', true)
             ->whereIn('type', ['customer', 'supplier', 'both'])
+            ->when(trim($this->deliveryCompanySearch) !== '', function ($query): void {
+                $search = trim($this->deliveryCompanySearch);
+                $query->where(function ($query) use ($search): void {
+                    $query->where('name', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%");
+                });
+            })
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'phone']);
+    }
+
+    public function selectDeliveryCompany(int $companyId): void
+    {
+        $company = Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'supplier', 'both'])
+            ->findOrFail($companyId);
+
+        $this->deliveryCompanyId = $company->id;
+        $this->deliveryCompanySearch = '';
+        $this->resetValidation('deliveryCompanyId');
     }
 
     private function deliveryCompanyIsValid(): bool
@@ -4366,6 +4394,8 @@ new class extends Component {
             }
             return null;
         }
+
+        $order->loadSum('payments as collected_amount', 'amount');
 
         return response()->streamDownload(function () use ($order) {
             $pdf = app('dompdf.wrapper');

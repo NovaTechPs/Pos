@@ -55,7 +55,7 @@ test('delivery details use invoice recipient fields and keep customer records ma
         ->assertSee('wire:model="deliveryCustomerAddress"', false)
         ->assertSee($company->name)
         ->assertSee($customer->name)
-        ->assertSee('اختر من الموردين والزبائن')
+        ->assertSee('ابحث بالاسم أو الهاتف')
         ->set('deliveryCustomerName', 'اسم للمستلم بالفاتورة');
 
     expect($customer->fresh()->name)->toBe('زبون التوصيل')
@@ -73,6 +73,15 @@ test('customers suppliers and mixed accounts can all be selected as delivery com
     $options = $component->get('deliveryCompanies')->pluck('id')->all();
 
     expect($options)->toContain($customer->id, $supplier->id, $both->id);
+
+    $component->set('deliveryCompanySearch', 'عميل')
+        ->assertSee('x-on:keydown.arrow-down.prevent', false)
+        ->assertSee('x-on:keydown.arrow-up.prevent', false)
+        ->assertSee('x-on:keydown.enter.prevent', false);
+    expect($component->get('deliveryCompanies')->pluck('id')->all())->toBe([$customer->id]);
+    $component->call('selectDeliveryCompany', $customer->id)
+        ->assertSet('deliveryCompanyId', $customer->id)
+        ->assertSet('deliveryCompanySearch', '');
 
     $component->set('deliveryCustomerName', 'مستلم')
         ->set('deliveryCustomerPhone', '0590000000')
@@ -141,9 +150,9 @@ test('invoice pdf downloads receive the current signed account balance', functio
         $url = route('tenant.purchase-invoices.pdf', ['purchaseId' => $invoice->id]);
     }
     $pdf = Mockery::mock();
-    $pdf->shouldReceive('loadView')->once()->withArgs(function (string $view, array $data): bool {
+    $pdf->shouldReceive('loadView')->once()->withArgs(function (string $view, array $data) use ($kind): bool {
         expect((float) $data['accountBalance'])->toBe(-123.45);
-        expect(view($view, $data)->render())->toContain('-123.45');
+        expect(view($view, $data)->render())->toContain($kind === 'sales' ? '123.45' : '-123.45');
 
         return true;
     });
