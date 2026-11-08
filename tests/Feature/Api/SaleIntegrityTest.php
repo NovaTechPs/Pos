@@ -36,6 +36,79 @@ test('replayed checkout returns the original invoice without duplicating stock o
         ->assertJsonPath('result.order.id', $first->json('order.id'));
 });
 
+test('retail customer payments and balances stay consistent through checkout replay edit and deletion', function (?float $paid, string $status, string $partyType): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Ledger customer',
+        'type' => $partyType, 'is_active' => true, 'opening_balance' => 1470, 'current_balance' => 1470]);
+    $payload = array_replace($this->payload, ['customer_id' => $customer->id]);
+    if ($paid !== null) {
+        $payload['paid_amount'] = $paid;
+    }
+    $actualPaid = $paid ?? 20.0;
+    $balance = 1470 + $customer->saleBalanceDirection() * (20 - $actualPaid);
+    $sale = $this->postJson('/api/pos/orders', $payload)->assertCreated()
+        ->assertJsonPath('order.paid_amount', fn ($amount): bool => (float) $amount === $actualPaid)
+        ->assertJsonPath('order.payment_status', $status);
+    $this->postJson('/api/pos/orders', $payload)->assertCreated()->assertHeader('Idempotency-Replayed', 'true');
+    expect((float) $customer->fresh()->current_balance)->toBe((float) $balance)
+        ->and((float) $customer->payments()->sum('amount'))->toBe($actualPaid)
+        ->and(Payment::count())->toBe($actualPaid > 0 ? 1 : 0);
+    $this->getJson('/api/parties/'.$customer->id.'/statement?branch_id='.$this->branch->id.'&from='.now()->toDateString().'&to='.now()->toDateString())
+        ->assertOk()->assertJsonCount($actualPaid > 0 ? 2 : 1, 'transactions');
+
+    $payload['operation_uuid'] = (string) Str::uuid();
+    $payload['invoice_id'] = $sale->json('order.id');
+    $payload['paid_amount'] = 5;
+    $this->postJson('/api/pos/orders', $payload)->assertCreated();
+    expect((float) $customer->fresh()->current_balance)->toBe(1470.0 + $customer->saleBalanceDirection() * 15)
+        ->and((float) $customer->payments()->sum('amount'))->toBe(5.0);
+    $this->deleteJson('/api/pos/invoices/'.$sale->json('order.id'))->assertSuccessful();
+    expect((float) $customer->fresh()->current_balance)->toBe(1470.0)
+        ->and($customer->payments()->count())->toBe(0);
+})->with([
+    'legacy full payment' => [null, 'paid', 'customer'],
+    'full payment' => [20.0, 'paid', 'customer'],
+    'partial payment' => [7.0, 'partial', 'customer'],
+    'credit sale' => [0.0, 'unpaid', 'customer'],
+    'supplier sale' => [7.0, 'partial', 'supplier'],
+]);
+
+test('retail checkout keeps a customer overpayment as credit and reverses it on edit', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Overpay customer',
+        'type' => 'customer', 'is_active' => true, 'current_balance' => 100]);
+    $payload = array_replace($this->payload, ['customer_id' => $customer->id, 'paid_amount' => 130]);
+    $sale = $this->postJson('/api/pos/orders', $payload)->assertCreated()
+        ->assertJsonPath('order.paid_amount', 20)
+        ->assertJsonPath('order.collected_amount', 130);
+    $id = $sale->json('order.id');
+    expect((float) $customer->fresh()->current_balance)->toBe(-10.0)
+        ->and(Payment::count())->toBe(1)
+        ->and((float) Payment::sum('amount'))->toBe(130.0);
+    $this->getJson('/api/pos/invoices?branch_id='.$this->branch->id.'&search='.$sale->json('order.invoice_number'))
+        ->assertOk()->assertJsonPath('order.collected_amount', 130);
+
+    $edit = array_replace($payload, ['invoice_id' => $id, 'paid_amount' => 5, 'operation_uuid' => (string) Str::uuid()]);
+    $this->postJson('/api/pos/orders', $edit)->assertCreated();
+    expect((float) $customer->fresh()->current_balance)->toBe(115.0)
+        ->and(Payment::count())->toBe(1)
+        ->and((float) Payment::sum('amount'))->toBe(5.0);
+});
+
+test('retail checkout rejects invalid payments without changing the ledger', function (mixed $paid, bool $withCustomer, string $field): void {
+    $payload = array_replace($this->payload, ['paid_amount' => $paid]);
+    if ($withCustomer) {
+        $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Customer', 'type' => 'customer', 'is_active' => true]);
+        $payload['customer_id'] = $customer->id;
+    }
+    $this->postJson('/api/pos/orders', $payload)->assertUnprocessable()->assertJsonValidationErrors($field);
+    expect(Order::count())->toBe(0)->and(Payment::count())->toBe(0)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(20.0);
+})->with([
+    [-1, true, 'paid_amount'],
+    [1000000000, true, 'paid_amount'],
+    ['invalid', true, 'paid_amount'],
+    [5, false, 'customer_id'],
+]);
+
 test('retail checkout batches product and stock reads without changing the ledger', function (bool $customerPricing): void {
     $pricingBranch = $customerPricing ? Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'Customer prices']) : $this->branch;
     $payload = $this->payload;

@@ -48,7 +48,7 @@ class WholesaleWorkspaceController extends Controller
             'discount_type' => ['nullable', 'in:fixed,percentage'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'discount_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'paid_amount' => ['required', 'numeric', 'min:0'],
+            'paid_amount' => ['required', 'numeric', 'min:0', 'max:999999999', 'decimal:0,2'],
             'payment_method' => ['required', 'in:cash,card,bank_transfer,cheque'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -124,9 +124,10 @@ class WholesaleWorkspaceController extends Controller
                 throw ValidationException::withMessages(['discount_amount' => 'الخصم يتجاوز قيمة الفاتورة.']);
             }
             $total = max(0, round($subtotal - $discount, 2));
-            $paid = min($total, round((float) $validated['paid_amount'], 2));
-            if ((float) $validated['paid_amount'] > $total + 0.005) {
-                throw ValidationException::withMessages(['paid_amount' => 'المبلغ المدفوع يتجاوز إجمالي الفاتورة.']);
+            $received = round((float) $validated['paid_amount'], 2);
+            $paid = min($total, $received);
+            if ($received > $total + 0.005 && ! $customer) {
+                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
             }
             if ($paid < $total && ! $customer) {
                 throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
@@ -171,20 +172,24 @@ class WholesaleWorkspaceController extends Controller
                 }
             }
 
-            if ($paid > 0) {
+            if ($received > 0) {
                 Payment::create([
                     'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                     'type' => 'receipt', 'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
-                    'party_id' => $customer?->id, 'amount' => $paid, 'payment_method' => $validated['payment_method'],
+                    'party_id' => $customer?->id, 'amount' => $received, 'payment_method' => $validated['payment_method'],
                     'order_id' => $order->id, 'notes' => 'دفعة على فاتورة الجملة '.$order->invoice_number,
                     'payment_date' => now(),
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $paid, 2));
+                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
             }
 
-            return $order->load(['items.product', 'party', 'branch'])->setAttribute('payment_method', $validated['payment_method'])->setAttribute('previous_balance', $previousBalance)->setAttribute('current_balance', $customer?->fresh()->current_balance ?? 0);
+            return $order->load(['items.product', 'party', 'branch'])
+                ->setAttribute('payment_method', $validated['payment_method'])
+                ->setAttribute('collected_amount', $received)
+                ->setAttribute('previous_balance', $previousBalance)
+                ->setAttribute('current_balance', $customer?->fresh()->current_balance ?? 0);
         });
 
         return response()->json(['message' => 'تم حفظ فاتورة الجملة', 'order' => $order], 201);
@@ -217,7 +222,7 @@ class WholesaleWorkspaceController extends Controller
         } else {
             $query->orderByDesc('id');
         }
-        $order = $query->with('items.product', 'party', 'branch')->firstOrFail();
+        $order = $query->with('items.product', 'party', 'branch')->withSum('payments as collected_amount', 'amount')->firstOrFail();
         $order->setAttribute('payment_method', Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->latest('id')->value('payment_method') ?? 'cash');
 
         return response()->json(['order' => $order,
@@ -244,7 +249,7 @@ class WholesaleWorkspaceController extends Controller
         }
         unset($product);
 
-        return response()->json($response + ['workspace_version' => 1, 'allow_negative_stock' => TenantSetting::getBool($tenantId, 'allow_negative_stock', false),
+        return response()->json($response + ['workspace_version' => 1, 'payment_contract_version' => 2, 'allow_negative_stock' => TenantSetting::getBool($tenantId, 'allow_negative_stock', false),
             'can_sell_below_cost' => $request->user()->hasPermission('pos.sell_below_cost')]);
     }
 
@@ -286,11 +291,13 @@ class WholesaleWorkspaceController extends Controller
             $stock = BranchProduct::where('tenant_id', $order->tenant_id)->where('branch_id', $movement->branch_id)->where('product_id', $movement->product_id)->lockForUpdate()->firstOrFail();
             StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', -(float) $movement->effect), 'sale_reversal');
         }
+        $payments = Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->lockForUpdate()->get();
+        $collected = (float) $payments->sum('amount');
         if ($order->customer_id) {
             $party = Party::where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
-            $party->decrement('current_balance', $party->saleBalanceDirection() * round((float) $order->total - (float) $order->paid_amount, 2));
+            $party->decrement('current_balance', $party->saleBalanceDirection() * round((float) $order->total - $collected, 2));
         }
-        foreach (Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->lockForUpdate()->get() as $payment) {
+        foreach ($payments as $payment) {
             $payment->delete();
         }
         $order->items()->delete();

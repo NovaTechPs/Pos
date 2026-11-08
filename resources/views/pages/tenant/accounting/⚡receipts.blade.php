@@ -533,7 +533,11 @@ new class extends Component {
                         ->lockForUpdate()
                         ->findOrFail($receipt->order_id);
 
-                    abort_unless($linkedOrder->type !== 'return' && (int) $linkedOrder->customer_id === (int) $newParty->id, 404);
+                    if ($linkedOrder->type === 'return' || (int) $linkedOrder->customer_id !== (int) $newParty->id) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'partyId' => 'لا يمكن تغيير العميل في سند قبض مرتبط بفاتورة.',
+                        ]);
+                    }
                 }
 
                 /*
@@ -654,7 +658,11 @@ new class extends Component {
 
                 if ($this->orderId) {
                     $order = Order::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($this->orderId);
-                    abort_unless((int) $order->customer_id === (int) $newParty->id, 404);
+                    if ($order->type === 'return' || (int) $order->customer_id !== (int) $newParty->id) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'partyId' => 'اختر العميل المسجل على الفاتورة المرتبطة بسند القبض.',
+                        ]);
+                    }
                     $paidAmount = min((float) $order->total, (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount') + (float) $order->delivery_fee);
                     $order->update(['paid_amount' => $paidAmount, 'payment_status' => $paidAmount >= (float) $order->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid')]);
                 }

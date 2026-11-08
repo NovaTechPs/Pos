@@ -41,6 +41,12 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    /** @return HasMany<Payment, $this> */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
     /** @return BelongsTo<Order, $this> */
     public function originalOrder(): BelongsTo
     {

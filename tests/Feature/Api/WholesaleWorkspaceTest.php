@@ -46,9 +46,28 @@ test('wholesale prices discount balances and idempotent edits stay consistent', 
     $this->getJson('/api/wholesale/price-history?branch_id='.$this->branch->id.'&customer_id='.$this->party->id.'&product_id='.$this->product->id)->assertOk()->assertJsonCount(1, 'history');
 });
 
+test('wholesale checkout records an overpayment as customer credit and reverses it on edit', function () {
+    $payment = array_replace($this->payload, ['paid_amount' => 150]);
+    $sale = $this->postJson('/api/wholesale/orders', $payment)->assertCreated()
+        ->assertJsonPath('order.paid_amount', 14.4)
+        ->assertJsonPath('order.collected_amount', 150);
+    $id = $sale->json('order.id');
+    expect((float) $this->party->fresh()->current_balance)->toBe(-35.6)
+        ->and(Payment::count())->toBe(1)
+        ->and((float) Payment::sum('amount'))->toBe(150.0);
+    $this->getJson('/api/wholesale/invoice?branch_id='.$this->branch->id.'&id='.$id)
+        ->assertOk()->assertJsonPath('order.collected_amount', 150);
+
+    $edit = array_replace($payment, ['invoice_id' => $id, 'paid_amount' => 5, 'operation_uuid' => (string) Str::uuid()]);
+    $this->postJson('/api/wholesale/orders', $edit)->assertCreated();
+    expect((float) $this->party->fresh()->current_balance)->toBe(109.4)
+        ->and(Payment::count())->toBe(1)
+        ->and((float) Payment::sum('amount'))->toBe(5.0);
+});
+
 test('invalid edit rolls back the old invoice inventory and balance', function () {
     $id = $this->postJson('/api/wholesale/orders', $this->payload)->assertCreated()->json('order.id');
-    $edit = array_replace($this->payload, ['invoice_id' => $id, 'paid_amount' => 999, 'operation_uuid' => (string) Str::uuid()]);
+    $edit = array_replace($this->payload, ['invoice_id' => $id, 'paid_amount' => -1, 'operation_uuid' => (string) Str::uuid()]);
     $this->postJson('/api/wholesale/orders', $edit)->assertUnprocessable();
     expect((float) $this->stock->fresh()->stock_quantity)->toBe(18.0)->and((float) $this->party->fresh()->current_balance)->toBe(110.4)->and(Order::find($id)->items()->count())->toBe(1)->and(Payment::count())->toBe(1);
 });

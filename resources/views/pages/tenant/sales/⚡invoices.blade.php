@@ -766,6 +766,7 @@ new class extends Component {
         $this->successMessage = "تم استبدال الصنف بـ {$product->name}. راجع الفاتورة ثم احفظ التعديل.";
         $this->errorMessage = null;
         $this->dispatch('toast', type: 'success', message: $this->successMessage);
+        $this->dispatch('focus-product-search');
     }
 
     public function cancelInlineReplacement(): void
@@ -1015,8 +1016,8 @@ new class extends Component {
 
         $totals = $this->calculateTotals();
         $paidAmount = round(max(0, (float) $this->paidAmount), 2);
-        if ($this->currentOrderType !== 'pos' && (! is_finite($paidAmount) || $paidAmount > $totals['total'])) {
-            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
+        if (! is_finite($paidAmount)) {
+            $this->errorMessage = 'أدخل مبلغ دفع صالحاً.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
 
             return;
@@ -1077,11 +1078,11 @@ new class extends Component {
                     $oldCustomerId = $order->customer_id ? (int) $order->customer_id : null;
                     $oldReceiptAmount = $isPosOrder ? $receiptAmount : (float) Payment::query()
                         ->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount');
-                    $oldOutstandingBalance = max(0, max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $oldReceiptAmount);
+                    $oldOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $oldReceiptAmount;
 
                     $effectivePaidAmount = $isPosOrder
                         ? min((float) $totals['total'], $receiptAmount + $deliveryFee)
-                        : (float) $order->paid_amount;
+                        : min((float) $order->total, (float) $order->paid_amount);
 
                     $order->update([
                         'branch_id' => $isPosOrder ? $order->branch_id : $this->selectedBranchId,
@@ -1144,7 +1145,7 @@ new class extends Component {
                         'total' => $totals['total'],
                         'total_cost' => $totals['total_cost'],
                         'total_profit' => $totals['profit'],
-                        'paid_amount' => $paidAmount,
+                        'paid_amount' => min($paidAmount, (float) $totals['total']),
                         'payment_status' => $paidAmount >= $totals['total'] && $totals['total'] > 0 ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid'),
                         'notes' => $this->notes ?: null,
                     ]);
@@ -1219,7 +1220,7 @@ new class extends Component {
                     ->where('order_id', $order->id)
                     ->where('type', 'receipt')
                     ->sum('amount');
-                $newOutstandingBalance = max(0, max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $newReceiptAmount);
+                $newOutstandingBalance = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $newReceiptAmount;
 
                 if ($wasEditingInvoice && $oldCustomerId !== (int) ($customer?->id ?? 0)) {
                     if ($oldCustomerId) {
@@ -2334,7 +2335,12 @@ new class extends Component {
                                     @if ($replacingCartKey === $key)
                                         <div class="mt-2 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5">
                                             <div class="flex gap-2">
-                                                <input type="search" wire:model.live.debounce.180ms="replacementSearch" x-init="$nextTick(() => $el.focus())" placeholder="ابحث عن الصنف البديل بالاسم أو الرقم أو الباركود..." class="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400" />
+                                                <input type="search" wire:model.live.debounce.180ms="replacementSearch" x-init="replacementIndex = -1; $nextTick(() => $el.focus())"
+                                                    x-on:input="replacementIndex = -1; refreshResultClasses()"
+                                                    x-on:keydown.arrow-down.prevent.stop="moveResult('replacement', 1)"
+                                                    x-on:keydown.arrow-up.prevent.stop="moveResult('replacement', -1)"
+                                                    x-on:keydown.enter.prevent.stop="clickCurrentResult('replacement')"
+                                                    x-on:keydown.escape.prevent.stop="$wire.cancelInlineReplacement()" placeholder="ابحث عن الصنف البديل بالاسم أو الرقم أو الباركود..." class="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400" />
                                                 <button type="button" wire:click="cancelInlineReplacement" class="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-800">إلغاء</button>
                                             </div>
                                             @if (trim($replacementSearch) !== '')
@@ -2346,7 +2352,7 @@ new class extends Component {
                                                                 ? (float) ($replacementBranchProduct?->retail_price ?? 0)
                                                                 : (float) ($replacementBranchProduct?->wholesale_price > 0 ? $replacementBranchProduct?->wholesale_price : ($replacementBranchProduct?->retail_price ?? 0));
                                                         @endphp
-                                                        <button type="button" wire:key="replacement-product-{{ $key }}-{{ $replacementProduct->id }}" wire:click="replaceCartItem({{ $replacementProduct->id }})" wire:loading.attr="disabled" class="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-right text-xs hover:bg-indigo-50 disabled:opacity-50">
+                                                        <button type="button" data-replacement-result wire:key="replacement-product-{{ $key }}-{{ $replacementProduct->id }}" wire:click="replaceCartItem({{ $replacementProduct->id }})" wire:loading.attr="disabled" class="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-right text-xs hover:bg-indigo-50 disabled:opacity-50">
                                                             <span class="min-w-0 truncate font-black text-slate-800">{{ $replacementProduct->name }} <span class="font-mono font-semibold text-slate-400">({{ $replacementProduct->product_number ?? $replacementProduct->id }})</span></span>
                                                             <span class="shrink-0 font-mono font-bold text-indigo-700">{{ number_format($replacementPrice, 2) }}</span>
                                                         </button>
@@ -2706,6 +2712,7 @@ new class extends Component {
     Alpine.data('salesInvoiceKeyboard', () => ({
         productIndex: -1,
         customerIndex: -1,
+        replacementIndex: -1,
         resultRefreshTimer: null,
         keyboardController: null,
 
@@ -2783,16 +2790,25 @@ new class extends Component {
         },
 
         productResults() {
-            return Array.from(this.$el.querySelectorAll('[data-product-result]')).filter(element => element.getClientRects().length > 0);
+            return Array.from(this.$root.querySelectorAll('[data-product-result]')).filter(element => element.getClientRects().length > 0);
         },
 
         customerResults() {
-            return Array.from(this.$el.querySelectorAll('[data-customer-result]')).filter(element => element.getClientRects().length > 0);
+            return Array.from(this.$root.querySelectorAll('[data-customer-result]')).filter(element => element.getClientRects().length > 0);
+        },
+
+        replacementResults() {
+            return Array.from(this.$root.querySelectorAll('[data-replacement-result]')).filter(element => element.getClientRects().length > 0);
         },
 
         refreshResultClasses() {
             const products = this.productResults();
             const customers = this.customerResults();
+            const replacements = this.replacementResults();
+            this.replacementIndex = Math.min(this.replacementIndex, replacements.length - 1);
+            replacements.forEach((element, index) => {
+                element.classList.toggle('search-result-active', index === this.replacementIndex);
+            });
 
             products.forEach((element, index) => {
                 element.classList.toggle('search-result-active', index === this.productIndex);
@@ -2812,11 +2828,11 @@ new class extends Component {
         moveResult(type, direction) {
             const list = type === 'product'
                 ? this.productResults()
-                : this.customerResults();
+                : type === 'replacement' ? this.replacementResults() : this.customerResults();
 
             if (!list.length) return;
 
-            const key = type === 'product' ? 'productIndex' : 'customerIndex';
+            const key = type === 'product' ? 'productIndex' : type === 'replacement' ? 'replacementIndex' : 'customerIndex';
             this[key] = direction > 0
                 ? Math.min(list.length - 1, this[key] + 1)
                 : Math.max(0, this[key] < 0 ? list.length - 1 : this[key] - 1);
@@ -2832,13 +2848,13 @@ new class extends Component {
         clickCurrentResult(type) {
             const list = type === 'product'
                 ? this.productResults()
-                : this.customerResults();
+                : type === 'replacement' ? this.replacementResults() : this.customerResults();
 
             if (!list.length) return false;
 
-            const key = type === 'product' ? 'productIndex' : 'customerIndex';
+            const key = type === 'product' ? 'productIndex' : type === 'replacement' ? 'replacementIndex' : 'customerIndex';
             const selected = list[this[key]] ?? (this[key] < 0 ? list[0] : null);
-            if (!selected) return false;
+            if (!selected || selected.disabled) return false;
 
             selected.click();
             return true;

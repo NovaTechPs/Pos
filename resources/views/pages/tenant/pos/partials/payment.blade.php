@@ -952,7 +952,7 @@
     @endif
 
     @if ($showDeliveryDetailsModal)
-        <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" dir="rtl">
+        <div x-data="{ activeDeliveryPartyIndex: -1 }" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" dir="rtl">
             <div class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
                 <div class="mb-4 flex items-center justify-between gap-3">
                     <div>
@@ -964,17 +964,37 @@
 
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div class="sm:col-span-2">
+                        @php($deliveryParties = $this->deliveryParties)
                         <label class="text-xs font-black text-slate-700">اختيار من الموردين والزبائن
-                            <input type="search" wire:model.live.debounce.300ms="deliveryPartySearch" placeholder="ابحث بالاسم أو الهاتف" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+                            <input
+                                type="search"
+                                autofocus
+                                wire:model.live.debounce.300ms="deliveryPartySearch"
+                                x-on:input="activeDeliveryPartyIndex = -1"
+                                x-on:keydown.arrow-down.prevent="activeDeliveryPartyIndex = Math.min(activeDeliveryPartyIndex + 1, {{ max(0, $deliveryParties->count() - 1) }})"
+                                x-on:keydown.arrow-up.prevent="activeDeliveryPartyIndex = Math.max(activeDeliveryPartyIndex - 1, 0)"
+                                x-on:keydown.enter.prevent="if (activeDeliveryPartyIndex >= 0) $refs.deliveryPartyResults.children[activeDeliveryPartyIndex]?.click()"
+                                placeholder="ابحث بالاسم أو الهاتف"
+                                class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                            >
                         </label>
-                        <div class="mt-2 max-h-36 overflow-y-auto">
-                            @foreach ($this->deliveryParties as $party)
-                                <button type="button" wire:key="delivery-party-{{ $party->id }}" wire:click="selectDeliveryParty({{ $party->id }})" class="flex w-full justify-between rounded-lg px-3 py-2 text-right text-sm hover:bg-indigo-50"><span>{{ $party->name }}</span><span dir="ltr">{{ $party->phone }}</span></button>
-                            @endforeach
+                        <div x-ref="deliveryPartyResults" class="mt-2 max-h-36 overflow-y-auto">
+                            @forelse ($deliveryParties as $party)
+                                <button
+                                    type="button"
+                                    wire:key="delivery-party-{{ $party->id }}"
+                                    wire:click="selectDeliveryParty({{ $party->id }})"
+                                    x-on:mouseenter="activeDeliveryPartyIndex = {{ $loop->index }}"
+                                    x-bind:class="activeDeliveryPartyIndex === {{ $loop->index }} ? 'bg-indigo-50 text-indigo-700' : ''"
+                                    class="flex w-full justify-between rounded-lg px-3 py-2 text-right text-sm hover:bg-indigo-50"
+                                ><span>{{ $party->name }}</span><span dir="ltr">{{ $party->phone }}</span></button>
+                            @empty
+                                <p class="px-3 py-2 text-sm text-slate-500">لا توجد نتائج مطابقة.</p>
+                            @endforelse
                         </div>
                     </div>
                     <label class="text-xs font-black text-slate-700">الاسم
-                        <input autofocus type="text" wire:model="deliveryCustomerName" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+                        <input type="text" wire:model="deliveryCustomerName" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
                         @error('deliveryCustomerName')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
                     </label>
                     <label class="text-xs font-black text-slate-700">رقم الهاتف

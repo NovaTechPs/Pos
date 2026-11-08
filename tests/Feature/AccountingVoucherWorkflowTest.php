@@ -154,6 +154,48 @@ test('linked receipt vouchers can be edited and deleted while keeping the invoic
         ->and(Payment::withTrashed()->findOrFail($receipt->id)->trashed())->toBeTrue();
 });
 
+test('editing a linked receipt with another customer shows a validation error instead of a not found page', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Receipt branch']);
+    $customer = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Invoice customer', 'type' => 'customer', 'is_active' => true]);
+    $otherCustomer = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Other customer', 'type' => 'customer', 'is_active' => true]);
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => $customer->id,
+        'invoice_number' => 'SALE-LOCKED-CUSTOMER',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 25,
+        'payment_status' => 'partial',
+    ]);
+    $receipt = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'party_id' => $customer->id,
+        'order_id' => $order->id,
+        'created_by' => $this->user->id,
+        'type' => 'receipt',
+        'voucher_number' => 'RECEIPT-LOCKED-CUSTOMER',
+        'payment_date' => '2026-11-08',
+        'payment_method' => 'cash',
+        'amount' => 25,
+    ]);
+
+    Livewire::test('pages::tenant.accounting.receipts')
+        ->call('edit', $receipt->id)
+        ->call('selectParty', $otherCustomer->id)
+        ->set('amount', '40')
+        ->call('saveReceipt')
+        ->assertHasErrors(['partyId'])
+        ->assertSet('showForm', true);
+
+    expect((float) $receipt->fresh()->amount)->toBe(25.0)
+        ->and((int) $receipt->fresh()->party_id)->toBe($customer->id)
+        ->and((float) $order->fresh()->paid_amount)->toBe(25.0);
+});
+
 test('payment voucher created from a purchase invoice is linked and updates its paid amount', function (): void {
     $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Voucher branch']);
     $supplier = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Invoice supplier', 'type' => 'supplier', 'is_active' => true]);
@@ -170,6 +212,75 @@ test('payment voucher created from a purchase invoice is linked and updates its 
     expect((int) Payment::query()->sole()->purchase_id)->toBe($purchase->id)
         ->and((float) $purchase->fresh()->paid_amount)->toBe(40.0)
         ->and($purchase->fresh()->payment_status)->toBe('partial');
+});
+
+test('linked receipt above invoice total and customer balance remains a full receipt voucher', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Overpayment branch']);
+    $customer = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Overpayment customer',
+        'type' => 'customer',
+        'is_active' => true,
+        'current_balance' => 25,
+    ]);
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => $customer->id,
+        'invoice_number' => 'SALE-OVERPAY',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 0,
+        'payment_status' => 'unpaid',
+    ]);
+
+    Livewire::withQueryParams(['order_id' => $order->id])
+        ->test('pages::tenant.accounting.receipts')
+        ->set('amount', '150')
+        ->call('saveReceipt')
+        ->assertHasNoErrors();
+
+    $receipt = Payment::query()->sole();
+    expect((int) $receipt->order_id)->toBe($order->id)
+        ->and((float) $receipt->amount)->toBe(150.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(100.0)
+        ->and($order->fresh()->payment_status)->toBe('paid')
+        ->and((float) $customer->fresh()->current_balance)->toBe(-125.0);
+});
+
+test('linked supplier payment above invoice total and balance remains a full payment voucher', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Overpayment branch']);
+    $supplier = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Overpayment supplier',
+        'type' => 'supplier',
+        'is_active' => true,
+        'current_balance' => 25,
+    ]);
+    $purchase = Purchase::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'supplier_id' => $supplier->id,
+        'reference_number' => 'PUR-OVERPAY',
+        'total' => 100,
+        'paid_amount' => 0,
+        'payment_status' => 'unpaid',
+    ]);
+
+    Livewire::withQueryParams(['purchase_id' => $purchase->id])
+        ->test('pages::tenant.accounting.payment')
+        ->set('amount', '150')
+        ->call('savePayment')
+        ->assertHasNoErrors();
+
+    $payment = Payment::query()->sole();
+    expect((int) $payment->purchase_id)->toBe($purchase->id)
+        ->and((float) $payment->amount)->toBe(150.0)
+        ->and((float) $purchase->fresh()->paid_amount)->toBe(100.0)
+        ->and($purchase->fresh()->payment_status)->toBe('paid')
+        ->and((float) $supplier->fresh()->current_balance)->toBe(-125.0);
 });
 
 test('vouchers can be previewed for printing with their account and creator', function (string $page, string $type): void {

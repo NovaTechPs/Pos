@@ -102,6 +102,45 @@ test('new purchase invoice records only the entered payment as a payment voucher
         ->and((float) $purchase->paid_amount)->toBe(1.5);
 });
 
+test('new purchase invoice accepts a payment above its total and credits the supplier balance', function (): void {
+    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد دفع زائد', 'type' => 'supplier']);
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->set('selectedSupplierId', $supplier->id)
+        ->call('selectProduct', $this->product->id)
+        ->set('selectedPurchasePrice', 10)
+        ->call('commitRowToCart')
+        ->set('paidAmount', 15)
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $purchase = Purchase::query()->sole();
+    $payment = Payment::query()->where('purchase_id', $purchase->id)->sole();
+    expect((float) $purchase->total)->toBe(10.0)
+        ->and((float) $purchase->paid_amount)->toBe(10.0)
+        ->and($purchase->payment_status)->toBe('paid')
+        ->and((float) $payment->amount)->toBe(15.0)
+        ->and((float) $supplier->fresh()->current_balance)->toBe(-5.0);
+});
+
+test('new sales invoice keeps an overpayment as a linked receipt voucher and customer credit', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون دفعة زائدة', 'type' => 'customer']);
+    Livewire::test('pages::tenant.sales.invoices')
+        ->set('selectedCustomerId', $customer->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->set('paidAmount', 15)
+        ->call('saveInvoice')
+        ->assertHasNoErrors();
+
+    $order = Order::query()->sole();
+    $receipt = Payment::query()->where('order_id', $order->id)->sole();
+    expect((float) $order->total)->toBe(10.0)
+        ->and((float) $order->paid_amount)->toBe(10.0)
+        ->and($order->payment_status)->toBe('paid')
+        ->and((float) $receipt->amount)->toBe(15.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(-5.0);
+});
+
 test('owner can reconcile a customer balance to the account statement movements', function (): void {
     $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون فرق الرصيد', 'type' => 'customer', 'current_balance' => -195]);
     $order = Order::create([

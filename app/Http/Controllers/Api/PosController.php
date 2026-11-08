@@ -50,7 +50,7 @@ class PosController extends Controller
             $query->orderByDesc('id');
         }
 
-        return response()->json(['order' => $query->with(['items.product', 'party', 'branch'])->firstOrFail()]);
+        return response()->json(['order' => $query->with(['items.product', 'party', 'branch'])->withSum('payments as collected_amount', 'amount')->firstOrFail()]);
     }
 
     private function reverseInvoice(Order $order): void
@@ -86,8 +86,14 @@ class PosController extends Controller
                 ->where('product_id', $movement->product_id)->lockForUpdate()->firstOrFail();
             StockMovementContext::forDocument($order, fn () => $stock->increment('stock_quantity', -(float) $movement->effect), 'sale_reversal');
         }
-        foreach (Payment::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $order->branch_id)
-            ->where('order_id', $order->id)->lockForUpdate()->get() as $payment) {
+        $payments = Payment::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $order->branch_id)
+            ->where('order_id', $order->id)->lockForUpdate()->get();
+        $collected = (float) $payments->sum('amount');
+        if ($order->customer_id) {
+            $customer = Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
+            $customer->decrement('current_balance', $customer->saleBalanceDirection() * round((float) $order->total - $collected, 2));
+        }
+        foreach ($payments as $payment) {
             $payment->delete();
         }
     }
@@ -201,6 +207,7 @@ class PosController extends Controller
                     ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
+            $previousBalance = (float) ($customer->current_balance ?? 0);
 
             $subtotal = 0.0;
             $items = [];
@@ -394,7 +401,7 @@ class PosController extends Controller
             'discount_type' => ['nullable', 'in:fixed,percentage'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'discount_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'paid_amount' => ['required', 'numeric', 'min:0'],
+            'paid_amount' => ['required', 'numeric', 'min:0', 'max:999999999', 'decimal:0,2'],
             'payment_method' => ['required', 'in:cash,card,bank_transfer,cheque'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -454,13 +461,15 @@ class PosController extends Controller
                 ? round($subtotal * $discountRate / 100, 2)
                 : min($subtotal, (float) ($validated['discount_amount'] ?? 0));
             $total = max(0, round($subtotal - $discount, 2));
-            $paid = min($total, round((float) $validated['paid_amount'], 2));
-            if ((float) $validated['paid_amount'] > $total + 0.005) {
-                throw ValidationException::withMessages(['paid_amount' => 'المبلغ المدفوع يتجاوز إجمالي الفاتورة.']);
+            $received = round((float) $validated['paid_amount'], 2);
+            $paid = min($total, $received);
+            if ($received > $total + 0.005 && ! $customer) {
+                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
             }
             if ($paid < $total && ! $customer) {
                 throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
             }
+            $previousBalance = (float) ($customer->current_balance ?? 0);
             $order = Order::create([
                 'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                 'customer_id' => $customer?->id, 'customer_name' => $customer->name ?? 'زبون جملة عابر',
@@ -498,20 +507,24 @@ class PosController extends Controller
                 }
             }
 
-            if ($paid > 0) {
+            if ($received > 0) {
                 Payment::create([
                     'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                     'type' => 'receipt', 'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
-                    'party_id' => $customer?->id, 'amount' => $paid, 'payment_method' => $validated['payment_method'],
+                    'party_id' => $customer?->id, 'amount' => $received, 'payment_method' => $validated['payment_method'],
                     'order_id' => $order->id, 'notes' => 'دفعة على فاتورة الجملة '.$order->invoice_number,
                     'payment_date' => now(),
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $paid, 2));
+                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
             }
 
-            return $order->load('items.product', 'party');
+            return $order->load('items.product', 'party')
+                ->setAttribute('payment_method', $validated['payment_method'])
+                ->setAttribute('collected_amount', $received)
+                ->setAttribute('previous_balance', $previousBalance)
+                ->setAttribute('current_balance', $customer?->fresh()->current_balance ?? 0);
         });
 
         return response()->json(['message' => 'تم حفظ فاتورة الجملة', 'order' => $order], 201);
@@ -536,6 +549,7 @@ class PosController extends Controller
             'discount' => ['nullable', 'numeric', 'min:0'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'total_amount' => ['nullable', 'numeric', 'min:0'],
+            'paid_amount' => ['sometimes', 'numeric', 'min:0', 'max:999999999', 'decimal:0,2'],
             'payment_method' => ['nullable', 'in:cash,card,bank_transfer,cheque'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
@@ -569,6 +583,7 @@ class PosController extends Controller
                     ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
             }
+            $previousBalance = (float) ($customer->current_balance ?? 0);
 
             $lines = [];
             $subtotal = 0.0;
@@ -644,6 +659,14 @@ class PosController extends Controller
             }
 
             $paymentMethod = $validated['payment_method'] ?? 'cash';
+            $received = round((float) ($validated['paid_amount'] ?? $total), 2);
+            $paid = min($total, $received);
+            if ($received > $total + 0.005 && ! $customer) {
+                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
+            }
+            if ($paid < $total && ! $customer) {
+                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
+            }
 
             $order = $editing ?? $held ?? new Order;
             $order->fill([
@@ -661,8 +684,8 @@ class PosController extends Controller
                 'tax_amount' => $tax,
                 'discount' => $discount,
                 'delivery_fee' => $deliveryFee, 'total' => $total,
-                'paid_amount' => $total,
-                'payment_status' => 'paid',
+                'paid_amount' => $paid,
+                'payment_status' => $paid >= $total ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
                 'total_cost' => round($totalCost, 2),
                 'total_profit' => round($total - $deliveryFee - $totalCost, 2),
                 'notes' => $validated['notes'] ?? null,
@@ -703,7 +726,7 @@ class PosController extends Controller
                 }
             }
 
-            if ($total > 0) {
+            if ($received > 0) {
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
@@ -711,14 +734,22 @@ class PosController extends Controller
                     'created_by' => $user->id,
                     'type' => 'receipt',
                     'voucher_number' => 'VCH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
-                    'amount' => $total,
+                    'party_id' => $customer?->id,
+                    'amount' => $received,
                     'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque']) ? $paymentMethod : 'cash',
                     'payment_date' => now(),
                     'order_id' => $order->id,
                 ]);
             }
 
-            return $order->load(['items.product', 'branch', 'party']);
+            if ($customer) {
+                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
+            }
+
+            return $order->load(['items.product', 'branch', 'party'])
+                ->setAttribute('collected_amount', $received)
+                ->setAttribute('previous_balance', $previousBalance)
+                ->setAttribute('current_balance', $customer?->fresh()->current_balance);
         });
 
         return response()->json([

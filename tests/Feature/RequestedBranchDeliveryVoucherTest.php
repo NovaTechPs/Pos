@@ -51,6 +51,23 @@ test('delivery details can be copied from either account type without changing t
         ->assertSet('selectedCustomerId', null);
 })->with(['customer', 'supplier', 'both']);
 
+test('delivery party picker searches customers and suppliers and supports arrow selection', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'phone' => '0591000001', 'is_active' => true]);
+    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد التوصيل', 'type' => 'supplier', 'phone' => '0591000002', 'is_active' => true]);
+
+    $component = Livewire::test('pages::tenant.pos.sales')
+        ->call('openDeliveryDetails')
+        ->set('deliveryPartySearch', 'التوصيل')
+        ->assertSee($customer->name)
+        ->assertSee($supplier->name)
+        ->assertSee('x-on:keydown.arrow-down.prevent', false)
+        ->assertSee('x-on:keydown.arrow-up.prevent', false)
+        ->assertSee('x-on:keydown.enter.prevent', false)
+        ->call('selectDeliveryParty', $supplier->id)
+        ->assertSet('deliveryCustomerName', $supplier->name)
+        ->assertSet('deliveryCustomerPhone', $supplier->phone);
+});
+
 test('delivery selection rejects inactive and foreign accounts', function (bool $foreign): void {
     $other = Tenant::create(['name' => 'آخر']);
     $party = Party::create(['tenant_id' => $foreign ? $other->id : $this->tenant->id, 'name' => 'محظور', 'type' => 'customer', 'is_active' => $foreign]);

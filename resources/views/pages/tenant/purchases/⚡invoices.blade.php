@@ -787,9 +787,10 @@ new class extends Component {
 
         $grandTotal = max(0, $base - $invoiceDiscount);
 
-        $paid = min(max(0, (float) $this->paidAmount), $grandTotal);
+        $payment = max(0, (float) $this->paidAmount);
+        $paid = min($payment, $grandTotal);
 
-        $remaining = max(0, $grandTotal - $paid);
+        $remaining = max(0, round($grandTotal - $paid, 2));
 
         $paymentStatus = $remaining <= 0.009
             ? 'paid'
@@ -801,6 +802,8 @@ new class extends Component {
             'tax' => 0.0,
             'total' => round($grandTotal, 2),
             'paid' => round($paid, 2),
+            'payment' => round($payment, 2),
+            'outstanding' => round($grandTotal - $payment, 2),
             'remaining' => round($remaining, 2),
             'payment_status' => $paymentStatus,
             'total_quantity' => round($totalQuantity, 2),
@@ -984,8 +987,8 @@ new class extends Component {
 
         $totals = $this->calculateTotals();
         $enteredPaidAmount = (float) ($this->paidAmount ?? 0);
-        if (! is_finite($enteredPaidAmount) || $enteredPaidAmount < 0 || $enteredPaidAmount > $totals['total']) {
-            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.';
+        if (! is_finite($enteredPaidAmount) || $enteredPaidAmount < 0) {
+            $this->errorMessage = 'المبلغ المدفوع يجب أن يكون صفراً أو أكثر.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
 
             return;
@@ -1018,10 +1021,7 @@ new class extends Component {
                     }
 
                     $oldSupplierId = $purchase->supplier_id;
-                    $oldOutstanding = max(
-                        0,
-                        (float) $purchase->total - (float) $purchase->paid_amount
-                    );
+                    $oldOutstanding = round((float) $purchase->total - (float) $purchase->paid_amount, 2);
 
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
@@ -1117,7 +1117,7 @@ new class extends Component {
 
                 }
 
-                if (! $wasEditingInvoice && $totals['paid'] > 0) {
+                if (! $wasEditingInvoice && $totals['payment'] > 0) {
                     Payment::query()->create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $this->selectedBranchId,
@@ -1126,7 +1126,7 @@ new class extends Component {
                         'party_id' => $supplier?->id,
                         'type' => 'payment',
                         'voucher_number' => 'PAY-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
-                        'amount' => $totals['paid'],
+                        'amount' => $totals['payment'],
                         'payment_method' => $this->paymentMethod,
                         'purchase_id' => $purchaseId,
                         'notes' => 'دفعة على فاتورة المشتريات رقم: '.$this->invoiceNumber,
@@ -1138,9 +1138,11 @@ new class extends Component {
                 | لا نعدل رصيد المورد إلا بالنسبة لصافي المديونية الناتجة
                 | عن الفاتورة نفسها: total - paid_amount.
                 */
-                $newOutstanding = $totals['remaining'];
+                $newOutstanding = $wasEditingInvoice
+                    ? round($totals['total'] - $totals['paid'], 2)
+                    : $totals['outstanding'];
 
-                if ($oldSupplierId && $oldOutstanding > 0) {
+                if ($oldSupplierId && $oldOutstanding != 0.0) {
                     $oldParty = Party::query()
                         ->where('tenant_id', $tenantId)
                         ->whereKey($oldSupplierId)
@@ -1153,7 +1155,7 @@ new class extends Component {
                     }
                 }
 
-                if ($supplier && $newOutstanding > 0) {
+                if ($supplier && $newOutstanding != 0.0) {
                     $supplier = Party::query()
                         ->where('tenant_id', $tenantId)
                         ->whereKey($supplier->id)
@@ -1846,7 +1848,7 @@ new class extends Component {
 
             $accountBalanceAfterPayment = round(
                 (float) $selectedSupplier->current_balance
-                    + $selectedSupplier->purchaseBalanceDirection() * ($totals['remaining'] - $previousOutstanding),
+                    + $selectedSupplier->purchaseBalanceDirection() * ((float) $totals['outstanding'] - $previousOutstanding),
                 2
             );
         }
