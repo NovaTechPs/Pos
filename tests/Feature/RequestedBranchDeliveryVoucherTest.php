@@ -81,8 +81,8 @@ test('customers suppliers and mixed accounts can all be selected as delivery com
     expect($component->get('deliveryCompanies')->pluck('id')->all())->toBe([$customer->id]);
     $component->call('selectDeliveryCompany', $customer->id)
         ->assertSet('deliveryCompanyId', $customer->id)
-        ->assertSet('deliveryCompanySearch', '')
-        ->assertSee('المحدد: عميل التوصيل')
+        ->assertSet('deliveryCompanySearch', 'عميل التوصيل')
+        ->assertSee('value="عميل التوصيل"', false)
         ->assertSee('bg-blue-50', false);
 
     $component->set('deliveryCustomerName', 'مستلم')

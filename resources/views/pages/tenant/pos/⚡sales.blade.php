@@ -2684,19 +2684,6 @@ new class extends Component {
             ->get(['id', 'name', 'phone']);
     }
 
-    public function getSelectedDeliveryCompanyProperty(): ?Party
-    {
-        if ($this->deliveryCompanyId === null) {
-            return null;
-        }
-
-        return Party::query()
-            ->where('tenant_id', $this->tenantId())
-            ->where('is_active', true)
-            ->whereIn('type', ['customer', 'supplier', 'both'])
-            ->find($this->deliveryCompanyId);
-    }
-
     public function selectDeliveryCompany(int $companyId): void
     {
         $company = Party::query()
@@ -2706,7 +2693,7 @@ new class extends Component {
             ->findOrFail($companyId);
 
         $this->deliveryCompanyId = $company->id;
-        $this->deliveryCompanySearch = '';
+        $this->deliveryCompanySearch = $company->name;
         $this->resetValidation('deliveryCompanyId');
     }
 

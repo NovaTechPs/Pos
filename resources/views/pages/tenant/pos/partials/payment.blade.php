@@ -984,6 +984,7 @@
                     <label class="text-xs font-black text-slate-700">شركة التوصيل
                         <input
                             type="search"
+                            value="{{ $deliveryCompanySearch }}"
                             wire:model.live.debounce.200ms="deliveryCompanySearch"
                             x-on:focus="deliveryCompaniesOpen = true"
                             x-on:input="activeDeliveryCompanyIndex = -1; deliveryCompaniesOpen = $el.value.trim().length > 0"
@@ -991,12 +992,9 @@
                             x-on:keydown.arrow-up.prevent="activeDeliveryCompanyIndex = Math.max(activeDeliveryCompanyIndex - 1, 0)"
                             x-on:keydown.enter.prevent="if (activeDeliveryCompanyIndex >= 0) $refs.deliveryCompanyResults.children[activeDeliveryCompanyIndex]?.click()"
                             placeholder="ابحث بالاسم أو الهاتف"
-                            class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                            @class(['mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500', 'font-black text-blue-700' => $deliveryCompanyId !== null])
                         >
                     </label>
-                    @if ($this->selectedDeliveryCompany)
-                        <p class="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">المحدد: {{ $this->selectedDeliveryCompany->name }}</p>
-                    @endif
                     @if (trim($this->deliveryCompanySearch) !== '')
                         <div x-cloak x-show="deliveryCompaniesOpen" x-ref="deliveryCompanyResults" class="absolute inset-x-0 top-full z-40 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
                             @forelse ($this->deliveryCompanies as $company)
