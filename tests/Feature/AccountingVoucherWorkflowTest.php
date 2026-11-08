@@ -141,10 +141,58 @@ test('POS payments stay in the accounting ledger but are not shown as separate r
         ->and((int) $component->get('items')->first()->id)->toBe($manualReceipt->id);
 
     $component->call('edit', $posPayment->id)
-        ->assertSet('showForm', false)
-        ->assertDispatched('toast');
+        ->assertSet('showForm', true)
+        ->assertNotDispatched('toast');
 
     expect(Payment::query()->whereKey($posPayment->id)->exists())->toBeTrue();
+});
+
+test('legacy POS receipt linked to an anonymous invoice can be edited without changing its party', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Legacy POS branch']);
+    $customer = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Legacy POS customer',
+        'type' => 'customer',
+        'is_active' => true,
+        'current_balance' => -30,
+    ]);
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => null,
+        'invoice_number' => 'LEGACY-POS-EDIT',
+        'type' => 'pos',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 30,
+        'payment_status' => 'partial',
+    ]);
+    $receipt = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'party_id' => $customer->id,
+        'order_id' => $order->id,
+        'created_by' => $this->user->id,
+        'type' => 'receipt',
+        'voucher_number' => 'LEGACY-POS-EDIT-RCV',
+        'payment_date' => now(),
+        'payment_method' => 'cash',
+        'amount' => 30,
+    ]);
+
+    Livewire::withQueryParams(['voucher' => $receipt->id])
+        ->test('pages::tenant.accounting.receipts')
+        ->assertSet('showForm', true)
+        ->set('amount', '45')
+        ->call('saveReceipt')
+        ->assertHasNoErrors()
+        ->assertSet('showForm', false);
+
+    expect((float) $receipt->fresh()->amount)->toBe(45.0)
+        ->and((int) $receipt->fresh()->party_id)->toBe($customer->id)
+        ->and((float) $customer->fresh()->current_balance)->toBe(-45.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(45.0);
 });
 
 test('linked receipt vouchers can be edited and deleted while keeping the invoice paid amount in sync', function (): void {

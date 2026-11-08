@@ -347,13 +347,28 @@ new class extends Component {
             return true;
         }
         $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
-        if ($payment->order_id && $payment->order?->type === 'pos' && !$payment->order?->customer_id) {
-            $this->dispatch('toast', type: 'error', message: 'دفعة نقطة البيع محفوظة ضمن الفاتورة ولا تعد سند قبض مستقلًا.');
+        if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
+            $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
 
             return false;
         }
-        if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
-            $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
+
+        return true;
+    }
+
+    private function canDeleteVoucher(?int $id): bool
+    {
+        if (!$id) {
+            return true;
+        }
+
+        if (!$this->canChangeVoucher($id)) {
+            return false;
+        }
+
+        $payment = Payment::query()->with('order')->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        if ($payment->order?->type === 'pos' && !$payment->order?->customer_id) {
+            $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف حركة هذه الفاتورة من الفاتورة نفسها.');
 
             return false;
         }
@@ -550,7 +565,11 @@ new class extends Component {
                         ->lockForUpdate()
                         ->findOrFail($receipt->order_id);
 
-                    if ($linkedOrder->type === 'return' || (int) $linkedOrder->customer_id !== (int) $newParty->id) {
+                    $partyDoesNotMatchInvoice = $linkedOrder->customer_id
+                        ? (int) $linkedOrder->customer_id !== (int) $newParty->id
+                        : (int) $oldPartyId !== (int) $newParty->id;
+
+                    if ($linkedOrder->type === 'return' || $partyDoesNotMatchInvoice) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             'partyId' => 'لا يمكن تغيير العميل في سند قبض مرتبط بفاتورة.',
                         ]);
@@ -729,7 +748,7 @@ new class extends Component {
     public function confirmDelete(int $id): void
 
     {
-        if (!$this->canChangeVoucher($id)) {
+        if (!$this->canDeleteVoucher($id)) {
             return;
         }
 
@@ -753,7 +772,7 @@ new class extends Component {
     public function delete(): void
 
     {
-        if (!$this->canChangeVoucher($this->deleteId)) {
+        if (!$this->canDeleteVoucher($this->deleteId)) {
             return;
         }
 
