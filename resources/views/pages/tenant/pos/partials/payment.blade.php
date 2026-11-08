@@ -980,12 +980,13 @@
                     <textarea wire:model="deliveryNotes" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"></textarea>
                     @error('deliveryNotes')<span class="mt-1 block text-rose-600">{{ $message }}</span>@enderror
                 </label>
-                <div class="mt-3" x-data="{ activeDeliveryCompanyIndex: -1 }">
+                <div class="relative mt-3" x-data="{ activeDeliveryCompanyIndex: -1, deliveryCompaniesOpen: false }" x-on:click.outside="deliveryCompaniesOpen = false" x-on:keydown.escape.stop="deliveryCompaniesOpen = false">
                     <label class="text-xs font-black text-slate-700">شركة التوصيل
                         <input
                             type="search"
                             wire:model.live.debounce.200ms="deliveryCompanySearch"
-                            x-on:input="activeDeliveryCompanyIndex = -1"
+                            x-on:focus="deliveryCompaniesOpen = true"
+                            x-on:input="activeDeliveryCompanyIndex = -1; deliveryCompaniesOpen = $el.value.trim().length > 0"
                             x-on:keydown.arrow-down.prevent="activeDeliveryCompanyIndex = Math.min(activeDeliveryCompanyIndex + 1, {{ max(0, $this->deliveryCompanies->count() - 1) }})"
                             x-on:keydown.arrow-up.prevent="activeDeliveryCompanyIndex = Math.max(activeDeliveryCompanyIndex - 1, 0)"
                             x-on:keydown.enter.prevent="if (activeDeliveryCompanyIndex >= 0) $refs.deliveryCompanyResults.children[activeDeliveryCompanyIndex]?.click()"
@@ -993,23 +994,26 @@
                             class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
                         >
                     </label>
-                    @if ($this->deliveryCompanyId)
-                        <p class="mt-1 text-xs font-bold text-indigo-700">المحدد: {{ $this->deliveryCompanies->firstWhere('id', $this->deliveryCompanyId)?->name }}</p>
+                    @if ($this->selectedDeliveryCompany)
+                        <p class="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">المحدد: {{ $this->selectedDeliveryCompany->name }}</p>
                     @endif
-                    <div x-ref="deliveryCompanyResults" class="mt-1 max-h-32 overflow-y-auto rounded-lg">
-                        @forelse ($this->deliveryCompanies as $company)
-                            <button
-                                type="button"
-                                wire:key="delivery-company-{{ $company->id }}"
-                                wire:click="selectDeliveryCompany({{ $company->id }})"
-                                x-on:mouseenter="activeDeliveryCompanyIndex = {{ $loop->index }}"
-                                x-bind:class="activeDeliveryCompanyIndex === {{ $loop->index }} ? 'bg-indigo-50 text-indigo-700' : ''"
-                                class="flex w-full justify-between rounded-lg px-3 py-2 text-right text-sm hover:bg-indigo-50"
-                            ><span>{{ $company->name }}</span><span dir="ltr" class="text-slate-500">{{ $company->phone }}</span></button>
-                        @empty
-                            <p class="px-3 py-2 text-xs text-slate-500">لا توجد نتائج مطابقة.</p>
-                        @endforelse
-                    </div>
+                    @if (trim($this->deliveryCompanySearch) !== '')
+                        <div x-cloak x-show="deliveryCompaniesOpen" x-ref="deliveryCompanyResults" class="absolute inset-x-0 top-full z-40 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                            @forelse ($this->deliveryCompanies as $company)
+                                <button
+                                    type="button"
+                                    wire:key="delivery-company-{{ $company->id }}"
+                                    wire:click="selectDeliveryCompany({{ $company->id }})"
+                                    x-on:click="deliveryCompaniesOpen = false"
+                                    x-on:mouseenter="activeDeliveryCompanyIndex = {{ $loop->index }}"
+                                    x-bind:class="activeDeliveryCompanyIndex === {{ $loop->index }} ? 'bg-blue-100 text-blue-800' : ''"
+                                    @class(['flex w-full justify-between px-3 py-2 text-right text-sm hover:bg-blue-50', 'bg-blue-50 font-black text-blue-700' => $deliveryCompanyId === $company->id])
+                                ><span>{{ $company->name }}</span><span dir="ltr" class="text-slate-500">{{ $company->phone }}</span></button>
+                            @empty
+                                <p class="px-3 py-2 text-xs text-slate-500">لا توجد نتائج مطابقة.</p>
+                            @endforelse
+                        </div>
+                    @endif
                     @error('deliveryCompanyId')<span class="mt-1 block text-rose-600">اختر شركة التوصيل.</span>@enderror
                 </div>
                 <button type="button" wire:click="confirmDeliveryDetails" class="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700">تأكيد والمتابعة للحفظ</button>

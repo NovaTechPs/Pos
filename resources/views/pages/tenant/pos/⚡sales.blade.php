@@ -2665,19 +2665,36 @@ new class extends Component {
 
     public function getDeliveryCompaniesProperty(): \Illuminate\Support\Collection
     {
+        $search = trim($this->deliveryCompanySearch);
+
+        if ($search === '') {
+            return collect();
+        }
+
         return Party::query()
             ->where('tenant_id', $this->tenantId())
             ->where('is_active', true)
             ->whereIn('type', ['customer', 'supplier', 'both'])
-            ->when(trim($this->deliveryCompanySearch) !== '', function ($query): void {
-                $search = trim($this->deliveryCompanySearch);
-                $query->where(function ($query) use ($search): void {
-                    $query->where('name', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                });
+            ->where(function ($query) use ($search): void {
+                $query->where('name', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
             })
             ->orderBy('name')
+            ->limit(30)
             ->get(['id', 'name', 'phone']);
+    }
+
+    public function getSelectedDeliveryCompanyProperty(): ?Party
+    {
+        if ($this->deliveryCompanyId === null) {
+            return null;
+        }
+
+        return Party::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('is_active', true)
+            ->whereIn('type', ['customer', 'supplier', 'both'])
+            ->find($this->deliveryCompanyId);
     }
 
     public function selectDeliveryCompany(int $companyId): void

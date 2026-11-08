@@ -164,6 +164,11 @@
             return;
         }
 
+        if (event.target?.closest?.('[data-pos-field], input:not([data-pos-barcode-input]), textarea, select, [contenteditable="true"]')) {
+            resetExternalBarcodeCapture();
+            return;
+        }
+
         if (event.key === 'Enter' || event.key === 'Tab') {
             if (externalBarcodeCaptured && externalBarcodeBuffer.length >= 4) {
                 event.preventDefault();

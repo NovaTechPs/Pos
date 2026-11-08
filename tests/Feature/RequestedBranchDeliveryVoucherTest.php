@@ -72,7 +72,7 @@ test('customers suppliers and mixed accounts can all be selected as delivery com
     $component = Livewire::test('pages::tenant.pos.sales')->call('openDeliveryDetails');
     $options = $component->get('deliveryCompanies')->pluck('id')->all();
 
-    expect($options)->toContain($customer->id, $supplier->id, $both->id);
+    expect($options)->toBe([]);
 
     $component->set('deliveryCompanySearch', 'عميل')
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
@@ -81,7 +81,9 @@ test('customers suppliers and mixed accounts can all be selected as delivery com
     expect($component->get('deliveryCompanies')->pluck('id')->all())->toBe([$customer->id]);
     $component->call('selectDeliveryCompany', $customer->id)
         ->assertSet('deliveryCompanyId', $customer->id)
-        ->assertSet('deliveryCompanySearch', '');
+        ->assertSet('deliveryCompanySearch', '')
+        ->assertSee('المحدد: عميل التوصيل')
+        ->assertSee('bg-blue-50', false);
 
     $component->set('deliveryCustomerName', 'مستلم')
         ->set('deliveryCustomerPhone', '0590000000')
