@@ -113,14 +113,14 @@ new class extends Component {
              * سندات القبض القادمة من مبيعات الجملة لها order_id،
              * لذلك لا نستبعدها هنا. نعرض السند المستقل وسند الفاتورة معًا.
              */
-            ->with(['party', 'order:id,type'])
+            ->with(['party', 'order:id,type,customer_id'])
 
             ->where('tenant_id', $tenantId)
 
             ->where('type', 'receipt')
             ->where(function ($query): void {
                 $query->whereNull('order_id')
-                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos')->orWhereNotNull('customer_id'));
             })
             ->tap(fn ($query) => $this->applyVoucherFilters($query))
 
@@ -210,7 +210,7 @@ new class extends Component {
             ->where('type', 'receipt')
             ->where(function ($query): void {
                 $query->whereNull('order_id')
-                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos')->orWhereNotNull('customer_id'));
             })
 
             ->count();
@@ -238,7 +238,7 @@ new class extends Component {
             ->where('type', 'receipt')
             ->where(function ($query): void {
                 $query->whereNull('order_id')
-                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos'));
+                    ->orWhereHas('order', fn ($orderQuery) => $orderQuery->where('type', '!=', 'pos')->orWhereNotNull('customer_id'));
             })
 
             ->whereDate('payment_date', today())
@@ -347,7 +347,7 @@ new class extends Component {
             return true;
         }
         $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
-        if ($payment->order_id && $payment->order?->type === 'pos') {
+        if ($payment->order_id && $payment->order?->type === 'pos' && !$payment->order?->customer_id) {
             $this->dispatch('toast', type: 'error', message: 'دفعة نقطة البيع محفوظة ضمن الفاتورة ولا تعد سند قبض مستقلًا.');
 
             return false;

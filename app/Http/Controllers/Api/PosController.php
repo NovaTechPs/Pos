@@ -685,6 +685,7 @@ class PosController extends Controller
                 'discount' => $discount,
                 'delivery_fee' => $deliveryFee, 'total' => $total,
                 'paid_amount' => $paid,
+                'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque'], true) ? $paymentMethod : 'cash',
                 'payment_status' => $paid >= $total ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
                 'total_cost' => round($totalCost, 2),
                 'total_profit' => round($total - $deliveryFee - $totalCost, 2),
@@ -726,7 +727,7 @@ class PosController extends Controller
                 }
             }
 
-            if ($received > 0) {
+            if ($received > 0 && $customer) {
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,

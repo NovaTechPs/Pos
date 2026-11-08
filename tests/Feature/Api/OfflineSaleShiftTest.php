@@ -24,7 +24,7 @@ test('offline sync binds atomically to the original shift and remains idempotent
     $first = $this->postJson('/api/pos/orders', $this->payload)->assertCreated()->assertJsonPath('order.shift_id', $this->shiftId);
     $this->postJson('/api/shifts/close', ['shift_id' => $this->shiftId, 'actual_cash' => 20])->assertOk();
     $this->postJson('/api/pos/orders', $this->payload)->assertCreated()->assertHeader('Idempotency-Replayed', 'true')->assertJsonPath('order.id', $first->json('order.id'));
-    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(1)->and((float) $this->stock->fresh()->stock_quantity)->toBe(18.0);
+    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(0)->and((float) $this->stock->fresh()->stock_quantity)->toBe(18.0);
 });
 
 test('closed or replaced original shift rejects offline sync without stock or cash changes', function (bool $replace): void {

@@ -256,6 +256,7 @@ class BranchSyncOperationProcessor
             'total_cost' => $orderData['total_cost'],
             'total_profit' => $orderData['total_profit'],
             'paid_amount' => $orderData['paid_amount'],
+            'payment_method' => $orderData['payment_method'] ?? null,
             'payment_status' => $orderData['payment_status'],
             'notes' => $orderData['notes'] ?? null,
             'sync_uuid' => $orderData['sync_uuid'],
@@ -303,6 +304,12 @@ class BranchSyncOperationProcessor
             ->where('tenant_id', $operation->tenant_id)
             ->where('order_id', $order->id)
             ->first();
+
+        if ($order->type === 'pos' && ! $order->customer_id) {
+            $existing?->delete();
+
+            return;
+        }
 
         if (! $payment || (float) $payment['amount'] <= 0) {
             $existing?->delete();
@@ -366,6 +373,7 @@ class BranchSyncOperationProcessor
             'order.total_cost' => ['required', 'numeric'],
             'order.total_profit' => ['required', 'numeric'],
             'order.paid_amount' => ['required', 'numeric'],
+            'order.payment_method' => ['sometimes', 'nullable', 'in:cash,card,bank_transfer,cheque'],
             'order.payment_status' => ['required', 'in:paid,partial,unpaid'],
             'order.notes' => ['nullable', 'string'],
             'shift' => ['required', 'array'],

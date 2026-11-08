@@ -112,6 +112,7 @@ function branchSyncSalePayload(Tenant $tenant, Branch $branch, string $invoiceNu
             'total_cost' => 10,
             'total_profit' => 15,
             'paid_amount' => 25,
+            'payment_method' => 'cash',
             'payment_status' => 'paid',
             'notes' => null,
         ],
@@ -274,8 +275,9 @@ test('branch sync endpoint stores retries once and rejects altered duplicate pay
         ->and(BranchSyncOperation::query()->where('operation_uuid', $operationUuid)->sole()->tenant_id)->toBe($tenant->id)
         ->and(BranchSyncOperation::query()->where('operation_uuid', $operationUuid)->sole()->branch_id)->toBe($branch->id)
         ->and(Order::query()->count())->toBe(1)
+        ->and(Order::query()->sole()->payment_method)->toBe('cash')
         ->and((float) BranchProduct::query()->value('stock_quantity'))->toBe(8.0)
-        ->and(Payment::query()->count())->toBe(1);
+        ->and(Payment::query()->count())->toBe(0);
 });
 
 test('branch sync stock conflicts do not create a central invoice or change stock', function (): void {

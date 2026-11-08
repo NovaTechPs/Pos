@@ -30,7 +30,7 @@ test('replayed checkout returns the original invoice without duplicating stock o
     $first = $this->postJson('/api/pos/orders', $this->payload)->assertCreated();
     $this->postJson('/api/pos/orders', $this->payload)->assertCreated()
         ->assertHeader('Idempotency-Replayed', 'true')->assertJsonPath('order.id', $first->json('order.id'));
-    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(1)
+    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(0)
         ->and((float) $this->stock->fresh()->stock_quantity)->toBe(18.0);
     $this->getJson('/api/sale-operations/'.$this->payload['operation_uuid'])->assertOk()
         ->assertJsonPath('result.order.id', $first->json('order.id'));
@@ -145,7 +145,8 @@ test('retail checkout batches product and stock reads without changing the ledge
     foreach ($stocks as $stock) {
         expect((float) $stock->fresh()->stock_quantity)->toBe(18.0);
     }
-    expect((float) Payment::where('order_id', $sale->json('order.id'))->sum('amount'))->toBe((float) $payload['total_amount']);
+    expect((float) Payment::where('order_id', $sale->json('order.id'))->sum('amount'))
+        ->toBe($customerPricing ? (float) $payload['total_amount'] : 0.0);
 })->with([false, true]);
 
 test('zero total checkout completes without inserting a zero value payment', function (bool $freeProduct): void {
@@ -317,8 +318,7 @@ test('invoice editing replaces items and payment without changing its identity o
     $this->postJson('/api/pos/orders', $payload)->assertCreated()->assertJsonPath('order.id', $original['id'])
         ->assertJsonPath('order.invoice_number', $original['invoice_number'])->assertJsonPath('order.notes', 'edited');
     $this->postJson('/api/pos/orders', $payload)->assertCreated();
-    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(1)
-        ->and((float) Payment::first()->amount)->toBe(35.0)
+    expect(Order::count())->toBe(1)->and(Payment::count())->toBe(0)
         ->and((float) $this->stock->fresh()->stock_quantity)->toBe(17.0);
 });
 
@@ -327,7 +327,7 @@ test('invalid invoice edit rolls back its stock reversal and payment removal', f
     $this->postJson('/api/pos/orders', array_replace($this->payload, [
         'invoice_id' => $original['id'], 'operation_uuid' => (string) Str::uuid(), 'total_amount' => 999,
     ]))->assertUnprocessable();
-    expect((float) $this->stock->fresh()->stock_quantity)->toBe(18.0)->and(Payment::count())->toBe(1)
+    expect((float) $this->stock->fresh()->stock_quantity)->toBe(18.0)->and(Payment::count())->toBe(0)
         ->and((float) Order::first()->total)->toBe(20.0);
 });
 

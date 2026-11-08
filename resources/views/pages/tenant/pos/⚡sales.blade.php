@@ -600,11 +600,19 @@ new class extends Component {
                 $query->where('branch_id', $shift->branch_id)->orWhereNull('branch_id');
             })
             ->where('payment_method', 'cash')
+            ->where(function ($query): void {
+                $query->whereNull('order_id')
+                    ->orWhereDoesntHave('order', fn ($orderQuery) => $orderQuery->where('type', 'pos')->whereNull('customer_id'));
+            })
             ->selectRaw("COALESCE(SUM(CASE WHEN type = 'receipt' THEN amount ELSE 0 END), 0) as cash_receipts")
             ->selectRaw("COALESCE(SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END), 0) as cash_payments")
             ->first();
 
-        $cashReceipts = (float) ($payments?->cash_receipts ?? 0);
+        $walkInOrders = Order::query()->where('tenant_id', $shift->tenant_id)
+            ->where('branch_id', $shift->branch_id)->where('shift_id', $shift->id)
+            ->where('status', 'completed')->where('type', 'pos')->whereNull('customer_id');
+        $cashReceipts = (float) ($payments?->cash_receipts ?? 0) + (float) (clone $walkInOrders)
+            ->where('payment_method', 'cash')->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
         $cashPayments = (float) ($payments?->cash_payments ?? 0);
         $bankReceipts = Payment::query()
             ->where('tenant_id', $shift->tenant_id)
@@ -613,12 +621,22 @@ new class extends Component {
                 $query->where('branch_id', $shift->branch_id)->orWhereNull('branch_id');
             })
             ->where('type', 'receipt')
+            ->where(function ($query): void {
+                $query->whereNull('order_id')
+                    ->orWhereDoesntHave('order', fn ($orderQuery) => $orderQuery->where('type', 'pos')->whereNull('customer_id'));
+            })
             ->selectRaw("COALESCE(SUM(CASE WHEN payment_method = 'card' THEN amount ELSE 0 END), 0) as card_receipts")
             ->selectRaw("COALESCE(SUM(CASE WHEN payment_method = 'bank_transfer' THEN amount ELSE 0 END), 0) as bank_transfer_receipts")
             ->toBase()
             ->first();
         $cardReceipts = (float) ($bankReceipts?->card_receipts ?? 0);
         $bankTransferReceipts = (float) ($bankReceipts?->bank_transfer_receipts ?? 0);
+        $chequeReceipts = (float) (clone $walkInOrders)->where('payment_method', 'cheque')
+            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+        $cardReceipts += (float) (clone $walkInOrders)->where('payment_method', 'card')
+            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+        $bankTransferReceipts += (float) (clone $walkInOrders)->where('payment_method', 'bank_transfer')
+            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
 
         return [
             'sales' => (float) ($orders?->sales ?? 0),
@@ -2288,7 +2306,7 @@ new class extends Component {
         }
 
         $this->paid_amount = (float) $invoice->paid_amount;
-        $this->payment_method = Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $invoice->id)->latest('id')->value('payment_method') ?: 'cash';
+        $this->payment_method = $invoice->payment_method ?: Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $invoice->id)->latest('id')->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
@@ -3360,6 +3378,7 @@ new class extends Component {
                         'total_cost' => $totalCost,
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
+                        'payment_method' => $this->payment_method,
                         'payment_status' => $paymentStatus,
                         'notes' => $invoiceNotes ?: null,
                     ]);
@@ -3385,6 +3404,7 @@ new class extends Component {
                         'total_cost' => $totalCost,
                         'total_profit' => $this->roundMoney(($total - $deliveryFee) - $totalCost),
                         'paid_amount' => $paid,
+                        'payment_method' => $this->payment_method,
                         'payment_status' => $paymentStatus,
                         'notes' => $invoiceNotes ?: null,
                         'updated_at' => now(),
@@ -3465,7 +3485,7 @@ new class extends Component {
                 // must not create a cash/bank movement in the cashier's shift.
                 $shiftReceiptAmount = $this->roundMoney(max(0, $paid - $deliveryFee));
 
-                if ($shiftReceiptAmount > 0) {
+                if ($shiftReceiptAmount > 0 && ($customer || $invoiceType === 'return')) {
                     $paymentNotes = 'سند قبض للفاتورة #' . $order->invoice_number;
 
                     if ($deliveryFee > 0) {
@@ -3493,7 +3513,7 @@ new class extends Component {
                     } else {
                         Payment::create($paymentData);
                     }
-                } elseif ($existingPayment) {
+                    } elseif ($existingPayment) {
                     $existingPayment->delete();
                 }
 
@@ -3698,6 +3718,7 @@ new class extends Component {
                     'total_cost' => (float) $order->total_cost,
                     'total_profit' => (float) $order->total_profit,
                     'paid_amount' => (float) $order->paid_amount,
+                    'payment_method' => $order->payment_method,
                     'payment_status' => $order->payment_status,
                     'notes' => $order->notes,
                 ],

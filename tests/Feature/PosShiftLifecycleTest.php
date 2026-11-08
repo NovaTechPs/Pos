@@ -44,9 +44,12 @@ test('local checkout honors negative stock and shared stock settings and queues 
     $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Negative stock product', 'cost_price' => 4]);
     $stock = BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
         'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 0]);
-    posShiftComponent()->call('selectInlineProduct', $product->id)->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null);
+    $component = posShiftComponent()->call('selectInlineProduct', $product->id)->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null);
+    $component->call('prepareCloseShift')->assertSet('shift_cash_receipts', 10.0);
 
     expect(Order::query()->count())->toBe(1)
+        ->and(Order::query()->sole()->payment_method)->toBe('cash')
+        ->and(Payment::query()->whereNotNull('order_id')->exists())->toBeFalse()
         ->and((float) $stock->fresh()->stock_quantity)->toBe(-1.0)
         ->and(BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->where('status', 'pending')->count())->toBe(1);
 });
