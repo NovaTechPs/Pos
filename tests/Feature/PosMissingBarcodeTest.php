@@ -56,6 +56,8 @@ test('unknown barcode opens the choices without changing the current cart and ca
         ->assertSee('نعم')->assertSee('لا')->assertSee('إلغاء')->assertSet('cart', $cart)
         ->assertSet('showNewProductModal', false)
         ->assertSee('x-trap.inert.noscroll.noautofocus', false)
+        ->assertSee('data-pos-dialog-action', false)
+        ->assertSee('x-on:keydown.arrow-down=', false)
         ->assertSee('x-on:keydown.enter.self.prevent.stop', false)
         ->assertSee('wire:click="createProductFromMissingBarcode"', false)
         ->call('scanBarcode', 'OTHER')->assertSet('missingBarcode', '000123')

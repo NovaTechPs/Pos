@@ -67,6 +67,9 @@ test('store owner uses the globally selected branch and can sell below cost at a
         ->set('paid_amount', 3)
         ->call('checkout')
         ->assertSet('showBelowCostModal', true)
+        ->assertSee('aria-labelledby="below-cost-title"', false)
+        ->assertSee('data-pos-dialog-action', false)
+        ->assertSee('x-trap.inert.noscroll', false)
         ->call('confirmBelowCostCheckout');
 
     $orderItem = OrderItem::query()->sole();

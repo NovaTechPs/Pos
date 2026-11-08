@@ -1,6 +1,6 @@
 @if ($showMissingBarcodeModal)
     <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3" x-data x-trap.inert.noscroll.noautofocus="true" x-on:keydown.escape.prevent.stop="$wire.cancelMissingBarcode()">
-        <section data-pos-missing-barcode-dialog tabindex="-1" x-init="$nextTick(() => $el.focus({ preventScroll: true }))" x-on:keydown.enter.self.prevent.stop x-on:keydown.stop role="dialog" aria-modal="true" aria-labelledby="missing-barcode-title" class="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-amber-200 bg-white p-4 shadow-2xl sm:p-6" dir="rtl">
+        <section data-pos-missing-barcode-dialog tabindex="-1" x-init="$nextTick(() => $el.querySelector('[data-pos-dialog-action]:not(:disabled)')?.focus({ preventScroll: true }))" x-on:keydown.enter.self.prevent.stop x-on:keydown.stop x-on:keydown.arrow-down="if (document.activeElement.matches('[data-pos-dialog-action]')) { $event.preventDefault(); const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (index !== -1 && actions.length) actions[(index + 1) % actions.length].focus() }" x-on:keydown.arrow-right="if (document.activeElement.matches('[data-pos-dialog-action]')) { $event.preventDefault(); const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (index !== -1 && actions.length) actions[(index + 1) % actions.length].focus() }" x-on:keydown.arrow-up="if (document.activeElement.matches('[data-pos-dialog-action]')) { $event.preventDefault(); const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (index !== -1 && actions.length) actions[(index - 1 + actions.length) % actions.length].focus() }" x-on:keydown.arrow-left="if (document.activeElement.matches('[data-pos-dialog-action]')) { $event.preventDefault(); const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (index !== -1 && actions.length) actions[(index - 1 + actions.length) % actions.length].focus() }" role="dialog" aria-modal="true" aria-labelledby="missing-barcode-title" class="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-amber-200 bg-white p-4 shadow-2xl sm:p-6" dir="rtl">
             <h2 id="missing-barcode-title" class="text-lg font-black text-amber-800">⚠ الباركود غير موجود</h2>
             <p class="mt-3 break-all text-center font-mono text-base font-bold">{{ $missingBarcode }}</p>
             <div class="mt-3 space-y-2 text-sm leading-7 text-slate-700">
@@ -44,16 +44,16 @@
             @endif
             <div class="mt-5 grid grid-cols-3 gap-2">
                 @if (auth()->user()?->can('products.create') && auth()->user()?->can('products.view') && mb_strlen($missingBarcode) <= 100)
-                    <button type="button" wire:click="createProductFromMissingBarcode" class="rounded-xl bg-emerald-600 px-3 py-3 text-center text-sm font-bold text-white">نعم</button>
+                    <button type="button" data-pos-dialog-action wire:click="createProductFromMissingBarcode" class="rounded-xl bg-emerald-600 px-3 py-3 text-center text-sm font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">نعم</button>
                 @else
                     <button type="button" disabled title="تحتاج صلاحية إضافة وعرض الأصناف" class="rounded-xl bg-slate-100 px-3 py-3 text-sm text-slate-400">نعم</button>
                 @endif
                 @can('products.barcode.manage')
-                    <button type="button" wire:click="chooseExistingProductForBarcode" class="rounded-xl bg-indigo-600 px-3 py-3 text-sm font-bold text-white">لا</button>
+                    <button type="button" data-pos-dialog-action wire:click="chooseExistingProductForBarcode" class="rounded-xl bg-indigo-600 px-3 py-3 text-sm font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">لا</button>
                 @else
                     <button type="button" disabled title="تحتاج صلاحية إدارة الباركود" class="rounded-xl bg-slate-100 px-3 py-3 text-sm text-slate-400">لا</button>
                 @endcan
-                <button type="button" wire:click="cancelMissingBarcode" class="rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold text-slate-700">إلغاء</button>
+                <button type="button" data-pos-dialog-action wire:click="cancelMissingBarcode" class="rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700">إلغاء</button>
             </div>
             <p class="mt-3 text-xs text-slate-500">إضافة الصنف تفتح هنا داخل نقطة البيع مع الاحتفاظ بالفاتورة الحالية.</p>
         </section>
