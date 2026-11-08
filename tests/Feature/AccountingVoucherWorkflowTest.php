@@ -195,6 +195,54 @@ test('legacy POS receipt linked to an anonymous invoice can be edited without ch
         ->and((float) $order->fresh()->paid_amount)->toBe(45.0);
 });
 
+test('legacy POS receipt without a party can be corrected by assigning a customer without a not found error', function (): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Unassigned POS branch']);
+    $customer = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Recovered POS customer',
+        'type' => 'customer',
+        'is_active' => true,
+        'current_balance' => 0,
+    ]);
+    $order = Order::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'customer_id' => null,
+        'invoice_number' => 'UNASSIGNED-POS-EDIT',
+        'type' => 'pos',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 30,
+        'payment_status' => 'partial',
+    ]);
+    $receipt = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $branch->id,
+        'party_id' => null,
+        'order_id' => $order->id,
+        'created_by' => $this->user->id,
+        'type' => 'receipt',
+        'voucher_number' => 'UNASSIGNED-POS-EDIT-RCV',
+        'payment_date' => now(),
+        'payment_method' => 'cash',
+        'amount' => 30,
+    ]);
+
+    Livewire::test('pages::tenant.accounting.receipts')
+        ->call('edit', $receipt->id)
+        ->call('selectParty', $customer->id)
+        ->set('amount', '45')
+        ->call('saveReceipt')
+        ->assertHasNoErrors()
+        ->assertSet('showForm', false);
+
+    expect((float) $receipt->fresh()->amount)->toBe(45.0)
+        ->and((int) $receipt->fresh()->party_id)->toBe($customer->id)
+        ->and((float) $customer->fresh()->current_balance)->toBe(-45.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(45.0);
+});
+
 test('linked receipt vouchers can be edited and deleted while keeping the invoice paid amount in sync', function (): void {
     $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Receipt branch']);
     $customer = Party::query()->create([

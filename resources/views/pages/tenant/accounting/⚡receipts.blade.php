@@ -384,8 +384,13 @@ new class extends Component {
 
         $order = Order::query()
             ->where('tenant_id', $tenantId)
+            ->withTrashed()
             ->lockForUpdate()
-            ->findOrFail($orderId);
+            ->find($orderId);
+
+        if (!$order || $order->trashed()) {
+            return;
+        }
 
         abort_unless($order->type !== 'return', 404);
 
@@ -562,14 +567,19 @@ new class extends Component {
                 if ($receipt->order_id) {
                     $linkedOrder = Order::query()
                         ->where('tenant_id', $tenantId)
+                        ->withTrashed()
                         ->lockForUpdate()
-                        ->findOrFail($receipt->order_id);
+                        ->find($receipt->order_id);
 
-                    $partyDoesNotMatchInvoice = $linkedOrder->customer_id
-                        ? (int) $linkedOrder->customer_id !== (int) $newParty->id
-                        : (int) $oldPartyId !== (int) $newParty->id;
+                    $partyDoesNotMatchInvoice = $linkedOrder?->trashed()
+                        ? false
+                        : ($linkedOrder?->customer_id
+                            ? (int) $linkedOrder->customer_id !== (int) $newParty->id
+                            : ($linkedOrder?->type === 'pos'
+                                ? ($oldPartyId !== null && (int) $oldPartyId !== (int) $newParty->id)
+                                : $linkedOrder !== null));
 
-                    if ($linkedOrder->type === 'return' || $partyDoesNotMatchInvoice) {
+                    if ($linkedOrder?->type === 'return' || $partyDoesNotMatchInvoice) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             'partyId' => 'لا يمكن تغيير العميل في سند قبض مرتبط بفاتورة.',
                         ]);
@@ -600,7 +610,7 @@ new class extends Component {
 
                  */
 
-                } else {
+                } elseif ($oldPartyId !== null) {
 
                     $oldParty = Party::query()
 
@@ -638,6 +648,12 @@ new class extends Component {
 
                     $newParty->save();
 
+                }
+
+                if ($oldPartyId === null) {
+                    $newParty->current_balance = (float) $newParty->current_balance
+                        - $newParty->saleBalanceDirection() * $newAmount;
+                    $newParty->save();
                 }
 
                 $receipt->update([
