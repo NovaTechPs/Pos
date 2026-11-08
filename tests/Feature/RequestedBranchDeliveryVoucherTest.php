@@ -54,12 +54,33 @@ test('delivery details use invoice recipient fields and keep customer records ma
         ->assertSee('wire:model="deliveryCustomerPhone"', false)
         ->assertSee('wire:model="deliveryCustomerAddress"', false)
         ->assertSee($company->name)
+        ->assertSee($customer->name)
+        ->assertSee('اختر من الموردين والزبائن')
         ->set('deliveryCustomerName', 'اسم للمستلم بالفاتورة');
 
     expect($customer->fresh()->name)->toBe('زبون التوصيل')
         ->and($customer->fresh()->phone)->toBe('0591000001')
         ->and($customer->fresh()->address)->toBe('الخليل')
         ->and($component->get('deliveryCustomerName'))->toBe('اسم للمستلم بالفاتورة');
+});
+
+test('customers suppliers and mixed accounts can all be selected as delivery companies', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'عميل التوصيل', 'type' => 'customer', 'is_active' => true]);
+    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد التوصيل', 'type' => 'supplier', 'is_active' => true]);
+    $both = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'حساب مشترك', 'type' => 'both', 'is_active' => true]);
+
+    $component = Livewire::test('pages::tenant.pos.sales')->call('openDeliveryDetails');
+    $options = $component->get('deliveryCompanies')->pluck('id')->all();
+
+    expect($options)->toContain($customer->id, $supplier->id, $both->id);
+
+    $component->set('deliveryCustomerName', 'مستلم')
+        ->set('deliveryCustomerPhone', '0590000000')
+        ->set('deliveryCustomerAddress', 'الخليل')
+        ->set('deliveryCompanyId', $customer->id)
+        ->call('confirmDeliveryDetails')
+        ->assertHasNoErrors('deliveryCompanyId')
+        ->assertSet('deliveryCompanyId', $customer->id);
 });
 
 test('voucher print and download include the signed account balance', function (string $type, float $balance): void {

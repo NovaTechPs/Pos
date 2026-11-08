@@ -982,7 +982,7 @@
                 </label>
                 <label class="mt-3 block text-xs font-black text-slate-700">شركة التوصيل
                     <select wire:model="deliveryCompanyId" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
-                        <option value="">اختر شركة التوصيل من الموردين</option>
+                        <option value="">اختر من الموردين والزبائن</option>
                         @foreach ($this->deliveryCompanies as $company)
                             <option value="{{ $company->id }}">{{ $company->name }}</option>
                         @endforeach

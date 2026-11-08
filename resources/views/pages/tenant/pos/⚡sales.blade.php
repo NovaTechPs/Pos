@@ -2660,7 +2660,7 @@ new class extends Component {
         return Party::query()
             ->where('tenant_id', $this->tenantId())
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->orderBy('name')
             ->get(['id', 'name']);
     }
@@ -2670,7 +2670,7 @@ new class extends Component {
         return $this->deliveryCompanyId !== null && Party::query()
             ->where('tenant_id', $this->tenantId())
             ->where('is_active', true)
-            ->whereIn('type', ['supplier', 'both'])
+            ->whereIn('type', ['customer', 'supplier', 'both'])
             ->whereKey($this->deliveryCompanyId)
             ->exists();
     }
@@ -2723,7 +2723,7 @@ new class extends Component {
         ]);
 
         if (! $this->deliveryCompanyIsValid()) {
-            $this->addError('deliveryCompanyId', 'اختر شركة توصيل من قائمة الموردين.');
+            $this->addError('deliveryCompanyId', 'اختر شركة توصيل من قائمة الموردين أو الزبائن.');
 
             return;
         }
