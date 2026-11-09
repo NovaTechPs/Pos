@@ -64,6 +64,8 @@ new class extends Component {
 
     public string $settlementAmount = '';
 
+    public string $settlementNotes = '';
+
     public bool $showSettlementModal = false;
 
     public string $notes = '';
@@ -732,7 +734,7 @@ new class extends Component {
         }
     }
 
-    public function updateItemTotal(string $cartKey, $total): void
+    public function updateItemTotal(string $cartKey, mixed $total): void
     {
         if (! $this->ensureInvoiceEditable()) {
             return;
@@ -742,7 +744,15 @@ new class extends Component {
             return;
         }
 
-        $this->cart[$cartKey]['total_override'] = max(0, round((float) $total, 2));
+        $quantity = (float) $this->cart[$cartKey]['quantity'];
+        if (! is_numeric($total) || ! is_finite((float) $total) || (float) $total < 0 || ! is_finite($quantity) || $quantity <= 0) {
+            return;
+        }
+
+        $lineTotal = round((float) $total, 2);
+        $discount = max(0, (float) ($this->cart[$cartKey]['discount'] ?? 0));
+        $this->updateItemPrice($cartKey, ($lineTotal + $discount) / $quantity);
+        $this->cart[$cartKey]['total_override'] = $lineTotal;
     }
 
     public function updateItemDiscount(string $cartKey, $discount): void
@@ -1245,6 +1255,8 @@ new class extends Component {
         $settled = max((float) $purchase->paid_amount, $linkedPayments);
 
         $this->settlementAmount = (string) max(0, (float) $purchase->total - $settled);
+        $this->settlementNotes = '';
+        $this->resetValidation('settlementNotes');
         $this->showSettlementModal = true;
     }
 
@@ -1254,6 +1266,7 @@ new class extends Component {
 
         $validated = $this->validate([
             'settlementAmount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:999999999'],
+            'settlementNotes' => ['nullable', 'string', 'max:5000'],
             'paymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
         ]);
 
@@ -1280,7 +1293,9 @@ new class extends Component {
                 'amount' => $amount,
                 'payment_method' => $validated['paymentMethod'],
                 'purchase_id' => $purchase->id,
-                'notes' => 'سند صرف مرتبط بفاتورة المشتريات '.$purchase->reference_number,
+                'notes' => trim($validated['settlementNotes'] ?? '') !== ''
+                    ? trim($validated['settlementNotes'])
+                    : 'سند صرف مرتبط بفاتورة المشتريات '.$purchase->reference_number,
                 'payment_date' => now(),
             ]);
 
@@ -2297,9 +2312,16 @@ new class extends Component {
 
                 <div class="w-full lg:w-40">
                     <label class="mb-1.5 block text-xs font-black text-slate-600">الإجمالي</label>
-                    <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900">
-                        {{ number_format(max(0, $selectedPurchasePrice * $selectedQuantity), 2) }}
-                    </div>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        aria-label="إجمالي الصنف"
+                        x-effect="if (document.activeElement !== $el) $el.value = Math.max(0, Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)).toFixed(2)"
+                        x-on:input="const total = Number($event.target.value); const quantity = Number($wire.selectedQuantity); if ($event.target.value !== '' && Number.isFinite(total) && total >= 0 && Number.isFinite(quantity) && quantity > 0) { $wire.selectedPurchasePrice = Math.round(total / quantity * 100) / 100; }"
+                        x-on:keydown.enter.stop.prevent="addCurrentPurchaseRow()"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
+                    />
                 </div>
 
                 <button
@@ -2465,6 +2487,10 @@ new class extends Component {
                     <input type="number" min="0.01" step="0.01" wire:model="settlementAmount" autofocus class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black outline-none focus:border-emerald-400 focus:bg-white">
                 </label>
                 @error('settlementAmount')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
+                    <label class="mt-3 block text-sm font-bold text-slate-600">ملاحظات السند (اختياري)
+                        <textarea wire:model="settlementNotes" rows="3" maxlength="5000" placeholder="اكتب ملاحظات السند..." class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 font-semibold outline-none focus:border-emerald-400 focus:bg-white"></textarea>
+                    </label>
+                    @error('settlementNotes')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
                 <label class="mt-3 block text-sm font-bold text-slate-700">طريقة الصرف
                     <select wire:model="paymentMethod" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 font-bold outline-none focus:border-emerald-400">
                         <option value="cash">نقداً</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option>

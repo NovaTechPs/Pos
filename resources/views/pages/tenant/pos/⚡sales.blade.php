@@ -2314,9 +2314,16 @@ new class extends Component {
         $this->deliveryCompanyId = $invoice->delivery_party_id ? (int) $invoice->delivery_party_id : null;
         $this->deliveryCustomerPhone = (string) ($invoice->customer_phone ?? '');
         $this->deliveryCustomerAddress = (string) ($invoice->customer_address ?? '');
+        $invoiceNotes = trim((string) ($invoice->notes ?? ''));
+        $deliveryNotesPrefix = 'ملاحظة التوصيل: ';
+        $deliveryNotesPosition = mb_strpos($invoiceNotes, $deliveryNotesPrefix);
         $this->deliveryNotes = '';
+        if ($deliveryNotesPosition !== false) {
+            $this->deliveryNotes = trim(mb_substr($invoiceNotes, $deliveryNotesPosition + mb_strlen($deliveryNotesPrefix)));
+            $invoiceNotes = trim(mb_substr($invoiceNotes, 0, $deliveryNotesPosition));
+        }
         $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
-        $this->notes = $invoice->notes ?? '';
+        $this->notes = $invoiceNotes;
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
         $this->customerSearch = '';
         $this->isReturnMode = $invoice->type === 'return';
@@ -2813,7 +2820,11 @@ new class extends Component {
 
     public function getExpectedProfitProperty(): float
     {
-        return $this->roundMoney($this->total - $this->total_cost);
+        $deliveryFee = ! empty($this->cart) && ! $this->isReturnMode
+            ? max(0, $this->delivery_fee)
+            : 0;
+
+        return $this->roundMoney($this->total - $deliveryFee - $this->total_cost);
     }
 
     public function getCalculatedDiscountProperty(): float

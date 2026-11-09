@@ -13,6 +13,35 @@ use App\Models\User;
 use App\Services\ReportingService;
 use Livewire\Livewire;
 
+test('cost preview excludes delivery fees from expected profit', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر عرض التكلفة']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    Shift::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'opening_cash' => 0, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف التكلفة', 'cost_price' => 4]);
+    BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 10]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('selectInlineProduct', $product->id)
+        ->call('openCostModal')
+        ->assertSet('showCostModal', true)
+        ->assertSet('expected_profit', 6.0)
+        ->set('delivery_fee', 5)
+        ->assertSet('total', 15.0)
+        ->assertSet('expected_profit', 6.0)
+        ->set('discount_amount', 2)
+        ->assertSet('total', 13.0)
+        ->assertSet('expected_profit', 4.0)
+        ->set('custom_final_total', 8)
+        ->assertSet('expected_profit', -1.0)
+        ->set('delivery_fee', 10)
+        ->assertSet('total', 13.0)
+        ->assertSet('expected_profit', -1.0)
+        ->set('cart', [])
+        ->assertSet('expected_profit', 0.0);
+});
+
 test('customer checkout saves a sales invoice and only its actual payment enters the shift', function (float $paid, string $status, string $mode, string $paymentMethod = 'cash'): void {
     config(['branch-sync.mode' => $mode]);
     $tenant = Tenant::query()->create(['name' => 'متجر الآجل']);

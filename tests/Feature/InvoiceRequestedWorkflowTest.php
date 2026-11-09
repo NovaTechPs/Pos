@@ -8,6 +8,7 @@ use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Purchase;
+use App\Models\PurchaseItem;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
@@ -23,6 +24,53 @@ beforeEach(function (): void {
     $this->product = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'الصنف', 'cost_price' => 2]);
     BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 50, 'retail_price' => 10, 'wholesale_price' => 10]);
 });
+
+test('editing an invoice line total recalculates and saves its unit price', function (string $page): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->set('selectedQuantity', 3)
+        ->call('commitRowToCart')
+        ->assertSee('aria-label="إجمالي الصنف"', false);
+    $key = array_key_first($component->get('cart'));
+
+    $component->call('updateItemDiscount', $key, 2)
+        ->call('updateItemTotal', $key, 10)
+        ->assertSet("cart.$key.price", 4.0)
+        ->assertSet("cart.$key.total_override", 10.0)
+        ->call('saveInvoice')
+        ->assertHasNoErrors()
+        ->assertSet('errorMessage', null);
+
+    $item = $page === 'sales' ? OrderItem::query()->sole() : PurchaseItem::query()->sole();
+    expect((float) ($page === 'sales' ? $item->unit_price : $item->unit_cost))->toBe(4.0)
+        ->and((float) ($page === 'sales' ? $item->total_price : $item->subtotal))->toBe(10.0);
+})->with(['sales', 'purchases']);
+
+test('invoice total changes preserve rounding and reject invalid input', function (string $page): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->set('selectedQuantity', 3)
+        ->call('commitRowToCart');
+    $key = array_key_first($component->get('cart'));
+
+    $component->call('updateItemTotal', $key, 10)
+        ->assertSet("cart.$key.price", 3.33)
+        ->assertSet("cart.$key.total_override", 10.0);
+
+    foreach (['', 'invalid', -1, '1e999'] as $invalidTotal) {
+        $component->call('updateItemTotal', $key, $invalidTotal)
+            ->assertSet("cart.$key.price", 3.33)
+            ->assertSet("cart.$key.total_override", 10.0);
+    }
+
+    $component->call('updateItemQuantity', $key, 2)
+        ->assertSet("cart.$key.price", 3.33);
+    expect($component->get('cart')[$key])->not->toHaveKey('total_override');
+    $component->call('updateItemTotal', $key, 0)->assertSet("cart.$key.price", 0.0);
+    $component->set("cart.$key.quantity", 0)
+        ->call('updateItemTotal', $key, 20)
+        ->assertSet("cart.$key.price", 0.0);
+})->with(['sales', 'purchases']);
 
 test('invoice item rows have prominent separators', function (string $page): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
@@ -143,6 +191,35 @@ test('new sales invoice keeps an overpayment as a linked receipt voucher and cus
         ->and((float) $customer->fresh()->current_balance)->toBe(-5.0);
 });
 
+test('settlement vouchers validate and save optional notes without reusing previous notes', function (string $page, string $partyType, string $partyField): void {
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'طرف سند التسديد', 'type' => $partyType]);
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set($partyField, $party->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->set('settlementNotes', 'ملاحظات سابقة')
+        ->call('saveInvoice', false, true)
+        ->assertSet('showSettlementModal', true)
+        ->assertSet('settlementNotes', '')
+        ->assertSee('wire:model="settlementNotes"', false)
+        ->set('settlementAmount', 1)
+        ->set('settlementNotes', str_repeat('أ', 5001))
+        ->call('saveSettlementVoucher')
+        ->assertHasErrors(['settlementNotes' => 'max']);
+
+    expect(Payment::query()->count())->toBe(0);
+
+    $component->set('settlementNotes', "  دفعة أولى\nبموجب الاتفاق  ")
+        ->call('saveSettlementVoucher')
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', false);
+
+    expect(Payment::query()->sole()->notes)->toBe("دفعة أولى\nبموجب الاتفاق");
+})->with([
+    ['sales', 'customer', 'selectedCustomerId'],
+    ['purchases', 'supplier', 'selectedSupplierId'],
+]);
+
 test('save and settle creates a linked receipt for any entered amount', function (): void {
     $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون تسديد الفاتورة', 'type' => 'customer']);
     $component = Livewire::test('pages::tenant.sales.invoices')
@@ -164,6 +241,7 @@ test('save and settle creates a linked receipt for any entered amount', function
     expect((float) $receipt->amount)->toBe(25.0)
         ->and($receipt->type)->toBe('receipt')
         ->and($receipt->payment_method)->toBe('card')
+        ->and($receipt->notes)->toBe('سند قبض مرتبط بفاتورة المبيعات '.$order->invoice_number)
         ->and((float) $order->fresh()->paid_amount)->toBe(10.0)
         ->and((float) $customer->fresh()->current_balance)->toBe(-15.0);
 });
@@ -189,6 +267,7 @@ test('save and settle creates a linked payment for any entered amount', function
     expect((float) $payment->amount)->toBe(25.0)
         ->and($payment->type)->toBe('payment')
         ->and($payment->payment_method)->toBe('card')
+        ->and($payment->notes)->toBe('سند صرف مرتبط بفاتورة المشتريات '.$purchase->reference_number)
         ->and((float) $purchase->fresh()->paid_amount)->toBe(2.0)
         ->and((float) $supplier->fresh()->current_balance)->toBe(-23.0);
 });
@@ -378,6 +457,13 @@ test('delivery notes survive checkout and appear on the printed receipt even for
     expect($order->notes)->toContain('ملاحظة الفاتورة', 'ملاحظة التوصيل: اتصل قبل الوصول');
     expect($component->get('receipt')['notes'])->toContain('اتصل قبل الوصول');
     expect(view('pages.tenant.pos.partials.thermal-receipt', ['receipt' => $component->get('receipt')])->render())->toContain('اتصل قبل الوصول');
+
+    $component->call('loadInvoice', $order->id)
+        ->assertSet('notes', 'ملاحظة الفاتورة')
+        ->assertSet('deliveryNotes', 'اتصل قبل الوصول');
+
+    expect(view('pages.tenant.pos.partials.invoice-pdf', ['order' => $order->fresh()->load('items.product')])->render())
+        ->toContain('ملاحظة التوصيل: اتصل قبل الوصول');
 });
 
 test('product history shows date quantity party and invoice links for both sales and purchases', function (): void {
