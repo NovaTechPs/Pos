@@ -1082,7 +1082,9 @@ new class extends Component {
 
                     $effectivePaidAmount = $isPosOrder
                         ? min((float) $totals['total'], $receiptAmount + $deliveryFee)
-                        : min((float) $order->total, (float) $order->paid_amount);
+                        : ($oldReceiptAmount > 0
+                            ? min((float) $totals['total'], $oldReceiptAmount)
+                            : min((float) $order->total, (float) $order->paid_amount));
 
                     $order->update([
                         'branch_id' => $isPosOrder ? $order->branch_id : $this->selectedBranchId,
@@ -1432,13 +1434,16 @@ new class extends Component {
         $this->selectedBranchId = $order->branch_id;
         $this->selectedCustomerId = $order->customer_id;
         $this->posDeliveryFee = $order->type === 'pos' ? (float) $order->delivery_fee : 0.0;
-        $posReceipts = $order->type === 'pos'
-            ? Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->orderBy('id')->get()
-            : collect();
-        $this->voucherPaidAmount = (float) $posReceipts->sum(fn (Payment $payment): float => (float) $payment->amount);
-        $this->posShiftId = (int) ($posReceipts->first(fn (Payment $payment): bool => $payment->shift_id !== null)?->shift_id ?? 0) ?: null;
-        $this->savedPaidAmount = $order->type === 'pos'
-            ? min((float) $order->total, $this->voucherPaidAmount + $this->posDeliveryFee)
+        $linkedReceipts = Payment::query()
+            ->where('tenant_id', $tenantId)
+            ->where('order_id', $order->id)
+            ->where('type', 'receipt')
+            ->orderBy('id')
+            ->get();
+        $this->voucherPaidAmount = (float) $linkedReceipts->sum(fn (Payment $payment): float => (float) $payment->amount);
+        $this->posShiftId = (int) ($linkedReceipts->first(fn (Payment $payment): bool => $payment->shift_id !== null)?->shift_id ?? 0) ?: null;
+        $this->savedPaidAmount = $this->voucherPaidAmount > 0
+            ? min((float) $order->total, $this->voucherPaidAmount + ($order->type === 'pos' ? $this->posDeliveryFee : 0))
             : (float) $order->paid_amount;
         $this->paidAmount = $this->savedPaidAmount;
         $this->customerSearch = $order->customer_name ?: '';

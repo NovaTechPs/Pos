@@ -3,6 +3,7 @@
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
@@ -139,6 +140,63 @@ test('new sales invoice keeps an overpayment as a linked receipt voucher and cus
         ->and($order->payment_status)->toBe('paid')
         ->and((float) $receipt->amount)->toBe(15.0)
         ->and((float) $customer->fresh()->current_balance)->toBe(-5.0);
+});
+
+test('editing a mobile invoice keeps its linked overpayment as the paid amount source', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون فاتورة التطبيق', 'type' => 'customer', 'current_balance' => -50]);
+    $order = Order::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'customer_id' => $customer->id,
+        'customer_name' => $customer->name,
+        'invoice_number' => 'APP-PAID-EDIT',
+        'type' => 'wholesale',
+        'source' => 'api',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'tax_percent' => 0,
+        'total' => 100,
+        'paid_amount' => 100,
+        'payment_status' => 'paid',
+    ]);
+    OrderItem::create([
+        'tenant_id' => $this->tenant->id,
+        'order_id' => $order->id,
+        'product_id' => $this->product->id,
+        'quantity' => 10,
+        'unit_price' => 10,
+        'total_price' => 100,
+        'cost_price' => 2,
+        'total_cost' => 20,
+        'discount' => 0,
+    ]);
+    $receipt = Payment::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'party_id' => $customer->id,
+        'type' => 'receipt',
+        'voucher_number' => 'APP-PAID-EDIT-RCV',
+        'amount' => 150,
+        'payment_method' => 'cash',
+        'order_id' => $order->id,
+        'payment_date' => now(),
+    ]);
+
+    $component = Livewire::test('pages::tenant.sales.invoices')
+        ->call('loadOrder', $order->id)
+        ->call('editLoadedInvoice');
+    $lineKey = array_key_first($component->get('cart'));
+    $component->set("cart.{$lineKey}.price", 12)
+        ->call('saveInvoice')
+        ->assertSet('errorMessage', null)
+        ->assertSet('savedPaidAmount', 120);
+
+    expect((float) $order->fresh()->total)->toBe(120.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(120.0)
+        ->and($order->fresh()->payment_status)->toBe('paid')
+        ->and((float) $receipt->fresh()->amount)->toBe(150.0)
+        ->and((int) $receipt->fresh()->party_id)->toBe($customer->id)
+        ->and((float) $customer->fresh()->current_balance)->toBe(-30.0);
 });
 
 test('owner can reconcile a customer balance to the account statement movements', function (): void {
