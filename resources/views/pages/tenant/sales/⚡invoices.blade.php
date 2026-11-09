@@ -1769,7 +1769,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, 'sales-invoice-'.$order->invoice_number.'.pdf');
+        }, 'sales-invoice-'.preg_replace('/[^\pL\pN_-]+/u', '-', $order->customer_name ?: 'زبون-عام').'-'.$order->invoice_number.'.pdf');
     }
 
     public function shareInvoicePdf(): void
@@ -1783,7 +1783,7 @@ new class extends Component {
         $this->dispatch(
             'share-invoice-pdf',
             url: route('tenant.sale-invoices.pdf', ['orderId' => $this->currentOrderId]),
-            filename: 'sales-invoice-'.$this->invoiceNumber.'.pdf',
+            filename: 'sales-invoice-'.preg_replace('/[^\pL\pN_-]+/u', '-', $this->selectedCustomerName ?: 'زبون-عام').'-'.$this->invoiceNumber.'.pdf',
             message: 'مرفق فاتورة مبيعات رقم '.$this->invoiceNumber
         );
     }

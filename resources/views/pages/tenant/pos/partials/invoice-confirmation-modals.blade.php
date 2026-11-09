@@ -1,11 +1,11 @@
 @if ($showClearInvoiceModal)
     <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3" x-data x-trap.inert.noscroll="true" x-on:keydown.escape.prevent.stop="$wire.cancelInvoiceDialogs()">
-        <section role="dialog" aria-modal="true" aria-labelledby="clear-invoice-title" x-on:keydown.stop class="w-full max-w-lg rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl" dir="rtl">
+        <section role="dialog" aria-modal="true" aria-labelledby="clear-invoice-title" tabindex="-1" x-init="$nextTick(() => $el.querySelector('[data-pos-dialog-action]:not(:disabled)')?.focus({ preventScroll: true }))" x-on:keydown.stop x-on:keydown.arrow-down.prevent="const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (actions.length) actions[(index + 1) % actions.length].focus()" x-on:keydown.arrow-up.prevent="const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (actions.length) actions[(index - 1 + actions.length) % actions.length].focus()" x-on:keydown.arrow-right.prevent="const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (actions.length) actions[(index + 1) % actions.length].focus()" x-on:keydown.arrow-left.prevent="const actions = [...$el.querySelectorAll('[data-pos-dialog-action]:not(:disabled)')]; const index = actions.indexOf(document.activeElement); if (actions.length) actions[(index - 1 + actions.length) % actions.length].focus()" class="w-full max-w-lg rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl" dir="rtl">
             <h2 id="clear-invoice-title" class="text-lg font-black text-amber-800">تأكيد إفراغ الفاتورة</h2>
             <p class="mt-4 text-sm text-slate-700">هل تريد إفراغ الفاتورة الحالية وبدء فاتورة جديدة؟</p>
             <div class="mt-6 flex gap-3">
-                <button type="button" wire:click="cancelInvoiceDialogs" class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700">إلغاء</button>
-                <button type="button" wire:click="confirmClearCart" wire:loading.attr="disabled" class="flex-1 rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white">إفراغ الفاتورة</button>
+                <button type="button" data-pos-dialog-action wire:click="cancelInvoiceDialogs" class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700">إلغاء</button>
+                <button type="button" data-pos-dialog-action wire:click="confirmClearCart" wire:loading.attr="disabled" class="flex-1 rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white">إفراغ الفاتورة</button>
             </div>
         </section>
     </div>

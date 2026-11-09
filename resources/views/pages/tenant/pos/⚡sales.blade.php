@@ -386,15 +386,12 @@ new class extends Component {
             }
 
             $oldQuantity = (float) $merged[$groupKey]['quantity'];
-            $oldSubtotal = (float) ($merged[$groupKey]['subtotal'] ?? 0);
-            $newSubtotal = (float) ($item['subtotal'] ?? 0);
-
             $merged[$groupKey]['quantity'] = $oldQuantity + $quantity;
-            $merged[$groupKey]['subtotal'] = $this->roundMoney($oldSubtotal + $newSubtotal);
-
             $totalQuantity = (float) $merged[$groupKey]['quantity'];
             if ($totalQuantity !== 0) {
-                $merged[$groupKey]['price'] = $this->roundMoney(abs((float) $merged[$groupKey]['subtotal'] / $totalQuantity));
+                $merged[$groupKey]['subtotal'] = $this->roundMoney(
+                    abs((float) $merged[$groupKey]['price'] * $totalQuantity)
+                );
             }
         }
 

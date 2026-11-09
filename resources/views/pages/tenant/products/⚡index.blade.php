@@ -59,6 +59,13 @@ new class extends Component {
 
     public bool $is_price_unified = false;
 
+    public bool $createOfferWithProduct = false;
+    public string $newOfferQuantity = '';
+    public string $newOfferPrice = '';
+    public string $newOfferStartAt = '';
+    public bool $newOfferHasEndDate = true;
+    public string $newOfferEndAt = '';
+
     /**
      * [
      *   branch_id => [
@@ -246,6 +253,13 @@ new class extends Component {
                 'min:1',
             ];
 
+        }
+
+        if ($this->createOfferWithProduct && ! $this->isEditing) {
+            $rules['newOfferQuantity'] = ['required', 'numeric', 'gt:0'];
+            $rules['newOfferPrice'] = ['required', 'numeric', 'min:0'];
+            $rules['newOfferStartAt'] = ['required', 'date'];
+            $rules['newOfferEndAt'] = [$this->newOfferHasEndDate ? 'required' : 'nullable', 'date', 'after_or_equal:newOfferStartAt'];
         }
 
         return $rules;
@@ -455,6 +469,12 @@ new class extends Component {
         $this->loadBranchesForInput();
 
         $this->isEditing = false;
+        $this->createOfferWithProduct = false;
+        $this->newOfferQuantity = '';
+        $this->newOfferPrice = '';
+        $this->newOfferStartAt = now()->format('Y-m-d\TH:i');
+        $this->newOfferHasEndDate = true;
+        $this->newOfferEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
         $this->showModal = true;
     }
 
@@ -1102,7 +1122,8 @@ new class extends Component {
                 $productData,
                 $cleanBarcodes,
                 $branchIds,
-                $stockQuantityChanged
+                $stockQuantityChanged,
+                $activeBranchId
             ) {
                 /*
                 |--------------------------------------------------------------------------
@@ -1264,6 +1285,20 @@ new class extends Component {
                         'tenant_id' => $tenantId,
                         'product_id' => $product->id,
                         'barcode' => $barcode,
+                    ]);
+                }
+
+                if ($this->createOfferWithProduct && ! $this->isEditing) {
+                    ProductOffer::query()->create([
+                        'tenant_id' => $tenantId,
+                        'branch_id' => $activeBranchId,
+                        'product_id' => $product->id,
+                        'offer_quantity' => $this->newOfferQuantity,
+                        'offer_price' => $this->newOfferPrice,
+                        'start_at' => Carbon::parse($this->newOfferStartAt),
+                        'end_at' => $this->newOfferHasEndDate && $this->newOfferEndAt ? Carbon::parse($this->newOfferEndAt) : null,
+                        'is_active' => true,
+                        'created_by' => auth()->id(),
                     ]);
                 }
             });
@@ -1813,6 +1848,12 @@ new class extends Component {
         $this->originalStockQuantity = '0';
 
         $this->is_price_unified = false;
+        $this->createOfferWithProduct = false;
+        $this->newOfferQuantity = '';
+        $this->newOfferPrice = '';
+        $this->newOfferStartAt = '';
+        $this->newOfferHasEndDate = true;
+        $this->newOfferEndAt = '';
 
         $this->branchPricesInput = [];
 
@@ -3787,6 +3828,26 @@ new class extends Component {
                     </section>
                 @endcan
 
+
+                @if (! $isEditing)
+                    <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                        <label class="flex items-center gap-2 font-semibold">
+                            <input type="checkbox" wire:model.live="createOfferWithProduct">
+                            إضافة عرض لهذا الصنف مباشرة
+                        </label>
+                        @if ($createOfferWithProduct)
+                            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                                <flux:field><flux:label>كمية العرض</flux:label><flux:input type="number" min="0.001" step="0.001" wire:model="newOfferQuantity" /><flux:error name="newOfferQuantity" /></flux:field>
+                                <flux:field><flux:label>سعر العرض الإجمالي</flux:label><flux:input type="number" min="0" step="0.01" wire:model="newOfferPrice" /><flux:error name="newOfferPrice" /></flux:field>
+                                <flux:field><flux:label>بداية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferStartAt" /><flux:error name="newOfferStartAt" /></flux:field>
+                                <label class="flex items-center gap-2 self-center text-sm"><input type="checkbox" wire:model.live="newOfferHasEndDate"> تحديد نهاية للعرض</label>
+                                @if ($newOfferHasEndDate)
+                                    <flux:field><flux:label>نهاية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferEndAt" /><flux:error name="newOfferEndAt" /></flux:field>
+                                @endif
+                            </div>
+                        @endif
+                    </section>
+                @endif
 
                 {{-- ====================================================
                     WEBSITE

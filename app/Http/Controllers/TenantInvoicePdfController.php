@@ -23,6 +23,7 @@ class TenantInvoicePdfController extends Controller
             ->with(['items.product', 'user', 'branch'])
             ->withSum('payments as collected_amount', 'amount')
             ->firstOrFail();
+        $customerName = $order->customer_name ?: 'زبون عام';
 
         return response()->streamDownload(function () use ($order): void {
             $pdf = app('dompdf.wrapper');
@@ -33,7 +34,7 @@ class TenantInvoicePdfController extends Controller
             ]);
 
             echo $pdf->output();
-        }, 'sales-invoice-'.$order->invoice_number.'.pdf');
+        }, 'sales-invoice-'.$this->safeFilenamePart($customerName).'-'.$order->invoice_number.'.pdf');
     }
 
     public function purchase(Request $request, int $purchaseId): mixed
@@ -52,6 +53,7 @@ class TenantInvoicePdfController extends Controller
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('name')
             : null;
+        $filenamePartyName = $supplierName ?: 'مورد عام';
         $branchName = Branch::query()
             ->where('tenant_id', $purchase->tenant_id)
             ->whereKey($purchase->branch_id)
@@ -68,7 +70,14 @@ class TenantInvoicePdfController extends Controller
             ]);
 
             echo $pdf->output();
-        }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
+        }, 'purchase-invoice-'.$this->safeFilenamePart($filenamePartyName).'-'.$purchase->reference_number.'.pdf');
+    }
+
+    private function safeFilenamePart(string $value): string
+    {
+        $value = preg_replace('/[<>:"\/\\|?*\x00-\x1F]/u', '-', trim($value)) ?? '';
+
+        return trim($value, ' .-_') ?: 'بدون-اسم';
     }
 
     public function voucher(Request $request, string $type, int $paymentId): mixed

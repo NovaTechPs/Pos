@@ -23,7 +23,11 @@ test('requesting a new invoice requires confirmation and cancellation preserves 
     $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)->set('notes', 'Original note');
     $cart = $component->get('cart');
     $component->call('clearCart')->assertSet('showClearInvoiceModal', true)->assertSet('cart', $cart)->assertSet('notes', 'Original note')
-        ->assertSee('تأكيد إفراغ الفاتورة')->call('cancelInvoiceDialogs')->assertSet('showClearInvoiceModal', false)->assertSet('cart', $cart);
+        ->assertSee('تأكيد إفراغ الفاتورة')
+        ->assertSee('data-pos-dialog-action', false)
+        ->assertSee('x-on:keydown.arrow-down.prevent', false)
+        ->assertSee('x-on:keydown.arrow-up.prevent', false)
+        ->call('cancelInvoiceDialogs')->assertSet('showClearInvoiceModal', false)->assertSet('cart', $cart);
     $component->call('confirmClearCart')->assertSet('cart', $cart);
     Livewire::test('pages::tenant.pos.sales')->assertSet('cart', $cart)->assertSet('notes', 'Original note');
     $component->call('clearCart')->call('confirmClearCart')->assertSet('cart', [])->assertSet('notes', '')->assertSet('showClearInvoiceModal', false);
