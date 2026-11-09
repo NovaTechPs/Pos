@@ -143,6 +143,56 @@ test('new sales invoice keeps an overpayment as a linked receipt voucher and cus
         ->and((float) $customer->fresh()->current_balance)->toBe(-5.0);
 });
 
+test('save and settle creates a linked receipt for any entered amount', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون تسديد الفاتورة', 'type' => 'customer']);
+    $component = Livewire::test('pages::tenant.sales.invoices')
+        ->set('selectedCustomerId', $customer->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('saveInvoice', false, true)
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', true);
+
+    $order = Order::query()->sole();
+    $component->set('settlementAmount', 25)
+        ->set('settlementMethod', 'card')
+        ->call('saveSettlementVoucher')
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', false);
+
+    $receipt = Payment::query()->where('order_id', $order->id)->sole();
+    expect((float) $receipt->amount)->toBe(25.0)
+        ->and($receipt->type)->toBe('receipt')
+        ->and($receipt->payment_method)->toBe('card')
+        ->and((float) $order->fresh()->paid_amount)->toBe(10.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(-15.0);
+});
+
+test('save and settle creates a linked payment for any entered amount', function (): void {
+    $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد تسديد الفاتورة', 'type' => 'supplier']);
+    $component = Livewire::test('pages::tenant.purchases.invoices')
+        ->set('selectedSupplierId', $supplier->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('saveInvoice', false, true)
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', true);
+
+    $purchase = Purchase::query()->sole();
+    $component->set('settlementAmount', 25)
+        ->set('paymentMethod', 'card')
+        ->call('saveSettlementVoucher')
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', false);
+
+    $payment = Payment::query()->where('purchase_id', $purchase->id)->sole();
+    expect((float) $payment->amount)->toBe(25.0)
+        ->and($payment->type)->toBe('payment')
+        ->and($payment->payment_method)->toBe('card')
+        ->and((float) $purchase->fresh()->paid_amount)->toBe(2.0)
+        ->and((float) $supplier->fresh()->current_balance)->toBe(-23.0);
+});
+
 test('editing a mobile invoice keeps its linked overpayment as the paid amount source', function (): void {
     $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون فاتورة التطبيق', 'type' => 'customer', 'current_balance' => -50]);
     $order = Order::create([

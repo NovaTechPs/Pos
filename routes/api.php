@@ -29,6 +29,7 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/branches', [BranchController::class, 'index'])->middleware('can:branches.view');
 
     Route::get('/pos/invoices', [PosController::class, 'invoice'])->middleware('can:pos.invoice.search');
+    Route::patch('/pos/invoices/{order}/receipt', [WholesaleWorkspaceController::class, 'updateInvoiceReceipt'])->middleware('can:sales_invoices.edit');
     Route::delete('/pos/invoices/{order}', [PosController::class, 'deleteInvoice'])->middleware('can:sales_invoices.delete');
     Route::get('/pos/products', [PosController::class, 'index'])->middleware('can:pos.view');
     Route::post('/pos/products', [PosProductController::class, 'store'])->middleware(['can:pos.view', 'can:products.view', 'can:products.create']);
@@ -38,6 +39,7 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::post('/wholesale/orders', [WholesaleWorkspaceController::class, 'store'])->middleware(['can:wholesale_sales.create', EnsureSaleIdempotency::class]);
     Route::get('/wholesale/orders', [PosController::class, 'wholesaleOrders'])->middleware('can:wholesale_sales.view');
     Route::get('/wholesale/invoice', [WholesaleWorkspaceController::class, 'invoice'])->middleware('can:wholesale_sales.view');
+    Route::patch('/wholesale/invoice/{order}/receipt', [WholesaleWorkspaceController::class, 'updateInvoiceReceipt']);
     Route::get('/wholesale/price-history', [WholesaleWorkspaceController::class, 'priceHistory'])->middleware('can:wholesale_sales.view');
     Route::get('/wholesale/receipts', [WholesaleWorkspaceController::class, 'receipts'])->middleware('can:accounting.receipt.view');
     Route::post('/wholesale/receipts', [WholesaleWorkspaceController::class, 'storeReceipt'])->middleware(['can:accounting.receipt.create', EnsureSaleIdempotency::class]);

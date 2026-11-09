@@ -93,6 +93,43 @@ test('retail checkout keeps a customer overpayment as credit and reverses it on 
         ->and((float) Payment::sum('amount'))->toBe(5.0);
 });
 
+test('POS invoice receipt can be updated without replacing its invoice lines', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Receipt customer',
+        'type' => 'customer', 'is_active' => true, 'current_balance' => 100]);
+    $order = $this->postJson('/api/pos/orders', array_replace($this->payload, [
+        'customer_id' => $customer->id,
+        'paid_amount' => 5,
+    ]))->assertCreated()->json('order');
+
+    $this->patchJson('/api/pos/invoices/'.$order['id'].'/receipt', [
+        'branch_id' => $this->branch->id,
+        'customer_id' => $customer->id,
+        'amount' => 30,
+        'payment_method' => 'card',
+        'payment_date' => '2026-11-09',
+        'notes' => 'تم التعديل من الفاتورة',
+    ])->assertOk()
+        ->assertJsonPath('order.id', $order['id'])
+        ->assertJsonPath('order.collected_amount', 30)
+        ->assertJsonPath('voucher.amount', '30.00')
+        ->assertJsonPath('voucher.notes', 'تم التعديل من الفاتورة');
+
+    expect((float) Order::find($order['id'])->paid_amount)->toBe(20.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(90.0)
+        ->and(Payment::query()->where('order_id', $order['id'])->count())->toBe(1);
+    $this->postJson('/api/pos/orders', array_replace($this->payload, [
+        'customer_id' => $customer->id,
+        'invoice_id' => $order['id'],
+        'paid_amount' => 30,
+        'payment_method' => 'card',
+        'operation_uuid' => (string) Str::uuid(),
+    ]))->assertCreated();
+    $receipt = Payment::query()->where('order_id', $order['id'])->sole();
+    expect($receipt->notes)->toBe('تم التعديل من الفاتورة')->and($receipt->payment_date->toDateString())->toBe('2026-11-09');
+    $this->getJson('/api/pos/invoices?branch_id='.$this->branch->id.'&search='.$order['invoice_number'])
+        ->assertOk()->assertJsonPath('order.linked_receipt.amount', '30.00');
+});
+
 test('retail checkout rejects invalid payments without changing the ledger', function (mixed $paid, bool $withCustomer, string $field): void {
     $payload = array_replace($this->payload, ['paid_amount' => $paid]);
     if ($withCustomer) {

@@ -1,6 +1,12 @@
 @php
     $arabic = new \ArPHP\I18N\Arabic();
 
+    $invoiceTotal = abs((float) $order->total);
+    $receivedAmount = max(0, (float) ($order->collected_amount ?? $order->paid_amount ?? 0));
+    $settledFromInvoice = min($invoiceTotal, $receivedAmount);
+    $invoiceRemaining = max(0, $invoiceTotal - $settledFromInvoice);
+    $creditFromPayment = max(0, $receivedAmount - $invoiceTotal);
+
     $ar = function ($text) use ($arabic) {
         $text = (string) ($text ?? '');
 
@@ -304,7 +310,7 @@
 
             <td class="number">
                 {{ number_format(
-                    abs((float) $order->total),
+                    $invoiceTotal,
                     2
                 ) }}
             </td>
@@ -320,13 +326,13 @@
 
             <td class="number">
                 {{ number_format(
-                    (float) $order->paid_amount,
+                    $receivedAmount,
                     2
                 ) }}
             </td>
 
             <td>
-                {{ $ar('المدفوع') }}
+                {{ $ar('المبلغ المستلم من العميل') }}
             </td>
 
         </tr>
@@ -338,11 +344,7 @@
 
                 {{
                     number_format(
-                        max(
-                            0,
-                            (float) $order->paid_amount
-                            - abs((float) $order->total)
-                        ),
+                        $invoiceRemaining,
                         2
                     )
                 }}
@@ -350,16 +352,29 @@
             </td>
 
             <td>
-                {{ $ar('الباقي') }}
+                {{ $ar('المتبقي من الفاتورة') }}
             </td>
 
         </tr>
+
+        @if ($creditFromPayment > 0.001)
+            <tr>
+                <td class="number">{{ number_format($creditFromPayment, 2) }}</td>
+                <td>{{ $ar('رصيد لصالح العميل من هذه الدفعة') }}</td>
+            </tr>
+        @endif
 
     </table>
 
 
     @if (isset($accountBalance))
-        <table class="summary"><tr><td class="number">{{ number_format((float) $accountBalance, 2) }}</td><td>{{ $ar('رصيد الحساب الحالي بعد الفاتورة') }}</td></tr></table>
+        @php
+            $balanceAfterPayment = (float) $accountBalance;
+            $balanceLabel = $balanceAfterPayment < -0.001
+                ? 'رصيد لصالح العميل بعد الدفعة'
+                : 'الرصيد المتبقي على العميل بعد الدفعة';
+        @endphp
+        <table class="summary"><tr><td class="number">{{ number_format(abs($balanceAfterPayment), 2) }}</td><td>{{ $ar($balanceLabel) }}</td></tr></table>
     @endif
 
     {{-- الملاحظات --}}

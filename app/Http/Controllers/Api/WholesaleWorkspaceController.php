@@ -63,10 +63,13 @@ class WholesaleWorkspaceController extends Controller
         $order = DB::transaction(function () use ($validated, $user, $tenantId, $branchId, $allowNegativeStock, $unifiedStock): Order {
             $shift = ApiShiftLedger::activeForWrite($tenantId, $branchId, $user->id);
             $editing = null;
+            $previousReceipt = null;
             if (! empty($validated['invoice_id'])) {
                 abort_unless($user->hasPermission('wholesale_sales.edit'), 403);
                 abort_if(config('branch-sync.mode') === 'edge', 422, 'التعديل متاح من النظام المركزي فقط.');
                 $editing = Order::where('tenant_id', $tenantId)->where('branch_id', $branchId)->where('type', 'wholesale')->where('status', 'completed')->lockForUpdate()->whereKey($validated['invoice_id'])->firstOrFail();
+                $previousReceipt = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $editing->id)
+                    ->where('type', 'receipt')->lockForUpdate()->first(['payment_date', 'notes']);
                 $this->reverse($editing);
             }
             $customer = null;
@@ -177,8 +180,8 @@ class WholesaleWorkspaceController extends Controller
                     'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                     'type' => 'receipt', 'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
                     'party_id' => $customer?->id, 'amount' => $received, 'payment_method' => $validated['payment_method'],
-                    'order_id' => $order->id, 'notes' => 'دفعة على فاتورة الجملة '.$order->invoice_number,
-                    'payment_date' => now(),
+                    'order_id' => $order->id, 'notes' => $previousReceipt?->notes ?? 'دفعة على فاتورة الجملة '.$order->invoice_number,
+                    'payment_date' => $previousReceipt?->payment_date ?? now(),
                 ]);
             }
             if ($customer) {
@@ -222,12 +225,113 @@ class WholesaleWorkspaceController extends Controller
         } else {
             $query->orderByDesc('id');
         }
-        $order = $query->with('items.product', 'party', 'branch')->withSum('payments as collected_amount', 'amount')->firstOrFail();
-        $order->setAttribute('payment_method', Payment::where('tenant_id', $order->tenant_id)->where('order_id', $order->id)->latest('id')->value('payment_method') ?? 'cash');
+        $order = $query->with([
+            'items.product',
+            'party',
+            'branch',
+            'payments' => fn ($payments) => $payments->where('type', 'receipt')->with('party')->orderBy('id'),
+        ])->withSum('payments as collected_amount', 'amount')->firstOrFail();
+        $receipt = $order->payments->first();
+        $order->unsetRelation('payments');
+        $order->setAttribute('linked_receipt', $receipt);
+        $order->setAttribute('payment_method', $receipt?->payment_method ?? 'cash');
 
         return response()->json(['order' => $order,
             'previous_id' => $this->orders($request)->where('id', '<', $order->id)->max('id'),
             'next_id' => $this->orders($request)->where('id', '>', $order->id)->min('id')]);
+    }
+
+    /**
+     * Update the one receipt linked to an invoice without re-saving its lines.
+     * A receipt value may exceed the invoice total; the difference is customer credit.
+     */
+    public function updateInvoiceReceipt(Request $request, Order $order): JsonResponse
+    {
+        $data = $request->validate([
+            'branch_id' => ['required', 'integer'],
+            'customer_id' => ['required', 'integer'],
+            'amount' => ['required', 'numeric', 'decimal:0,2', 'gte:0', 'max:999999999'],
+            'payment_date' => ['required', 'date'],
+            'payment_method' => ['required', 'in:cash,card,bank_transfer,cheque'],
+            'notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+        $user = $request->user();
+        abort_unless(in_array($order->type, ['pos', 'wholesale'], true), 404);
+        abort_unless($order->tenant_id === $user->tenant_id && $order->branch_id === (int) $data['branch_id'] && $order->status === 'completed', 404);
+        abort_unless(! $user->branch_id || $user->isTenantOwner() || $order->branch_id === $user->branch_id, 404);
+        abort_unless($user->hasPermission($order->type === 'pos' ? 'sales_invoices.edit' : 'wholesale_sales.edit'), 403);
+        abort_if(config('branch-sync.mode') === 'edge', 422, 'التعديل متاح من النظام المركزي فقط.');
+
+        $result = DB::transaction(function () use ($data, $order, $user): array {
+            $locked = Order::query()->where('tenant_id', $user->tenant_id)->lockForUpdate()->findOrFail($order->id);
+            $shift = ApiShiftLedger::activeForWrite($user->tenant_id, $locked->branch_id, $user->id);
+            $receipts = Payment::query()->where('tenant_id', $user->tenant_id)->where('branch_id', $locked->branch_id)
+                ->where('order_id', $locked->id)->where('type', 'receipt')->lockForUpdate()->get();
+            if ($receipts->count() > 1) {
+                throw ValidationException::withMessages(['receipt' => 'الفاتورة مرتبطة بأكثر من سند قبض، ولا يمكن تعديلها من هذه الشاشة.']);
+            }
+
+            $partyIds = array_filter([(int) $locked->customer_id, (int) $data['customer_id']]);
+            $parties = Party::query()->where('tenant_id', $user->tenant_id)->whereIn('id', $partyIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $customer = $parties->get((int) $data['customer_id']);
+            abort_unless($customer && $customer->is_active && in_array($customer->type, ['customer', 'supplier', 'both'], true), 404);
+            abort_unless(! $user->branch_id || $user->isTenantOwner() || ! $customer->branch_id || $customer->branch_id === $user->branch_id, 404);
+
+            $oldCustomer = $locked->customer_id ? $parties->get((int) $locked->customer_id) : null;
+            $oldReceived = round((float) $receipts->sum('amount'), 2);
+            $amount = round((float) $data['amount'], 2);
+            if ($oldCustomer) {
+                $oldCustomer->decrement('current_balance', $oldCustomer->saleBalanceDirection() * round((float) $locked->total - $oldReceived, 2));
+            }
+
+            $receipt = $receipts->first();
+            if ($amount > 0) {
+                $receipt ??= new Payment;
+                $receipt->fill([
+                    'tenant_id' => $user->tenant_id,
+                    'branch_id' => $locked->branch_id,
+                    'created_by' => $receipt->created_by ?? $user->id,
+                    'shift_id' => $receipt->shift_id ?? $shift?->id,
+                    'type' => 'receipt',
+                    'voucher_number' => $receipt->voucher_number ?? ($locked->type === 'pos' ? 'VCH-' : 'RCV-').now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
+                    'party_id' => $customer->id,
+                    'amount' => $amount,
+                    'payment_method' => $data['payment_method'],
+                    'payment_date' => $data['payment_date'],
+                    'order_id' => $locked->id,
+                    'notes' => $data['notes'] ?? null,
+                ]);
+                $receipt->save();
+            } elseif ($receipt) {
+                $receipt->delete();
+                $receipt = null;
+            }
+
+            $paid = min((float) $locked->total, $amount);
+            $locked->fill([
+                'customer_id' => $customer->id,
+                'customer_name' => $customer->name,
+                'customer_phone' => $customer->phone,
+                'paid_amount' => $paid,
+                'payment_method' => $data['payment_method'],
+                'payment_status' => $paid >= (float) $locked->total ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
+            ]);
+            $locked->save();
+            $customer->increment('current_balance', $customer->saleBalanceDirection() * round((float) $locked->total - $amount, 2));
+
+            $currentBalance = $customer->fresh()->current_balance;
+            $updatedOrder = $locked->fresh()->load('party')
+                ->setAttribute('collected_amount', $amount)
+                ->setAttribute('current_balance', $currentBalance);
+
+            return [
+                'order' => $updatedOrder,
+                'voucher' => $receipt?->fresh()->load('party')
+                    ?->setAttribute('current_balance', $currentBalance),
+            ];
+        });
+
+        return response()->json(['message' => 'تم حفظ سند القبض والعودة إلى الفاتورة.'] + $result);
     }
 
     public function products(Request $request): JsonResponse
@@ -249,7 +353,7 @@ class WholesaleWorkspaceController extends Controller
         }
         unset($product);
 
-        return response()->json($response + ['workspace_version' => 1, 'payment_contract_version' => 2, 'allow_negative_stock' => TenantSetting::getBool($tenantId, 'allow_negative_stock', false),
+        return response()->json($response + ['workspace_version' => 1, 'allow_negative_stock' => TenantSetting::getBool($tenantId, 'allow_negative_stock', false),
             'can_sell_below_cost' => $request->user()->hasPermission('pos.sell_below_cost')]);
     }
 

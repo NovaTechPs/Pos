@@ -50,7 +50,18 @@ class PosController extends Controller
             $query->orderByDesc('id');
         }
 
-        return response()->json(['order' => $query->with(['items.product', 'party', 'branch'])->withSum('payments as collected_amount', 'amount')->firstOrFail()]);
+        $order = $query->with([
+            'items.product',
+            'party',
+            'branch',
+            'payments' => fn ($payments) => $payments->where('type', 'receipt')->with('party')->orderBy('id'),
+        ])->withSum('payments as collected_amount', 'amount')->firstOrFail();
+        $receipt = $order->payments->first();
+        $order->unsetRelation('payments');
+        $order->setAttribute('linked_receipt', $receipt);
+        $order->setAttribute('payment_method', $receipt?->payment_method ?? 'cash');
+
+        return response()->json(['order' => $order]);
     }
 
     private function reverseInvoice(Order $order): void
@@ -566,11 +577,14 @@ class PosController extends Controller
                 throw ValidationException::withMessages(['offline_shift_id' => 'الوردية الأصلية للفواتير المحلية مغلقة أو تغيرت. راجع المزامنة قبل الحفظ.']);
             }
             $editing = null;
+            $previousReceipt = null;
             if (! empty($validated['invoice_id'])) {
                 abort_unless($user->hasPermission('sales_invoices.edit'), 403);
                 abort_if(config('branch-sync.mode') === 'edge', 422, 'التعديل متاح من النظام المركزي فقط.');
                 $editing = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
                     ->where('type', 'pos')->where('status', 'completed')->whereKey($validated['invoice_id'])->lockForUpdate()->firstOrFail();
+                $previousReceipt = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $editing->id)
+                    ->where('type', 'receipt')->lockForUpdate()->first(['payment_date', 'notes']);
                 $this->reverseInvoice($editing);
             }
             $held = ! empty($validated['held_order_id'])
@@ -738,8 +752,9 @@ class PosController extends Controller
                     'party_id' => $customer?->id,
                     'amount' => $received,
                     'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque']) ? $paymentMethod : 'cash',
-                    'payment_date' => now(),
+                    'payment_date' => $previousReceipt?->payment_date ?? now(),
                     'order_id' => $order->id,
+                    'notes' => $previousReceipt?->notes,
                 ]);
             }
 

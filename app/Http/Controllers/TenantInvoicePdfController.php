@@ -21,6 +21,7 @@ class TenantInvoicePdfController extends Controller
             ->where('tenant_id', $request->user()->tenant_id)
             ->whereKey($orderId)
             ->with(['items.product', 'user', 'branch'])
+            ->withSum('payments as collected_amount', 'amount')
             ->firstOrFail();
 
         return response()->streamDownload(function () use ($order): void {

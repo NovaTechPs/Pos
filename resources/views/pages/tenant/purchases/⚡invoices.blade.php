@@ -62,6 +62,10 @@ new class extends Component {
 
     public string $paymentMethod = 'cash';
 
+    public string $settlementAmount = '';
+
+    public bool $showSettlementModal = false;
+
     public string $notes = '';
 
     /*
@@ -918,7 +922,7 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    public function saveInvoice(bool $shouldPrint = false): void
+    public function saveInvoice(bool $shouldPrint = false, bool $openSettlementModal = false): void
     {
         if ($this->currentPurchaseId && ! $this->invoiceEditMode) {
             $this->errorMessage = 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.';
@@ -985,6 +989,12 @@ new class extends Component {
             }
         }
 
+        if ($openSettlementModal && !$supplier) {
+            $this->errorMessage = 'اختر مورداً للفاتورة قبل تسجيل سند الصرف.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+            return;
+        }
+
         $totals = $this->calculateTotals();
         $enteredPaidAmount = (float) ($this->paidAmount ?? 0);
         if (! is_finite($enteredPaidAmount) || $enteredPaidAmount < 0) {
@@ -1021,7 +1031,15 @@ new class extends Component {
                     }
 
                     $oldSupplierId = $purchase->supplier_id;
-                    $oldOutstanding = round((float) $purchase->total - (float) $purchase->paid_amount, 2);
+                    $linkedPayments = (float) Payment::query()->where('tenant_id', $tenantId)
+                        ->where('purchase_id', $purchase->id)->where('type', 'payment')->sum('amount');
+                    $oldPaidAmount = $linkedPayments > 0
+                        ? min((float) $purchase->total, $linkedPayments)
+                        : (float) $purchase->paid_amount;
+                    $oldOutstanding = round((float) $purchase->total - $oldPaidAmount, 2);
+                    $newPaidAmount = $linkedPayments > 0
+                        ? min((float) $totals['total'], $linkedPayments)
+                        : min((float) $totals['total'], (float) $purchase->paid_amount);
 
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
@@ -1038,8 +1056,8 @@ new class extends Component {
                             'total' => $totals['total'],
                             'tax_amount' => 0,
                             'tax_percent' => 0,
-                            'paid_amount' => $totals['paid'],
-                            'payment_status' => $totals['payment_status'],
+                            'paid_amount' => $newPaidAmount,
+                            'payment_status' => $newPaidAmount >= $totals['total'] ? 'paid' : ($newPaidAmount > 0 ? 'partial' : 'unpaid'),
                             'notes' => trim($this->notes) !== '' ? trim($this->notes) : null,
                             'updated_at' => now(),
                         ]);
@@ -1139,7 +1157,7 @@ new class extends Component {
                 | عن الفاتورة نفسها: total - paid_amount.
                 */
                 $newOutstanding = $wasEditingInvoice
-                    ? round($totals['total'] - $totals['paid'], 2)
+                    ? round($totals['total'] - (float) ($newPaidAmount ?? $totals['paid']), 2)
                     : $totals['outstanding'];
 
                 if ($oldSupplierId && $oldOutstanding != 0.0) {
@@ -1182,8 +1200,18 @@ new class extends Component {
             if ($wasEditingInvoice) {
                 $this->loadPurchase($purchaseId);
                 $this->successMessage = 'تم تعديل فاتورة المشتريات بنجاح.';
+                if ($openSettlementModal) {
+                    $this->openSettlementModal();
+                }
                 $this->dispatch('toast', type: 'success', message: $this->successMessage);
 
+                return;
+            }
+
+            if ($openSettlementModal) {
+                $this->loadPurchase($purchaseId);
+                $this->openSettlementModal();
+                $this->successMessage = 'تم حفظ الفاتورة. أدخل مبلغ سند الصرف.';
                 return;
             }
 
@@ -1198,6 +1226,83 @@ new class extends Component {
                 : 'تعذر حفظ فاتورة المشتريات. تأكد من البيانات والجداول المطلوبة ثم حاول مرة أخرى.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
         }
+    }
+
+    private function openSettlementModal(): void
+    {
+        if (!$this->currentPurchaseId || !$this->selectedSupplierId) {
+            $this->errorMessage = 'تعذر فتح سند الصرف بدون مورد مرتبط بالفاتورة.';
+            return;
+        }
+
+        $purchase = DB::table('purchases')->where('tenant_id', $this->tenantId())->where('id', $this->currentPurchaseId)->first();
+        abort_unless($purchase, 404);
+        $linkedPayments = (float) Payment::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('purchase_id', $purchase->id)
+            ->where('type', 'payment')
+            ->sum('amount');
+        $settled = max((float) $purchase->paid_amount, $linkedPayments);
+
+        $this->settlementAmount = (string) max(0, (float) $purchase->total - $settled);
+        $this->showSettlementModal = true;
+    }
+
+    public function saveSettlementVoucher(): void
+    {
+        $this->authorize('accounting.voucher.create');
+
+        $validated = $this->validate([
+            'settlementAmount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:999999999'],
+            'paymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
+        ]);
+
+        $tenantId = $this->tenantId();
+        abort_unless($tenantId && $this->currentPurchaseId, 404);
+
+        DB::transaction(function () use ($tenantId, $validated): void {
+            $purchase = DB::table('purchases')
+                ->where('tenant_id', $tenantId)
+                ->where('id', $this->currentPurchaseId)
+                ->lockForUpdate()
+                ->first();
+            abort_unless($purchase && $purchase->supplier_id, 422);
+
+            $supplier = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($purchase->supplier_id);
+            $amount = round((float) $validated['settlementAmount'], 2);
+            $payment = Payment::query()->create([
+                'tenant_id' => $tenantId,
+                'branch_id' => $purchase->branch_id,
+                'created_by' => auth()->id(),
+                'party_id' => $supplier->id,
+                'type' => 'payment',
+                'voucher_number' => 'PAY-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
+                'amount' => $amount,
+                'payment_method' => $validated['paymentMethod'],
+                'purchase_id' => $purchase->id,
+                'notes' => 'سند صرف مرتبط بفاتورة المشتريات '.$purchase->reference_number,
+                'payment_date' => now(),
+            ]);
+
+            $linkedPayments = (float) Payment::query()
+                ->where('tenant_id', $tenantId)
+                ->where('purchase_id', $purchase->id)
+                ->where('type', 'payment')
+                ->sum('amount');
+            $paidAmount = min((float) $purchase->total, max((float) $purchase->paid_amount, $linkedPayments));
+            DB::table('purchases')->where('tenant_id', $tenantId)->where('id', $purchase->id)->update([
+                'paid_amount' => $paidAmount,
+                'payment_status' => $paidAmount >= (float) $purchase->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid'),
+                'updated_at' => now(),
+            ]);
+
+            $supplier->current_balance = round((float) $supplier->current_balance - $supplier->purchaseBalanceDirection() * $amount, 2);
+            $supplier->save();
+        });
+
+        $this->showSettlementModal = false;
+        $this->loadPurchase($this->currentPurchaseId);
+        $this->dispatch('toast', type: 'success', message: 'تم حفظ سند الصرف وربطه بفاتورة المشتريات.');
     }
 
     private function preparePriceUpdateCandidate(int $productId, float $purchaseCost, ?int $branchId): void
@@ -1853,6 +1958,10 @@ new class extends Component {
             );
         }
 
+        $linkedPayments = $tenantId && $this->currentPurchaseId
+            ? Payment::query()->where('tenant_id', $tenantId)->where('purchase_id', $this->currentPurchaseId)->where('type', 'payment')->orderBy('id')->get(['id', 'voucher_number', 'amount'])
+            : collect();
+
         return $this->view([
             'branches' => $branches,
             'purchaseBranches' => $branches,
@@ -1868,6 +1977,7 @@ new class extends Component {
                 : $totals['tax'],
             'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true),
             'grandTotal' => $totals['total'],
+            'linkedPayments' => $linkedPayments,
             'paidTotal' => $totals['paid'],
             'remainingTotal' => $totals['remaining'],
             'accountBalanceAfterPayment' => $accountBalanceAfterPayment,
@@ -2304,107 +2414,69 @@ new class extends Component {
                 </div>
             </div>
 
-            {{-- الملخص والدفع --}}
-            <div class="xl:col-span-12" data-purchase-summary>
-                <div class="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
-                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="mb-3 flex items-center justify-between">
-                            <div>
-                                <div class="text-sm font-black text-slate-900">ملخص الفاتورة</div>
-                                <div class="mt-1 text-xs font-semibold text-slate-600">تفاصيل المبلغ المستحق للمورد</div>
-                            </div>
-                            <div class="rounded-xl bg-indigo-50 px-3 py-2 text-center">
-                                <div class="text-xs font-bold text-indigo-500">إجمالي الكمية</div>
-                                <div class="text-sm font-black text-indigo-800">{{ number_format($totalQuantity, 2) }}</div>
-                            </div>
-                        </div>
-
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="font-bold text-slate-500">المجموع الفرعي</span>
-                                <span class="font-black text-slate-900">{{ number_format($subtotal, 2) }}</span>
-                            </div>
-
-                            <div class="grid grid-cols-12 items-center gap-2">
-                                <div class="col-span-7">
-                                    <label class="mb-1 block text-xs font-black text-slate-600">خصم الفاتورة</label>
-                                    <input type="number" min="0" step="0.01" wire:model.live="discount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
-                                </div>
-                                <div class="col-span-5">
-                                    <label class="mb-1 block text-xs font-black text-slate-600">نوع الخصم</label>
-                                    <select wire:model.live="discountType" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black outline-none focus:border-indigo-400">
-                                        <option value="fixed">مبلغ</option>
-                                        <option value="percentage">%</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div class="flex items-center justify-between text-sm">
-                                <span class="font-bold text-slate-500">الخصم المحتسب</span>
-                                <span class="font-black text-rose-600">- {{ number_format($invoiceDiscount, 2) }}</span>
-                            </div>
-
-                            @if ($showTax)
-                                <div class="flex items-center justify-between text-sm" data-purchase-tax>
-                                    <span class="font-bold text-slate-500">قيمة الضريبة</span>
-                                    <span class="font-black text-amber-600">{{ number_format($taxAmount, 2) }}</span>
-                                </div>
-                            @endif
-
-                            <div class="rounded-xl bg-indigo-50 p-3">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-base font-black text-slate-900">إجمالي الفاتورة</span>
-                                    <span class="text-2xl font-black tabular-nums text-indigo-700">{{ number_format($grandTotal, 2) }}</span>
-                                </div>
-                            </div>
-                        </div>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <label for="purchase-notes" class="text-sm font-black text-slate-700">ملاحظات الفاتورة (اختياري)</label>
+                    <div class="flex items-center gap-2 text-xs font-bold text-slate-500">
+                        <span>عدد المواد: {{ number_format($totalQuantity, 2) }}</span>
+                        <span class="rounded-lg bg-indigo-50 px-3 py-2 text-sm font-black text-indigo-700">الإجمالي: {{ number_format($grandTotal, 2) }}</span>
                     </div>
-
-                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        @if (! $currentPurchaseId)
-                            <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
-                                <div>
-                                    <label for="paid-amount-input" class="mb-2 block text-sm font-bold text-slate-700">الدفعة</label>
-                                    <input id="paid-amount-input" x-ref="paidAmount" type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black text-slate-900 outline-none focus:border-emerald-400 focus:bg-white" />
-                                </div>
-                                <div>
-                                    <label for="payment-method-input" class="mb-2 block text-sm font-bold text-slate-700">طريقة الدفع</label>
-                                    <select id="payment-method-input" wire:model="paymentMethod" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400 focus:bg-white">
-                                        <option value="cash">نقداً</option>
-                                        <option value="card">بطاقة</option>
-                                        <option value="bank_transfer">تحويل بنكي</option>
-                                        <option value="cheque">شيك</option>
-                                    </select>
-                                </div>
-                            </div>
-                        @else
-                            <p class="text-sm font-semibold text-slate-500">لتسجيل دفعة جديدة على هذه الفاتورة، أضف سند دفع مرتبطاً بها.</p>
-                        @endif
-                        <div class="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3" role="status" aria-live="polite">
-                            <div class="text-sm font-bold text-rose-700">الرصيد بعد الدفعة</div>
-                            <div class="mt-1 text-xl font-black tabular-nums text-rose-800">{{ number_format($accountBalanceAfterPayment, 2) }}</div>
-                        </div>
+                </div>
+                <div class="mb-3 grid max-w-xl grid-cols-2 gap-2">
+                    <label class="text-xs font-bold text-slate-600">خصم الفاتورة
+                        <input type="number" min="0" step="0.01" wire:model.live="discount" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
+                    </label>
+                    <label class="text-xs font-bold text-slate-600">نوع الخصم
+                        <select wire:model.live="discountType" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black outline-none focus:border-indigo-400">
+                            <option value="fixed">مبلغ</option><option value="percentage">%</option>
+                        </select>
+                    </label>
+                </div>
+                <textarea id="purchase-notes" wire:model="notes" rows="2" placeholder="اكتب ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
+                @if ($currentPurchaseId && $linkedPayments->isNotEmpty())
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        @foreach ($linkedPayments as $linkedPayment)
+                            <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100">تعديل سند الصرف {{ $linkedPayment->voucher_number }}</a>
+                        @endforeach
                     </div>
-
-                    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <label for="purchase-notes" class="mb-1.5 block text-sm font-bold text-slate-600">ملاحظات (اختياري)</label>
-                        <textarea id="purchase-notes" wire:model="notes" rows="1" placeholder="ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
-                    </div>
-
-                    <div class="grid grid-cols-2 items-end gap-2 self-end">
-                        <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
-                            <span wire:loading.remove wire:target="saveInvoice">💾 حفظ</span>
-                            <span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
+                @endif
+                <div class="mt-3 grid gap-2 sm:grid-cols-3">
+                    <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
+                        <span wire:loading.remove wire:target="saveInvoice">💾 حفظ الفاتورة</span><span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
+                    </button>
+                    <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" wire:target="saveAndPrint" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
+                        <span wire:loading.remove wire:target="saveAndPrint">🖨 حفظ وطباعة</span><span wire:loading wire:target="saveAndPrint">جاري الحفظ...</span>
+                    </button>
+                    @can('accounting.voucher.create')
+                        <button type="button" wire:click="saveInvoice(false, true)" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60">
+                            حفظ وتسديد
                         </button>
-                        <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" wire:target="saveAndPrint" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
-                            <span wire:loading.remove wire:target="saveAndPrint">🖨 حفظ وطباعة</span>
-                            <span wire:loading wire:target="saveAndPrint">جاري الحفظ...</span>
-                        </button>
-                    </div>
+                    @endcan
                 </div>
             </div>
         </div>
     </div>
+    @if ($showSettlementModal)
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" x-data x-trap.inert.noscroll="true" x-on:keydown.escape.window="$wire.set('showSettlementModal', false)">
+            <section role="dialog" aria-modal="true" aria-labelledby="purchase-settlement-title" class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" dir="rtl">
+                <h2 id="purchase-settlement-title" class="text-lg font-black text-slate-900">سند صرف للفاتورة {{ $invoiceNumber }}</h2>
+                <p class="mt-1 text-sm leading-6 text-slate-500">سيُحفظ المبلغ كاملًا كسند صرف مرتبط بهذه الفاتورة، حتى لو تجاوز إجماليها أو رصيد المورد.</p>
+                <label class="mt-4 block text-sm font-bold text-slate-700">مبلغ السند
+                    <input type="number" min="0.01" step="0.01" wire:model="settlementAmount" autofocus class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black outline-none focus:border-emerald-400 focus:bg-white">
+                </label>
+                @error('settlementAmount')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
+                <label class="mt-3 block text-sm font-bold text-slate-700">طريقة الصرف
+                    <select wire:model="paymentMethod" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 font-bold outline-none focus:border-emerald-400">
+                        <option value="cash">نقداً</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option>
+                    </select>
+                </label>
+                <div class="mt-5 grid grid-cols-2 gap-2">
+                    <button type="button" wire:click="saveSettlementVoucher" wire:loading.attr="disabled" wire:target="saveSettlementVoucher" class="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-50">حفظ سند الصرف</button>
+                    <button type="button" wire:click="$set('showSettlementModal', false)" class="rounded-xl border border-slate-200 px-4 py-3 font-black text-slate-700">إلغاء</button>
+                </div>
+            </section>
+        </div>
+    @endif
     @if ($showPriceUpdateModal)
         <div class="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-3" role="presentation">
             <section class="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="purchase-price-update-title" dir="rtl">

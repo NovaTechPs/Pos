@@ -65,6 +65,37 @@ test('wholesale checkout records an overpayment as customer credit and reverses 
         ->and((float) Payment::sum('amount'))->toBe(5.0);
 });
 
+test('an invoice linked receipt is updated separately and keeps one receipt', function () {
+    $id = $this->postJson('/api/wholesale/orders', $this->payload)->assertCreated()->json('order.id');
+
+    $this->patchJson('/api/wholesale/invoice/'.$id.'/receipt', [
+        'branch_id' => $this->branch->id,
+        'customer_id' => $this->party->id,
+        'amount' => 20,
+        'payment_method' => 'bank_transfer',
+        'payment_date' => '2026-11-09',
+        'notes' => 'دفعة معدلة',
+    ])->assertOk()
+        ->assertJsonPath('order.id', $id)
+        ->assertJsonPath('order.collected_amount', 20)
+        ->assertJsonPath('voucher.amount', '20.00')
+        ->assertJsonPath('voucher.payment_method', 'bank_transfer');
+
+    expect((float) Order::find($id)->paid_amount)->toBe(14.4)
+        ->and((float) $this->party->fresh()->current_balance)->toBe(94.4)
+        ->and(Payment::query()->where('order_id', $id)->count())->toBe(1);
+    $this->postJson('/api/wholesale/orders', array_replace($this->payload, [
+        'invoice_id' => $id,
+        'paid_amount' => 20,
+        'payment_method' => 'bank_transfer',
+        'operation_uuid' => (string) Str::uuid(),
+    ]))->assertCreated();
+    $receipt = Payment::query()->where('order_id', $id)->sole();
+    expect($receipt->notes)->toBe('دفعة معدلة')->and($receipt->payment_date->toDateString())->toBe('2026-11-09');
+    $this->getJson('/api/wholesale/invoice?branch_id='.$this->branch->id.'&id='.$id)
+        ->assertOk()->assertJsonPath('order.linked_receipt.amount', '20.00');
+});
+
 test('invalid edit rolls back the old invoice inventory and balance', function () {
     $id = $this->postJson('/api/wholesale/orders', $this->payload)->assertCreated()->json('order.id');
     $edit = array_replace($this->payload, ['invoice_id' => $id, 'paid_amount' => -1, 'operation_uuid' => (string) Str::uuid()]);
