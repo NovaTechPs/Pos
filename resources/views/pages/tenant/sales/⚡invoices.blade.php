@@ -1116,12 +1116,6 @@ new class extends Component {
                     ]);
 
                     $order->items()->delete();
-
-                    Payment::query()
-                        ->where('tenant_id', $tenantId)
-                        ->where('order_id', $order->id)
-                        ->where('type', 'receipt')
-                        ->update(['party_id' => $customer?->id]);
                 } else {
                     $order = Order::query()->create([
                         'tenant_id' => $tenantId,
@@ -1797,9 +1791,10 @@ new class extends Component {
         }
 
         $totals = $this->calculateTotals();
-        $linkedReceiptAmount = $tenantId && $this->currentOrderId
-            ? (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $this->currentOrderId)->where('type', 'receipt')->sum('amount')
-            : 0.0;
+        $linkedReceipts = $tenantId && $this->currentOrderId
+            ? Payment::query()->where('tenant_id', $tenantId)->where('order_id', $this->currentOrderId)->where('type', 'receipt')->orderBy('id')->get(['id', 'voucher_number', 'amount'])
+            : collect();
+        $linkedReceiptAmount = (float) $linkedReceipts->sum(fn (Payment $payment): float => (float) $payment->amount);
 
         $invoiceSearchResults = collect();
         if ($tenantId && $this->showInvoiceSearch) {
@@ -1855,6 +1850,7 @@ new class extends Component {
             'taxAmount' => $totals['tax'],
             'showTax' => TenantSetting::getBool((int) $tenantId, 'show_tax', true) && $this->currentOrderType !== 'pos',
             'grandTotal' => $totals['total'],
+            'linkedReceipts' => $linkedReceipts,
             'linkedReceiptAmount' => $linkedReceiptAmount,
             'totalCost' => $totals['total_cost'],
             'profit' => $totals['profit'],
@@ -2612,8 +2608,13 @@ new class extends Component {
                                 @endif
                                 <div class="flex justify-between text-slate-500"><span>الشيفت من سند القبض</span><span>{{ $posShiftId ?? 'غير محدد' }}</span></div>
                             @else
-                                <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($savedPaidAmount, 2) }}</span></div>
+                                <div class="flex justify-between"><span>المدفوع</span><span>{{ number_format($linkedReceiptAmount > 0 ? $linkedReceiptAmount : $savedPaidAmount, 2) }}</span></div>
                             @endif
+                            @foreach ($linkedReceipts as $linkedReceipt)
+                                <a href="{{ route('tenant.receipts', ['voucher' => $linkedReceipt->id]) }}" class="flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">
+                                    تعديل سند القبض {{ $linkedReceipt->voucher_number }}
+                                </a>
+                            @endforeach
                             <div class="flex justify-between text-rose-600"><span>المتبقي على الزبون</span><span>{{ number_format(max(0, $grandTotal - $savedPaidAmount), 2) }}</span></div>
                         </div>
                         @if ($selectedCustomerId)

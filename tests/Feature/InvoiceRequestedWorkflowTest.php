@@ -11,6 +11,7 @@ use App\Models\Purchase;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
@@ -181,9 +182,13 @@ test('editing a mobile invoice keeps its linked overpayment as the paid amount s
         'order_id' => $order->id,
         'payment_date' => now(),
     ]);
+    DB::table('payments')->where('id', $receipt->id)->update(['updated_at' => now()->subDay()]);
+    $receiptUpdatedAt = $receipt->fresh()->updated_at;
 
     $component = Livewire::test('pages::tenant.sales.invoices')
         ->call('loadOrder', $order->id)
+        ->assertSee('150.00')
+        ->assertSee(route('tenant.receipts', ['voucher' => $receipt->id]), false)
         ->call('editLoadedInvoice');
     $lineKey = array_key_first($component->get('cart'));
     $component->set("cart.{$lineKey}.price", 12)
@@ -196,6 +201,7 @@ test('editing a mobile invoice keeps its linked overpayment as the paid amount s
         ->and($order->fresh()->payment_status)->toBe('paid')
         ->and((float) $receipt->fresh()->amount)->toBe(150.0)
         ->and((int) $receipt->fresh()->party_id)->toBe($customer->id)
+        ->and($receipt->fresh()->updated_at->equalTo($receiptUpdatedAt))->toBeTrue()
         ->and((float) $customer->fresh()->current_balance)->toBe(-30.0);
 });
 
