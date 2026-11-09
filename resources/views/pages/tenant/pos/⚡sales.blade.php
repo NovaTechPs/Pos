@@ -4487,11 +4487,19 @@ new class extends Component {
         if ($this->linkMissingBarcode && Auth::user()?->can('products.barcode.manage')) {
             $search = mb_substr(trim($this->missingBarcodeSearch), 0, 100);
             if ($search !== '') {
+                $normalizedSearch = app(PosProductSearch::class)->normalize($search);
+                $searchWords = array_slice(explode(' ', $normalizedSearch), 0, 8);
                 $missingBarcodeProducts = Product::query()->where('tenant_id', $tenantId)
-                    ->where(function ($query) use ($search): void {
-                        $query->where('name', 'like', '%'.$search.'%')
-                            ->orWhere('product_number', $search)
-                            ->orWhereHas('barcodes', fn ($query) => $query->where('barcode', $search));
+                    ->where(function ($query) use ($search, $normalizedSearch, $searchWords): void {
+                        $query->where(function ($nameQuery) use ($searchWords): void {
+                            foreach ($searchWords as $word) {
+                                $nameQuery->where(function ($wordQuery) use ($word): void {
+                                    $wordQuery->where('search_name', 'like', '%'.$word.'%')
+                                        ->orWhere('name', 'like', '%'.$word.'%');
+                                });
+                            }
+                        })->orWhere('product_number', 'like', '%'.$search.'%')
+                            ->orWhereHas('barcodes', fn ($query) => $query->where('barcode', 'like', '%'.$normalizedSearch.'%'));
                     })->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
             }
         }

@@ -38,6 +38,18 @@ test('POS displays product numbers and supports searching by number', function (
     expect(collect($component->get('cart'))->first()['product_number'])->toBe('P01');
 });
 
+test('barcode linking search finds products when the query skips words between name parts', function (): void {
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'غاز 3 عيون زجاج نوفا', 'product_number' => 'GAS-03']);
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id, 'retail_price' => 20, 'stock_quantity' => 5]);
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('scanBarcode', '999888')
+        ->call('chooseExistingProductForBarcode')
+        ->set('missingBarcodeSearch', 'غاز نوفا')
+        ->assertSee('غاز 3 عيون زجاج نوفا')
+        ->assertSee('GAS-03');
+});
+
 test('the reported scanner barcode adds its exact product and confirms field handling', function (): void {
     ProductBarcode::create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '6958326545504']);
     $component = Livewire::test('pages::tenant.pos.sales')->call('scanBarcode', '6958326545504')
