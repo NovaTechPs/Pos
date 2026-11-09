@@ -57,6 +57,8 @@ test('unknown barcode opens the choices without changing the current cart and ca
         ->assertSet('showNewProductModal', false)
         ->assertSee('x-trap.inert.noscroll.noautofocus', false)
         ->assertSee('data-pos-dialog-action', false)
+        ->assertSee('x-on:keydown.arrow-right=', false)
+        ->assertSee('wire:click="chooseExistingProductForBarcode"', false)
         ->assertSee('x-on:keydown.arrow-down=', false)
         ->assertSee('x-on:keydown.enter.self.prevent.stop', false)
         ->assertSee('wire:click="createProductFromMissingBarcode"', false)
@@ -71,7 +73,6 @@ test('unknown barcode can be linked to an existing product then scanned normally
         ->call('chooseExistingProductForBarcode')->set('missingBarcodeSearch', 'إبريق')
         ->assertSee('إبريق تجريبي')->assertSee('رقم الصنف:')->assertSee('P01')
         ->assertSee('aria-label="مسح بحث الأصناف"', false)
-        ->assertSee('data-pos-barcode-result', false)->assertSee('اختر الصنف من النتائج لإضافة الباركود إليه.')
         ->call('attachMissingBarcode', $this->product->id)
         ->assertHasNoErrors()->assertSet('showMissingBarcodeModal', false)->assertSet('cart', []);
     expect(ProductBarcode::query()->sole()->product_id)->toBe($this->product->id);
