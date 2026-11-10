@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\StockVoucher;
 use App\Models\StockVoucherItem;
+use App\Services\PosProductSearch;
 use App\Services\StockMovementContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -343,16 +344,27 @@ new class extends Component
             ->when($user?->branch_id && ! $user->isTenantOwner() && ! $user->isSaaSAdmin(), fn ($query) => $query->whereKey($user->branch_id))
             ->orderBy('name')->get(['id', 'name']);
         $search = trim($this->productSearch);
-        $products = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereNull('deleted_at')
-            ->when($search !== '', fn ($query) => $query->where(fn ($productQuery) => $productQuery
-                ->where('name', 'like', "%{$search}%")
-                ->orWhere('product_number', 'like', "%{$search}%")
-                ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
-                    ->where('tenant_id', $tenantId)
-                    ->where('barcode', 'like', "%{$search}%"))))
-            ->with(['branchProducts' => fn ($query) => $query
-                ->where('tenant_id', $tenantId)
-                ->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
+        $normalizedSearch = app(PosProductSearch::class)->normalize($search);
+        $searchWords = array_slice(array_filter(explode(' ', $normalizedSearch)), 0, 8);
+        $productQuery = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereNull('deleted_at');
+        if ($normalizedSearch !== '') {
+            $productQuery->where(function ($query) use ($searchWords, $normalizedSearch, $tenantId): void {
+                $query->where(function ($nameQuery) use ($searchWords): void {
+                    foreach ($searchWords as $word) {
+                        $nameQuery->where(function ($wordQuery) use ($word): void {
+                            $wordQuery->where('search_name', 'like', '%'.$word.'%')
+                                ->orWhere('name', 'like', '%'.$word.'%');
+                        });
+                    }
+                })
+                    ->orWhere('product_number', 'like', '%'.$normalizedSearch.'%')
+                    ->orWhereHas('barcodes', fn ($barcodeQuery) => $barcodeQuery
+                        ->where('tenant_id', $tenantId)->where('barcode', 'like', '%'.$normalizedSearch.'%'));
+            });
+        }
+        $products = $productQuery->with(['branchProducts' => fn ($query) => $query
+            ->where('tenant_id', $tenantId)
+            ->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
             ->orderBy('name')->limit($search === '' ? 30 : 50)->get(['id', 'name', 'product_number', 'cost_price']);
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->map(fn (string|int $id): int => (int) $id)->unique();
         $lineProducts = $selectedProductIds->isEmpty() ? collect() : Product::withoutGlobalScopes()

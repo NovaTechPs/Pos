@@ -140,6 +140,14 @@ test('stock voucher uses a searchable dropdown with editable quantity and cost b
         ->toContain('wire:click="addSelectedProduct"');
 });
 
+test('stock voucher search finds a product when words in its name are skipped', function (): void {
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'غاز 3 عيون زجاج نوفا', 'product_number' => 'GAS-03']);
+
+    Livewire::test('pages::tenant.stock-vouchers.index')
+        ->set('productSearch', 'غاز عيون')
+        ->assertViewHas('products', fn ($products): bool => $products->pluck('id')->contains($product->id));
+});
+
 test('stock voucher line defaults to the product cost and stores an edited cost with quantity', function (): void {
     $this->product->update(['cost_price' => 8.25]);
     $component = Livewire::test('pages::tenant.stock-vouchers.index')
