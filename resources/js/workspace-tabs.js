@@ -8,6 +8,15 @@ export function workspaceUrl(value, base) {
     return url.href;
 }
 
+export function workspaceSectionKey(value, base) {
+    const normalized = workspaceUrl(value, base);
+    if (!normalized) return null;
+    const url = new URL(normalized);
+    let pathname = url.pathname.replace(/\/+$/, '') || '/';
+    if (/^\/dashboard\/pos(?:\/.*)?$/i.test(pathname)) pathname = '/dashboard/pos';
+    return `${url.origin}${pathname}`;
+}
+
 export function cleanWorkspaceAddress(view) {
     const url = new URL(view.location.href);
     if (!url.searchParams.has('_workspace')) return;
@@ -48,6 +57,21 @@ export function interceptWorkspaceNavigation(event, base, openPage) {
     return true;
 }
 
+export function openWorkspaceLinkInTab(event, base, openPage) {
+    const link = event.target.closest?.('a[href]');
+    if (!link || event.defaultPrevented || event.button !== 2 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
+        || link.target === '_blank' || link.hasAttribute('download') || link.hasAttribute('wire:click')
+        || !link.hasAttribute('wire:navigate')) return false;
+    const raw = link.getAttribute('href');
+    if (!raw || raw.startsWith('#')) return false;
+    const url = workspaceUrl(raw, base);
+    if (!url) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openPage(url, link.textContent.trim(), true);
+    return true;
+}
+
 export function workspaceUsesFullWidth(url) {
     return Boolean(url && /\/dashboard\/pos\/?$/.test(new URL(url).pathname));
 }
@@ -80,11 +104,16 @@ export function readWorkspaceSnapshot(raw, base) {
             if (typeof item?.url !== 'string' || typeof item.title !== 'string') continue;
             let url;
             try { url = workspaceUrl(item.url, base); } catch { continue; }
-            if (url && !tabs.some(tab => tab.url === url)) tabs.push({url, title: item.title.slice(0, 160)});
+            if (url) tabs.push({url, title: item.title.slice(0, 160)});
         }
         let activeUrl = null;
         try { if (typeof data.activeUrl === 'string') activeUrl = workspaceUrl(data.activeUrl, base); } catch {}
-        return tabs.length ? {tabs, activeUrl: tabs.some(tab => tab.url === activeUrl) ? activeUrl : tabs[0].url} : null;
+        const requestedActiveIndex = Number.isInteger(data.activeTabIndex) ? data.activeTabIndex : -1;
+        const matchingActiveIndex = tabs.findIndex(tab => tab.url === activeUrl);
+        const activeIndex = requestedActiveIndex >= 0 && requestedActiveIndex < tabs.length
+            ? requestedActiveIndex
+            : Math.max(0, matchingActiveIndex);
+        return tabs.length ? {tabs, activeUrl: tabs[activeIndex].url, activeIndex} : null;
     } catch { return null; }
 }
 
@@ -94,8 +123,9 @@ export class WorkspaceTabState {
         this.active = 'initial';
         this.sequence = 0;
     }
-    open(url, title) {
-        let tab = this.tabs.find(tab => tab.url === url);
+    open(url, title, forceNew = false) {
+        const requestedSection = workspaceSectionKey(url, url);
+        let tab = forceNew ? null : this.tabs.find(existing => workspaceSectionKey(existing.url, url) === requestedSection);
         if (!tab) {
             tab = { id: `page-${++this.sequence}`, url, title };
             this.tabs.push(tab);
@@ -191,7 +221,11 @@ function mountWorkspace(root) {
     function persist() {
         if (restoring || !storageKey) return;
         try {
-            sessionStorage.setItem(storageKey, JSON.stringify({tabs: state.tabs.map(({url, title}) => ({url, title})), activeUrl: state.tabs.find(tab => tab.id === state.active)?.url}));
+            sessionStorage.setItem(storageKey, JSON.stringify({
+                tabs: state.tabs.map(({url, title}) => ({url, title})),
+                activeUrl: state.tabs.find(tab => tab.id === state.active)?.url,
+                activeTabIndex: state.tabs.findIndex(tab => tab.id === state.active),
+            }));
         } catch { /* Storage can be unavailable in private or restricted browsing. */ }
     }
     initial.id = 'workspace-panel-initial';
@@ -280,10 +314,10 @@ function mountWorkspace(root) {
         if (!state.tabs.length) openPage(root.dataset.homeUrl || '/dashboard', 'لوحة التحكم');
         else { draw(); focusPage(state.active); }
     }
-    function openPage(raw, title) {
+    function openPage(raw, title, forceNew = false) {
         const url = workspaceUrl(raw, window.location.href);
         if (!url) return false;
-        const tab = state.open(url, title || 'صفحة');
+        const tab = state.open(url, title || 'صفحة', forceNew);
         if (!views.has(tab.id)) {
             const frame = document.createElement('iframe');
             frame.className = 'workspace-frame';
@@ -314,11 +348,13 @@ function mountWorkspace(root) {
                         return;
                     }
                     const click = event => intercept(event, childUrl.href);
+                    const contextMenu = event => openWorkspaceLinkInTab(event, childUrl.href, openPage);
                     const press = event => {
                         if (event.type === 'keydown' && cycleWorkspaceTab(event, state, id => { draw(); focusPage(id); })) return;
                         if (event.type !== 'keydown' || event.key === 'Enter') intercept(event, childUrl.href);
                     };
                     child.addEventListener('click', click, true);
+                    child.addEventListener('contextmenu', contextMenu, true);
                     child.addEventListener('mousedown', press, true);
                     child.addEventListener('keydown', press, true);
                     const contextChanged = () => window.location.reload();
@@ -326,6 +362,7 @@ function mountWorkspace(root) {
                     frame.contentWindow.addEventListener('branch-changed', contextChanged);
                     bindings.set(tab.id, () => {
                         child.removeEventListener('click', click, true);
+                        child.removeEventListener('contextmenu', contextMenu, true);
                         child.removeEventListener('mousedown', press, true);
                         child.removeEventListener('keydown', press, true);
                         frame.contentWindow?.removeEventListener('tenant-changed', contextChanged);
@@ -359,6 +396,7 @@ function mountWorkspace(root) {
         return interceptWorkspaceNavigation(event, base, openPage);
     }
     const click = event => intercept(event);
+    const contextMenu = event => openWorkspaceLinkInTab(event, window.location.href, openPage);
     const press = event => {
         if (event.type !== 'keydown' || event.key === 'Enter') intercept(event);
     };
@@ -380,6 +418,7 @@ function mountWorkspace(root) {
     root.querySelector('[data-workspace-retry]')?.addEventListener('click', retry);
     const contextChanged = () => window.location.reload();
     document.addEventListener('click', click, true);
+    document.addEventListener('contextmenu', contextMenu, true);
     document.addEventListener('mousedown', press, true);
     document.addEventListener('keydown', press, true);
     document.addEventListener('keydown', key, true);
@@ -387,13 +426,11 @@ function mountWorkspace(root) {
     window.addEventListener('branch-changed', contextChanged);
     window.addEventListener('workspace:open-page', openRequestedPage);
     if (saved) {
-        if (!saved.tabs.some(tab => tab.url === initialUrl)) {
-            state.close('initial');
-            views.delete('initial');
-            initial.remove();
-        }
-        for (const tab of saved.tabs) openPage(tab.url, tab.title);
-        const active = state.tabs.find(tab => tab.url === saved.activeUrl);
+        state.close('initial');
+        views.delete('initial');
+        initial.remove();
+        for (const tab of saved.tabs) openPage(tab.url, tab.title, true);
+        const active = state.tabs[saved.activeIndex];
         if (active) state.select(active.id);
     }
     restoring = false;
@@ -402,6 +439,7 @@ function mountWorkspace(root) {
         root.querySelector('[data-workspace-retry]')?.removeEventListener('click', retry);
         document.body.classList.remove('workspace-pos-active');
         document.removeEventListener('click', click, true);
+        document.removeEventListener('contextmenu', contextMenu, true);
         document.removeEventListener('mousedown', press, true);
         document.removeEventListener('keydown', press, true);
         document.removeEventListener('keydown', key, true);

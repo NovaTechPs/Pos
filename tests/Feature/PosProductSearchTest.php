@@ -157,6 +157,37 @@ test('POS search ranks a whole-word match inside the name above a partial-word m
     expect(array_column($component->get('quickProducts'), 'id'))->toBe([$word->id, $partial->id]);
 });
 
+test('POS numeric search words do not match longer numbers inside product names', function (): void {
+    $matching = searchablePosProduct($this, 'كاسات كرتون 4 اوز 40 قطعة');
+    searchablePosProduct($this, 'كاسات كرتون 7 اوز 40 قطعة');
+    searchablePosProduct($this, 'كاسات كرتون 14 اوز 40 قطعة');
+
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', '4 اوز');
+
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$matching->id]);
+
+    $component->set('inlineSearchQuery', '4 اوز');
+
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$matching->id]);
+
+    config(['branch-sync.mode' => 'central']);
+    BranchSyncDevice::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'device_uuid' => (string) Str::uuid(),
+        'name' => 'Numeric search desktop',
+        'token_hash' => hash('sha256', 'numeric-search-device'),
+        'is_active' => true,
+    ]);
+
+    $response = $this->withToken('numeric-search-device')->getJson('/api/branch-sync/pos-catalog?'.http_build_query([
+        'entity' => 'products',
+        'search' => '4 اوز',
+    ]))->assertOk();
+
+    expect(array_column($response->json('rows'), 'id'))->toBe([$matching->id]);
+});
+
 test('search wildcards are literal and cannot expand results', function (): void {
     $literal = searchablePosProduct($this, 'Discount 50%', 'AB_12');
     searchablePosProduct($this, 'Discount 500', 'ABX12');

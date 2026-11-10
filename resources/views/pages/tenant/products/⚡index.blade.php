@@ -59,11 +59,10 @@ new class extends Component {
 
     public bool $is_price_unified = false;
 
-    public bool $createOfferWithProduct = false;
     public string $newOfferQuantity = '';
     public string $newOfferPrice = '';
     public string $newOfferStartAt = '';
-    public bool $newOfferHasEndDate = true;
+    public bool $newOfferHasEndDate = false;
     public string $newOfferEndAt = '';
 
     /**
@@ -128,7 +127,7 @@ new class extends Component {
     public $offerPrice = null;
     public $offerStartAt = null;
     public $offerEndAt = null;
-    public bool $offerHasEndDate = true;
+    public bool $offerHasEndDate = false;
     public string $offerProductName = '';
     #[Locked]
     public ?int $offerId = null;
@@ -255,7 +254,7 @@ new class extends Component {
 
         }
 
-        if ($this->createOfferWithProduct && ! $this->isEditing) {
+        if ((! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) && ! $this->isEditing) {
             $rules['newOfferQuantity'] = ['required', 'numeric', 'gt:0'];
             $rules['newOfferPrice'] = ['required', 'numeric', 'min:0'];
             $rules['newOfferStartAt'] = ['required', 'date'];
@@ -469,11 +468,10 @@ new class extends Component {
         $this->loadBranchesForInput();
 
         $this->isEditing = false;
-        $this->createOfferWithProduct = false;
         $this->newOfferQuantity = '';
         $this->newOfferPrice = '';
         $this->newOfferStartAt = now()->format('Y-m-d\TH:i');
-        $this->newOfferHasEndDate = true;
+        $this->newOfferHasEndDate = false;
         $this->newOfferEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
         $this->showModal = true;
     }
@@ -1288,7 +1286,7 @@ new class extends Component {
                     ]);
                 }
 
-                if ($this->createOfferWithProduct && ! $this->isEditing) {
+                if ((! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) && ! $this->isEditing) {
                     ProductOffer::query()->create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $activeBranchId,
@@ -1398,7 +1396,7 @@ new class extends Component {
         $this->offerQuantity = null;
         $this->offerPrice = null;
         $this->offerStartAt = now()->format('Y-m-d\TH:i');
-        $this->offerHasEndDate = true;
+        $this->offerHasEndDate = false;
         $this->offerEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
 
         $this->resetValidation([
@@ -1458,7 +1456,7 @@ new class extends Component {
         $this->offerPrice = null;
         $this->offerStartAt = null;
         $this->offerEndAt = null;
-        $this->offerHasEndDate = true;
+        $this->offerHasEndDate = false;
         $this->offerProductName = '';
         $this->resetValidation([
             'offerBranchId',
@@ -1487,7 +1485,7 @@ new class extends Component {
 
     private function loadOfferRetailPrice(): void
     {
-        $this->updateOfferRetailPrice = false;
+        $this->updateOfferRetailPrice = true;
         $this->offerRetailPrice = (string) (\App\Models\BranchProduct::query()
             ->where('tenant_id', $this->tenantId())->where('branch_id', $this->offerBranchId)
             ->where('product_id', $this->offerProductId)->value('retail_price') ?? '0.00');
@@ -1516,7 +1514,7 @@ new class extends Component {
                     $q->where('tenant_id', $tenantId)
                 ),
             ],
-            'offerRetailPrice' => [$this->updateOfferRetailPrice ? 'required' : 'nullable', 'numeric', 'min:0', 'max:999999999'],
+            'offerRetailPrice' => ['required', 'numeric', 'min:0', 'max:999999999'],
             'offerQuantity' => ['required', 'numeric', 'gt:0'],
             'offerPrice' => ['required', 'numeric', 'min:0'],
             'offerStartAt' => ['required', 'date'],
@@ -1604,12 +1602,10 @@ new class extends Component {
                 session()->flash('message', 'تمت إضافة العرض بنجاح.');
             }
 
-            if ($this->updateOfferRetailPrice) {
-                \App\Models\BranchProduct::query()->updateOrCreate([
-                    'tenant_id' => $tenantId, 'branch_id' => $this->offerBranchId, 'product_id' => $this->offerProductId,
-                ], ['retail_price' => $this->offerRetailPrice]);
-                Product::query()->where('tenant_id', $tenantId)->whereKey($this->offerProductId)->update(['is_price_unified' => false]);
-            }
+            \App\Models\BranchProduct::query()->updateOrCreate([
+                'tenant_id' => $tenantId, 'branch_id' => $this->offerBranchId, 'product_id' => $this->offerProductId,
+            ], ['retail_price' => $this->offerRetailPrice]);
+            Product::query()->where('tenant_id', $tenantId)->whereKey($this->offerProductId)->update(['is_price_unified' => false]);
         });
 
         $this->closeOfferModal();
@@ -1848,11 +1844,10 @@ new class extends Component {
         $this->originalStockQuantity = '0';
 
         $this->is_price_unified = false;
-        $this->createOfferWithProduct = false;
         $this->newOfferQuantity = '';
         $this->newOfferPrice = '';
         $this->newOfferStartAt = '';
-        $this->newOfferHasEndDate = true;
+        $this->newOfferHasEndDate = false;
         $this->newOfferEndAt = '';
 
         $this->branchPricesInput = [];
@@ -1931,7 +1926,13 @@ new class extends Component {
                     $search = app(PosProductSearch::class)->normalize($this->search);
 
 
-                    app(PosProductSearch::class)->apply($query->getQuery(), $search, (int) $this->tenantId());
+                    $searchService = app(PosProductSearch::class);
+                    $query->where(function ($matches) use ($searchService, $search): void {
+                        $searchService->apply($matches->getQuery(), $search, (int) $this->tenantId());
+                        $matches->orWhere(function ($nameMatches) use ($searchService, $search): void {
+                            $searchService->applyContains($nameMatches->getQuery(), $search);
+                        });
+                    });
                 }
             )
             ->when(
@@ -3831,12 +3832,8 @@ new class extends Component {
 
                 @if (! $isEditing)
                     <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
-                        <label class="flex items-center gap-2 font-semibold">
-                            <input type="checkbox" wire:model.live="createOfferWithProduct">
-                            إضافة عرض لهذا الصنف مباشرة
-                        </label>
-                        @if ($createOfferWithProduct)
-                            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                        <div class="font-semibold">إضافة عرض لهذا الصنف مباشرة</div>
+                        <div class="mt-4 grid gap-4 sm:grid-cols-2">
                                 <flux:field><flux:label>كمية العرض</flux:label><flux:input type="number" min="0.001" step="0.001" wire:model="newOfferQuantity" /><flux:error name="newOfferQuantity" /></flux:field>
                                 <flux:field><flux:label>سعر العرض الإجمالي</flux:label><flux:input type="number" min="0" step="0.01" wire:model="newOfferPrice" /><flux:error name="newOfferPrice" /></flux:field>
                                 <flux:field><flux:label>بداية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferStartAt" /><flux:error name="newOfferStartAt" /></flux:field>
@@ -3844,8 +3841,7 @@ new class extends Component {
                                 @if ($newOfferHasEndDate)
                                     <flux:field><flux:label>نهاية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferEndAt" /><flux:error name="newOfferEndAt" /></flux:field>
                                 @endif
-                            </div>
-                        @endif
+                        </div>
                     </section>
                 @endif
 
@@ -3996,11 +3992,8 @@ new class extends Component {
             </div>
 
             <form wire:submit.prevent="saveOffer" class="mt-6 space-y-4">
-                <flux:checkbox wire:model.live="updateOfferRetailPrice" label="تعديل سعر البيع لهذا الفرع" />
-                @if ($updateOfferRetailPrice)
-                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
-                    <flux:error name="offerRetailPrice" />
-                @endif
+                <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
+                <flux:error name="offerRetailPrice" />
 
                 <flux:field>
                     <flux:label>الفرع</flux:label>

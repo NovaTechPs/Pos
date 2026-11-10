@@ -2374,13 +2374,13 @@ new class extends Component {
                                             </td>
                                             <td class="px-3 py-3">
                                                 <div class="flex items-center gap-1">
-                                                    <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
+                                                    <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
                                                 </div>
                                             </td>
                                             <td class="px-3 py-3">
-                                                <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
+                                                <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
                                             </td>
-                                            <td class="px-3 py-3"><input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
+                                            <td class="px-3 py-3"><input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
                                             <td class="px-3 py-3 text-center">
                                                 <button type="button" wire:click="removeItem('{{ $key }}')" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button>
                                             </td>
@@ -2417,15 +2417,15 @@ new class extends Component {
                                 <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
-                                        <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:change="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
+                                        <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
-                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:change="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
+                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
                                     </div>
                                     <div>
                                         <label class="mb-1 block text-[10px] font-black text-slate-400">الإجمالي</label>
-                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
+                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
                                     </div>
                                 </div>
                             </div>
@@ -2436,7 +2436,7 @@ new class extends Component {
                 </div>
             </div>
 
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div data-purchase-invoice-summary class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-12">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <label for="purchase-notes" class="text-sm font-black text-slate-700">ملاحظات الفاتورة (اختياري)</label>
                     <div class="flex items-center gap-2 text-xs font-bold text-slate-500">

@@ -7,6 +7,17 @@ use App\Models\Tenant;
 use App\Models\User;
 use Livewire\Livewire;
 
+test('purchase invoice summary spans the full entry grid width', function (): void {
+    $tenant = Tenant::create(['name' => 'المتجر']);
+    $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->assertSee('data-purchase-invoice-summary', false)
+        ->assertSee('xl:col-span-12', false);
+});
+
 test('purchase summary keeps discounts and payment totals reactive in the compact layout', function (): void {
     $tenant = Tenant::create(['name' => 'المتجر']);
     $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
@@ -14,7 +25,8 @@ test('purchase summary keeps discounts and payment totals reactive in the compac
     $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
 
     Livewire::test('pages::tenant.purchases.invoices')
-        ->assertSee('data-purchase-summary', false)
+        ->assertSee('data-purchase-invoice-summary', false)
+        ->assertSee('xl:col-span-12', false)
         ->assertSee('wire:model.live.debounce.800ms="paidAmount"', false)
         ->assertSee('إجمالي الفاتورة')
         ->assertSee('الدفعة')

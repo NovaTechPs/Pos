@@ -24,7 +24,7 @@ new class extends Component {
     public string $price = '';
     public string $startAt = '';
     public string $endAt = '';
-    public bool $hasEndDate = true;
+    public bool $hasEndDate = false;
     public bool $isActive = true;
 
     private function tenantId(): ?int
@@ -108,7 +108,7 @@ new class extends Component {
 
     private function loadOfferRetailPrice(): void
     {
-        $this->updateOfferRetailPrice = false;
+        $this->updateOfferRetailPrice = true;
         $this->offerRetailPrice = (string) (\App\Models\BranchProduct::query()
             ->where('tenant_id', $this->tenantId())->where('branch_id', $this->branchId)
             ->where('product_id', $this->productId)->value('retail_price') ?? '0.00');
@@ -127,7 +127,7 @@ new class extends Component {
         $this->validate([
             'productId' => ['required', 'integer', Rule::exists('products', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId))],
             'branchId' => ['required', 'integer', Rule::exists('branches', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId))],
-            'offerRetailPrice' => [$this->updateOfferRetailPrice ? 'required' : 'nullable', 'numeric', 'min:0', 'max:999999999'],
+            'offerRetailPrice' => ['required', 'numeric', 'min:0', 'max:999999999'],
             'quantity' => ['required', 'numeric', 'gt:0'],
             'price' => ['required', 'numeric', 'min:0'],
             'startAt' => ['required', 'date'],
@@ -179,12 +179,10 @@ new class extends Component {
                 session()->flash('message', 'تمت إضافة العرض بنجاح.');
             }
 
-            if ($this->updateOfferRetailPrice) {
-                \App\Models\BranchProduct::query()->updateOrCreate([
-                    'tenant_id' => $tenantId, 'branch_id' => $this->branchId, 'product_id' => $this->productId,
-                ], ['retail_price' => $this->offerRetailPrice]);
-                Product::query()->where('tenant_id', $tenantId)->whereKey($this->productId)->update(['is_price_unified' => false]);
-            }
+            \App\Models\BranchProduct::query()->updateOrCreate([
+                'tenant_id' => $tenantId, 'branch_id' => $this->branchId, 'product_id' => $this->productId,
+            ], ['retail_price' => $this->offerRetailPrice]);
+            Product::query()->where('tenant_id', $tenantId)->whereKey($this->productId)->update(['is_price_unified' => false]);
         });
 
         $this->closeModal();
@@ -206,7 +204,7 @@ new class extends Component {
     private function resetForm(): void
     {
         $this->reset(['offerId', 'productId', 'branchId', 'productSearch', 'productName', 'quantity', 'price', 'startAt', 'endAt']);
-        $this->hasEndDate = true;
+        $this->hasEndDate = false;
         $this->isActive = true;
         $this->resetValidation();
     }
@@ -290,11 +288,8 @@ new class extends Component {
         <div class="space-y-4">
             <div><flux:heading size="lg">{{ $offerId ? 'تعديل العرض' : 'إضافة عرض' }}</flux:heading><flux:subheading>حدد الصنف والفرع والكمية والسعر ومدة العرض.</flux:subheading></div>
             <form wire:submit="save" class="space-y-4">
-                <flux:checkbox wire:model.live="updateOfferRetailPrice" label="تعديل سعر البيع لهذا الفرع" />
-                @if ($updateOfferRetailPrice)
-                    <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
-                    <flux:error name="offerRetailPrice" />
-                @endif
+                <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
+                <flux:error name="offerRetailPrice" />
                 <div class="relative">
                     <label class="mb-1 block text-sm font-bold">الصنف</label>
                     <input type="search" wire:model.live.debounce.200ms="productSearch" @disabled($offerId) placeholder="ابحث باسم الصنف أو رقمه..." class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />

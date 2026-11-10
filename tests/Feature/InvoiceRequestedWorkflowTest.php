@@ -72,6 +72,21 @@ test('invoice total changes preserve rounding and reject invalid input', functio
         ->assertSet("cart.$key.price", 0.0);
 })->with(['sales', 'purchases']);
 
+test('changing invoice quantity recalculates the line and invoice totals for sales and purchases', function (string $page, float $expectedTotal): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->set('selectedQuantity', 3)
+        ->call('commitRowToCart');
+    $key = array_key_first($component->get('cart'));
+
+    $component->assertSee('wire:input.debounce.300ms="updateItemQuantity', false)
+        ->call('updateItemQuantity', $key, 2)
+        ->assertViewHas('grandTotal', $expectedTotal);
+})->with([
+    ['sales', 20.0],
+    ['purchases', 4.0],
+]);
+
 test('invoice item rows have prominent separators', function (string $page): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
         ->call('selectProduct', $this->product->id)

@@ -2528,7 +2528,7 @@ new class extends Component {
                                         data-grid-input
                                         data-row="{{ $loop->index }}"
                                         data-col="0"
-                                        wire:change="updateItemQuantity('{{ $key }}', $event.target.value)"
+                                        wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)"
                                         class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
                                     />
                                 </td>
@@ -2544,7 +2544,7 @@ new class extends Component {
                                         data-grid-input
                                         data-row="{{ $loop->index }}"
                                         data-col="1"
-                                        wire:change="updateItemPrice('{{ $key }}', $event.target.value)"
+                                        wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)"
                                         class="w-28 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
                                     />
                                 </td>
@@ -2558,13 +2558,13 @@ new class extends Component {
                                         data-grid-input
                                         data-row="{{ $loop->index }}"
                                         data-col="2"
-                                        wire:change="updateItemDiscount('{{ $key }}', $event.target.value)"
+                                        wire:input.debounce.300ms="updateItemDiscount('{{ $key }}', $event.target.value)"
                                         class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-sm font-black text-rose-600 outline-none focus:border-indigo-500"
                                     />
                                 </td>
 
                                 <td class="px-3 py-2.5 text-center">
-                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" data-grid-input data-row="{{ $loop->index }}" data-col="3" wire:change="updateItemTotal('{{ $key }}', $event.target.value)" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500" aria-label="إجمالي السطر" />
+                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" data-grid-input data-row="{{ $loop->index }}" data-col="3" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500" aria-label="إجمالي السطر" />
                                 </td>
 
                                 <td class="px-3 py-2.5 text-center">

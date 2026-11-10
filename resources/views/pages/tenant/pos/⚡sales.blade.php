@@ -1099,10 +1099,20 @@ new class extends Component {
             // Match all words, even with additional words between them.
             $matches->orWhere(function ($nameQuery) use ($words, $escape, $nameSql): void {
                 foreach ($words as $word) {
-                    $nameQuery->whereRaw(
-                        "{$nameSql} LIKE ? ESCAPE '!'",
-                        ['%' . $escape($word) . '%']
-                    );
+                    if (ctype_digit($word)) {
+                        $number = $escape($word);
+                        $nameQuery->where(function ($numberQuery) use ($nameSql, $number): void {
+                            $numberQuery->whereRaw("{$nameSql} = ?", [$number])
+                                ->orWhereRaw("{$nameSql} LIKE ? ESCAPE '!'", [$number.' %'])
+                                ->orWhereRaw("{$nameSql} LIKE ? ESCAPE '!'", ['% '.$number.' %'])
+                                ->orWhereRaw("{$nameSql} LIKE ? ESCAPE '!'", ['% '.$number]);
+                        });
+                    } else {
+                        $nameQuery->whereRaw(
+                            "{$nameSql} LIKE ? ESCAPE '!'",
+                            ['%' . $escape($word) . '%']
+                        );
+                    }
                 }
             });
         });
@@ -1136,6 +1146,7 @@ new class extends Component {
                 'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
             ]);
          $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+        app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
         $this->inlineSearchResults = $query->orderBy('name')->orderBy('id')
             ->limit(12)
             ->get()
@@ -1568,10 +1579,17 @@ new class extends Component {
         // An empty search means "All": do not apply the search service's no-results guard.
         if ($search !== '') {
              $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+            app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
         }
 
         $resultLimit = 24;
         $matchedProducts = $query->orderBy('name')->orderBy('id')->limit($resultLimit)->get();
+        if ($remoteIds !== null) {
+            $remoteOrder = array_flip($remoteIds);
+            $matchedProducts = $matchedProducts
+                ->sortBy(fn (Product $product): int => $remoteOrder[$product->id] ?? PHP_INT_MAX)
+                ->values();
+        }
         if ($matchedProducts->isEmpty()) {
             $this->quickProducts = [];
             $this->quickProductsRequestKey = $requestKey;

@@ -67,7 +67,44 @@ class PosProductSearch
             return;
         }
         foreach ($words as $word) {
-            $query->whereRaw("products.search_name LIKE ? ESCAPE '!'", ['%'.$this->escapeLike($word).'%']);
+            if (ctype_digit($word)) {
+                $number = $this->escapeLike($word);
+                $query->where(function (Builder $numberQuery) use ($number): void {
+                    $numberQuery->where('products.search_name', $number)
+                        ->orWhereRaw("products.search_name LIKE ? ESCAPE '!'", [$number.' %'])
+                        ->orWhereRaw("products.search_name LIKE ? ESCAPE '!'", ['% '.$number.' %'])
+                        ->orWhereRaw("products.search_name LIKE ? ESCAPE '!'", ['% '.$number]);
+                });
+            } else {
+                $query->whereRaw("products.search_name LIKE ? ESCAPE '!'", ['%'.$this->escapeLike($word).'%']);
+            }
         }
+    }
+
+    public function applyRelevanceOrdering(Builder $query, string $search, int $tenantId): void
+    {
+        $search = $this->normalize($search);
+        if ($search === '') {
+            return;
+        }
+
+        $prefix = $this->escapeLike($search).'%';
+        $query
+            ->orderByRaw('CASE WHEN EXISTS (
+                SELECT 1 FROM product_barcodes AS ranked_barcodes
+                WHERE ranked_barcodes.product_id = products.id
+                    AND ranked_barcodes.tenant_id = ?
+                    AND ranked_barcodes.barcode = ?
+            ) THEN 0 ELSE 1 END', [$tenantId, $search])
+            ->orderByRaw('CASE WHEN LOWER(COALESCE(products.product_number, \'\')) = LOWER(?) THEN 0 ELSE 1 END', [$search])
+            ->orderByRaw("CASE WHEN LOWER(COALESCE(products.product_number, '')) LIKE ? ESCAPE '!' THEN 0 ELSE 1 END", [$prefix])
+            ->orderByRaw('CASE WHEN EXISTS (
+                SELECT 1 FROM product_barcodes AS ranked_barcodes
+                WHERE ranked_barcodes.product_id = products.id
+                    AND ranked_barcodes.tenant_id = ?
+                    AND ranked_barcodes.barcode LIKE ? ESCAPE \'!\'
+            ) THEN 0 ELSE 1 END', [$tenantId, $prefix])
+            ->orderByRaw('CASE WHEN products.search_name = ? THEN 0 ELSE 1 END', [$search])
+            ->orderByRaw("CASE WHEN products.search_name LIKE ? ESCAPE '!' THEN 0 ELSE 1 END", [$prefix]);
     }
 }

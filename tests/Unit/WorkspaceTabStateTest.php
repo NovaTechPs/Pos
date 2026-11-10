@@ -65,7 +65,7 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, workspaceUrl, cleanWorkspaceAddress, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, workspaceUrl, cleanWorkspaceAddress, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, openWorkspaceLinkInTab, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard/pos';
     const pageContent = { livewireId: 'same-component', value: 'unsaved invoice' };
     let frameMarked = false, frameClass = false, replacements = 0;
@@ -107,6 +107,11 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
         {url: '/dashboard/product?_workspace=frame', title: 'Products'}], activeUrl: '/dashboard/product?_workspace=frame' }), base);
     assert.equal(oldSnapshot.activeUrl, 'https://pos.example/dashboard/product');
     const tabs = new WorkspaceTabState(base, 'نقطة البيع');
+    assert.equal(tabs.open(base + '/?invoice=another', 'نقطة البيع - فاتورة أخرى').id, 'initial', 'A section with a different query must reuse its existing tab');
+    assert.equal(tabs.tabs.length, 1, 'The same section must not open twice');
+    const duplicateTabs = new WorkspaceTabState(base, 'نقطة البيع');
+    assert.notEqual(duplicateTabs.open(base + '/?invoice=another', 'نقطة البيع - فاتورة أخرى', true).id, 'initial');
+    assert.equal(duplicateTabs.tabs.length, 2, 'Explicit new tabs may open the same section independently');
     const products = tabs.open('https://pos.example/dashboard/product', 'الأصناف');
     const customer = tabs.open('https://pos.example/dashboard/customer', 'الزبائن');
     const focused = [];
@@ -204,18 +209,34 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     activate('keydown', {key: 'Enter'});
     assert.equal(opened.length, 2);
     assert.equal(activate('mousedown', {ctrlKey: true}).stopped, false, 'Modified clicks should retain browser behavior');
+    let newWorkspacePage;
+    const contextMenu = (button = 2, extra = {}) => {
+        const event = {target: {closest: () => link}, button, defaultPrevented: false, stopped: false,
+            preventDefault() {this.defaultPrevented = true;}, stopImmediatePropagation() {this.stopped = true;}, ...extra};
+        const handled = openWorkspaceLinkInTab(event, base, (url, title, forceNew) => { newWorkspacePage = {url, title, forceNew}; });
+        return {event, handled};
+    };
+    const rightClick = contextMenu();
+    assert.equal(rightClick.handled, true);
+    assert.equal(rightClick.event.defaultPrevented, true);
+    assert.equal(rightClick.event.stopped, true);
+    assert.deepEqual(newWorkspacePage, {url: 'https://pos.example/dashboard/product', title: 'الأصناف', forceNew: true});
+    assert.equal(contextMenu(0).handled, false, 'Left clicks should stay in the current workspace');
     const saved = readWorkspaceSnapshot(JSON.stringify({tabs: [
-        {url: base, title: 'نقطة البيع'}, {url: '/dashboard/product', title: 'الأصناف'},
+        {url: base, title: 'نقطة البيع'}, {url: '/dashboard/pos?invoice=another', title: 'نقطة البيع الثانية'},
+        {url: '/dashboard/product', title: 'الأصناف'},
         {url: 'https://evil.example/dashboard', title: 'External'}, {url: '/logout', title: 'Logout'},
-        {url: '/dashboard/product', title: 'Duplicate'}], activeUrl: base}), base);
-    assert.equal(saved.tabs.length, 2);
-    assert.equal(saved.activeUrl, base);
+        {url: '/dashboard/product', title: 'Duplicate'}], activeUrl: '/dashboard/pos?invoice=another'}), base);
+    assert.equal(saved.tabs.length, 4, 'Saved tabs must restore separate instances of the same section');
+    assert.equal(saved.activeUrl, 'https://pos.example/dashboard/pos?invoice=another');
+    assert.equal(saved.activeIndex, 1);
     assert.equal(readWorkspaceSnapshot('corrupt', base), null);
     const restored = new WorkspaceTabState(base, 'نقطة البيع');
-    saved.tabs.forEach(tab => restored.open(tab.url, tab.title));
-    restored.select(restored.tabs.find(tab => tab.url === saved.activeUrl).id);
-    assert.equal(restored.tabs.length, 2);
-    assert.equal(restored.active, 'initial');
+    restored.close('initial');
+    saved.tabs.forEach(tab => restored.open(tab.url, tab.title, true));
+    restored.select(restored.tabs[saved.activeIndex].id);
+    assert.equal(restored.tabs.length, 4);
+    assert.equal(restored.tabs.find(tab => tab.id === restored.active).url, saved.activeUrl);
     let requests = 0;
     let requestedUrl;
     const deferred = {dataset: {src: 'https://pos.example/dashboard/product?_workspace=frame'}, setAttribute() {}, set src(value) { requestedUrl = value; requests++; }};

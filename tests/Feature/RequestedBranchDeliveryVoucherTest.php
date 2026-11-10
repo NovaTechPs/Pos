@@ -19,7 +19,23 @@ beforeEach(function (): void {
     $this->actingAs($this->user)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
 });
 
-test('offers optionally update only the selected branch retail price', function (string $page, bool $updatePrice): void {
+test('product form keeps the direct offer fields visible and leaves the end date disabled by default', function (): void {
+    Livewire::test('pages::tenant.products.index')
+        ->call('openCreateModal')
+        ->assertSee('إضافة عرض لهذا الصنف مباشرة')
+        ->assertSee('wire:model="newOfferQuantity"', false)
+        ->assertDontSee('wire:model.live="createOfferWithProduct"', false)
+        ->assertSet('newOfferHasEndDate', false);
+});
+
+test('new offers default to no end date from both offer forms', function (): void {
+    $product = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'الصنف', 'cost_price' => 5]);
+
+    Livewire::test('pages::tenant.offers.index')->call('openCreateModal')->assertSet('hasEndDate', false);
+    Livewire::test('pages::tenant.products.index')->call('openOfferModal', $product->id)->assertSet('offerHasEndDate', false);
+});
+
+test('offers always show and update only the selected branch retail price', function (string $page): void {
     $product = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'الصنف', 'cost_price' => 5]);
     $otherBranch = Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'الفرع الثاني']);
     foreach ([$this->branch, $otherBranch] as $branch) {
@@ -31,16 +47,16 @@ test('offers optionally update only the selected branch retail price', function 
     } else {
         $component->call('openCreateModal')->call('selectProduct', $product->id)->set('quantity', '3')->set('price', '45')->set('startAt', now()->format('Y-m-d\TH:i'))->set('hasEndDate', false);
     }
-    $component->assertSee('تعديل سعر البيع لهذا الفرع')->assertSet('offerRetailPrice', '20')
-        ->set('updateOfferRetailPrice', $updatePrice)->set('offerRetailPrice', '25')
+    $component->assertSee('سعر التجزئة للفرع المحدد')->assertDontSee('تعديل سعر البيع لهذا الفرع')->assertSet('offerRetailPrice', '20')
+        ->set('offerRetailPrice', '25')
         ->call($page === 'products' ? 'saveOffer' : 'save')->assertHasNoErrors();
     expect(ProductOffer::query()->count())->toBe(1);
     $prices = BranchProduct::query()->where('product_id', $product->id)->get()->keyBy('branch_id');
-    expect((float) $prices[$this->branch->id]->retail_price)->toBe($updatePrice ? 25.0 : 20.0)
+    expect((float) $prices[$this->branch->id]->retail_price)->toBe(25.0)
         ->and((float) $prices[$otherBranch->id]->retail_price)->toBe(20.0)
         ->and((float) $prices[$this->branch->id]->wholesale_price)->toBe(15.0)
         ->and((float) $prices[$this->branch->id]->stock_quantity)->toBe(7.0);
-})->with(['products', 'offers'])->with([true, false]);
+})->with(['products', 'offers']);
 
 test('delivery details use invoice recipient fields and keep customer records managed separately', function (): void {
     $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'phone' => '0591000001', 'address' => 'الخليل', 'is_active' => true]);

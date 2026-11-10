@@ -49,7 +49,14 @@ class BranchSyncCatalogController extends Controller
         $search = trim($validated['search'] ?? '');
         if ($search !== '') {
             if ($products) {
-                app(PosProductSearch::class)->apply($query, $search, (int) $device->tenant_id);
+                $searchService = app(PosProductSearch::class);
+                $query->where(function ($matches) use ($searchService, $search, $device): void {
+                    $searchService->apply($matches, $search, (int) $device->tenant_id);
+                    $matches->orWhere(function ($nameMatches) use ($searchService, $search): void {
+                        $searchService->applyContains($nameMatches, $search);
+                    });
+                });
+                $searchService->applyRelevanceOrdering($query, $search, (int) $device->tenant_id);
             } else {
                 $query->where(fn ($query) => $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%"));
             }
