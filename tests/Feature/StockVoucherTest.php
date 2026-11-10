@@ -60,6 +60,50 @@ test('stock out voucher refuses a quantity larger than the branch balance', func
     expect(StockVoucher::count())->toBe(0)->and((float) $this->stock->fresh()->stock_quantity)->toBe(10.0);
 });
 
+test('stock vouchers can be edited while recording reversals and can be deleted by reversing their stock effect', function (): void {
+    $component = Livewire::test('pages::tenant.stock-vouchers.index')
+        ->set('branchId', $this->branch->id)
+        ->set('type', 'in')
+        ->set('notes', 'إدخال أولي')
+        ->set('lines', [['product_id' => (string) $this->product->id, 'quantity' => 5, 'unit_cost' => 7.5]])
+        ->call('save')
+        ->assertHasNoErrors();
+    $voucher = StockVoucher::query()->with('items')->sole();
+    expect((float) $this->stock->fresh()->stock_quantity)->toBe(15.0);
+
+    $component->call('editVoucher', $voucher->id)
+        ->assertSet('editingVoucherId', $voucher->id)
+        ->assertSet('notes', 'إدخال أولي')
+        ->set('lines.0.quantity', 8)
+        ->set('notes', 'تعديل كمية الإدخال')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertSet('editingVoucherId', null);
+
+    expect(StockVoucher::query()->count())->toBe(1)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(18.0)
+        ->and((float) $voucher->fresh()->items()->sole()->quantity)->toBe(8.0)
+        ->and($voucher->fresh()->notes)->toBe('تعديل كمية الإدخال')
+        ->and(DB::table('stock_movements')->where('source_type', 'stock_voucher_reversal')->count())->toBe(1);
+
+    $component->call('deleteVoucher', $voucher->id);
+
+    expect(StockVoucher::query()->count())->toBe(0)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(10.0)
+        ->and(DB::table('stock_movements')->where('source_type', 'stock_voucher_reversal')->count())->toBe(2);
+});
+
+test('stock voucher cannot be deleted when reversing an input would make branch stock negative', function (): void {
+    $this->stock->update(['stock_quantity' => 2]);
+    $voucher = StockVoucher::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'voucher_number' => 'SIN-USED', 'type' => 'in']);
+    $voucher->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 5, 'unit_cost' => 0]);
+
+    Livewire::test('pages::tenant.stock-vouchers.index')->call('deleteVoucher', $voucher->id)->assertStatus(422);
+
+    expect(StockVoucher::query()->exists())->toBeTrue()
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(2.0);
+});
+
 test('stock vouchers find products by barcode and add them through the invoice-style entry controls', function (): void {
     ProductBarcode::create([
         'tenant_id' => $this->tenant->id,

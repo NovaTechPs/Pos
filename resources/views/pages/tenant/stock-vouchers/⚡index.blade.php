@@ -18,6 +18,7 @@ new class extends Component
     public ?int $branchId = null;
     public string $notes = '';
     public string $productSearch = '';
+    public ?int $editingVoucherId = null;
     public ?int $selectedProductId = null;
     public string $selectedProductName = '';
     public float $selectedQuantity = 1.0;
@@ -184,6 +185,53 @@ new class extends Component
         $this->lines = array_values($this->lines);
     }
 
+    public function editVoucher(int $voucherId): void
+    {
+        $this->authorize('products.stock.adjust');
+        $voucher = StockVoucher::query()->where('tenant_id', auth()->user()?->tenant_id)->with('items')->findOrFail($voucherId);
+        $this->editingVoucherId = $voucher->id;
+        $this->type = $voucher->type;
+        $this->branchId = $voucher->branch_id;
+        $this->notes = (string) ($voucher->notes ?? '');
+        $this->lines = $voucher->items->map(fn (StockVoucherItem $item): array => [
+            'product_id' => (string) $item->product_id,
+            'quantity' => (float) $item->quantity,
+            'unit_cost' => (float) $item->unit_cost,
+        ])->all();
+        $this->successMessage = null;
+        $this->errorMessage = null;
+    }
+
+    public function deleteVoucher(int $voucherId): void
+    {
+        $this->authorize('products.stock.adjust');
+        $tenantId = auth()->user()?->tenant_id;
+
+        DB::transaction(function () use ($tenantId, $voucherId): void {
+            $voucher = StockVoucher::query()->where('tenant_id', $tenantId)->lockForUpdate()->with('items')->findOrFail($voucherId);
+            $direction = $voucher->type === 'in' ? -1 : 1;
+            $stocks = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $voucher->branch_id)
+                ->whereIn('product_id', $voucher->items->pluck('product_id'))->lockForUpdate()->get()->keyBy('product_id');
+
+            foreach ($voucher->items as $item) {
+                $stock = $stocks->get($item->product_id);
+                abort_unless($stock, 422, 'تعذر العثور على مخزون أحد أصناف السند.');
+                $delta = $direction * (float) $item->quantity;
+                abort_if((float) $stock->stock_quantity + $delta < -0.0005, 422, 'لا يمكن حذف السند لأن الرصيد الحالي لا يسمح بعكس كمية الإخراج.');
+                StockMovementContext::voucher('stock_voucher_reversal', $voucher->voucher_number, fn () => $stock->increment('stock_quantity', $delta));
+            }
+
+            $voucher->delete();
+        });
+
+        if ($this->editingVoucherId === $voucherId) {
+            $this->editingVoucherId = null;
+            $this->lines = [];
+            $this->notes = '';
+        }
+        $this->successMessage = 'تم حذف السند وعكس أثره من رصيد المخزون.';
+    }
+
     public function save(): void
     {
         $this->authorize('products.stock.adjust');
@@ -206,12 +254,33 @@ new class extends Component
         $productIds = array_map(fn (array $line): int => (int) $line['product_id'], $this->lines);
         abort_unless(Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->whereNull('deleted_at')->whereIn('id', $productIds)->count() === count($productIds), 404);
 
-        $voucher = strtoupper($this->type === 'in' ? 'SIN' : 'SOUT').'-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5));
+        $voucherNumber = strtoupper($this->type === 'in' ? 'SIN' : 'SOUT').'-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5));
         $sourceType = $this->type === 'in' ? 'stock_in' : 'stock_out';
 
-        DB::transaction(function () use ($tenantId, $user, $voucher, $sourceType): void {
+        DB::transaction(function () use ($tenantId, $user, $voucherNumber, $sourceType): void {
+            $existingVoucher = $this->editingVoucherId
+                ? StockVoucher::query()->where('tenant_id', $tenantId)->lockForUpdate()->with('items')->findOrFail($this->editingVoucherId)
+                : null;
+            abort_if($existingVoucher && (int) $existingVoucher->branch_id !== (int) $this->branchId, 422, 'لا يمكن نقل السند إلى فرع آخر أثناء تعديله.');
+            $productIds = array_values(array_unique(array_merge(
+                array_map(fn (array $line): int => (int) $line['product_id'], $this->lines),
+                $existingVoucher?->items->pluck('product_id')->map(fn ($id): int => (int) $id)->all() ?? [],
+            )));
             $stocks = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $this->branchId)
-                ->whereIn('product_id', array_map(fn (array $line): int => (int) $line['product_id'], $this->lines))->lockForUpdate()->get()->keyBy('product_id');
+                ->whereIn('product_id', $productIds)->lockForUpdate()->get()->keyBy('product_id');
+
+            if ($existingVoucher) {
+                $reversalDirection = $existingVoucher->type === 'in' ? -1 : 1;
+                foreach ($existingVoucher->items as $oldItem) {
+                    $stock = $stocks->get($oldItem->product_id);
+                    abort_unless($stock, 422, 'تعذر العثور على مخزون أحد أصناف السند.');
+                    $delta = $reversalDirection * (float) $oldItem->quantity;
+                    abort_if((float) $stock->stock_quantity + $delta < -0.0005, 422, 'لا يمكن تعديل السند لأن الرصيد الحالي لا يسمح بعكس كمية الإخراج.');
+                    StockMovementContext::voucher('stock_voucher_reversal', $existingVoucher->voucher_number, fn () => $stock->increment('stock_quantity', $delta));
+                }
+                $existingVoucher->update(['type' => $this->type, 'notes' => trim($this->notes) ?: null]);
+                $existingVoucher->items()->delete();
+            }
 
             foreach ($this->lines as $line) {
                 $productId = (int) $line['product_id'];
@@ -232,8 +301,8 @@ new class extends Component
                     throw \Illuminate\Validation\ValidationException::withMessages(['lines' => ['كمية الإخراج أكبر من المتبقي للصنف المحدد.']]);
                 }
 
-                $stockVoucher ??= StockVoucher::create([
-                    'tenant_id' => $tenantId, 'branch_id' => $this->branchId, 'voucher_number' => $voucher,
+                $stockVoucher ??= $existingVoucher ?? StockVoucher::create([
+                    'tenant_id' => $tenantId, 'branch_id' => $this->branchId, 'voucher_number' => $voucherNumber,
                     'type' => $this->type, 'notes' => trim($this->notes) ?: null, 'created_by' => $user->id,
                 ]);
                 StockVoucherItem::create([
@@ -245,11 +314,14 @@ new class extends Component
                     $this->type === 'in'
                         ? $stock->increment('stock_quantity', $quantity)
                         : $stock->decrement('stock_quantity', $quantity);
-                }, $voucher);
+                }, $existingVoucher?->voucher_number ?? $voucherNumber);
             }
         });
 
-        $this->successMessage = 'تم حفظ سند '.($this->type === 'in' ? 'الإدخال' : 'الإخراج').' بنجاح: '.$voucher;
+        $this->successMessage = $this->editingVoucherId
+            ? 'تم تعديل السند '.$voucherNumber.' بنجاح.'
+            : 'تم حفظ سند '.($this->type === 'in' ? 'الإدخال' : 'الإخراج').' بنجاح: '.$voucherNumber;
+        $this->editingVoucherId = null;
         $this->notes = '';
         $this->lines = [];
         $this->selectedProductId = null;
@@ -288,7 +360,8 @@ new class extends Component
             ->with(['branchProducts' => fn ($query) => $query->where('tenant_id', $tenantId)->when($this->branchId, fn ($branchQuery) => $branchQuery->where('branch_id', $this->branchId))])
             ->get(['id', 'name', 'product_number', 'cost_price']);
         $lineOptions = $products->concat($lineProducts)->unique('id')->values();
-        $recent = StockMovement::query()->where('tenant_id', $tenantId)->whereIn('source_type', ['stock_in', 'stock_out'])->when($this->branchId, fn ($query) => $query->where('branch_id', $this->branchId))->with(['product:id,name,product_number', 'branch:id,name'])->latest('id')->limit(30)->get();
+        $recent = StockVoucher::query()->where('tenant_id', $tenantId)->when($this->branchId, fn ($query) => $query->where('branch_id', $this->branchId))
+            ->with(['items.product:id,name,product_number', 'branch:id,name'])->latest('id')->limit(30)->get();
 
         return $this->view(compact('branches', 'products', 'lineOptions', 'recent'))->layout('layouts::tenant');
     }
@@ -302,7 +375,7 @@ new class extends Component
 @endphp
 
 <flux:main dir="rtl" class="space-y-5">
-    <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-l from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-lg">
         <div class="flex items-center gap-3">
             <div class="flex size-12 items-center justify-center rounded-xl bg-white/10 text-2xl">📦</div>
             <div>
@@ -326,7 +399,7 @@ new class extends Component
         <section class="grid gap-4 border-b border-slate-100 pb-5 md:grid-cols-2 dark:border-slate-800">
             <flux:select label="نوع السند" wire:model.live="type"><option value="in">إدخال بضاعة</option><option value="out">إخراج بضاعة</option></flux:select>
             @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
-                <flux:select label="الفرع / المخزن" wire:model="branchId"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+                <flux:select label="الفرع / المخزن" wire:model="branchId" :disabled="$editingVoucherId !== null"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @endif
         </section>
 
@@ -406,12 +479,17 @@ new class extends Component
 
         <section class="grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end dark:border-slate-800">
             <flux:textarea label="سبب السند أو ملاحظات" wire:model="notes" placeholder="مثال: بضاعة وصلت دون فاتورة / تلف / استعمال داخلي" />
-            <flux:button variant="primary" wire:click="save" wire:loading.attr="disabled" wire:target="save">حفظ سند {{ $type === 'in' ? 'الإدخال' : 'الإخراج' }}</flux:button>
+            <div class="flex gap-2">
+                @if ($editingVoucherId)
+                    <flux:button variant="ghost" wire:click="$set('editingVoucherId', null); $set('lines', []); $set('notes', '')">إلغاء التعديل</flux:button>
+                @endif
+                <flux:button variant="primary" wire:click="save" wire:loading.attr="disabled" wire:target="save">{{ $editingVoucherId ? 'حفظ تعديل السند' : 'حفظ سند '.($type === 'in' ? 'الإدخال' : 'الإخراج') }}</flux:button>
+            </div>
         </section>
     </div>
 
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div class="border-b border-slate-100 p-4 dark:border-slate-800"><h2 class="font-black text-slate-900 dark:text-white">آخر حركات الإدخال والإخراج</h2><p class="mt-1 text-xs text-slate-500">عرض آخر 30 حركة مسجلة.</p></div>
-        <div class="overflow-x-auto"><table class="w-full min-w-[720px] text-right text-sm"><thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><tr><th class="p-3">التاريخ</th><th class="p-3">رقم السند</th><th class="p-3">النوع</th><th class="p-3">الفرع</th><th class="p-3">الصنف</th><th class="p-3 text-center">الكمية</th></tr></thead><tbody class="divide-y divide-slate-100 dark:divide-slate-800">@forelse($recent as $movement)<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td class="p-3 tabular-nums">{{ $movement->created_at->format('Y-m-d H:i') }}</td><td class="p-3 font-mono text-xs">{{ $movement->source_reference }}</td><td class="p-3"><span class="rounded-full px-2.5 py-1 text-xs font-bold {{ $movement->source_type === 'stock_in' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300' }}">{{ $movement->source_type === 'stock_in' ? 'إدخال' : 'إخراج' }}</span></td><td class="p-3">{{ $movement->branch?->name }}</td><td class="p-3 font-semibold">{{ $movement->product?->name }}</td><td class="p-3 text-center font-mono font-black tabular-nums {{ $movement->quantity > 0 ? 'text-emerald-700' : 'text-rose-700' }}">{{ number_format($movement->quantity, 3) }}</td></tr>@empty<tr><td colspan="6" class="p-8 text-center text-slate-500">لا توجد سندات إدخال أو إخراج بعد.</td></tr>@endforelse</tbody></table></div>
+        <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-right text-sm"><thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><tr><th class="p-3">التاريخ</th><th class="p-3">رقم السند</th><th class="p-3">النوع</th><th class="p-3">الفرع</th><th class="p-3">الأصناف</th><th class="p-3 text-center">الكمية</th><th class="p-3">الإجراءات</th></tr></thead><tbody class="divide-y divide-slate-100 dark:divide-slate-800">@forelse($recent as $voucher)<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td class="p-3 tabular-nums">{{ $voucher->created_at->format('Y-m-d H:i') }}</td><td class="p-3 font-mono text-xs">{{ $voucher->voucher_number }}</td><td class="p-3">{{ $voucher->type === 'in' ? 'إدخال' : 'إخراج' }}</td><td class="p-3">{{ $voucher->branch?->name }}</td><td class="p-3 font-semibold">{{ $voucher->items->map(fn ($item) => $item->product?->name)->filter()->implode('، ') }}</td><td class="p-3 text-center font-mono font-black tabular-nums">{{ number_format((float) $voucher->items->sum('quantity'), 3) }}</td><td class="p-3"><div class="flex gap-2"><button type="button" wire:click="editVoucher({{ $voucher->id }})" class="rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">تعديل</button><button type="button" wire:click="deleteVoucher({{ $voucher->id }})" wire:confirm="هل تريد حذف السند وعكس أثره من المخزون؟" class="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">حذف</button></div></td></tr>@empty<tr><td colspan="7" class="p-8 text-center text-slate-500">لا توجد سندات إدخال أو إخراج بعد.</td></tr>@endforelse</tbody></table></div>
     </section>
 </flux:main>
