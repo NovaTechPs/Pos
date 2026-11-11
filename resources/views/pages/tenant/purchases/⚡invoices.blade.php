@@ -52,6 +52,8 @@ new class extends Component {
 
     public float $selectedQuantity = 1.0;
 
+    public float $selectedDiscount = 0.0;
+
     public array $cart = [];
 
     public float $discount = 0.0;
@@ -280,6 +282,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
+        $this->selectedDiscount = 0.0;
         $this->editingCartKey = null;
 
         $this->cart = [];
@@ -432,6 +435,7 @@ new class extends Component {
             $this->selectedRetailPrice = 0;
             $this->selectedStock = 0;
             $this->selectedQuantity = 1;
+            $this->selectedDiscount = 0.0;
         }
     }
 
@@ -522,7 +526,7 @@ new class extends Component {
     }
 
     // Pass current DOM values in one request so blur/morphing cannot lose edits.
-    public function commitRowWithValues($quantity, $price): void
+    public function commitRowWithValues($quantity, $price, $discount = 0): void
     {
         if (! $this->ensureInvoiceEditable()) {
             return;
@@ -535,8 +539,15 @@ new class extends Component {
             return;
         }
 
+        $discount = $discount === null || $discount === '' ? 0 : $discount;
+        if (! is_numeric($discount) || ! is_finite((float) $discount) || (float) $discount < 0) {
+            $this->errorMessage = 'الخصم يجب ألا يكون سالباً.';
+            return;
+        }
+
         $this->selectedQuantity = round((float) $quantity, 2);
         $this->selectedPurchasePrice = round((float) $price, 2);
+        $this->selectedDiscount = round((float) $discount, 2);
         if ($this->selectedQuantity <= 0) {
             $this->errorMessage = 'الكمية يجب أن تكون أكبر من صفر.';
             return;
@@ -580,7 +591,7 @@ new class extends Component {
             'price' => round((float) $this->selectedPurchasePrice, 2),
             'retail_price' => round((float) $this->selectedRetailPrice, 2),
             'quantity' => round((float) $this->selectedQuantity, 2),
-            'discount' => 0.0,
+            'discount' => round(min(max(0, (float) $this->selectedDiscount), (float) $this->selectedPurchasePrice * (float) $this->selectedQuantity), 2),
             'stock' => round((float) $this->selectedStock, 2),
         ];
 
@@ -594,6 +605,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
+        $this->selectedDiscount = 0.0;
         $this->rowSearch = '';
         $this->editingCartKey = null;
         $this->errorMessage = null;
@@ -648,6 +660,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
+        $this->selectedDiscount = 0.0;
         $this->rowSearch = '';
         $this->dispatch('focus-product-search');
     }
@@ -1439,6 +1452,12 @@ new class extends Component {
 
     public function saveAndPrint(): void
     {
+        if ($this->currentPurchaseId && ! $this->invoiceEditMode) {
+            $this->printCurrentInvoice();
+
+            return;
+        }
+
         $this->saveInvoice(true);
     }
 
@@ -1615,6 +1634,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0;
         $this->selectedStock = 0;
         $this->selectedQuantity = 1;
+        $this->selectedDiscount = 0.0;
         $this->rowSearch = '';
 
         $this->successMessage = "تم تحميل فاتورة المشتريات {$purchase->reference_number}.";
@@ -1705,11 +1725,14 @@ new class extends Component {
                 'pi.unit_cost',
                 'pi.subtotal',
                 'p.name as product_name',
+                'p.product_number',
+                'pi.product_id',
             ])
             ->map(function ($item) {
                 $gross = (float) $item->unit_cost * (float) $item->quantity;
                 return [
                     'name' => $item->product_name ?? 'مادة غير محددة',
+                    'product_number' => (string) ($item->product_number ?: $item->product_id),
                     'quantity' => (float) $item->quantity,
                     'price' => (float) $item->unit_cost,
                     'discount' => max(0, $gross - (float) $item->subtotal),
@@ -1737,10 +1760,12 @@ new class extends Component {
         $this->dispatch(
             'print-purchase-invoice',
             invoice: [
+                'pdf_url' => route('tenant.purchase-invoices.pdf', ['purchaseId' => $purchase->id]),
                 'store_name' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
                 'number' => $purchase->reference_number,
                 'date' => $purchase->invoice_date ?: $purchase->created_at,
                 'supplier' => $supplierName,
+                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($supplier?->name, $purchase->reference_number, 'مورد عام'), '.pdf'),
                 'notes' => $purchase->notes ?? null,
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
@@ -1790,7 +1815,7 @@ new class extends Component {
             ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
             ->where('pi.purchase_id', $purchase->id)
             ->orderBy('pi.id')
-            ->get(['pi.quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name']);
+            ->get(['pi.product_id', 'pi.quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name', 'p.product_number']);
 
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $tenantId)->whereKey($purchase->supplier_id)->value('name')
@@ -1811,7 +1836,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, 'purchase-invoice-'.$purchase->reference_number.'.pdf');
+        }, \App\Services\PdfFilename::forDocument($supplierName, $purchase->reference_number, 'مورد عام'));
     }
 
     public function shareInvoicePdf(): void
@@ -1825,7 +1850,7 @@ new class extends Component {
         $this->dispatch(
             'share-invoice-pdf',
             url: route('tenant.purchase-invoices.pdf', ['purchaseId' => $this->currentPurchaseId]),
-            filename: 'purchase-invoice-'.$this->invoiceNumber.'.pdf',
+            filename: \App\Services\PdfFilename::forDocument($this->selectedSupplierId ? Party::query()->where('tenant_id', $this->tenantId())->whereKey($this->selectedSupplierId)->value('name') : null, $this->invoiceNumber, 'مورد عام'),
             message: 'مرفق فاتورة مشتريات رقم '.$this->invoiceNumber
         );
     }
@@ -1869,7 +1894,11 @@ new class extends Component {
                     $query->where(function ($prefixQuery) use ($searchService, $search, $tenantId) {
                         $searchService->apply($prefixQuery->getQuery(), $search, (int) $tenantId);
                     })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", [$numberPattern]);
+
+                    $searchService->orWhereBarcodeContains($query->getQuery(), $search, (int) $tenantId);
                 })
+                // Items with the most stock in this branch come first.
+                ->orderByRaw('COALESCE((SELECT bp_sort.stock_quantity FROM branch_products AS bp_sort WHERE bp_sort.product_id = products.id AND bp_sort.branch_id = ? LIMIT 1), 0) DESC', [$branchId])
                 ->orderBy('name')->orderBy('id')
                 ->limit(12)
                 ->get();
@@ -1881,6 +1910,8 @@ new class extends Component {
                     ->where('tenant_id', $tenantId)
                     ->with(['branchProducts' => fn ($query) => $query->where('branch_id', $branchId)])
                     ->tap(fn ($query) => $searchService->applyContains($query->getQuery(), $search))
+                    ->orderByRaw('COALESCE((SELECT bp_sort.stock_quantity FROM branch_products AS bp_sort WHERE bp_sort.product_id = products.id AND bp_sort.branch_id = ? LIMIT 1), 0) DESC', [$branchId])
+                    ->orderBy('name')->orderBy('id')
                     ->limit(12)
                     ->get();
             }
@@ -1978,6 +2009,9 @@ new class extends Component {
             : collect();
 
         return $this->view([
+            'cartProductNumbers' => $tenantId && $this->cart !== []
+                ? Product::query()->where('tenant_id', $tenantId)->whereIn('id', array_column($this->cart, 'id'))->pluck('product_number', 'id')->filter()->all()
+                : [],
             'branches' => $branches,
             'purchaseBranches' => $branches,
             'purchaseSearchResults' => $purchaseSearchResults,
@@ -2004,86 +2038,127 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="min-h-[calc(100vh-4rem)] bg-slate-100 p-2 sm:p-3 md:p-4" dir="rtl">
+<flux:main class="bg-slate-100 p-2! sm:p-3! xl:h-[var(--invoice-fit-height,calc(100dvh-4rem))] xl:overflow-y-auto" dir="rtl">
 
     <div
-        class="mx-auto max-w-[1700px]"
+        class="mx-auto max-w-[1700px] xl:flex xl:h-full xl:flex-col"
         x-data="purchaseInvoiceKeyboard()"
     >
 
         {{-- شريط الأدوات --}}
         <livewire:product-history :key="'purchase-product-history-singleton'" />
-        @if ($selectedSupplierId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
-            <a class="mb-3 inline-flex rounded-xl bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedSupplierId, 'party_type' => 'supplier']) }}" target="_blank" rel="noopener">كشف حساب المورد</a>
-        @endif
-        <div class="mb-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="flex flex-col gap-3 bg-slate-950 p-3 text-white lg:flex-row lg:items-center lg:justify-between">
+
+        <div class="mb-3 shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+
                 <div class="flex min-w-0 items-center gap-3">
-                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl">
-                        🛒
-                    </div>
+                    <flux:icon.shopping-bag class="size-10 shrink-0 text-blue-600" />
+
                     <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
-                            <h1 class="truncate text-base font-black sm:text-lg">فاتورة مشتريات</h1>
+                            <h1 class="text-xl font-black text-slate-900">فاتورة مشتريات</h1>
+
                             @if ($currentPurchaseId)
-                                <span class="rounded-full border border-amber-300/30 bg-amber-400/15 px-2.5 py-1 text-[10px] font-black text-amber-300">تعديل فاتورة</span>
+                                @if ($invoiceEditMode)
+                                    <span class="rounded-full bg-amber-500 px-3 py-0.5 text-xs font-black text-white">تعديل فاتورة</span>
+                                @else
+                                    <span class="rounded-full bg-slate-700 px-3 py-0.5 text-xs font-black text-white">محفوظة</span>
+                                @endif
                             @else
-                                <span class="rounded-full border border-emerald-300/30 bg-emerald-400/15 px-2.5 py-1 text-[10px] font-black text-emerald-300">فاتورة جديدة</span>
+                                <span class="rounded-full bg-emerald-600 px-3 py-0.5 text-xs font-black text-white">فاتورة جديدة</span>
                             @endif
                         </div>
-                        <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-300">
-                            <span>رقم: <strong class="font-mono text-white">{{ $invoiceNumber }}</strong></span>
-                            <span>التاريخ: <strong class="text-white">{{ $invoiceDate }}</strong></span>
-                        </div>
+
+                        <div class="mt-0.5 font-mono text-xs font-bold text-slate-500">{{ $invoiceNumber }}</div>
                     </div>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <button type="button" wire:click="startNewInvoice" class="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black transition hover:bg-emerald-500">+ جديدة</button>
-                    <button type="button" wire:click="togglePurchaseSearch" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🔎 استعلام</button>
-                    <button type="button" wire:click="previousInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">← السابقة</button>
-                    <button type="button" wire:click="nextInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">التالية →</button>
-                    @if ($currentPurchaseId)
-                        <button type="button" wire:click="printCurrentInvoice" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">🖨 طباعة</button>
-                        <button type="button" wire:click="downloadInvoicePdf" class="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-black transition hover:bg-white/15">📄 PDF</button>
-                        <button type="button" wire:click="shareInvoicePdf" class="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/30">🟢 واتساب PDF</button>
-                        @if (! $invoiceEditMode)
-                            <button type="button" wire:click="editLoadedInvoice" class="rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 transition hover:bg-amber-400">✎ تعديل</button>
-                        @endif
-                    @else
-                        <button type="button" wire:click="saveAndPrint" class="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black transition hover:bg-indigo-500">💾 حفظ وطباعة</button>
-                    @endif
-                </div>
-            </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative" x-data="{ toolsOpen: false }" x-on:click.outside="toolsOpen = false" x-on:keydown.escape.stop="toolsOpen = false">
+                        <button type="button" x-on:click="toolsOpen = ! toolsOpen" x-bind:aria-expanded="toolsOpen" aria-haspopup="menu" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                            أدوات
+                            <flux:icon.chevron-down class="size-4" />
+                        </button>
 
-            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-500">
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">↑ ↓</kbd> تنقل</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">← →</kbd> الخانات</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F2</kbd> الأسعار</span><span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Shift+F2</kbd> جديدة</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F3</kbd> حفظ</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F6</kbd> حفظ وطباعة</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F7</kbd> استعلام</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F8</kbd> المورد</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">F9</kbd> المادة</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Enter</kbd> اختيار / إضافة</span>
-                <span><kbd class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">Esc</kbd> إغلاق</span>
+                        <div x-cloak x-show="toolsOpen" x-transition.origin.top x-on:click="toolsOpen = false" role="menu" class="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-700 shadow-xl">
+                            <button type="button" role="menuitem" x-on:click="document.getElementById('purchase-notes')?.focus()" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات الفاتورة
+                            </button>
+
+                            @if ($currentPurchaseId)
+                                <button type="button" role="menuitem" wire:click="printCurrentInvoice" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                    <flux:icon.printer class="size-4 text-slate-500" /> طباعة الفاتورة المحفوظة
+                                </button>
+                                <button type="button" role="menuitem" wire:click="downloadInvoicePdf" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                    <flux:icon.document-arrow-down class="size-4 text-slate-500" /> تحميل PDF
+                                </button>
+                                <button type="button" role="menuitem" wire:click="shareInvoicePdf" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-emerald-700 hover:bg-emerald-50">
+                                    <flux:icon.share class="size-4" /> واتساب PDF
+                                </button>
+                            @endif
+
+                            @if ($selectedSupplierId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+                                <div class="my-1 border-t border-slate-100"></div>
+                                <a role="menuitem" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedSupplierId, 'party_type' => 'supplier']) }}" target="_blank" rel="noopener" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-indigo-700 hover:bg-indigo-50">
+                                    <flux:icon.document-text class="size-4" /> كشف حساب المورد
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="inline-flex h-10 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+                        <button type="button" wire:click="previousInvoice" title="الفاتورة السابقة" class="inline-flex items-center gap-1 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                            <flux:icon.chevron-right class="size-4" /> السابقة
+                        </button>
+                        <button type="button" wire:click="nextInvoice" title="الفاتورة التالية" class="inline-flex items-center gap-1 border-r border-slate-300 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                            التالية <flux:icon.chevron-left class="size-4" />
+                        </button>
+                    </div>
+
+                    <button type="button" wire:click="togglePurchaseSearch" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                        <flux:icon.magnifying-glass class="size-4" /> استعلام <span class="text-xs text-slate-400">(F7)</span>
+                    </button>
+
+                    @if ($currentPurchaseId && ! $invoiceEditMode)
+                        <button type="button" wire:click="editLoadedInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-100">
+                            <flux:icon.pencil-square class="size-4" /> تعديل
+                        </button>
+                    @endif
+
+                    <button type="button" wire:click="startNewInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                        <flux:icon.plus-circle class="size-5 text-blue-600" /> جديد <span class="text-xs text-slate-400">(Shift+F2)</span>
+                    </button>
+
+                    @can('accounting.voucher.create')
+                        <button type="button" wire:click="saveInvoice(false, true)" wire:loading.attr="disabled" wire:target="saveInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
+                            <flux:icon.banknotes class="size-4" /> حفظ وتسديد
+                        </button>
+                    @endcan
+
+                    <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" wire:target="saveAndPrint" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50">
+                        <flux:icon.printer class="size-4" />
+                        <span wire:loading.remove wire:target="saveAndPrint">{{ $currentPurchaseId && ! $invoiceEditMode ? 'طباعة' : 'حفظ وطباعة' }}</span><span wire:loading wire:target="saveAndPrint">{{ $currentPurchaseId && ! $invoiceEditMode ? 'جاري التجهيز...' : 'جاري الحفظ...' }}</span>
+                        <span class="text-xs text-slate-500">(F6)</span>
+                    </button>
+
+                    <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+                        <flux:icon.check-circle class="size-5" />
+                        <span wire:loading.remove wire:target="saveInvoice">{{ $currentPurchaseId ? 'حفظ التعديل' : 'حفظ الفاتورة' }}</span><span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
+                        <span class="text-xs font-bold text-emerald-100">(F3)</span>
+                    </button>
+                </div>
             </div>
         </div>
 
         {{-- الرسائل --}}
         @if ($errorMessage)
-            <div class="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+            <div class="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
                 <div class="flex items-center gap-2"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100">!</span><span>{{ $errorMessage }}</span></div>
                 <button type="button" wire:click="$set('errorMessage', null)" class="rounded-lg px-2 py-1 hover:bg-rose-100">✕</button>
             </div>
         @endif
 
-        @if ($successMessage)
-            <div class="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-                <div class="flex items-center gap-2"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100">✓</span><span>{{ $successMessage }}</span></div>
-                <button type="button" wire:click="$set('successMessage', null)" class="rounded-lg px-2 py-1 hover:bg-emerald-100">✕</button>
-            </div>
-        @endif
+        <x-flash-notice :message="$successMessage" />
 
         {{-- البحث عن فاتورة --}}
         @if ($showPurchaseSearch)
@@ -2130,36 +2205,44 @@ new class extends Component {
         @endif
 
         {{-- رأس الفاتورة --}}
-        <div class="mb-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div class="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
-                    <div class="text-sm font-black text-slate-900">بيانات الفاتورة</div>
-                    <div class="mt-1 text-[11px] font-semibold text-slate-400">المورد، رقم فاتورة المورد، الفرع والتاريخ</div>
-                </div>
-                <div class="rounded-xl bg-slate-50 px-3 py-2 text-left">
-                    <div class="text-[10px] font-bold text-slate-400">رقم الفاتورة</div>
-                    <div class="font-mono text-sm font-black text-slate-900">{{ $invoiceNumber }}</div>
-                </div>
-            </div>
+        @php
+            $showBranchField = ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin();
+        @endphp
 
-            <div class="grid gap-3 lg:grid-cols-12">
-                <div class="relative lg:col-span-4" data-invoice-search-group x-data="{ partySearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) partySearchOpen = false" x-on:click.outside="partySearchOpen = false" x-on:keydown.escape.stop="partySearchOpen = false">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">العميل / المورد</label>
+        <div class="relative z-40 mb-3 shrink-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+
+                <div class="xl:col-span-2">
+                    <label for="purchase-invoice-number" class="mb-1 block text-xs font-bold text-slate-700">رقم الفاتورة / المرجع</label>
+                    <input id="purchase-invoice-number" type="text" wire:model="invoiceNumber" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-mono text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                </div>
+
+                <div class="xl:col-span-2">
+                    <label for="purchase-invoice-date" class="mb-1 block text-xs font-bold text-slate-700">التاريخ</label>
+                    <input id="purchase-invoice-date" type="date" wire:model="invoiceDate" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                </div>
+
+                <div class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" data-invoice-search-group x-data="{ partySearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) partySearchOpen = false" x-on:click.outside="partySearchOpen = false" x-on:keydown.escape.stop="partySearchOpen = false">
+                    <label for="supplier-search-input" class="mb-1 block text-xs font-bold text-slate-700">العميل / المورد</label>
                     @if ($selectedSupplier)
-                        <div class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
-                            <div class="min-w-0">
-                                <div class="truncate text-sm font-black text-indigo-900">{{ $selectedSupplier->name }}</div>
-                                <div class="mt-0.5 text-[11px] font-semibold text-indigo-700">{{ $selectedSupplier->phone ?: 'بدون هاتف' }}</div>
+                        <div class="flex h-10 items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3">
+                            <flux:icon.building-storefront class="size-4 shrink-0 text-indigo-700" />
+                            <div class="min-w-0 flex-1 truncate text-sm">
+                                <span class="font-black text-indigo-900">{{ $selectedSupplier->name }}</span>
+                                <span class="mr-1 text-xs font-semibold text-indigo-700">{{ $selectedSupplier->phone ?: 'بدون هاتف' }}</span>
                             </div>
-                            <button type="button" wire:click="clearSupplier" class="rounded-lg px-2 py-1 text-xs font-black text-indigo-700 hover:bg-indigo-100">تغيير</button>
+                            <button type="button" wire:click="clearSupplier" title="تغيير المورد" class="shrink-0 rounded-md px-2 py-1 text-xs font-black text-indigo-800 hover:bg-indigo-100">تغيير</button>
                         </div>
                     @else
-                        <input id="supplier-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم العميل أو المورد أو الهاتف..." autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-400 focus:bg-white" />
+                        <div class="relative">
+                            <flux:icon.building-storefront class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                            <input id="supplier-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم العميل أو المورد أو الهاتف..." autocomplete="off" class="h-10 w-full rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                        </div>
                         @if (trim($supplierSearch) !== '')
-                            <div data-invoice-search-results x-cloak x-show="partySearchOpen" x-on:click="partySearchOpen = false" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                            <div data-invoice-search-results x-cloak x-show="partySearchOpen" x-on:click="partySearchOpen = false" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
                                 <div class="max-h-64 overflow-y-auto p-1.5" x-ref="supplierResults">
                                     @forelse ($supplierResults as $supplier)
-                                        <button type="button" wire:key="purchase-search-supplier-{{ $supplier->id }}" data-supplier-result data-result-index="{{ $loop->index }}" wire:click="selectSupplier({{ $supplier->id }})" class="group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right transition hover:bg-slate-50">
+                                        <button type="button" wire:key="purchase-search-supplier-{{ $supplier->id }}" data-supplier-result data-result-index="{{ $loop->index }}" wire:click="selectSupplier({{ $supplier->id }})" class="group flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-right transition hover:bg-slate-50">
                                             <div class="min-w-0">
                                                 <div class="truncate text-sm font-black text-slate-800">{{ $supplier->name }}</div>
                                                 <div class="mt-0.5 text-[11px] font-semibold text-slate-400">{{ $supplier->phone ?: 'بدون هاتف' }}</div>
@@ -2178,304 +2261,333 @@ new class extends Component {
                     @endif
                 </div>
 
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">مرجع الفاتورة</label>
-                    <input type="text" wire:model="invoiceNumber" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white" />
-                </div>
-
-                @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
-                    <select wire:model.live="selectedBranchId" @disabled($userBranchLocked) class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60">
-                        @foreach ($branches as $branch)
-                            <option wire:key="purchase-selected-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                @if ($showBranchField)
+                    <div class="xl:col-span-2">
+                        <label for="purchase-invoice-branch" class="mb-1 block text-xs font-bold text-slate-700">الفرع / المخزن</label>
+                        <select id="purchase-invoice-branch" wire:model.live="selectedBranchId" @disabled($userBranchLocked) class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70">
+                            @foreach ($branches as $branch)
+                                <option wire:key="purchase-selected-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 @endif
 
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">التاريخ</label>
-                    <input type="date" wire:model="invoiceDate" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 outline-none focus:border-slate-400 focus:bg-white" />
-                </div>
-
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">نوع العملية</label>
-                    <div class="flex h-[46px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3">
-                        <span class="h-2.5 w-2.5 rounded-full bg-indigo-500"></span>
-                        <span class="mr-2 text-xs font-black text-indigo-800">مشتريات</span>
+                <div class="xl:col-span-2">
+                    <div class="mb-1 block text-xs font-bold text-slate-700">الرصيد الحالي</div>
+                    <div class="flex h-10 items-center justify-between rounded-lg border border-slate-300 bg-slate-50 px-3">
+                        <span class="font-mono text-sm font-black {{ $selectedSupplier && (float) $selectedSupplier->current_balance < 0 ? 'text-rose-600' : 'text-slate-800' }}">
+                            {{ $selectedSupplier ? number_format((float) $selectedSupplier->current_balance, 2) : '—' }}
+                        </span>
+                        <flux:icon.wallet class="size-4 text-slate-400" />
                     </div>
                 </div>
             </div>
         </div>
 
-        {{-- منطقة الإدخال --}}
-        <div class="grid gap-3 xl:grid-cols-12">
+        {{-- جدول المواد مع سطر الإدخال --}}
+        <div class="relative z-30 mb-3 flex flex-col rounded-xl focus-within:z-50 border border-slate-200 bg-white shadow-sm xl:min-h-56 xl:flex-1" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:purchase-product-selected.window="productSearchOpen = false" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
+            <div class="app-table-scroll max-h-[62vh] overflow-auto rounded-xl xl:max-h-none xl:min-h-0" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+                <table class="w-full min-w-[900px] border-collapse text-right">
+                    <thead class="sticky top-0 z-20 bg-slate-800">
+                        <tr class="text-xs font-bold text-white">
+                            <th class="w-12 border-l border-slate-700 px-3 py-3 text-center">#</th>
+                            <th class="w-32 border-l border-slate-700 px-3 py-3 text-center">رقم الصنف</th>
+                            <th class="border-l border-slate-700 px-3 py-3">اسم الصنف</th>
+                            <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">المخزون</th>
+                            <th class="w-40 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
+                            <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">التكلفة</th>
+                            <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
+                            <th class="w-24 px-3 py-3 text-center">حذف</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y-2 divide-slate-500">
+                        @foreach ($cart as $key => $item)
+                            @php
+                                $lineQuantity = (float) $item['quantity'];
+                                $lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * $lineQuantity) - (float) ($item['discount'] ?? 0));
+                            @endphp
+                            <tr
+                                wire:key="purchase-item-{{ $key }}"
+                                data-cart-row="{{ $loop->index }}"
+                                data-cart-key="{{ $key }}"
+                                class="group transition-colors duration-100 {{ $editingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
+                            >
+                                <td class="border-l border-slate-100 px-3 py-2 text-center text-sm font-black text-slate-800">{{ $loop->iteration }}</td>
+                                <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-semibold text-slate-700">{{ $cartProductNumbers[$item['id']] ?? $item['id'] }}</td>
+                                <td class="border-l border-slate-100 px-3 py-2">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="min-w-0 truncate text-sm font-black text-slate-900">{{ $item['name'] }}</span>
+                                        <div class="flex shrink-0 items-center gap-0.5 text-[11px] font-bold opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+                                            <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-1.5 py-0.5 text-indigo-600 hover:bg-indigo-50">حركة الصنف</button>
+                                            <button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($productSearchLocked) class="rounded px-1.5 py-0.5 text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال المادة</button>
+                                            <button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: null })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" class="rounded p-0.5 text-indigo-600 hover:bg-indigo-50">
+                                                <flux:icon.currency-dollar class="size-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-semibold text-slate-600">{{ isset($item['stock']) ? number_format((float) $item['stock'], 2) : '—' }}</td>
+                                <td class="border-l border-slate-100 px-3 py-2 text-center">
+                                    <div class="mx-auto flex w-32 items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+                                        <div class="flex flex-col border-l border-slate-200">
+                                            <button type="button" tabindex="-1" wire:click="incrementItem('{{ $key }}')" @disabled($productSearchLocked) aria-label="زيادة الكمية" class="flex flex-1 items-center px-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-40"><flux:icon.chevron-up class="size-3" /></button>
+                                            <button type="button" tabindex="-1" wire:click="decrementItem('{{ $key }}')" @disabled($productSearchLocked) aria-label="إنقاص الكمية" class="flex flex-1 items-center px-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-40"><flux:icon.chevron-down class="size-3" /></button>
+                                        </div>
+                                        <input type="text" inputmode="decimal" value="{{ number_format($lineQuantity, 2, '.', '') }}" wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" aria-label="الكمية" class="w-full min-w-0 border-0 bg-transparent px-2 py-1.5 text-center text-sm font-black text-slate-900 outline-none" />
+                                    </div>
+                                </td>
+                                <td class="border-l border-slate-100 px-3 py-2 text-center">
+                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $item['price'], 2, '.', '') }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" aria-label="التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-blue-500" />
+                                </td>
+                                <td class="border-l border-slate-100 bg-slate-50 px-3 py-2 text-center">
+                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" title="يمكن تعديل المجموع وسيُعاد حساب التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500" aria-label="إجمالي السطر" />
+                                </td>
+                                <td class="px-3 py-2 text-center">
+                                    <button type="button" wire:click="removeItem('{{ $key }}')" title="حذف السطر" aria-label="حذف السطر" class="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"><flux:icon.trash class="size-5" /></button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
 
-            {{-- المواد --}}
-            <div class="min-w-0 xl:col-span-12">
-                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    {{-- سطر إدخال صنف جديد --}}
+                    <tfoot class="sticky bottom-0 z-20">
+                        <tr data-invoice-entry-row class="bg-blue-50 [&>td]:shadow-[inset_0_2px_0_0_#93c5fd]">
+                            <td class="px-2 py-2 text-center">
+                                <button type="button" x-on:click="$refs.productSearch?.focus(); $refs.productSearch?.select()" @disabled($productSearchLocked) title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500 disabled:opacity-40">
+                                    <flux:icon.plus class="size-5" />
+                                </button>
+                            </td>
 
-            <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-end">
-
-                <div class="min-w-0 flex-1">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
-
-                    <div class="relative" data-invoice-search-group x-data="{ productSearchOpen: false }" x-on:purchase-product-selected.window="productSearchOpen = false" x-on:focusout="if (!$el.contains($event.relatedTarget)) productSearchOpen = false" x-on:click.outside="productSearchOpen = false" x-on:keydown.escape.stop="productSearchOpen = false">
-                        <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: null })" class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
-                        <input
-                            id="product-search-input"
-                            x-ref="productSearch"
-                            type="text"
-                            wire:model.live.debounce.120ms="rowSearch"
-                            maxlength="120" x-on:input="productSearchOpen = true" x-on:focus="productSearchOpen = true" @disabled($productSearchLocked)
-                            autocomplete="off"
-                            placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter...' }}"
-                            class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 pl-28 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100"
-                        />
-
-                        @if ($productSearchLocked)
-                            <p class="mt-1 text-xs font-bold text-amber-700">الفاتورة للعرض فقط. اضغط «تعديل» بالأعلى لتفعيل البحث وإضافة الأصناف.</p>
-                        @endif
-
-                        @if ($selectedProductId)
-                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}». أدخل الكمية والتكلفة ثم اضغط «{{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}».</p>
-                        @endif
-
-                        @if ($editingCartKey !== null)
-                            <div class="mt-1 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800">
-                                <span>اختر المادة البديلة للسطر المحدد، ثم احفظ التعديل.</span>
-                                <button type="button" wire:click="cancelCartItemEdit" class="shrink-0 rounded px-2 py-1 text-amber-900 hover:bg-amber-100">إلغاء</button>
-                            </div>
-                        @endif
-
-                        @if (count($productResults) > 0)
-                            <div data-invoice-search-results x-cloak x-show="productSearchOpen" class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
-                                <div class="max-h-80 overflow-auto" x-ref="productResults">
-                                    <table class="w-full text-right text-sm">
-                                        <thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
-                                        <tbody>
-                                            @foreach ($productResults as $product)
-                                                @php
-                                                    $bp = $product->branchProducts->first();
-                                                    $resultPrice = (float) $product->cost_price;
-                                                    $stock = (float) ($bp?->stock_quantity ?? 0);
-                                                @endphp
-                                                <tr wire:key="purchase-search-product-{{ $product->id }}" data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
-                                                    <td colspan="4" class="p-0">
-                                                        <button type="button" x-on:click.stop wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60">
-                                                            <span class="font-mono">{{ $product->product_number ?? $product->id }}</span>
-                                                            <span class="font-bold">{{ $product->name }}</span>
-                                                            <span class="font-mono">{{ number_format($resultPrice, 2) }}</span>
-                                                            <span class="tabular-nums">{{ number_format($stock, 2) }}</span>
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
+                            <td colspan="2" class="px-2 py-2">
+                                <div class="relative">
+                                    <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-5 -translate-y-1/2 text-slate-500" />
+                                    <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: null })" class="absolute left-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
+                                    <input
+                                        id="product-search-input"
+                                        x-ref="productSearch"
+                                        type="text"
+                                        wire:model.live.debounce.120ms="rowSearch"
+                                        maxlength="120" x-on:input="productSearchOpen = true; updateSearchDirection($event.target)" x-on:focus="productSearchOpen = true; updateSearchDirection($event.target)" @disabled($productSearchLocked)
+                                        autocomplete="off"
+                                        aria-label="رقم الصنف / الباركود / اسم الصنف"
+                                        placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'رقم الصنف / الباركود / اسم الصنف ثم Enter...' }}"
+                                        class="h-9 w-full rounded-md border border-blue-300 bg-white pl-24 pr-10 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                    />
                                 </div>
-                            </div>
-                        @endif
-                    </div>
-                </div>
+                            </td>
 
-                <div class="w-full lg:w-40">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">الكمية</label>
-                    <input
-                        x-ref="quantity"
-                        type="text"
-                        inputmode="decimal"
-                        wire:model="selectedQuantity"
-                        x-on:focus="$event.target.select()"
-                        x-on:keydown.arrow-up.stop.prevent="$refs.purchasePriceInput?.focus()"
-                        x-on:keydown.arrow-down.stop.prevent="$refs.purchasePriceInput?.focus()"
-                        x-on:keydown.enter.stop.prevent="$refs.purchasePriceInput?.focus(); $refs.purchasePriceInput?.select()"
-                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
-                    />
-                </div>
+                            <td class="px-2 py-2 text-center font-mono text-sm font-semibold text-slate-600">
+                                {{ $selectedProductId ? number_format((float) $selectedStock, 2) : '—' }}
+                            </td>
 
-                <div class="w-full lg:w-40">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">سعر التكلفة</label>
-                    <input
-                        x-ref="purchasePriceInput"
-                        type="text"
-                        inputmode="decimal"
-                        wire:model="selectedPurchasePrice"
-                        x-on:focus="$event.target.select()"
-                        x-on:keydown.arrow-up.stop.prevent="$refs.quantity?.focus()"
-                        x-on:keydown.arrow-down.stop.prevent="$refs.quantity?.focus()"
-                        x-on:keydown.enter.stop.prevent="addCurrentPurchaseRow()"
-                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500"
-                    />
-                </div>
+                            <td class="px-2 py-2">
+                                <input
+                                    x-ref="quantity"
+                                    type="text"
+                                    inputmode="decimal"
+                                    wire:model="selectedQuantity"
+                                    aria-label="الكمية"
+                                    x-on:focus="$event.target.select()"
+                                    x-on:keydown.arrow-up.stop.prevent="$refs.purchasePriceInput?.focus()"
+                                    x-on:keydown.arrow-down.stop.prevent="$refs.purchasePriceInput?.focus()"
+                                    x-on:keydown.enter.stop.prevent="$refs.purchasePriceInput?.focus(); $refs.purchasePriceInput?.select()"
+                                    class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
+                            </td>
 
-                <div class="w-full lg:w-40">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">الإجمالي</label>
-                    <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        aria-label="إجمالي الصنف"
-                        x-effect="if (document.activeElement !== $el) $el.value = Math.max(0, Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)).toFixed(2)"
-                        x-on:input="const total = Number($event.target.value); const quantity = Number($wire.selectedQuantity); if ($event.target.value !== '' && Number.isFinite(total) && total >= 0 && Number.isFinite(quantity) && quantity > 0) { $wire.selectedPurchasePrice = Math.round(total / quantity * 100) / 100; }"
-                        x-on:keydown.enter.stop.prevent="addCurrentPurchaseRow()"
-                        class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900 outline-none focus:border-indigo-500"
-                    />
-                </div>
+                            <td class="px-2 py-2">
+                                <input
+                                    x-ref="purchasePriceInput"
+                                    type="text"
+                                    inputmode="decimal"
+                                    wire:model="selectedPurchasePrice"
+                                    aria-label="سعر التكلفة"
+                                    x-on:focus="$event.target.select()"
+                                    x-on:keydown.arrow-up.stop.prevent="$refs.quantity?.focus()"
+                                    x-on:keydown.arrow-down.stop.prevent="$refs.quantity?.focus()"
+                                    x-on:keydown.enter.stop.prevent="$refs.purchaseEntryTotalInput?.focus(); $refs.purchaseEntryTotalInput?.select()"
+                                    class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
+                            </td>
 
-                <button
-                    type="button"
-                    x-ref="addProductButton"
-                    x-on:click="addCurrentPurchaseRow()"
-                    wire:loading.attr="disabled"
-                    wire:target="commitRowWithValues"
-                    @disabled(!$selectedProductId || $productSearchLocked)
-                    class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    <span wire:loading.remove wire:target="commitRowWithValues">{{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}</span>
-                    <span wire:loading wire:target="commitRowWithValues">{{ $editingCartKey !== null ? 'جارٍ حفظ التعديل...' : 'جارٍ الإضافة...' }}</span>
-                </button>
+                            <td class="px-2 py-2">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    aria-label="إجمالي الصنف"
+                                    x-effect="if (document.activeElement !== $el) $el.value = Math.max(0, Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)).toFixed(2)"
+                                    x-on:input="const total = Number($event.target.value); const quantity = Number($wire.selectedQuantity); if ($event.target.value !== '' && Number.isFinite(total) && total >= 0 && Number.isFinite(quantity) && quantity > 0) { $wire.selectedPurchasePrice = Math.round(total / quantity * 100) / 100; }"
+                                    x-ref="purchaseEntryTotalInput"
+                                    x-on:focus="$event.target.select()"
+                                    x-on:keydown.enter.stop.prevent="addCurrentPurchaseRow()"
+                                    class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center font-mono text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
+                            </td>
+
+                            <td class="px-2 py-2 text-center">
+                                <button
+                                    type="button"
+                                    x-ref="addProductButton"
+                                    x-on:click="addCurrentPurchaseRow()"
+                                    wire:loading.attr="disabled"
+                                    wire:target="commitRowWithValues"
+                                    @disabled(!$selectedProductId || $productSearchLocked)
+                                    title="إضافة السطر (Enter)"
+                                    class="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <span wire:loading.remove wire:target="commitRowWithValues">{{ $editingCartKey !== null ? 'حفظ التعديل' : '+ إضافة' }}</span>
+                                    <span wire:loading wire:target="commitRowWithValues">...</span>
+                                </button>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
 
-                    {{-- جدول المواد --}}
-                    <div class="hidden md:block">
-                        <div class="max-h-[52vh] overflow-auto">
-                            <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
-                            <table class="w-full min-w-[850px] text-right">
-                                <thead class="sticky top-0 z-20 border-b border-slate-200 bg-slate-900">
-                                    <tr class="text-[11px] font-black text-white">
-                                        <th class="w-12 px-3 py-3">#</th>
-                                        <th class="px-3 py-3">المادة</th>
-                                        <th class="w-28 px-3 py-3">الكمية</th>
-                                        <th class="w-32 px-3 py-3">التكلفة</th>
-                                        <th class="w-36 px-3 py-3">الإجمالي</th>
-                                        <th class="w-20 px-3 py-3"></th>
+            @if ($productSearchLocked)
+                <p class="order-first border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">الفاتورة للعرض فقط. اضغط «تعديل» بالأعلى لتفعيل البحث وإضافة الأصناف.</p>
+            @endif
+
+            @if ($editingCartKey !== null)
+                <div class="order-first flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800">
+                    <span>اختر المادة البديلة للسطر المحدد، ثم احفظ التعديل.</span>
+                    <button type="button" wire:click="cancelCartItemEdit" class="shrink-0 rounded px-2 py-1 text-amber-900 hover:bg-amber-100">إلغاء</button>
+                </div>
+            @endif
+
+            @if (count($productResults) > 0)
+                <div data-invoice-search-results x-cloak x-show="productSearchOpen" x-bind:style="searchDropUp ? { bottom: searchOffset + 'px' } : { top: searchOffset + 'px' }" class="absolute right-12 z-50 w-[min(46rem,calc(100%-3rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                    <div class="overflow-auto" x-ref="productResults" x-bind:style="{ maxHeight: searchMaxHeight + 'px' }">
+                        <table class="w-full text-right text-sm">
+                            <thead class="sticky top-0 bg-slate-800 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">السعر</th><th class="p-2">المخزون</th></tr></thead>
+                            <tbody>
+                                @foreach ($productResults as $product)
+                                    @php
+                                        $bp = $product->branchProducts->first();
+                                        $resultPrice = (float) $product->cost_price;
+                                        $stock = (float) ($bp?->stock_quantity ?? 0);
+                                    @endphp
+                                    <tr wire:key="purchase-search-product-{{ $product->id }}" data-product-result data-result-index="{{ $loop->index }}" class="border-t border-slate-100">
+                                        <td colspan="4" class="p-0">
+                                            <button type="button" x-on:click.stop wire:click="selectProduct({{ $product->id }})" wire:loading.attr="disabled" wire:target="selectProduct({{ $product->id }})" class="grid w-full grid-cols-[1.15fr_2.4fr_1fr_0.8fr] items-center gap-1 px-2 py-2 text-right hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60">
+                                                <span class="font-mono">{{ $product->product_number ?? $product->id }}</span>
+                                                <span class="font-bold">{{ $product->name }}</span>
+                                                <span class="font-mono">{{ number_format($resultPrice, 2) }}</span>
+                                                <span class="tabular-nums">{{ number_format($stock, 2) }}</span>
+                                            </button>
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody class="divide-y-2 divide-slate-500">
-                                    @forelse ($cart as $key => $item)
-                                        @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
-                                        <tr
-                                            wire:key="purchase-item-{{ $key }}"
-                                            data-cart-row="{{ $loop->index }}"
-                                            data-cart-key="{{ $key }}"
-
-
-
-                                            class="transition-colors duration-100 {{ $editingCartKey === $key ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : '' }}"
-                                        >
-                                            <td class="px-3 py-3 text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
-                                            <td class="px-3 py-3">
-                                                <div class="text-sm font-black text-slate-800"><button type="button" data-price-history-button x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: null })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" style="float: left; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: #4f46e5; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width: 18px; height: 18px;" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m3-6h-4a2 2 0 0 0 0 4h2a2 2 0 0 0 0-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></button>{{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($productSearchLocked) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال المادة</button></div>
-                                                @if(isset($item['stock']))
-                                                    <div class="mt-1 text-[10px] font-semibold text-slate-400">المخزون الحالي: {{ number_format((float) $item['stock'], 2) }}</div>
-                                                @endif
-                                            </td>
-                                            <td class="px-3 py-3">
-                                                <div class="flex items-center gap-1">
-                                                    <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black outline-none focus:border-indigo-400" />
-                                                </div>
-                                            </td>
-                                            <td class="px-3 py-3">
-                                                <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black outline-none focus:border-indigo-400" />
-                                            </td>
-                                            <td class="px-3 py-3"><input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-28 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-xs font-black text-indigo-700" aria-label="إجمالي السطر" /></td>
-                                            <td class="px-3 py-3 text-center">
-                                                <button type="button" wire:click="removeItem('{{ $key }}')" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button>
-                                            </td>
-                                        </tr>
-                                    @empty
-                                        <tr>
-                                            <td colspan="6" class="px-6 py-16 text-center">
-                                                <div class="mx-auto max-w-sm">
-                                                    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-2xl">＋</div>
-                                                    <div class="mt-4 text-base font-black text-slate-800">ابدأ بإضافة المواد</div>
-                                                    <div class="mt-1 text-sm font-semibold text-slate-400">ابحث عن المادة أو امسح الباركود ثم اضغط Enter.</div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Mobile --}}
-                    <div class="divide-y-2 divide-slate-500 md:hidden">
-                        @forelse ($cart as $key => $item)
-                            @php($lineTotal = isset($item['total_override']) ? max(0, (float) $item['total_override']) : max(0, ((float) $item['price'] * (float) $item['quantity']) - (float) ($item['discount'] ?? 0)))
-                            <div wire:key="purchase-mobile-item-{{ $key }}" data-cart-row="{{ $loop->index }}" data-cart-key="{{ $key }}"    class="p-3 transition-colors">
-                                <div class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <div class="text-sm font-black text-slate-800">{{ $loop->iteration }}. {{ $item['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button><button type="button" wire:click="editCartItem('{{ $key }}')" @disabled($productSearchLocked) class="rounded px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50">استبدال</button></div>
-                                        <div class="mt-1 text-xs font-semibold text-slate-400">الإجمالي: {{ number_format($lineTotal, 2) }}</div>
-                                    </div>
-                                    <button type="button" wire:click="removeItem('{{ $key }}')" class="text-xs font-black text-rose-600">حذف</button>
-                                </div>
-                                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                    <div>
-                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الكمية</label>
-                                        <input type="text" inputmode="decimal" min="0.01" step="0.01" value="{{ $item['quantity'] }}" wire:input.debounce.300ms="updateItemQuantity('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="0" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-black" />
-                                    </div>
-                                    <div>
-                                        <label class="mb-1 block text-[10px] font-black text-slate-400">التكلفة</label>
-                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ $item['price'] }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-black" />
-                                    </div>
-                                    <div>
-                                        <label class="mb-1 block text-[10px] font-black text-slate-400">الإجمالي</label>
-                                        <input type="text" inputmode="decimal" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" class="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-black text-indigo-700" aria-label="إجمالي السطر" />
-                                    </div>
-                                </div>
-                            </div>
-                        @empty
-                            <div class="px-6 py-16 text-center text-sm font-bold text-slate-400">لا توجد مواد في الفاتورة.</div>
-                        @endforelse
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </div>
+            @endif
+        </div>
 
-            <div data-purchase-invoice-summary class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-12">
-                <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-                    <label for="purchase-notes" class="text-sm font-black text-slate-700">ملاحظات الفاتورة (اختياري)</label>
-                    <div class="flex items-center gap-2 text-xs font-bold text-slate-500">
-                        <span>عدد المواد: {{ number_format($totalQuantity, 2) }}</span>
-                        <span class="rounded-lg bg-indigo-50 px-3 py-2 text-sm font-black text-indigo-700">الإجمالي: {{ number_format($grandTotal, 2) }}</span>
-                    </div>
-                </div>
-                <div class="mb-3 grid max-w-xl grid-cols-2 gap-2">
-                    <label class="text-xs font-bold text-slate-600">خصم الفاتورة
-                        <input type="number" min="0" step="0.01" wire:model.live="discount" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black outline-none focus:border-indigo-400" />
-                    </label>
-                    <label class="text-xs font-bold text-slate-600">نوع الخصم
-                        <select wire:model.live="discountType" class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-black outline-none focus:border-indigo-400">
-                            <option value="fixed">مبلغ</option><option value="percentage">%</option>
-                        </select>
-                    </label>
-                </div>
-                <textarea id="purchase-notes" wire:model="notes" rows="2" placeholder="اكتب ملاحظة الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
+        {{-- أسفل الفاتورة --}}
+        @php
+            $invoiceGrossTotal = 0.0;
+
+            foreach ($cart as $cartLine) {
+                $invoiceGrossTotal += (float) ($cartLine['price'] ?? 0) * (float) ($cartLine['quantity'] ?? 0);
+            }
+
+            $invoiceLineDiscounts = max(0, $invoiceGrossTotal - $subtotal);
+            $invoiceTotalDiscount = $invoiceLineDiscounts + $invoiceDiscount;
+        @endphp
+
+        <div data-purchase-invoice-summary class="grid min-w-0 shrink-0 gap-3 xl:mt-auto xl:col-span-12 xl:grid-cols-12">
+
+            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
+                <label for="purchase-notes" class="mb-2 flex items-center gap-1.5 text-sm font-black text-slate-800">
+                    <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات الفاتورة (اختياري)
+                </label>
+                <textarea id="purchase-notes" wire:model="notes" rows="3" placeholder="اكتب ملاحظة الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
                 @if ($currentPurchaseId && $linkedPayments->isNotEmpty())
-                    <div class="mt-3 flex flex-wrap gap-2">
+                    <div class="mt-2 flex flex-wrap gap-2">
                         @foreach ($linkedPayments as $linkedPayment)
-                            <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100">تعديل سند الصرف {{ $linkedPayment->voucher_number }}</a>
+                            <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100">تعديل سند الصرف {{ $linkedPayment->voucher_number }}</a>
                         @endforeach
                     </div>
                 @endif
-                <div class="mt-3 grid gap-2 sm:grid-cols-3">
-                    <button type="button" wire:click="saveInvoice" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-60">
-                        <span wire:loading.remove wire:target="saveInvoice">💾 حفظ الفاتورة</span><span wire:loading wire:target="saveInvoice">جاري الحفظ...</span>
-                    </button>
-                    <button type="button" wire:click="saveAndPrint" wire:loading.attr="disabled" wire:target="saveAndPrint" class="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60">
-                        <span wire:loading.remove wire:target="saveAndPrint">🖨 حفظ وطباعة</span><span wire:loading wire:target="saveAndPrint">جاري الحفظ...</span>
-                    </button>
-                    @can('accounting.voucher.create')
-                        <button type="button" wire:click="saveInvoice(false, true)" wire:loading.attr="disabled" wire:target="saveInvoice" class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60">
-                            حفظ وتسديد
-                        </button>
-                    @endcan
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 xl:grid-cols-1">
+                <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
+                    <div class="mt-1 flex items-center justify-between">
+                        <span class="font-mono text-lg font-black text-slate-900">{{ number_format($totalQuantity, 2) }}</span>
+                        <flux:icon.cube class="size-5 text-slate-400" />
+                    </div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
+                    <div class="mt-1 flex items-center justify-between">
+                        <span class="font-mono text-lg font-black text-slate-900">{{ count($cart) }}</span>
+                        <flux:icon.square-3-stack-3d class="size-5 text-slate-400" />
+                    </div>
                 </div>
             </div>
+
+            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
+                <div class="grid grid-cols-3 divide-x divide-x-reverse divide-slate-200 text-center">
+                    <div class="px-2">
+                        <div class="text-xs font-bold text-slate-500">إجمالي قبل الخصم</div>
+                        <div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($invoiceGrossTotal, 2) }}</div>
+                    </div>
+                    <div class="px-2">
+                        <div class="text-xs font-bold text-slate-500">إجمالي بعد الخصم</div>
+                        <div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($grandTotal, 2) }}</div>
+                    </div>
+                    <div class="px-2">
+                        <div class="text-xs font-bold text-slate-500">الخصم الإجمالي</div>
+                        <div class="mt-1 font-mono text-lg font-black text-rose-600">{{ number_format($invoiceTotalDiscount, 2) }}</div>
+                    </div>
+                </div>
+
+                <div class="mt-3 grid gap-2 border-t border-slate-100 pt-3 {{ $showTax ? 'grid-cols-3' : 'grid-cols-2' }}">
+                    <label class="text-xs font-bold text-slate-600">خصم الفاتورة
+                        <input type="number" min="0" step="0.01" wire:model.live="discount" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label class="text-xs font-bold text-slate-600">نوع الخصم
+                        <select wire:model.live="discountType" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+                            <option value="fixed">مبلغ</option><option value="percentage">%</option>
+                        </select>
+                    </label>
+                    @if ($showTax)
+                        <div data-purchase-tax class="text-xs font-bold text-slate-600">قيمة الضريبة
+                            <div class="mt-1 flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 font-mono text-sm font-black text-slate-800">{{ number_format((float) $taxAmount, 2) }}</div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <div class="flex flex-col justify-between rounded-xl bg-emerald-700 p-4 text-white shadow-sm xl:col-span-2">
+                <div class="text-sm font-black text-emerald-50">الإجمالي النهائي</div>
+                <div class="mt-2 font-mono text-3xl font-black tabular-nums">{{ number_format($grandTotal, 2) }}</div>
+                @if ($selectedSupplier)
+                    <div class="mt-2 border-t border-emerald-500/60 pt-2 text-xs font-bold text-emerald-100">
+                        المتبقي: <span class="font-mono font-black text-white">{{ number_format($remainingTotal, 2) }}</span>
+                    </div>
+                @endif
+            </div>
+        </div>
+
+        {{-- اختصارات لوحة المفاتيح --}}
+        <div class="mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg">
+            <span class="inline-flex items-center gap-1.5 text-slate-300"><flux:icon.question-mark-circle class="size-4" /> اختصارات لوحة المفاتيح</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Enter</kbd> اختيار / إضافة</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">↑ ↓ ← →</kbd> التنقل بين الخانات</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F3</kbd> حفظ</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F6</kbd> حفظ وطباعة / طباعة المحفوظة</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Shift+F2</kbd> جديد</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F2</kbd> الأسعار</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F7</kbd> استعلام</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F8</kbd> المورد</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F9</kbd> المادة</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Esc</kbd> إغلاق</span>
         </div>
     </div>
     @if ($showSettlementModal)
@@ -2565,21 +2677,84 @@ new class extends Component {
         rowIndex: 0,
         selectedCartKey: null,
         keyboardController: null,
+        searchDropUp: false,
+        searchMaxHeight: 320,
+        searchOffset: 0,
+        knownItemRows: 0,
         livewireCleanup: [],
         addingRow: false,
+        entryDiscount: 0,
+
+        /** Finds an x-ref anywhere in this page, including refs declared inside nested x-data scopes. */
+        /** Sizes the page to the visible window on desktop so only the items table scrolls. */
+        fitToViewport() {
+            const main = this.$el?.closest?.('[data-flux-main]');
+            if (!main) return;
+
+            // Stored on <html> because Livewire re-renders the component root and would drop an inline height.
+            const root = document.documentElement;
+            const top = main.getBoundingClientRect().top + window.scrollY;
+            let height = Math.max(520, window.innerHeight - top);
+            root.style.setProperty('--invoice-fit-height', height + 'px');
+
+            // Remove any page scroll left over from padding or margins outside the invoice.
+            requestAnimationFrame(() => {
+                const overflow = (document.scrollingElement ?? root).scrollHeight - window.innerHeight;
+                if (overflow > 0 && height - overflow >= 520) {
+                    height -= overflow;
+                    root.style.setProperty('--invoice-fit-height', height + 'px');
+                }
+                window.scrollTo(0, 0);
+            });
+        },
+
+        /** Opens the product suggestions upward when there is not enough room below the entry row. */
+        updateSearchDirection(input) {
+            const rect = input.getBoundingClientRect();
+            const card = input.closest('[data-invoice-search-group]');
+            const cardRect = card?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+            const header = card?.querySelector('thead')?.getBoundingClientRect().height ?? 0;
+            const fitsInCard = window.innerWidth >= 1280;
+            const bottomLimit = fitsInCard ? cardRect.bottom : window.innerHeight;
+            const spaceBelow = bottomLimit - rect.bottom - 8;
+            const spaceAbove = rect.top - cardRect.top - header - 8;
+
+            this.searchDropUp = spaceAbove > spaceBelow;
+            this.searchMaxHeight = Math.max(80, Math.min(360, this.searchDropUp ? spaceAbove : spaceBelow));
+            this.searchOffset = this.searchDropUp
+                ? cardRect.bottom - rect.top + 4
+                : rect.bottom - cardRect.top + 4;
+        },
+
+        /** Scrolls the items table down to the newest line whenever a line was added. */
+        scrollItemsToNewest() {
+            const area = this.$root?.querySelector?.('[data-invoice-search-group] .app-table-scroll');
+            if (!area) return;
+
+            const rows = area.querySelectorAll('tbody > tr').length;
+            if (rows > (this.knownItemRows ?? 0)) {
+                area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+            }
+            this.knownItemRows = rows;
+        },
+
+        entryRef(name) {
+            return this.$root.querySelector(`[x-ref="${name}"]`);
+        },
 
         async addCurrentPurchaseRow() {
             if (this.addingRow) return;
-            const quantity = this.$refs.quantity?.value?.trim();
-            const price = this.$refs.purchasePriceInput?.value?.trim();
+            const quantity = this.entryRef('quantity')?.value?.trim();
+            const price = this.entryRef('purchasePriceInput')?.value?.trim();
             if (!quantity || !price || !Number.isFinite(Number(quantity)) ||
                 !Number.isFinite(Number(price)) || Number(quantity) <= 0 || Number(price) < 0) {
-                this.$refs.quantity?.focus();
+                this.entryRef('quantity')?.focus();
                 return;
             }
             this.addingRow = true;
             try {
-                await this.$wire.commitRowWithValues(quantity, price);
+                await this.$wire.commitRowWithValues(quantity, price, Number(this.entryDiscount) || 0);
+                if (!this.$wire.selectedProductId) this.entryDiscount = 0;
             } finally {
                 this.addingRow = false;
             }
@@ -2590,11 +2765,18 @@ new class extends Component {
 
             this.registerKeyboard();
 
+            this.fitToViewport();
+            this.$nextTick(() => this.fitToViewport());
+            window.addEventListener('resize', () => this.fitToViewport(), { signal: this.keyboardController.signal });
+            window.addEventListener('load', () => this.fitToViewport(), { signal: this.keyboardController.signal });
+            setTimeout(() => this.fitToViewport(), 300);
+
             this.livewireCleanup.push(Livewire.on('focus-product-search', () => {
-                this.$nextTick(() => {
-                    this.productInput()?.focus();
+                this.$nextTick(() => requestAnimationFrame(() => {
+                    this.productInput()?.focus({ preventScroll: true });
                     this.productInput()?.select();
-                });
+                    this.scrollItemsToNewest();
+                }));
             }));
 
             this.livewireCleanup.push(Livewire.on('focus-supplier-search', () => {
@@ -2602,15 +2784,19 @@ new class extends Component {
             }));
 
             this.livewireCleanup.push(Livewire.on('focus-quantity', () => {
-                this.$nextTick(() => { this.$refs.quantity?.focus(); this.$refs.quantity?.select(); });
+                this.$nextTick(() => { this.entryRef('quantity')?.focus(); this.entryRef('quantity')?.select(); });
+            }));
+
+            this.livewireCleanup.push(Livewire.on('purchase-product-selected', () => {
+                this.entryDiscount = 0;
             }));
 
             this.livewireCleanup.push(Livewire.on('focus-paid-amount', () => {
-                this.$nextTick(() => this.$refs.paidAmount?.focus());
+                this.$nextTick(() => this.entryRef('paidAmount')?.focus());
             }));
 
             this.livewireCleanup.push(Livewire.on('focus-purchase-search', () => {
-                this.$nextTick(() => this.$refs.purchaseSearch?.focus());
+                this.$nextTick(() => this.entryRef('purchaseSearch')?.focus());
             }));
         },
 
@@ -2732,7 +2918,7 @@ new class extends Component {
                     if (event.shiftKey) {
                         this.$wire.startNewInvoice();
                     } else {
-                        this.$refs.priceHistoryTrigger?.click();
+                        this.entryRef('priceHistoryTrigger')?.click();
                     }
                     return;
                 }
@@ -2914,6 +3100,7 @@ new class extends Component {
     });
 
     Livewire.on('print-purchase-invoice', ({ invoice }) => {
+        if (invoice?.pdf_url && window.printPdf) { window.printPdf(invoice.pdf_url, invoice.file_title); return; }
         const esc = (value) => String(value ?? '')
             .replaceAll('&', '&amp;')
             .replaceAll('<', '&lt;')
@@ -2929,6 +3116,7 @@ new class extends Component {
         const rows = (invoice.items || []).map((item, index) => `
             <tr>
                 <td>${index + 1}</td>
+                <td data-print-product-number>${esc(item.product_number ?? '')}</td>
                 <td>${esc(item.name)}</td>
                 <td>${money(item.quantity)}</td>
                 <td>${money(item.price)}</td>
@@ -2942,7 +3130,7 @@ new class extends Component {
             <html lang="ar" dir="rtl">
             <head>
                 <meta charset="utf-8">
-                <title>فاتورة مشتريات ${esc(invoice.number)}</title>
+                <title>${esc(invoice.file_title ?? ('فاتورة مشتريات ' + (invoice.number ?? '')))}</title>
                 <style>
                     * { box-sizing: border-box; }
                     body {
@@ -2989,6 +3177,7 @@ new class extends Component {
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>رقم الصنف</th>
                             <th>المادة</th>
                             <th>الكمية</th>
                             <th>التكلفة</th>

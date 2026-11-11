@@ -4,6 +4,18 @@
         <div dir="rtl" class="space-y-5" x-data="{ activePriceTab: '{{ $priceHistoryCustomerId ? 'customerSales' : 'costs' }}' }">
             <flux:heading size="lg">سجل الأسعار — {{ $history['product']->name }}</flux:heading>
             <div class="rounded-xl bg-slate-50 p-3 font-bold text-slate-800">التكلفة الحالية: {{ number_format((float) $history['product']->cost_price, 2) }}</div>
+            @if ($history['branchPrices']->isNotEmpty())
+                <div data-price-history-branch-prices class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="w-full text-right text-sm">
+                        <thead class="bg-slate-50"><tr><th class="p-2">الفرع</th><th class="p-2">سعر البيع (مفرق)</th><th class="p-2">سعر الجملة</th><th class="p-2">المخزون</th></tr></thead>
+                        <tbody>
+                            @foreach ($history['branchPrices'] as $branchPrice)
+                                <tr wire:key="price-branch-{{ $loop->index }}" class="border-t border-slate-100"><td class="p-2">{{ $branchPrice->branch }}</td><td class="p-2 font-bold">{{ number_format((float) $branchPrice->retail_price, 2) }}</td><td class="p-2">{{ number_format((float) $branchPrice->wholesale_price, 2) }}</td><td class="p-2">{{ number_format((float) $branchPrice->stock_quantity, 2) }}</td></tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
             <div role="tablist" aria-label="الأسعار والتكلفة" class="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2">
                 @foreach (['costs' => 'التكلفة', 'customerSales' => 'أسعار هذا الزبون', 'sales' => 'أسعار كل الزبائن'] as $tab => $label)
                     <button type="button" role="tab" id="price-tab-{{ $tab }}" aria-controls="price-panel-{{ $tab }}"

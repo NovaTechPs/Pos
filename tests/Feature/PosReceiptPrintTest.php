@@ -74,17 +74,25 @@ function posReceiptPrintView(array $overrides = []): string
     return view('pages.tenant.pos.partials.thermal-receipt', compact('receipt'))->render();
 }
 
-test('thermal receipt keeps equal payment details off the compact summary', function () {
-    $html = posReceiptPrintView();
+test('thermal receipt matches the shop layout for a walk-in sale', function () {
+    $html = posReceiptPrintView([
+        'items' => [
+            ['id' => 22, 'name' => 'مشط صابون معدن طبقتين', 'qty' => 1, 'price' => '70.00', 'total' => '70.00'],
+            ['id' => 35, 'name' => 'سطل ماء بلاستيك', 'qty' => 2, 'price' => '5.00', 'total' => '10.00'],
+        ],
+        'total_qty' => 3, 'subtotal' => '80.00', 'discount' => '0.00', 'total_amount' => '80.00', 'paid' => '100.00', 'change' => '20.00',
+    ]);
+    $summary = substr($html, strpos($html, 'data-invoice-balance-summary'));
+    $summary = substr($summary, 0, strpos($summary, 'barcode-section'));
 
-    expect($html)
-        ->toContain('INV-1001')
-        ->toContain('الصافي للدفع')
-        ->not->toContain('المدفوع :')
-        ->not->toContain('الباقي :');
+    expect($html)->toContain('رقم: <b dir="ltr">INV-1001</b>', 'التاريخ:', 'الكاشير: الموظف', '<th style="width:47%">الصنف</th>', '<th style="width:9%">ك</th>',
+        'عدد الأصناف: <b>2</b>', 'إجمالي الكمية: <b>3</b>', 'item-name-text')
+        ->and(strpos($html, '<td>1</td>'))->toBeLessThan(strpos($html, '<td>2</td>'))
+        ->and($summary)->toContain('المجموع :', '80.00', 'الصافي للدفع', 'net-box')
+        ->not->toContain('الخصم :', 'دفعة :', 'المدفوع :', 'المتبقي :', 'الباقي :', 'رصيد سابق', 'رصيد جديد', '100.00');
 });
 
-test('thermal receipt itemizes delivery before the final payable total', function (mixed $delivery, string $formatted): void {
+test('thermal receipt itemizes delivery before the black payable total', function (mixed $delivery, string $formatted): void {
     $html = posReceiptPrintView([
         'items' => [['id' => 1, 'name' => 'طلب', 'qty' => 1, 'price' => '55.00', 'total' => '55.00']],
         'subtotal' => '55.00', 'delivery_fee' => $delivery,
@@ -98,15 +106,25 @@ test('thermal receipt omits delivery when no fee was charged', function (mixed $
     expect(posReceiptPrintView(['delivery_fee' => $delivery]))->not->toContain('التوصيل :');
 })->with([null, 0, '0.00']);
 
-test('thermal receipt shows partial payment and remaining balance', function () {
+test('thermal receipt prints delivery details without the delivery company', function (): void {
     $html = posReceiptPrintView([
-        'paid' => '50.00',
+        'delivery_fee' => '15.00',
+        'delivery' => ['name' => 'سامي', 'phone' => '0599000000', 'address' => 'الخليل - رأس الجورة', 'notes' => 'اتصل قبل الوصول'],
     ]);
 
-    expect($html)
-        ->toContain('المدفوع :')
-        ->toContain('المتبقي :')
-        ->toContain('19.00');
+    expect($html)->toContain('data-receipt-delivery', 'معلومات التوصيل', 'الاسم: سامي', '0599000000', 'العنوان: الخليل - رأس الجورة', 'ملاحظة التوصيل: اتصل قبل الوصول')
+        ->not->toContain('شركة التوصيل');
+});
+
+test('thermal receipt shows the previous and new customer balance', function () {
+    $html = posReceiptPrintView([
+        'paid' => '50.00',
+        'customer_name' => 'أبو أحمد',
+        'summary' => ['total' => 69.0, 'discount' => 0.0, 'payment' => 50.0, 'previous_balance' => 100.0, 'new_balance' => 119.0],
+    ]);
+
+    expect($html)->toContain('الزبون: أبو أحمد', 'دفعة :', '50.00', 'رصيد سابق :', '100.00', 'رصيد جديد :', '119.00')
+        ->not->toContain('المتبقي :');
 });
 
 test('thermal receipt fits the printable roll area and uses lighter table text', function (): void {
@@ -129,7 +147,7 @@ test('long receipt preserves every item and its final payment details', function
     foreach ($items as $item) {
         expect($html)->toContain($item['name']);
     }
-    expect($html)->toContain('750.00', '700.00', '50.00', 'break-inside: avoid;');
+    expect($html)->toContain('750.00', 'عدد الأصناف: <b>75</b>', 'break-inside: avoid;');
 });
 
 test('long invoice barcode scales to the available receipt width without dropping bars', function (): void {

@@ -507,7 +507,7 @@ new class extends Component {
 
         $topProductsQuery = OrderItem::query()
             ->select('order_items.product_id')
-            ->select('products.name')
+            ->addSelect('products.name')
             ->selectRaw('SUM(order_items.quantity) as quantity')
             ->selectRaw('SUM(order_items.total_price) as total_sales')
             ->selectRaw('SUM(order_items.total_cost) as total_cost')
@@ -568,7 +568,7 @@ new class extends Component {
             $purchaseReturnsQuery->whereDate('purchase_returns.created_at', '<=', $this->date_to);
         }
 
-        $purchaseStats->returns = (float) (clone $purchaseReturnsQuery)->sum('total');
+        $purchaseStats->returns = (float) (clone $purchaseReturnsQuery)->sum(DB::raw('ABS(total)'));
         $purchaseStats->total = (float) $purchaseStats->gross_total - $purchaseStats->returns;
 
         $topSuppliers = (clone $purchasesQuery)

@@ -62,9 +62,10 @@ test('drafts are isolated between users and branches', function (): void {
     Livewire::test('pages::tenant.pos.sales')->assertSet('cart', []);
     $this->actingAs($this->user);
     $otherBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'الثاني']);
-    $this->user->update(['branch_id' => $otherBranch->id]);
+    // Owners work in the branch selected in the session, not their default branch.
+    session(['active_branch_id' => $otherBranch->id]);
     Livewire::test('pages::tenant.pos.sales')->assertSet('cart', []);
-    $this->user->update(['branch_id' => $this->branch->id]);
+    session(['active_branch_id' => $this->branch->id]);
     $restored = Livewire::test('pages::tenant.pos.sales');
     expect($restored->get('cart'))->toHaveCount(1);
 });

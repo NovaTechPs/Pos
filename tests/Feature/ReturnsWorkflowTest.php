@@ -42,7 +42,7 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertSee('فاتورة مردود مبيعات')
         ->assertDontSee('return-balance-summary', false)
         ->assertSee('العميل')
-        ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
+        ->assertSee('الأسعار F2')
         ->assertSee('اختر العميل أولاً')
         ->assertSee(route('tenant.sales-returns'))
         ->assertSee(route('tenant.purchase-returns'))
@@ -60,7 +60,7 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertOk()
         ->assertSee('فاتورة مردود مشتريات')
         ->assertSee('المورد')
-        ->assertSee('الفاتورة جاهزة لإضافة الأصناف')
+        ->assertSee('الأسعار F2')
         ->assertSee('اختر المورد أولاً')
         ->assertDontSee('Return type');
 });
@@ -264,9 +264,17 @@ test('return PDFs are downloadable and tenant scoped', function (string $kind): 
     $component->set('paidAmount', 3)->call('saveReturn');
     $id = $component->get('currentReturnId');
     $url = route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $id]);
-    $response = $this->get($url)->assertOk()->assertDownload('return-'.$kind.'-'.$id.'.pdf');
+    $filename = 'Return account - '.$component->get('invoiceNumber').'.pdf';
+    $response = $this->get($url)->assertOk()->assertDownload($filename);
     expect($response->streamedContent())->toStartWith('%PDF');
-    $component->call('shareInvoicePdf')->assertDispatched('share-return-pdf');
+    $component->call('shareInvoicePdf')->assertDispatched('share-return-pdf', filename: $filename);
+    $return = DB::table($kind === 'sale' ? 'orders' : 'purchase_returns')->find($id);
+    $items = DB::table($kind === 'sale' ? 'order_items as item' : 'purchase_return_items as item')
+        ->join('products', 'products.id', '=', 'item.product_id')
+        ->where($kind === 'sale' ? 'item.order_id' : 'item.purchase_return_id', $id)
+        ->get(['item.*', 'products.name', 'products.product_number']);
+    expect(view('pages.tenant.returns.partials.invoice-pdf', ['return' => $return, 'items' => $items, 'party' => $party, 'branchName' => $branch->name, 'kind' => $kind, 'showTax' => true])->render())
+        ->toContain('RET-PRODUCT');
     $other = Tenant::create(['name' => 'Other PDF store']);
     $this->withSession(['active_tenant_id' => $other->id])->get($url)->assertNotFound();
 })->with(['sale', 'purchase']);
@@ -313,3 +321,18 @@ test('return schema migration can be resumed without overwriting existing invoic
     expect((float) $return->subtotal)->toBe(10.0)->and((float) $return->total)->toBe(8.0)
         ->and((float) $return->paid_amount)->toBe(3.0);
 });
+
+test('return invoices use the invoice layout with a search window, party balance and entry row', function (string $kind): void {
+    ['party' => $party, 'component' => $component] = editableReturnFixture($kind);
+    $component->assertSee('الرصيد الحالي')->assertSee('200.00')->assertSee('اختصارات لوحة المفاتيح')
+        ->assertSee('رقم الصنف / الباركود / اسم الصنف ثم Enter...')
+        ->call('saveReturn')->assertHasNoErrors();
+    $number = $component->get('invoiceNumber');
+
+    $component->call('startNewReturn')->assertSet('currentReturnId', null)
+        ->call('toggleReturnSearch')->assertSet('showReturnSearch', true)
+        ->assertSee($number)->assertSee($party->name)
+        ->set('returnSearch', $number)->call('searchReturn')
+        ->assertSet('showReturnSearch', false)->assertSet('invoiceNumber', $number)
+        ->assertSet('editing', false)->assertSee('محفوظ');
+})->with(['sale', 'purchase']);

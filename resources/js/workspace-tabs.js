@@ -159,6 +159,49 @@ export function cycleWorkspaceTab(event, state, onSelect) {
     return true;
 }
 
+/**
+ * Sends a key pressed in the workspace shell to the active page frame.
+ *
+ * When focus sits on the shell itself (nothing focused, or a tab button for F-keys),
+ * barcode scanners and page shortcuts would otherwise never reach the page, e.g. the
+ * POS "scan anywhere" capture and its F-key actions. Typing in the shell's own fields
+ * and tab-bar navigation keys are left alone. Returns true when the key was forwarded.
+ */
+export function forwardWorkspaceKey(event, frame, shellDocument) {
+    if (!frame || frame.tagName !== 'IFRAME' || event.isComposing) return false;
+    let child;
+    let childWindow;
+    try {
+        childWindow = frame.contentWindow;
+        child = frame.contentDocument;
+    } catch { return false; }
+    if (!child || !childWindow || child.readyState === 'loading') return false;
+
+    const target = event.target;
+    const typingInShell = Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
+    if (typingInShell) return false;
+
+    const focused = shellDocument.activeElement;
+    const nothingFocused = !focused || focused === shellDocument.body || focused === shellDocument.documentElement;
+    const functionKey = /^F\d+$/.test(event.key);
+    if (!nothingFocused && !functionKey) return false;
+
+    const KeyboardEventType = childWindow.KeyboardEvent ?? KeyboardEvent;
+    const forwarded = new KeyboardEventType('keydown', {
+        key: event.key, code: event.code, location: event.location, repeat: event.repeat,
+        ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey,
+        bubbles: true, cancelable: true, composed: true,
+    });
+    const receiver = child.activeElement && child.activeElement !== child.documentElement ? child.activeElement : child.body;
+    if (!receiver) return false;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    receiver.dispatchEvent(forwarded);
+
+    return true;
+}
+
 export function loadWorkspaceFrame(frame) {
     if (!frame?.dataset.src || frame.dataset.started) return false;
     const url = workspaceUrl(frame.dataset.src, frame.dataset.src);
@@ -333,6 +376,12 @@ function mountWorkspace(root) {
                 tab.loadError = false;
                 frame.setAttribute('aria-busy', 'false');
                 draw();
+                // The frame could not take focus before its page loaded; give it focus now
+                // unless the user has meanwhile moved to a field in the shell.
+                const shellFocus = document.activeElement;
+                if (state.active === tab.id && (!shellFocus || shellFocus === document.body || shellFocus === frame)) {
+                    focusPage(tab.id);
+                }
                 bindings.get(tab.id)?.();
                 try {
                     const child = frame.contentDocument;
@@ -402,6 +451,8 @@ function mountWorkspace(root) {
     };
     const key = event => {
         if (cycleWorkspaceTab(event, state, id => { draw(); focusPage(id); })) return;
+        // Keys pressed while the shell has focus belong to the active page (barcode scans, F-keys).
+        if (state.active !== 'initial' && forwardWorkspaceKey(event, views.get(state.active), document)) return;
         if (state.active !== 'initial' && /^F\d+$/.test(event.key)) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -435,6 +486,7 @@ function mountWorkspace(root) {
     }
     restoring = false;
     draw();
+    focusPage(state.active);
     return () => {
         root.querySelector('[data-workspace-retry]')?.removeEventListener('click', retry);
         document.body.classList.remove('workspace-pos-active');

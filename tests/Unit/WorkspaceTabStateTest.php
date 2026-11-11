@@ -261,3 +261,59 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('WORKSPACE_OK');
 });
+
+test('keys pressed on the workspace shell reach the active page frame', function (): void {
+    $script = <<<'JAVASCRIPT'
+    import fs from 'node:fs';
+    import assert from 'node:assert/strict';
+    const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
+    const { forwardWorkspaceKey } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+
+    class FakeKeyboardEvent { constructor(type, init) { Object.assign(this, init, {type}); } }
+    const received = [];
+    const childBody = {dispatchEvent: event => received.push(event)};
+    const child = {readyState: 'complete', body: childBody, documentElement: {}, activeElement: childBody};
+    const frame = {tagName: 'IFRAME', contentWindow: {KeyboardEvent: FakeKeyboardEvent}, contentDocument: child};
+    const shellBody = {closest: () => null};
+    const tabButton = {closest: () => null};
+    const shellInput = {closest: selector => selector.includes('input') ? {} : null};
+    const shell = {body: shellBody, documentElement: {}, activeElement: shellBody};
+    const press = (key, target, extra = {}) => {
+        const event = {key, code: key, target, prevented: false, stopped: false,
+            preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...extra};
+        return [forwardWorkspaceKey(event, frame, shell), event];
+    };
+
+    // A scanner typing while nothing in the shell is focused goes to the page.
+    for (const key of ['6', '2', '9', 'Enter']) {
+        const [forwarded, event] = press(key, shellBody);
+        assert.equal(forwarded, true);
+        assert.ok(event.prevented && event.stopped);
+    }
+    assert.deepEqual(received.map(event => event.key), ['6', '2', '9', 'Enter']);
+    assert.equal(received[0].type, 'keydown');
+    assert.equal(received[0].bubbles, true);
+
+    // F-keys reach the page even from a focused tab button; other keys stay with the tab bar.
+    shell.activeElement = tabButton;
+    assert.equal(press('F3', tabButton)[0], true);
+    assert.equal(press('ArrowLeft', tabButton)[0], false);
+    assert.equal(received.at(-1).key, 'F3');
+
+    // Typing in a shell field is never stolen, and initial or non-frame views are ignored.
+    shell.activeElement = shellInput;
+    assert.equal(press('a', shellInput)[0], false);
+    assert.equal(press('F3', shellInput)[0], false);
+    shell.activeElement = shellBody;
+    assert.equal(forwardWorkspaceKey({key: 'a', target: shellBody}, {tagName: 'DIV'}, shell), false);
+    assert.equal(forwardWorkspaceKey({key: 'a', target: shellBody}, undefined, shell), false);
+    child.readyState = 'loading';
+    assert.equal(press('a', shellBody)[0], false);
+    console.log('WORKSPACE_KEY_FORWARD_OK');
+    JAVASCRIPT;
+
+    $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
+    $process->mustRun();
+
+    expect($process->getOutput())->toContain('WORKSPACE_KEY_FORWARD_OK');
+});

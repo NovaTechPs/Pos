@@ -21,10 +21,9 @@ test('invoice PDF renders the store name above the company copyright without cha
     $order->setRelation('tenant', null);
 
     $html = view('pages.tenant.pos.partials.invoice-pdf', compact('order', 'storeName'))->render();
-    $text = 'جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS';
-    $shapedText = (new Arabic)->utf8Glyphs($text, 150, true, true);
-
-    $shapedStore = (new Arabic)->utf8Glyphs($storeName, 150, true, true);
+    // Latin digits are kept and the Latin part is placed left of the shaped Arabic words.
+    $shapedText = '© '.now()->year.' — WaslaPOS  '.(new Arabic)->utf8Glyphs('جميع الحقوق محفوظة', 150, false, true);
+    $shapedStore = (new Arabic)->utf8Glyphs($storeName, 150, false, true);
 
     expect($html)->toContain(e($shapedStore))->toContain(e($shapedText))->toContain('20.00')
         ->and(strpos($html, e($shapedStore)))->toBeLessThan(strpos($html, 'data-invoice-copyright'))
@@ -43,8 +42,11 @@ test('invoice PDF prints the amount received and the customer balance after an o
     $html = view('pages.tenant.pos.partials.invoice-pdf', compact('order', 'storeName', 'accountBalance'))->render();
     $arabic = new Arabic;
 
-    expect($html)->toContain('190.00')->toContain('166.50')->toContain('23.50')
-        ->toContain($arabic->utf8Glyphs('المبلغ المستلم من العميل', 150, true, true))
-        ->toContain($arabic->utf8Glyphs('المتبقي من الفاتورة', 150, true, true))
-        ->toContain($arabic->utf8Glyphs('رصيد لصالح العميل بعد الدفعة', 150, true, true));
+    // Walk-in invoice: only total, discount and the payment kept on the invoice (change is not a payment).
+    expect($html)->toContain('166.50')->not->toContain('190.00')
+        ->toContain($arabic->utf8Glyphs('المجموع', 150, false, true))
+        ->toContain($arabic->utf8Glyphs('دفعة', 150, false, true))
+        ->not->toContain($arabic->utf8Glyphs('المبلغ المستلم من العميل', 150, false, true))
+        ->not->toContain($arabic->utf8Glyphs('المتبقي من الفاتورة', 150, false, true))
+        ->not->toContain($arabic->utf8Glyphs('رصيد سابق', 150, false, true));
 });

@@ -36,9 +36,11 @@ class PosProductSearch
             return;
         }
         $prefix = $this->escapeLike($search).'%';
-        $query->where(function (Builder $q) use ($prefix, $search, $tenantId) {
+        // Any part of the item number, e.g. "22" or "00000022" finds I00000022.
+        $numberContains = '%'.$this->escapeLike($search).'%';
+        $query->where(function (Builder $q) use ($prefix, $numberContains, $search, $tenantId) {
             $q->whereRaw("products.search_name LIKE ? ESCAPE '!'", [$prefix])
-                ->orWhereRaw("products.product_number LIKE ? ESCAPE '!'", [$prefix])
+                ->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", [$numberContains])
                 ->orWhereExists(function (Builder $b) use ($tenantId, $prefix) {
                     $b->selectRaw('1')->from('product_barcodes as pb')
                         ->whereColumn('pb.product_id', 'products.id')
@@ -48,6 +50,27 @@ class PosProductSearch
             if (ctype_digit($search) && strlen($search) < 18) {
                 $q->orWhere('products.id', (int) $search);
             }
+        });
+    }
+
+    /**
+     * Adds an OR condition matching barcodes that contain the typed digits anywhere,
+     * e.g. the last 5 digits of a barcode. Only digit searches of 3+ characters qualify
+     * so plain word searches never pay for the contains scan.
+     */
+    public function orWhereBarcodeContains(Builder $query, string $search, int $tenantId): void
+    {
+        $search = $this->normalize($search);
+        if (! preg_match('/^[0-9]{3,40}$/', $search)) {
+            return;
+        }
+
+        $pattern = '%'.$this->escapeLike($search).'%';
+        $query->orWhereExists(function (Builder $barcodes) use ($tenantId, $pattern): void {
+            $barcodes->selectRaw('1')->from('product_barcodes as pbc')
+                ->whereColumn('pbc.product_id', 'products.id')
+                ->where('pbc.tenant_id', $tenantId)
+                ->whereRaw("pbc.barcode LIKE ? ESCAPE '!'", [$pattern]);
         });
     }
 
@@ -81,6 +104,34 @@ class PosProductSearch
         }
     }
 
+    /** Puts a product whose barcode or product number equals the search first. */
+    public function applyExactMatchOrdering(Builder $query, string $search, int $tenantId): void
+    {
+        $search = $this->normalize($search);
+        if ($search === '') {
+            return;
+        }
+
+        $query
+            ->orderByRaw('CASE WHEN EXISTS (
+                SELECT 1 FROM product_barcodes AS ranked_barcodes
+                WHERE ranked_barcodes.product_id = products.id
+                    AND ranked_barcodes.tenant_id = ?
+                    AND ranked_barcodes.barcode = ?
+            ) THEN 0 ELSE 1 END', [$tenantId, $search])
+            ->orderByRaw('CASE WHEN LOWER(COALESCE(products.product_number, \'\')) = LOWER(?) THEN 0 ELSE 1 END', [$search]);
+    }
+
+    /** Orders products from the highest to the lowest stock in the branch; products without a branch row count as zero. */
+    public function applyBranchStockOrdering(Builder $query, ?int $branchId): void
+    {
+        $query->orderByRaw('COALESCE((
+            SELECT bp_sort.stock_quantity FROM branch_products AS bp_sort
+            WHERE bp_sort.product_id = products.id AND bp_sort.branch_id = ?
+            LIMIT 1
+        ), 0) DESC', [$branchId]);
+    }
+
     public function applyRelevanceOrdering(Builder $query, string $search, int $tenantId): void
     {
         $search = $this->normalize($search);
@@ -89,14 +140,8 @@ class PosProductSearch
         }
 
         $prefix = $this->escapeLike($search).'%';
+        $this->applyExactMatchOrdering($query, $search, $tenantId);
         $query
-            ->orderByRaw('CASE WHEN EXISTS (
-                SELECT 1 FROM product_barcodes AS ranked_barcodes
-                WHERE ranked_barcodes.product_id = products.id
-                    AND ranked_barcodes.tenant_id = ?
-                    AND ranked_barcodes.barcode = ?
-            ) THEN 0 ELSE 1 END', [$tenantId, $search])
-            ->orderByRaw('CASE WHEN LOWER(COALESCE(products.product_number, \'\')) = LOWER(?) THEN 0 ELSE 1 END', [$search])
             ->orderByRaw("CASE WHEN LOWER(COALESCE(products.product_number, '')) LIKE ? ESCAPE '!' THEN 0 ELSE 1 END", [$prefix])
             ->orderByRaw('CASE WHEN EXISTS (
                 SELECT 1 FROM product_barcodes AS ranked_barcodes

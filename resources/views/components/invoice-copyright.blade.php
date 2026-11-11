@@ -3,7 +3,8 @@
 @php
     $copyright = 'جميع الحقوق محفوظة © '.now()->year.' — WaslaPOS';
     if ($pdf) {
-        $copyright = (new \ArPHP\I18N\Arabic)->utf8Glyphs($copyright, 150, true, true);
+        // Dompdf draws left-to-right: put the Latin part on the left of the shaped Arabic words.
+        $copyright = '© '.now()->year.' — WaslaPOS  '.(new \ArPHP\I18N\Arabic)->utf8Glyphs('جميع الحقوق محفوظة', 150, false, true);
     }
 @endphp
 

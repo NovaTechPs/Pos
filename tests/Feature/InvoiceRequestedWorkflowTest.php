@@ -12,6 +12,7 @@ use App\Models\PurchaseItem;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
+use ArPHP\I18N\Arabic;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
@@ -91,11 +92,8 @@ test('invoice item rows have prominent separators', function (string $page): voi
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
         ->call('selectProduct', $this->product->id)
         ->call('commitRowToCart')
-        ->assertSee('<tbody class="divide-y-2 divide-slate-500">', false);
-
-    if ($page === 'purchases') {
-        $component->assertSee('<div class="divide-y-2 divide-slate-500 md:hidden">', false);
-    }
+        ->assertSee('<tbody class="divide-y-2 divide-slate-500">', false)
+        ->assertSee('data-invoice-entry-row', false);
 })->with(['sales', 'purchases']);
 
 test('saving a sales or purchase invoice immediately starts a fresh invoice after printing the saved data', function (string $page, string $model, string $idField): void {
@@ -470,15 +468,17 @@ test('delivery notes survive checkout and appear on the printed receipt even for
         ->assertDispatched('print-receipt')->assertSet('errorMessage', null);
     $order = Order::query()->sole();
     expect($order->notes)->toContain('ملاحظة الفاتورة', 'ملاحظة التوصيل: اتصل قبل الوصول');
-    expect($component->get('receipt')['notes'])->toContain('اتصل قبل الوصول');
+    expect($component->get('receipt')['delivery']['notes'])->toBe('اتصل قبل الوصول')
+        ->and($component->get('receipt')['notes'])->toBe('ملاحظة الفاتورة');
     expect(view('pages.tenant.pos.partials.thermal-receipt', ['receipt' => $component->get('receipt')])->render())->toContain('اتصل قبل الوصول');
 
     $component->call('loadInvoice', $order->id)
         ->assertSet('notes', 'ملاحظة الفاتورة')
         ->assertSet('deliveryNotes', 'اتصل قبل الوصول');
 
+    // The PDF stores Arabic as shaped right-to-left glyphs.
     expect(view('pages.tenant.pos.partials.invoice-pdf', ['order' => $order->fresh()->load('items.product')])->render())
-        ->toContain('ملاحظة التوصيل: اتصل قبل الوصول');
+        ->toContain((new Arabic)->utf8Glyphs('اتصل قبل الوصول', 55, false, true));
 });
 
 test('product history shows date quantity party and invoice links for both sales and purchases', function (): void {

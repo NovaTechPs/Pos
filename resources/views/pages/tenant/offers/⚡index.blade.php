@@ -287,7 +287,7 @@ new class extends Component {
     <flux:modal wire:model="showModal" class="w-full max-w-xl">
         <div class="space-y-4">
             <div><flux:heading size="lg">{{ $offerId ? 'تعديل العرض' : 'إضافة عرض' }}</flux:heading><flux:subheading>حدد الصنف والفرع والكمية والسعر ومدة العرض.</flux:subheading></div>
-            <form wire:submit="save" class="space-y-4">
+            <form wire:submit="save" data-arrow-nav class="space-y-4">
                 <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
                 <flux:error name="offerRetailPrice" />
                 <div class="relative">
@@ -297,7 +297,7 @@ new class extends Component {
                     @if ($productResults->isNotEmpty())
                         <div class="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
                             @foreach ($productResults as $product)
-                                <button type="button" wire:click="selectProduct({{ $product->id }})" class="block w-full border-b border-slate-100 p-3 text-right hover:bg-indigo-50"><span class="font-bold">{{ $product->name }}</span><span class="mr-2 font-mono text-xs text-slate-400">{{ $product->product_number }}</span></button>
+                                <button type="button" data-arrow-nav-item wire:click="selectProduct({{ $product->id }})" class="block w-full border-b border-slate-100 p-3 text-right hover:bg-indigo-50"><span class="font-bold">{{ $product->name }}</span><span class="mr-2 font-mono text-xs text-slate-400">{{ $product->product_number }}</span></button>
                             @endforeach
                         </div>
                     @endif

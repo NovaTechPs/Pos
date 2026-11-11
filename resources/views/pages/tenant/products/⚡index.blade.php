@@ -254,7 +254,7 @@ new class extends Component {
 
         }
 
-        if ((! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) && ! $this->isEditing) {
+        if (! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) {
             $rules['newOfferQuantity'] = ['required', 'numeric', 'gt:0'];
             $rules['newOfferPrice'] = ['required', 'numeric', 'min:0'];
             $rules['newOfferStartAt'] = ['required', 'date'];
@@ -545,6 +545,8 @@ new class extends Component {
             ->findOrFail($id);
 
         $this->resetInputFields();
+        $this->newOfferStartAt = now()->format('Y-m-d\TH:i');
+        $this->newOfferEndAt = now()->addDays(7)->format('Y-m-d\TH:i');
 
         $this->product_id = $product->id;
         $this->category_id = $product->category_id;
@@ -1286,7 +1288,7 @@ new class extends Component {
                     ]);
                 }
 
-                if ((! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) && ! $this->isEditing) {
+                if (! empty($this->newOfferQuantity) || ! empty($this->newOfferPrice)) {
                     ProductOffer::query()->create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $activeBranchId,
@@ -3830,9 +3832,11 @@ new class extends Component {
                 @endcan
 
 
-                @if (! $isEditing)
-                    <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
-                        <div class="font-semibold">إضافة عرض لهذا الصنف مباشرة</div>
+                    <section data-product-new-offer data-arrow-nav class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                        <div class="font-semibold">{{ $isEditing ? 'إضافة عرض جديد لهذا الصنف' : 'إضافة عرض لهذا الصنف مباشرة' }}</div>
+                        @if ($isEditing)
+                            <div class="mt-1 text-xs text-slate-500">اترك الحقول فارغة إذا لا تريد إضافة عرض. العروض الحالية تُعدّل من صفحة العروض.</div>
+                        @endif
                         <div class="mt-4 grid gap-4 sm:grid-cols-2">
                                 <flux:field><flux:label>كمية العرض</flux:label><flux:input type="number" min="0.001" step="0.001" wire:model="newOfferQuantity" /><flux:error name="newOfferQuantity" /></flux:field>
                                 <flux:field><flux:label>سعر العرض الإجمالي</flux:label><flux:input type="number" min="0" step="0.01" wire:model="newOfferPrice" /><flux:error name="newOfferPrice" /></flux:field>
@@ -3843,7 +3847,6 @@ new class extends Component {
                                 @endif
                         </div>
                     </section>
-                @endif
 
                 {{-- ====================================================
                     WEBSITE
@@ -3991,7 +3994,7 @@ new class extends Component {
                 </div>
             </div>
 
-            <form wire:submit.prevent="saveOffer" class="mt-6 space-y-4">
+            <form wire:submit.prevent="saveOffer" data-arrow-nav class="mt-6 space-y-4">
                 <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="offerRetailPrice" label="سعر التجزئة للفرع المحدد" />
                 <flux:error name="offerRetailPrice" />
 

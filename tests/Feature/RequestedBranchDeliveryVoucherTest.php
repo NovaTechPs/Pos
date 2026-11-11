@@ -118,7 +118,8 @@ test('voucher print and download include the signed account balance', function (
     $html = view('pages.tenant.accounting.partials.voucher-pdf', ['voucher' => $voucher->load(['party', 'creator', 'branch', 'tenant'])])->render();
     expect($html)->toContain(number_format($balance, 2), 'V-123');
     $response = $this->get(route('tenant.vouchers.pdf', ['type' => $type, 'paymentId' => $voucher->id]));
-    $response->assertSuccessful()->assertDownload('voucher-'.$type.'-'.$voucher->id.'.pdf');
+    $response->assertSuccessful();
+    expect($response->headers->get('content-disposition'))->toContain("filename*=utf-8''".rawurlencode('الحساب - V-123.pdf'));
     expect($response->streamedContent())->toStartWith('%PDF-');
 })->with(['receipt', 'payment'])->with([125.0, 0.0, -50.0]);
 
@@ -138,7 +139,9 @@ test('sales invoice summary and pos receipt show account balance', function (): 
         ->assertViewHas('accountBalanceAfterInvoice', -35.0)->assertSee('الرصيد بعد الفاتورة');
     $order = Order::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'customer_id' => $party->id, 'invoice_number' => 'POS-BALANCE', 'type' => 'pos', 'status' => 'completed', 'subtotal' => 10, 'total' => 10, 'paid_amount' => 10]);
     Livewire::test('pages::tenant.pos.sales')->set('currentInvoiceId', $order->id)->call('printReceipt')
-        ->assertSet('receipt.account_balance', '-35.00')->assertSee('رصيد الحساب الحالي بعد الفاتورة');
+        ->assertSet('receipt.account_balance', '-35.00')
+        ->assertSet('receipt.summary.previous_balance', -35.0)->assertSet('receipt.summary.new_balance', -35.0)
+        ->assertSee('رصيد سابق :')->assertSee('رصيد جديد :');
 });
 
 test('editing an offer reloads the selected branch price and rejects invalid prices', function (string $page): void {
@@ -179,7 +182,7 @@ test('invoice pdf downloads receive the current signed account balance', functio
     if ($fromPage) {
         Livewire::test('pages::tenant.'.($kind === 'sales' ? 'sales' : 'purchases').'.invoices')
             ->set($kind === 'sales' ? 'currentOrderId' : 'currentPurchaseId', $invoice->id)
-            ->call('downloadInvoicePdf')->assertFileDownloaded(($kind === 'sales' ? 'sales' : 'purchase').'-invoice-PDF-BAL.pdf');
+            ->call('downloadInvoicePdf')->assertFileDownloaded('الحساب - PDF-BAL.pdf');
     } else {
         $response = $this->get($url)->assertSuccessful();
         expect($response->streamedContent())->toBe('%PDF-test');

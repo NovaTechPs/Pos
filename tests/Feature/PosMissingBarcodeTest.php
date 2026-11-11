@@ -164,3 +164,20 @@ test('closing the embedded form using its close control notifies POS', function 
     Livewire::test('pages::tenant.products.index', ['posEmbedded' => true, 'newBarcode' => '000123'])
         ->set('showModal', false)->assertDispatched('pos-product-form-closed');
 });
+
+test('linking a missing barcode lists each product with its number, branch price and remaining stock', function (): void {
+    $otherBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'فرع آخر']);
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $otherBranch->id, 'product_id' => $this->product->id, 'retail_price' => 99, 'stock_quantity' => 77]);
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('scanBarcode', '000999')
+        ->call('chooseExistingProductForBarcode')
+        ->set('missingBarcodeSearch', 'إبريق')
+        ->assertSee('data-pos-barcode-result-details', false)
+        ->assertSee('P01')
+        ->assertSee('10.00')
+        ->assertSee('20.00')
+        ->assertSee('الكمية المتبقية')
+        ->assertDontSee('99.00')
+        ->assertDontSee('77.00');
+});

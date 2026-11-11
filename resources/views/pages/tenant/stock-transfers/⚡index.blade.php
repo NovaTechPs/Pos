@@ -1041,8 +1041,7 @@ return new class extends Component {
                         $q->where(function ($sub) use ($word) {
 
                             $sub->where('name', 'like', '%' . $word . '%')
-
-
+                                ->orWhere('product_number', 'like', '%' . $word . '%')
                                 ->orWhereHas('barcodes', fn ($barcode) => $barcode->where('barcode', 'like', '%' . $word . '%'));
 
                         });

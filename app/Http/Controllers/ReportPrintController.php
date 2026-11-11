@@ -16,7 +16,7 @@ class ReportPrintController extends Controller
         $branchId = $hasBranchFilter && $request->integer('branch_id') > 0 ? $request->integer('branch_id') : null;
         $service = new ReportingService($request->user(), $branchId, ! $hasBranchFilter);
         $report = $request->string('report')->toString();
-        $definition = $service->prepare($report, $request->only(['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method']));
+        $definition = $service->prepare($report, $request->only(ReportingService::FILTER_KEYS));
         $data = ['title' => ReportingService::REPORTS[$report][0], 'definition' => $definition,
             'from' => $request->string('from')->toString(), 'to' => $request->string('to')->toString(),
             'tenantName' => DB::table('tenants')->where('id', $service->tenantId)->value('name'),

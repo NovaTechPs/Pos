@@ -31,6 +31,8 @@ new class extends Component {
     public string $source = '';
     public string $saleKind = '';
     public string $costMethod = 'recorded';
+    public string $voucherType = '';
+    public string $paymentMethod = '';
     public string $partySearch = '';
     public string $statementPartyType = 'customer';
     public string $productSearch = '';
@@ -82,7 +84,8 @@ new class extends Component {
     {
         return ['from' => $this->from, 'to' => $this->to, 'party_id' => $this->partyId, 'product_id' => $this->productId,
             'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
-            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod];
+            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod,
+            'voucher_type' => $this->voucherType, 'payment_method' => $this->paymentMethod];
     }
 
     public function applyFilters(): void
@@ -161,6 +164,8 @@ new class extends Component {
         $this->statementPartyType = 'customer';
         $this->partyId = null;
         $this->productId = null;
+        $this->voucherType = '';
+        $this->paymentMethod = '';
     }
 
     public function setPeriod(string $range): void
@@ -211,7 +216,7 @@ new class extends Component {
         $parties = collect();
         $statementParties = null;
         $products = collect();
-        if (in_array($this->report, ['statement', 'balances'], true)) {
+        if (in_array($this->report, ['statement', 'balances', 'aging', 'cashflow'], true)) {
             $parties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when($service->branchId, fn ($q) => $q->where(fn ($q) => $q->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')))
@@ -250,7 +255,7 @@ new class extends Component {
         </div>
     </div>
     <flux:select label="نوع التقرير" wire:model.live="report">
-        @foreach ($allowed as $key => $entry)<option wire:key="report-{{ $key }}" value="{{ $key }}">{{ $entry[0] }}</option>@endforeach
+        @foreach (ReportingService::REPORT_GROUPS as $group => $keys) @php($groupReports = array_intersect_key($allowed, array_flip($keys))) @if ($groupReports)<optgroup wire:key="report-group-{{ $loop->index }}" label="{{ $group }}">@foreach ($groupReports as $key => $entry)<option wire:key="report-{{ $key }}" value="{{ $key }}">{{ $entry[0] }}</option>@endforeach</optgroup> @endif @endforeach
     </flux:select>
     <form wire:submit="applyFilters" class="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -261,14 +266,14 @@ new class extends Component {
             @endif
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (in_array($report, ['balances', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
+            @if (in_array($report, ['balances', 'aging', 'cashflow', 'expenses', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
-        @if (in_array($report, ['statement', 'balances']))
+        @if (in_array($report, ['statement', 'balances', 'aging', 'cashflow']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <flux:input label="ابحث عن الطرف للاختيار" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الرمز أو الهاتف" />
                 <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الطرف' : 'كل الأطراف' }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
-                @if ($report === 'balances')<flux:select label="نوع الطرف" wire:model="partyType"><option value="all">الجميع</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></flux:select>@endif
-                @if ($report === 'balances')<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
+                @if (in_array($report, ['balances', 'aging']))<flux:select label="نوع الطرف" wire:model="partyType"><option value="all">الجميع</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></flux:select>@endif
+                @if (in_array($report, ['balances', 'aging']))<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
             </div>
         @endif
         @if (in_array($report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))
@@ -290,9 +295,15 @@ new class extends Component {
                 @endif
             </div>
         @endif
-        @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'profit']))
+        @if (in_array($report, ['cashflow', 'daily-cash', 'expenses']))
             <div class="grid gap-4 sm:grid-cols-2">
-                <flux:select label="مصدر الفاتورة" wire:model="source"><option value="">الكل</option><option value="pos">نقطة البيع</option><option value="web">الويب</option><option value="api">التطبيق / API</option><option value="online">المتجر الإلكتروني</option></flux:select>
+                @if ($report !== 'expenses')<flux:select label="نوع الحركة" wire:model="voucherType"><option value="">قبض وصرف</option><option value="receipt">قبض فقط</option><option value="payment">صرف فقط</option></flux:select>@endif
+                <flux:select label="طريقة الدفع" wire:model="paymentMethod"><option value="">كل الطرق</option><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل</option><option value="cheque">شيك</option></flux:select>
+            </div>
+        @endif
+        @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'tax', 'branches']))
+            <div class="grid gap-4 sm:grid-cols-2">
+                <flux:select label="مصدر الفاتورة" wire:model="source"><option value="">الكل</option><option value="pos">نقطة البيع (زبون نقدي)</option><option value="web">فواتير المبيعات (تشمل فواتير نقطة البيع لزبون)</option><option value="api">التطبيق / API</option><option value="online">المتجر الإلكتروني</option></flux:select>
                 <flux:select label="نوع البيع" wire:model="saleKind"><option value="">الكل</option><option value="retail">مفرق</option><option value="wholesale">جملة</option></flux:select>
             </div>
         @endif

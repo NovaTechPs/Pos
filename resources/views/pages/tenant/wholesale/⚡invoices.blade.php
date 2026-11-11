@@ -388,6 +388,8 @@ new class extends Component {
         $this->dispatch(
             'print-wholesale-invoice',
             data: [
+                'pdf_url' => route('tenant.sale-invoices.pdf', ['orderId' => $order->id]),
+                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($order->customer_name ?: $order->party?->name, $order->invoice_number, 'زبون عام'), '.pdf'),
                 'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'title' => 'فاتورة مبيعات جملة',
                 'invoice_number' => $order->invoice_number,
@@ -408,6 +410,7 @@ new class extends Component {
                 'total' => $total,
                 'paid' => $paid,
                 'remaining' => max(0, $total - $paid),
+                'summary' => \App\Services\InvoiceBalanceSummary::forOrder($order),
                 'notes' => $order->notes ?: '',
             ]
         );
@@ -1816,6 +1819,7 @@ new class extends Component {
 @script
 <script>
     $wire.on('print-wholesale-invoice', ({ data }) => {
+        if (data?.pdf_url && window.printPdf) { window.printPdf(data.pdf_url, data.file_title); return; }
         const popup = window.open(
             '',
             '_blank',
@@ -1990,7 +1994,7 @@ new class extends Component {
                 <div class="customer">
 
                     <div>
-                        <strong>العميل:</strong>
+                        <strong>الزبون:</strong>
                         ${esc(data.customer_name)}
                     </div>
 
@@ -2031,32 +2035,29 @@ new class extends Component {
 
                 <div class="line"></div>
 
-                <div class="totals">
+                <div class="totals" data-invoice-balance-summary>
 
                     <div>
                         <span>المجموع</span>
-                        <span>${money(data.subtotal)}</span>
+                        <span>${money(data.summary?.total)}</span>
                     </div>
 
                     <div>
                         <span>الخصم</span>
-                        <span>${money(data.discount)}</span>
-                    </div>
-
-                    <div class="grand">
-                        <span>الإجمالي</span>
-                        <span>${money(data.total)}</span>
+                        <span>${money(data.summary?.discount)}</span>
                     </div>
 
                     <div>
-                        <span>المدفوع</span>
-                        <span>${money(data.paid)}</span>
+                        <span>دفعة</span>
+                        <span>${money(data.summary?.payment)}</span>
                     </div>
 
-                    <div>
-                        <span>المتبقي</span>
-                        <span>${money(data.remaining)}</span>
-                    </div>
+                    ${
+                        data.summary?.previous_balance != null
+                            ? `<div><span>رصيد سابق</span><span>${money(data.summary.previous_balance)}</span></div>
+                               <div class="grand"><span>رصيد جديد</span><span>${money(data.summary.new_balance)}</span></div>`
+                            : ''
+                    }
 
                 </div>
 
@@ -2074,10 +2075,6 @@ new class extends Component {
                 }
 
                 <div class="line"></div>
-
-                <div class="footer">
-                    شكراً لتعاملكم معنا
-                </div>
 
                 <x-invoice-copyright />
 

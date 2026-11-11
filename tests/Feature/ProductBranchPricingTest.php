@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\ProductOffer;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
@@ -102,4 +103,37 @@ test('full product edit shows and saves prices for the active branch only', func
     expect((float) BranchProduct::query()->where('branch_id', $this->branch->id)->where('product_id', $this->product->id)->value('retail_price'))->toBe(13.0)
         ->and((float) BranchProduct::query()->where('branch_id', $this->otherBranch->id)->where('product_id', $this->product->id)->value('retail_price'))->toBe(20.0)
         ->and((bool) $this->product->fresh()->is_price_unified)->toBeFalse();
+});
+
+test('editing a product can add a new offer for the active branch and leaving it empty adds none', function (): void {
+    $productEditPermission = Permission::query()->create([
+        'name' => 'products.edit',
+        'display_name' => 'Edit products',
+        'group' => 'Products',
+    ]);
+    $this->employee->role->permissions()->attach($productEditPermission);
+    $this->employee->unsetRelation('role');
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('edit', $this->product->id)
+        ->assertSee('إضافة عرض جديد لهذا الصنف')
+        ->assertSee('wire:model="newOfferQuantity"', false)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(ProductOffer::query()->count())->toBe(0);
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('edit', $this->product->id)
+        ->set('newOfferQuantity', '3')
+        ->set('newOfferPrice', '25')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $offer = ProductOffer::query()->sole();
+    expect($offer->product_id)->toBe($this->product->id)
+        ->and($offer->branch_id)->toBe($this->branch->id)
+        ->and((float) $offer->offer_quantity)->toBe(3.0)
+        ->and((float) $offer->offer_price)->toBe(25.0)
+        ->and($offer->end_at)->toBeNull();
 });

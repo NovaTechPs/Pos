@@ -22,6 +22,7 @@ new class extends Component {
     #[Locked]
     public bool $editing = false;
     public string $returnSearch = '';
+    public bool $showReturnSearch = false;
     public string $discountType = 'fixed';
     public $discountRate = 0;
     public $taxPercent = 16;
@@ -130,12 +131,14 @@ new class extends Component {
         $this->startNewReturn(false);
     }
 
+    public function toggleReturnSearch(): void
+    {
+        $this->showReturnSearch = ! $this->showReturnSearch;
+    }
+
     public function updatedSelectedBranchId(): void
     {
-        $user = auth()->user();
-        if ($user?->isTenantOwner() || $user?->isSaaSAdmin()) {
-            $this->selectedBranchId = $user->activeBranchId();
-        }
+        $this->selectedBranchId = $this->branchId();
 
         $this->productSearch = '';
         $this->productResults = [];
@@ -166,7 +169,7 @@ new class extends Component {
         $this->partyResults = Party::query()->where('tenant_id', $this->tenantId())->whereIn('type', $types)
             ->where('is_active', true)->where(function ($query) use ($search): void {
                 $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
-            })->orderBy('name')->limit(10)->get(['id', 'name', 'phone'])->toArray();
+            })->orderBy('name')->limit(10)->get(['id', 'name', 'phone', 'current_balance'])->toArray();
     }
 
     public function selectParty(int $partyId): void
@@ -468,7 +471,7 @@ new class extends Component {
     {
         Gate::authorize('returns.view');
         abort_unless($this->currentReturnId && $this->returnQuery()->where('id', $this->currentReturnId)->exists(), 404);
-        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: 'return-'.$this->kind.'-'.$this->currentReturnId.'.pdf');
+        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: \App\Services\PdfFilename::forDocument($this->selectedPartyName, $this->invoiceNumber, $this->kind === 'sale' ? 'زبون' : 'مورد'));
     }
 
     public function copyReturn(): void
@@ -535,6 +538,7 @@ new class extends Component {
         $return = $this->returnQuery()->where('id', $id)->first();
         abort_unless($return, 404);
         $this->startNewReturn(false);
+        $this->showReturnSearch = false;
         $this->currentReturnId = $id;
         $this->selectedBranchId = (int) $return->branch_id;
         $this->selectedPartyId = (int) ($this->kind === 'sale' ? $return->customer_id : $return->supplier_id);
@@ -665,6 +669,11 @@ new class extends Component {
 
     public function saveReturn(bool $print = false): void
     {
+        if ($this->currentReturnId && !$this->editing && $print) {
+            $this->printCurrentInvoice();
+
+            return;
+        }
         Gate::authorize('returns.create');
         if ($this->currentReturnId && !$this->editing) {
             $this->errorMessage = 'اضغط تعديل أولاً لتعديل الفاتورة المحفوظة.';
@@ -844,256 +853,471 @@ new class extends Component {
             })->all(),
         ];
         $this->showPrint = true;
+        $this->dispatch('print-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $return->id]),
+            title: \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($party?->name, $this->printData['number'], $this->kind === 'sale' ? 'زبون' : 'مورد'), '.pdf'));
     }
 
     public function render(): View
     {
         $column = $this->kind === 'sale' ? 'invoice_number' : 'reference_number';
         $recentReturns = $this->returnQuery()->when(trim($this->returnSearch) !== '', fn ($query) => $query->where($column, 'like', '%'.trim($this->returnSearch).'%'))->orderByDesc('id')->limit(20)->get();
+        $partyColumn = $this->kind === 'sale' ? 'customer_id' : 'supplier_id';
+        $returnPartyNames = Party::query()->where('tenant_id', $this->tenantId())
+            ->whereIn('id', $recentReturns->pluck($partyColumn)->filter()->unique())->pluck('name', 'id');
+        $selectedParty = $this->selectedPartyId
+            ? Party::query()->where('tenant_id', $this->tenantId())->find($this->selectedPartyId, ['id', 'name', 'phone', 'current_balance'])
+            : null;
 
-        return $this->view(['recentReturns' => $recentReturns, 'totals' => $this->totals(), 'showTax' => TenantSetting::getBool($this->tenantId(), 'show_tax', true)])->layout('layouts::tenant');
+        return $this->view([
+            'recentReturns' => $recentReturns,
+            'returnPartyNames' => $returnPartyNames,
+            'partyColumn' => $partyColumn,
+            'selectedParty' => $selectedParty,
+            'totals' => $this->totals(),
+            'showTax' => TenantSetting::getBool($this->tenantId(), 'show_tax', true),
+        ])->layout('layouts::tenant');
     }
 }; ?>
 
-<flux:main class="min-h-[calc(100vh-4rem)] bg-slate-100 p-2 sm:p-3 md:p-4" dir="rtl">
-    <div class="mx-auto max-w-[1700px] space-y-3" x-data x-on:keydown.f3.window.prevent="$wire.saveReturn()" x-on:keydown.f6.window.prevent="$wire.saveReturn(true)">
-        <section class="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div class="flex flex-col gap-3 rounded-t-2xl bg-slate-950 p-3 text-white lg:flex-row lg:items-center lg:justify-between">
-                <div class="flex items-center gap-3">
-                    <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-xl">🧾</span>
-                    <div>
-                        <h1 class="text-lg font-black">{{ $kind === 'sale' ? 'فاتورة مردود مبيعات' : 'فاتورة مردود مشتريات' }}</h1>
-                        <div class="mt-1 flex flex-wrap gap-x-4 text-[11px] text-slate-300">
-                            <span>رقم الفاتورة: <strong class="font-mono text-white">{{ $invoiceNumber }}</strong></span>
-                            <span>التاريخ: <strong class="text-white">{{ $invoiceDate }}</strong></span>
+@php
+    $isSale = $kind === 'sale';
+    $partyLabel = $isSale ? 'العميل' : 'المورد';
+    $viewOnly = $currentReturnId && ! $editing;
+    $showBranchField = ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin();
+    $returnQuantity = collect($lines)->sum(fn ($line) => (float) $line['quantity']);
+    $accent = $isSale ? 'rose' : 'amber';
+@endphp
+
+<flux:main class="bg-slate-100 p-2! sm:p-3! xl:h-[var(--invoice-fit-height,calc(100dvh-4rem))] xl:overflow-y-auto" dir="rtl">
+    <div class="mx-auto max-w-[1700px] xl:flex xl:h-full xl:flex-col"
+        x-data="{
+            {{-- Sizes the page to the visible window on desktop so only the items table grows, like the invoice screens. --}}
+            fitToViewport() {
+                const main = this.$el?.closest?.('[data-flux-main]');
+                if (!main) return;
+                const top = main.getBoundingClientRect().top + window.scrollY;
+                document.documentElement.style.setProperty('--invoice-fit-height', Math.max(520, window.innerHeight - top) + 'px');
+            },
+        }"
+        x-init="$nextTick(() => fitToViewport())"
+        x-on:resize.window.debounce.150ms="fitToViewport()"
+        x-on:keydown.f3.window.prevent="$wire.saveReturn()"
+        x-on:keydown.f6.window.prevent="$wire.saveReturn(true)"
+        x-on:keydown.f7.window.prevent="$wire.toggleReturnSearch()"
+        x-on:keydown.f9.window.prevent="document.getElementById('return-product-search')?.focus()"
+        x-on:keydown.shift.f2.window.prevent="$wire.startNewReturn()">
+
+        {{-- ================================================================
+             شريط الأدوات الرئيسي
+        ================================================================= --}}
+        <div class="mb-3 shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div class="flex min-w-0 items-center gap-3">
+                    <flux:icon.arrow-uturn-left class="size-10 shrink-0 {{ $isSale ? 'text-rose-600' : 'text-amber-600' }}" />
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h1 class="text-xl font-black text-slate-900">{{ $isSale ? 'فاتورة مردود مبيعات' : 'فاتورة مردود مشتريات' }}</h1>
+                            @if ($currentReturnId)
+                                @if ($editing)
+                                    <span class="rounded-full bg-amber-500 px-3 py-0.5 text-xs font-black text-white">تعديل مردود</span>
+                                @else
+                                    <span class="rounded-full bg-slate-700 px-3 py-0.5 text-xs font-black text-white">محفوظ</span>
+                                @endif
+                            @else
+                                <span class="rounded-full bg-emerald-600 px-3 py-0.5 text-xs font-black text-white">مردود جديد</span>
+                            @endif
                         </div>
+                        <div class="mt-0.5 font-mono text-xs font-bold text-slate-500">{{ $invoiceNumber }}</div>
                     </div>
                 </div>
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" wire:click="previousInvoice" class="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold">السابقة</button>
-                    <button type="button" wire:click="nextInvoice" class="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold">التالية</button>
-                    @if($currentReturnId)
-                        <button type="button" wire:click="copyReturn" class="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold">نسخ لفاتورة جديدة</button>
-                        <button type="button" wire:click="editLoadedInvoice" class="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold">تعديل</button>
-                        <a href="{{ route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $currentReturnId]) }}" class="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold">تنزيل PDF</a>
-                        <button type="button" wire:click="shareInvoicePdf" class="rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold">مشاركة / واتساب</button>
-                        <button type="button" wire:click="printCurrentInvoice" class="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold">طباعة / PDF</button>
-                        <button type="button" wire:click="deleteReturn" wire:confirm="حذف المردود وعكس أثره على المخزون والرصيد؟" class="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold">حذف المردود</button>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative" x-data="{ toolsOpen: false }" x-on:click.outside="toolsOpen = false" x-on:keydown.escape.stop="toolsOpen = false">
+                        <button type="button" x-on:click="toolsOpen = ! toolsOpen" x-bind:aria-expanded="toolsOpen" aria-haspopup="menu" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                            أدوات <flux:icon.chevron-down class="size-4" />
+                        </button>
+                        <div x-cloak x-show="toolsOpen" x-transition.origin.top x-on:click="toolsOpen = false" role="menu" class="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-700 shadow-xl">
+                            <button type="button" role="menuitem" x-on:click="document.getElementById('return-notes')?.focus()" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات المردود
+                            </button>
+                            @if ($currentReturnId)
+                                <button type="button" role="menuitem" wire:click="printCurrentInvoice" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                    <flux:icon.printer class="size-4 text-slate-500" /> طباعة المردود المحفوظ
+                                </button>
+                                <a role="menuitem" href="{{ route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $currentReturnId]) }}" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                    <flux:icon.document-arrow-down class="size-4 text-slate-500" /> تنزيل PDF
+                                </a>
+                                <button type="button" role="menuitem" wire:click="shareInvoicePdf" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-emerald-700 hover:bg-emerald-50">
+                                    <flux:icon.share class="size-4" /> مشاركة / واتساب
+                                </button>
+                                <button type="button" role="menuitem" wire:click="copyReturn" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                                    <flux:icon.document-duplicate class="size-4 text-slate-500" /> نسخ لفاتورة جديدة
+                                </button>
+                            @endif
+                            @if ($selectedPartyId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+                                <div class="my-1 border-t border-slate-100"></div>
+                                <a role="menuitem" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedPartyId, 'party_type' => $isSale ? 'customer' : 'supplier']) }}" target="_blank" rel="noopener" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-indigo-700 hover:bg-indigo-50">
+                                    <flux:icon.arrow-top-right-on-square class="size-4" /> كشف حساب {{ $partyLabel }}
+                                </a>
+                            @endif
+                            @if ($currentReturnId)
+                                <div class="my-1 border-t border-slate-100"></div>
+                                <button type="button" role="menuitem" wire:click="deleteReturn" wire:confirm="حذف المردود وعكس أثره على المخزون والرصيد؟" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-rose-700 hover:bg-rose-50">
+                                    <flux:icon.trash class="size-4" /> حذف المردود
+                                </button>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="inline-flex h-10 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+                        <button type="button" wire:click="previousInvoice" title="المردود السابق" class="inline-flex items-center gap-1 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                            <flux:icon.chevron-right class="size-4" /> السابقة
+                        </button>
+                        <button type="button" wire:click="nextInvoice" title="المردود التالي" class="inline-flex items-center gap-1 border-r border-slate-300 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                            التالية <flux:icon.chevron-left class="size-4" />
+                        </button>
+                    </div>
+
+                    <button type="button" wire:click="toggleReturnSearch" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                        <flux:icon.magnifying-glass class="size-4" /> استعلام <span class="text-xs text-slate-400">(F7)</span>
+                    </button>
+
+                    @if ($viewOnly)
+                        <button type="button" wire:click="editLoadedInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-100">
+                            <flux:icon.pencil-square class="size-4" /> تعديل
+                        </button>
                     @endif
-                    <button type="button" wire:click="startNewReturn" class="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black hover:bg-emerald-500">+ فاتورة جديدة</button>
+
+                    <button type="button" wire:click="startNewReturn" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+                        <flux:icon.plus-circle class="size-5 text-blue-600" /> جديد <span class="text-xs text-slate-400">(Shift+F2)</span>
+                    </button>
+
+                    <button type="button" wire:click="saveReturn(true)" wire:loading.attr="disabled" wire:target="saveReturn" @disabled(! $viewOnly && (empty($lines) || ! $selectedPartyId)) class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50">
+                        <flux:icon.printer class="size-4" /> {{ $viewOnly ? 'طباعة' : 'حفظ وطباعة' }} <span class="text-xs text-slate-500">(F6)</span>
+                    </button>
+
+                    <button type="button" wire:click="saveReturn" wire:loading.attr="disabled" wire:target="saveReturn" @disabled($viewOnly || empty($lines) || ! $selectedPartyId) class="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+                        <flux:icon.check-circle class="size-5" />
+                        <span wire:loading.remove wire:target="saveReturn">{{ $currentReturnId ? 'حفظ التعديلات' : 'حفظ الفاتورة' }}</span>
+                        <span wire:loading wire:target="saveReturn">جاري الحفظ...</span>
+                        <span class="text-xs font-bold text-emerald-100">(F3)</span>
+                    </button>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <details class="rounded-2xl border border-slate-200 bg-white p-3" @if($returnSearch !== '') open @endif>
-            <summary class="cursor-pointer text-sm font-black">بحث وفتح المردودات السابقة</summary>
-            <div class="mt-3 flex gap-2"><input type="text" wire:model.live.debounce.300ms="returnSearch" wire:keydown.enter="searchReturn" placeholder="رقم المردود..." class="w-full rounded-xl border border-slate-200 px-3 py-2"><button type="button" wire:click="searchReturn" class="rounded-xl bg-slate-900 px-4 text-white">بحث</button></div>
-            <div class="mt-3 max-h-64 overflow-auto">
-                @forelse($recentReturns as $savedReturn)
-                    <button type="button" wire:click="loadReturn({{ $savedReturn->id }})" class="flex w-full items-center justify-between border-b border-slate-100 px-3 py-3 text-sm hover:bg-blue-50">
-                        <span>{{ $kind === 'sale' ? $savedReturn->invoice_number : $savedReturn->reference_number }}</span><span>{{ \Illuminate\Support\Carbon::parse($savedReturn->created_at)->format('Y-m-d') }}</span><strong>{{ number_format(abs((float) $savedReturn->total), 2) }}</strong>
-                    </button>
-                @empty <p class="p-3 text-sm text-slate-500">لا توجد مردودات مطابقة.</p> @endforelse
-            </div>
-        </details>
-        @if($currentReturnId)<div class="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-800">{{ $editing ? 'تعديل المردود المحفوظ' : 'عرض المردود — اضغط تعديل لتغيير البيانات' }}</div>@endif
-        @if($errors->any())<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ $errors->first() }}</div>@endif
-
+        {{-- ================================================================
+             الرسائل
+        ================================================================= --}}
+        @if ($errors->any())
+            <div class="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{{ $errors->first() }}</div>
+        @endif
         @if ($errorMessage)
-            <div class="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-                <span>{{ $errorMessage }}</span><button type="button" wire:click="$set('errorMessage', null)">✕</button>
+            <div class="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                <div class="flex items-center gap-2"><span class="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100">!</span><span>{{ $errorMessage }}</span></div>
+                <button type="button" wire:click="$set('errorMessage', null)" class="rounded-lg px-2 py-1 hover:bg-rose-100">✕</button>
             </div>
         @endif
-        @if ($successMessage)
-            <div class="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-                <span>{{ $successMessage }}</span><button type="button" wire:click="$set('successMessage', null)">✕</button>
-            </div>
-        @endif
+        <x-flash-notice :message="$successMessage" />
 
-        <fieldset @disabled($currentReturnId && !$editing) class="space-y-3">
-        <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div>
-                    <h2 class="text-sm font-black text-slate-900">بيانات الفاتورة</h2>
-                    <p class="mt-1 text-[11px] font-semibold text-slate-400">اختر {{ $kind === 'sale' ? 'العميل' : 'المورد' }} والفرع والتاريخ.</p>
-                </div>
-                <span class="rounded-xl bg-slate-50 px-3 py-2 text-left">
-                    <span class="block text-[10px] font-bold text-slate-400">رقم الفاتورة</span>
-                    <strong class="font-mono text-sm text-slate-900">{{ $invoiceNumber }}</strong>
-                </span>
-            </div>
-
-            <div class="grid gap-3 lg:grid-cols-12">
-                <div class="relative lg:col-span-5">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">{{ $kind === 'sale' ? 'العميل' : 'المورد' }}</label>
-                    @if ($selectedPartyId)
-                        <div class="flex h-[46px] items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3">
-                            <div class="min-w-0">
-                                <div class="truncate text-sm font-black text-emerald-900">{{ $selectedPartyName }}</div>
-                                <div class="text-[10px] font-semibold text-emerald-700">{{ $kind === 'sale' ? 'فاتورة مرتبطة بحساب العميل' : 'فاتورة مرتبطة بحساب المورد' }}</div>
-                            </div>
-                            <button type="button" wire:click="clearParty" class="rounded-lg px-2 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100">تغيير</button>
+        {{-- ================================================================
+             الاستعلام عن المردودات السابقة
+        ================================================================= --}}
+        @if ($showReturnSearch)
+            <div class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="return-search-title" x-on:keydown.escape.window="$wire.set('showReturnSearch', false)">
+                <div class="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+                        <div>
+                            <h2 id="return-search-title" class="text-base font-black text-slate-900">{{ $isSale ? 'استعلام عن مردودات المبيعات السابقة' : 'استعلام عن مردودات المشتريات السابقة' }}</h2>
+                            <p class="mt-1 text-xs font-semibold text-slate-500">اختر مردوداً من النتائج لفتحه.</p>
                         </div>
-                    @else
-                        <input type="text" wire:model.live.debounce.180ms="partySearch" wire:keydown.enter.prevent="selectFirstParty" autocomplete="off" placeholder="ابحث بالاسم أو الهاتف..." class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-slate-400 focus:bg-white">
-                        @if ($partySearch !== '' || count($partyResults))
-                            <div class="absolute right-0 top-full z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl">
-                                @forelse ($partyResults as $party)
-                                    <button type="button" wire:click="selectParty({{ $party['id'] }})" class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right hover:bg-slate-50">
-                                        <span class="text-sm font-black text-slate-800">{{ $party['name'] }}</span><span class="text-xs text-slate-400">{{ $party['phone'] ?: 'بدون هاتف' }}</span>
-                                    </button>
-                                @empty
-                                    <div class="p-4 text-center text-xs font-bold text-slate-400">لا توجد نتائج مطابقة.</div>
-                                @endforelse
-                            </div>
-                        @endif
-                    @endif
-                </div>
-                @if (!auth()->user()->isTenantOwner() && !auth()->user()->isSaaSAdmin())
-                <div class="lg:col-span-3">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">الفرع</label>
-                    <select wire:model.live="selectedBranchId" @disabled(auth()->user()?->branch_id) class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700 disabled:opacity-60">
-                        @foreach ($branches as $branch)
-                            <option value="{{ $branch['id'] }}">{{ $branch['name'] }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                @endif
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">التاريخ</label>
-                    <input type="date" wire:model="invoiceDate" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700">
-                </div>
-                <div class="lg:col-span-2">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">نوع العملية</label>
-                    <div class="flex h-[46px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-xs font-black text-indigo-800">{{ $kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات' }}</div>
+                        <button type="button" wire:click="$set('showReturnSearch', false)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-100" aria-label="إغلاق">✕</button>
+                    </div>
+                    <div class="grid gap-2 border-b border-slate-200 p-3 sm:grid-cols-[1fr_auto] sm:p-4">
+                        <input type="search" x-init="$nextTick(() => $el.focus())" wire:model.live.debounce.300ms="returnSearch" wire:keydown.enter="searchReturn" placeholder="رقم المردود..." class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-400 focus:bg-white" />
+                        <button type="button" wire:click="searchReturn" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">فتح المطابق</button>
+                    </div>
+                    <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4">
+                        @forelse ($recentReturns as $savedReturn)
+                            <button type="button" wire:key="return-result-{{ $savedReturn->id }}" wire:click="loadReturn({{ $savedReturn->id }})" class="grid w-full grid-cols-2 items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-3 text-right transition hover:border-indigo-300 hover:bg-indigo-50 sm:grid-cols-[1.2fr_1.4fr_1fr_1fr_auto] sm:gap-4">
+                                <span class="font-mono text-sm font-black text-indigo-700">{{ $isSale ? $savedReturn->invoice_number : $savedReturn->reference_number }}</span>
+                                <span class="truncate text-sm font-bold text-slate-800">{{ $returnPartyNames[$savedReturn->{$partyColumn}] ?? '—' }}</span>
+                                <span class="text-xs font-semibold text-slate-500">{{ \Illuminate\Support\Carbon::parse($savedReturn->created_at)->format('Y-m-d') }}</span>
+                                <span class="text-xs font-bold text-slate-700">الإجمالي: {{ number_format(abs((float) $savedReturn->total), 2) }}</span>
+                                <span class="hidden rounded-lg bg-indigo-100 px-3 py-2 text-xs font-black text-indigo-700 sm:inline-flex">فتح</span>
+                            </button>
+                        @empty
+                            <div class="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm font-bold text-slate-500">لا توجد مردودات مطابقة.</div>
+                        @endforelse
+                    </div>
                 </div>
             </div>
-        </section>
+        @endif
 
-        <section class="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div class="relative z-30 flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-end" x-data="{}" x-on:return-product-selected.window="$nextTick(() => $refs.returnQuantity?.focus())" x-on:return-product-added.window="$nextTick(() => $refs.returnProductSearch?.focus())">
-                    <div class="relative min-w-0 flex-1" x-data="{ active: 0, rows() { return [...(this.$refs.returnResults?.querySelectorAll('[data-return-product]') ?? [])] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:keydown.arrow-down.prevent="move(1)" x-on:keydown.arrow-up.prevent="move(-1)">
-                        <label for="return-product-search" class="mb-1.5 block text-xs font-black text-slate-600">إضافة مادة / باركود</label>
-                        @unless ($selectedPartyId)
-                            <span class="mb-1 block text-[11px] font-bold text-amber-700">اختر {{ $kind === 'sale' ? 'العميل' : 'المورد' }} أولاً لتفعيل إضافة الأصناف.</span>
-                        @endunless
-                        <input id="return-product-search" x-ref="returnProductSearch" type="text" wire:model.live.debounce.120ms="productSearch" x-on:keydown.enter.prevent="rows().length ? choose() : $wire.addFirstProduct()" x-on:input="active = 0" @disabled(!$selectedPartyId) autocomplete="off" placeholder="ابحث باسم الصنف أو رقمه أو امسح الباركود ثم اضغط Enter..." class="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
-                        @if ($productSearch !== '' && !$selectedProductId)
-                            <div x-ref="returnResults" class="absolute right-0 top-full z-50 mt-1 max-h-80 w-full overflow-auto rounded-2xl border border-indigo-200 bg-white shadow-2xl">
-                                <table class="w-full text-right text-sm"><thead class="sticky top-0 bg-slate-900 text-xs text-white"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2">المتاح للإرجاع</th></tr></thead><tbody>
-                                    @forelse ($productResults as $product)
-                                        <tr data-product-result data-return-product wire:key="return-search-{{ $product['id'] }}" x-on:mouseenter="active = {{ $loop->index }}" x-bind:class="active === {{ $loop->index }} ? 'search-result-active' : ''" x-on:mousedown.prevent wire:click="selectProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50"><td class="p-2 font-mono">{{ $product['product_number'] ?: $product['id'] }}</td><td class="p-2 font-bold">{{ $product['name'] }}</td><td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td></tr>
-                                    @empty<tr><td colspan="3" class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</td></tr>@endforelse
-                                </tbody></table>
+        <fieldset @disabled($viewOnly) class="min-w-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+            {{-- ================================================================
+                 بيانات رأس الفاتورة
+            ================================================================= --}}
+            <div class="relative z-40 mb-3 shrink-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+                    <div class="xl:col-span-2">
+                        <label for="return-number" class="mb-1 block text-xs font-bold text-slate-700">رقم الفاتورة</label>
+                        <input id="return-number" type="text" value="{{ $invoiceNumber }}" readonly tabindex="-1" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 font-mono text-sm font-bold text-slate-800 outline-none" />
+                    </div>
+
+                    <div class="xl:col-span-2">
+                        <label for="return-date" class="mb-1 block text-xs font-bold text-slate-700">التاريخ</label>
+                        <input id="return-date" type="date" wire:model="invoiceDate" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                    </div>
+
+                    <div class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" x-data="{ partyOpen: true }" x-on:click.outside="partyOpen = false" x-on:keydown.escape.stop="partyOpen = false">
+                        <label for="return-party-search" class="mb-1 block text-xs font-bold text-slate-700">{{ $partyLabel }}</label>
+                        @if ($selectedPartyId)
+                            <div class="flex h-10 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3">
+                                <flux:icon.user class="size-4 shrink-0 text-emerald-700" />
+                                <div class="min-w-0 flex-1 truncate text-sm">
+                                    <span class="font-black text-emerald-900">{{ $selectedPartyName }}</span>
+                                    <span class="mr-1 text-xs font-semibold text-emerald-700">{{ $selectedParty?->phone ?: ($isSale ? 'فاتورة مرتبطة بحساب العميل' : 'فاتورة مرتبطة بحساب المورد') }}</span>
+                                </div>
+                                <button type="button" wire:click="clearParty" title="تغيير {{ $partyLabel }}" class="shrink-0 rounded-md px-2 py-1 text-xs font-black text-emerald-800 hover:bg-emerald-100">تغيير</button>
                             </div>
+                        @else
+                            <div class="relative">
+                                <flux:icon.user class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                                <input id="return-party-search" type="text" autofocus wire:model.live.debounce.180ms="partySearch" wire:keydown.enter.prevent="selectFirstParty" x-on:focus="partyOpen = true" x-on:input="partyOpen = true" autocomplete="off" placeholder="ابحث باسم {{ $partyLabel }} أو الهاتف..." class="h-10 w-full rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                            </div>
+                            @if ($partySearch !== '' || count($partyResults))
+                                <div x-show="partyOpen" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                                    <div class="max-h-64 overflow-y-auto p-1.5">
+                                        @forelse ($partyResults as $party)
+                                            <button type="button" wire:key="return-party-{{ $party['id'] }}" wire:click="selectParty({{ $party['id'] }})" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-right transition hover:bg-slate-50">
+                                                <div class="min-w-0">
+                                                    <div class="truncate text-sm font-black text-slate-800">{{ $party['name'] }}</div>
+                                                    <div class="mt-0.5 text-[11px] font-semibold text-slate-400">{{ $party['phone'] ?: 'بدون هاتف' }}</div>
+                                                </div>
+                                                <div class="text-left">
+                                                    <div class="font-mono text-xs font-black text-slate-700">{{ number_format((float) ($party['current_balance'] ?? 0), 2) }}</div>
+                                                    <div class="text-[10px] font-bold text-slate-400">الرصيد الحالي</div>
+                                                </div>
+                                            </button>
+                                        @empty
+                                            <div class="px-3 py-6 text-center text-xs font-bold text-slate-400">لا توجد نتائج مطابقة.</div>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            @endif
                         @endif
-                        @if ($selectedProductId)
-                            <p role="status" class="mt-1 text-xs font-bold text-indigo-700">تم اختيار «{{ $selectedProductName }}» — المتاح للإرجاع {{ number_format($selectedProductAvailable, 2) }}.</p>
-                        @endif
                     </div>
 
-                    <div class="w-full lg:w-32">
-                        <label class="mb-1.5 block text-xs font-black text-slate-600">الكمية</label>
-                        <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable ?: '' }}" step="0.01" wire:model="selectedQuantity" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" @disabled(!$selectedProductId) class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
-                    </div>
-
-                    <div class="w-full lg:w-36">
-                        <label class="mb-1.5 block text-xs font-black text-slate-600">{{ $kind === 'sale' ? 'سعر البيع' : 'تكلفة الشراء' }}</label>
-                        <input x-ref="returnPrice" type="number" min="0" step="0.01" wire:model="selectedPrice" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$wire.addSelectedProduct()" @disabled(!$selectedProductId) class="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-100">
-                    </div>
-
-                    <div class="w-full lg:w-36">
-                        <label class="mb-1.5 block text-xs font-black text-slate-600">الإجمالي</label>
-                        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center font-mono text-sm font-black text-slate-900">{{ number_format(max(0, $selectedPrice * $selectedQuantity), 2) }}</div>
-                    </div>
-
-                    <button type="button" wire:click="addSelectedProduct" wire:loading.attr="disabled" wire:target="addSelectedProduct" @disabled(!$selectedProductId) class="flex h-[46px] items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
-                        <span wire:loading.remove wire:target="addSelectedProduct">+ إضافة</span>
-                        <span wire:loading wire:target="addSelectedProduct">جارٍ الإضافة...</span>
-                    </button>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
-                    <table class="w-full min-w-[900px] text-right">
-                        <thead class="bg-slate-900 text-[11px] font-black text-white">
-                            <tr><th class="w-12 px-3 py-3 text-center">#</th><th class="px-3 py-3">المادة</th><th class="w-32 px-3 py-3 text-center">المتاح للإرجاع</th><th class="w-32 px-3 py-3 text-center">الكمية</th><th class="w-36 px-3 py-3 text-center">{{ $kind === 'sale' ? 'سعر البيع' : 'تكلفة الشراء' }}</th><th class="w-36 px-3 py-3 text-center">الإجمالي</th><th class="w-16 px-3 py-3"></th></tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            @forelse ($lines as $index => $line)
-                                <tr wire:key="return-line-{{ $line['id'] }}" class="transition hover:bg-slate-50">
-                                    <td class="px-3 py-3 text-center text-xs font-black text-slate-400">{{ $loop->iteration }}</td>
-                                    <td class="px-3 py-3"><div class="text-sm font-black text-slate-800">{{ $line['name'] }} <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $line['id'] }} })" class="px-2 text-xs text-blue-700">حركة الصنف</button><button type="button" x-on:click="$dispatch('open-product-price-history', { productId: {{ $line['id'] }}, customerId: {{ $selectedPartyId ?? 'null' }} })" class="px-2 text-xs text-blue-700">الأسعار</button></div><div class="mt-1 text-[10px] text-slate-400">رقم الصنف: {{ $line['product_number'] ?? $line['id'] }}</div>@if($kind === 'sale')<select wire:model.live="lines.{{ $index }}.returned_to_stock" class="mt-2 rounded-lg border border-slate-200 p-1 text-xs"><option value="1">سليم — يعود للمخزون</option><option value="0">مرتجع تالف — لا يعود للمخزون</option></select>@endif</td>
-                                    <td class="px-3 py-3 text-center"><span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-600">{{ number_format($line['available'], 2) }}</span></td>
-                                    <td class="px-3 py-3"><input type="number" min="0.01" max="{{ $line['available'] }}" step="0.01" wire:model.live.debounce.400ms="lines.{{ $index }}.quantity" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-sm font-black outline-none focus:border-indigo-400"></td>
-                                    <td class="px-3 py-3"><input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="lines.{{ $index }}.price" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-center text-sm font-black text-indigo-700 outline-none focus:border-indigo-400"></td>
-                                    <td class="px-3 py-3 text-center font-mono text-sm font-black text-slate-900">{{ number_format((float) $line['quantity'] * (float) $line['price'], 2) }}</td>
-                                    <td class="px-3 py-3 text-center"><button type="button" wire:click="removeLine({{ $index }})" class="rounded-lg px-2 py-1.5 text-xs font-black text-rose-600 hover:bg-rose-50">حذف</button></td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="7" class="px-6 py-14 text-center"><div class="text-3xl text-slate-300">＋</div><div class="mt-3 text-base font-black text-slate-700">{{ $selectedPartyId ? 'أضف أصناف الفاتورة' : 'الفاتورة جاهزة لإضافة الأصناف' }}</div><div class="mt-1 text-sm font-semibold text-slate-400">{{ $selectedPartyId ? 'اكتب اسم الصنف أو امسح الباركود ثم اضغط Enter.' : 'اختر العميل أو المورد بالأعلى، ثم ابحث عن الأصناف أو امسح باركودها.' }}</div></td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                    </div>
-                </div>
-        </section>
-
-            <section class="grid gap-3 xl:grid-cols-12">
-                <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-7">
-                    <label class="mb-1.5 block text-xs font-black text-slate-600">ملاحظات الفاتورة</label>
-                    <textarea wire:model="notes" rows="3" placeholder="أضف ملاحظات الفاتورة..." class="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold outline-none focus:border-indigo-400 focus:bg-white"></textarea>
-                    <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $kind === 'sale' ? 'العميل ويعاد الصنف إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-5">
-                    @php
-                        $returnTotal = $totals['subtotal'];
-                        $returnQuantity = collect($lines)->sum(fn ($line) => (float) $line['quantity']);
-                    @endphp
-                    <div class="mb-3 flex items-center justify-between"><div><div class="text-sm font-black text-slate-900">ملخص الفاتورة</div><div class="mt-1 text-[11px] text-slate-400">{{ count($lines) }} أصناف</div></div><span class="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-800">الكمية {{ number_format($returnQuantity, 2) }}</span></div>
-                    <div class="flex items-center justify-between border-t border-slate-100 py-3 text-sm"><span class="font-bold text-slate-500">المجموع الفرعي</span><strong>{{ number_format($returnTotal, 2) }}</strong></div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="text-sm font-bold">الخصم<input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" class="mt-1 w-full rounded-xl border border-slate-200 p-2"></label>
-                        <label class="text-sm font-bold">نوع الخصم<select wire:model.live="discountType" class="mt-1 w-full rounded-xl border border-slate-200 p-2"><option value="fixed">مبلغ</option><option value="percentage">نسبة %</option></select></label>
-                        @if($showTax)<label class="text-sm font-bold">نسبة الضريبة المضمنة %<input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 w-full rounded-xl border border-slate-200 p-2"></label>@endif
-                        <label class="text-sm font-bold">{{ $kind === 'sale' ? 'الدفعة المعادة للعميل' : 'الدفعة المستردة من المورد' }}<input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 w-full rounded-xl border border-slate-200 p-2 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"></label>
-                        <label class="text-sm font-bold">طريقة الدفع<select wire:model="paymentMethod" class="mt-1 w-full rounded-xl border border-slate-200 p-2"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select></label>
-                    </div>
-                    @if($showTax)<div class="mt-3 flex justify-between text-sm"><span>قيمة الضريبة المضمنة (الأسعار شاملة الضريبة)</span><strong>{{ number_format($totals['tax'], 2) }}</strong></div>@endif
-                    <div class="mt-3 flex justify-between text-sm"><span>الخصم المحتسب</span><strong>{{ number_format($totals['discount'], 2) }}</strong></div>
-                    @if ($selectedPartyId)
-                        <div class="return-balance-summary mt-3 flex w-full justify-between rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-700" style="position: static !important; inset: auto !important; width: 100% !important;"><span>الرصيد بعد الدفعة</span><strong>{{ number_format($totals['balance'], 2) }}</strong></div>
+                    @if ($showBranchField)
+                        <div class="xl:col-span-2">
+                            <label for="return-branch" class="mb-1 block text-xs font-bold text-slate-700">الفرع / المخزن</label>
+                            <select id="return-branch" wire:model.live="selectedBranchId" @disabled(auth()->user()?->branch_id) class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70">
+                                @foreach ($branches as $branch)
+                                    <option wire:key="return-branch-{{ $branch['id'] }}" value="{{ $branch['id'] }}">{{ $branch['name'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     @endif
-                    <div class="flex items-center justify-between border-t border-slate-200 py-3"><span class="text-base font-black text-slate-900">إجمالي المردود</span><strong class="text-3xl font-black text-indigo-700">{{ number_format($totals['total'], 2) }}</strong></div>
-                    <button type="button" wire:click="saveReturn" wire:loading.attr="disabled" @disabled(empty($lines) || !$selectedPartyId) class="mt-2 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"><span wire:loading.remove wire:target="saveReturn">{{ $currentReturnId ? 'حفظ التعديلات' : 'حفظ الفاتورة' }}</span><span wire:loading wire:target="saveReturn">جاري الحفظ...</span></button>
-                    <button type="button" wire:click="saveReturn(true)" wire:loading.attr="disabled" @disabled(empty($lines) || !$selectedPartyId) class="mt-2 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50">حفظ وطباعة</button>
+
+                    <div class="xl:col-span-2">
+                        <div class="mb-1 block text-xs font-bold text-slate-700">الرصيد الحالي</div>
+                        <div class="flex h-10 items-center justify-between rounded-lg border border-slate-300 bg-slate-50 px-3">
+                            <span class="font-mono text-sm font-black {{ $selectedParty && (float) $selectedParty->current_balance < 0 ? 'text-rose-600' : 'text-slate-800' }}">{{ $selectedParty ? number_format((float) $selectedParty->current_balance, 2) : '—' }}</span>
+                            <flux:icon.wallet class="size-4 text-slate-400" />
+                        </div>
+                    </div>
                 </div>
-            </section>
+            </div>
+
+            {{-- ================================================================
+                 جدول المردود مع سطر الإدخال
+            ================================================================= --}}
+            <div class="relative z-30 mb-3 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm focus-within:z-50 xl:min-h-56 xl:flex-1"
+                x-data="{ active: 0, rows() { return [...(this.$refs.returnResults?.querySelectorAll('[data-return-product]') ?? [])] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }"
+                x-on:return-product-selected.window="$nextTick(() => { $refs.returnQuantity?.focus(); $refs.returnQuantity?.select() })"
+                x-on:return-product-added.window="$nextTick(() => $refs.returnProductSearch?.focus())">
+                <div class="app-table-scroll max-h-[62vh] overflow-auto rounded-xl xl:max-h-none xl:min-h-0" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
+                    <table class="w-full min-w-[900px] border-collapse text-right">
+                        <thead class="sticky top-0 z-20">
+                            <tr class="bg-slate-800 text-xs font-bold text-white">
+                                <th class="w-12 border-l border-slate-700 px-3 py-3 text-center">#</th>
+                                <th class="w-32 border-l border-slate-700 px-3 py-3 text-center">رقم الصنف</th>
+                                <th class="border-l border-slate-700 px-3 py-3">اسم الصنف</th>
+                                <th class="w-32 border-l border-slate-700 px-3 py-3 text-center">المتاح للإرجاع</th>
+                                <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
+                                <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">{{ $isSale ? 'سعر البيع' : 'تكلفة الشراء' }}</th>
+                                <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
+                                <th class="w-24 px-3 py-3 text-center">حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200">
+                            @foreach ($lines as $index => $line)
+                                <tr wire:key="return-line-{{ $line['id'] }}" class="group transition hover:bg-slate-50 focus-within:bg-blue-50">
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center text-sm font-black text-slate-800">{{ $loop->iteration }}</td>
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-semibold text-slate-700">{{ $line['product_number'] ?? $line['id'] }}</td>
+                                    <td class="border-l border-slate-100 px-3 py-2">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="min-w-0 truncate text-sm font-black text-slate-900">{{ $line['name'] }}</span>
+                                            <div class="flex shrink-0 items-center gap-0.5 text-[11px] font-bold opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                                                <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $line['id'] }} })" class="rounded px-1.5 py-0.5 text-indigo-600 hover:bg-indigo-50">حركة الصنف</button>
+                                                <button type="button" x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $line['id'] }}, customerId: {{ $selectedPartyId ?? 'null' }} })" title="سجل الأسعار والتكلفة" aria-label="سجل الأسعار والتكلفة" class="rounded p-0.5 text-indigo-600 hover:bg-indigo-50"><flux:icon.currency-dollar class="size-4" /></button>
+                                            </div>
+                                        </div>
+                                        @if ($isSale)
+                                            <select wire:model.live="lines.{{ $index }}.returned_to_stock" aria-label="حالة الصنف المرتجع" class="mt-1.5 h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-bold {{ ($line['returned_to_stock'] ?? true) ? 'text-emerald-700' : 'text-rose-700' }}">
+                                                <option value="1">سليم — يعود للمخزون</option>
+                                                <option value="0">مرتجع تالف — لا يعود للمخزون</option>
+                                            </select>
+                                        @endif
+                                    </td>
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center"><span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-black text-slate-600">{{ number_format($line['available'], 2) }}</span></td>
+                                    <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0.01" max="{{ $line['available'] }}" step="0.01" aria-label="الكمية" wire:model.live.debounce.400ms="lines.{{ $index }}.quantity" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
+                                    <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0" step="0.01" aria-label="السعر" wire:model.live.debounce.400ms="lines.{{ $index }}.price" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-black text-slate-900">{{ number_format((float) $line['quantity'] * (float) $line['price'], 2) }}</td>
+                                    <td class="px-3 py-2 text-center"><button type="button" wire:click="removeLine({{ $index }})" aria-label="حذف السطر" class="inline-flex size-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"><flux:icon.trash class="size-4" /></button></td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot class="sticky bottom-0 z-20">
+                            <tr class="bg-blue-50 [&>td]:shadow-[inset_0_2px_0_0_#93c5fd]">
+                                <td class="px-2 py-2 text-center">
+                                    <button type="button" x-on:click="$refs.returnProductSearch?.focus(); $refs.returnProductSearch?.select()" title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500"><flux:icon.plus class="size-5" /></button>
+                                </td>
+                                <td colspan="2" class="px-2 py-2">
+                                    <div class="relative">
+                                        <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-5 -translate-y-1/2 text-slate-500" />
+                                        <button type="button" aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(! $selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: {{ $selectedPartyId ?? 'null' }} })" class="absolute left-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
+                                        <input id="return-product-search" x-ref="returnProductSearch" type="text" wire:model.live.debounce.120ms="productSearch"
+                                            x-on:keydown.arrow-down.prevent="move(1)" x-on:keydown.arrow-up.prevent="move(-1)"
+                                            x-on:keydown.enter.prevent="rows().length ? choose() : $wire.addFirstProduct()" x-on:input="active = 0"
+                                            @disabled(! $selectedPartyId) autocomplete="off" aria-label="رقم الصنف / الباركود / اسم الصنف"
+                                            placeholder="{{ $selectedPartyId ? 'رقم الصنف / الباركود / اسم الصنف ثم Enter...' : 'اختر '.$partyLabel.' أولاً' }}"
+                                            class="h-9 w-full rounded-md border border-blue-300 bg-white pl-24 pr-10 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100" />
+                                    </div>
+                                </td>
+                                <td class="px-2 py-2 text-center font-mono text-sm font-semibold text-slate-600">{{ $selectedProductId ? number_format($selectedProductAvailable, 2) : '—' }}</td>
+                                <td class="px-2 py-2">
+                                    <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable ?: '' }}" step="0.01" wire:model="selectedQuantity" aria-label="كمية الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                </td>
+                                <td class="px-2 py-2">
+                                    <input x-ref="returnPrice" type="number" min="0" step="0.01" wire:model="selectedPrice" aria-label="سعر الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnTotal?.focus(); $refs.returnTotal?.select()" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                </td>
+                                <td class="px-2 py-2">
+                                    <input x-ref="returnTotal" type="number" min="0" step="0.01" aria-label="إجمالي الصنف"
+                                        x-effect="if (document.activeElement !== $el) $el.value = Math.max(0, Number($wire.selectedPrice) * Number($wire.selectedQuantity)).toFixed(2)"
+                                        x-on:input="const total = Number($event.target.value); const quantity = Number($wire.selectedQuantity); if ($event.target.value !== '' && Number.isFinite(total) && total >= 0 && Number.isFinite(quantity) && quantity > 0) { $wire.selectedPrice = Math.round(total / quantity * 100) / 100; }"
+                                        x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$wire.addSelectedProduct()"
+                                        class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center font-mono text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                </td>
+                                <td class="px-2 py-2 text-center">
+                                    <button type="button" wire:click="addSelectedProduct" wire:loading.attr="disabled" wire:target="addSelectedProduct" title="إضافة السطر (Enter)" class="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-50">
+                                        <flux:icon.plus-circle class="size-4" /> إضافة
+                                    </button>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                @if ($productSearch !== '' && ! $selectedProductId)
+                    <div x-ref="returnResults" class="max-h-72 overflow-auto border-t-2 border-blue-200 bg-white">
+                        <table class="w-full text-right text-sm">
+                            <thead class="sticky top-0 bg-slate-100 text-xs font-black text-slate-600"><tr><th class="p-2">رقم الصنف</th><th class="p-2">اسم الصنف</th><th class="p-2 text-center">المتاح للإرجاع</th></tr></thead>
+                            <tbody>
+                                @forelse ($productResults as $product)
+                                    <tr data-product-result data-return-product wire:key="return-search-{{ $product['id'] }}" x-on:mouseenter="active = {{ $loop->index }}" x-bind:class="active === {{ $loop->index }} ? 'search-result-active' : ''" x-on:mousedown.prevent wire:click="selectProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50">
+                                        <td class="p-2 font-mono">{{ $product['product_number'] ?: $product['id'] }}</td>
+                                        <td class="p-2 font-bold">{{ $product['name'] }}</td>
+                                        <td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="3" class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+
+            {{-- ================================================================
+                 الملاحظات والإجماليات
+            ================================================================= --}}
+            <div class="grid shrink-0 gap-3 xl:mt-auto xl:grid-cols-12">
+                <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
+                    <label for="return-notes" class="mb-2 flex items-center gap-1.5 text-sm font-black text-slate-800">
+                        <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات
+                    </label>
+                    <textarea id="return-notes" wire:model="notes" rows="3" placeholder="سبب المردود أو أي ملاحظة على الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
+                    <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'العميل ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 xl:grid-cols-1">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
+                        <div class="mt-1 flex items-center justify-between"><span class="font-mono text-lg font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-5 text-slate-400" /></div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
+                        <div class="mt-1 flex items-center justify-between"><span class="font-mono text-lg font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-5 text-slate-400" /></div>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
+                    <div class="grid grid-cols-3 divide-x divide-x-reverse divide-slate-200 text-center">
+                        <div class="px-2"><div class="text-xs font-bold text-slate-500">المجموع الفرعي</div><div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($totals['subtotal'], 2) }}</div></div>
+                        <div class="px-2"><div class="text-xs font-bold text-slate-500">الخصم المحتسب</div><div class="mt-1 font-mono text-lg font-black text-rose-600">{{ number_format($totals['discount'], 2) }}</div></div>
+                        <div class="px-2"><div class="text-xs font-bold text-slate-500">{{ $showTax ? 'الضريبة المضمنة' : 'بعد الخصم' }}</div><div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($showTax ? $totals['tax'] : $totals['total'], 2) }}</div></div>
+                    </div>
+                    <div class="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-3">
+                        <label class="text-xs font-bold text-slate-600">الخصم
+                            <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                        </label>
+                        <label class="text-xs font-bold text-slate-600">نوع الخصم
+                            <select wire:model.live="discountType" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold outline-none focus:border-blue-500"><option value="fixed">مبلغ</option><option value="percentage">نسبة %</option></select>
+                        </label>
+                        @if ($showTax)
+                            <label class="text-xs font-bold text-slate-600">نسبة الضريبة المضمنة %
+                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                            </label>
+                        @endif
+                        <label class="text-xs font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للعميل' : 'الدفعة المستردة من المورد' }}
+                            <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                        </label>
+                        <label class="text-xs font-bold text-slate-600">طريقة الدفع
+                            <select wire:model="paymentMethod" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold outline-none focus:border-blue-500"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-4 text-white shadow-sm xl:col-span-2">
+                    <div class="text-sm font-black text-white/90">إجمالي المردود</div>
+                    <div class="mt-2 font-mono text-3xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
+                    @if ($selectedPartyId)
+                        <div class="return-balance-summary mt-2 flex w-full justify-between border-t border-white/30 pt-2 text-xs font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
+                            <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
+                        </div>
+                    @endif
+                </div>
+            </div>
         </fieldset>
+
+        {{-- ================================================================
+             اختصارات لوحة المفاتيح
+        ================================================================= --}}
+        <div class="mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg">
+            <span class="inline-flex items-center gap-1.5 text-slate-300"><flux:icon.question-mark-circle class="size-4" /> اختصارات لوحة المفاتيح</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Enter</kbd> اختيار / إضافة السطر</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">↑ ↓</kbd> التنقل في النتائج</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F3</kbd> حفظ</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F6</kbd> حفظ وطباعة</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Shift+F2</kbd> جديد</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F7</kbd> استعلام</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F9</kbd> الصنف</span>
+        </div>
     </div>
     <livewire:product-history />
     <livewire:product-price-history-modal />
-    @if($showPrint && $printData)
-        @teleport('body')
-        <div class="return-print-modal fixed inset-0 z-[110] overflow-auto bg-slate-950/60 p-4" dir="rtl">
-            <div class="mx-auto max-w-3xl rounded-2xl bg-white p-6">
-                <div class="return-print-controls mb-4 flex gap-3"><button type="button" onclick="window.print()" class="rounded-xl bg-blue-600 px-4 py-2 text-white">طباعة / حفظ PDF</button><button type="button" wire:click="$set('showPrint', false)" class="rounded-xl border px-4 py-2">إغلاق</button></div>
-                <h1 class="text-center text-2xl font-black">{{ $printData['title'] }}</h1>
-                <p class="mt-2 text-center">{{ $printData['branch'] }} — {{ $printData['number'] }}</p>
-                <div class="my-4 flex justify-between"><strong>{{ $printData['party'] }}</strong><span>{{ $printData['date'] }}</span></div>
-                <table class="w-full text-right text-sm"><thead><tr class="border-b"><th class="p-2">الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>@foreach($printData['lines'] as $item)<tr class="border-b"><td class="p-2">{{ $item['name'] }}</td><td>{{ number_format($item['quantity'], 2) }}</td><td>{{ number_format($item['price'], 2) }}</td><td>{{ number_format($item['total'], 2) }}</td></tr>@endforeach</tbody></table>
-                <div class="mt-4 space-y-2">
-                    @foreach(['subtotal' => 'المجموع الفرعي', 'discount' => 'الخصم', 'tax' => 'الضريبة', 'total' => 'إجمالي المردود', 'paid' => 'الدفعة', 'balance' => 'رصيد الحساب الحالي'] as $key => $label)
-                        @if($key !== 'tax' || $showTax)<div class="flex justify-between"><span>{{ $label }}</span><strong>{{ number_format($printData[$key], 2) }}</strong></div>@endif
-                    @endforeach
-                </div>
-                <p class="mt-4 whitespace-pre-line">{{ $printData['notes'] }}</p>
-                <x-invoice-copyright />
-            </div>
-        </div>
-        @endteleport
-        <style>@media print { html,body {display:block!important;height:auto!important;overflow:visible!important} body > :not(.return-print-modal) {display:none!important} .return-print-modal {position:static!important;padding:0!important;background:white!important;overflow:visible!important} .return-print-modal>div {max-width:none!important;border-radius:0!important} .return-print-controls {display:none!important} }</style>
-    @endif
 </flux:main>
 
 @script

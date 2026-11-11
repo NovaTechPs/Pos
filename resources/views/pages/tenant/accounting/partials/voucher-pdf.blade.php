@@ -11,6 +11,7 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    @isset($documentTitle)<title>{{ $documentTitle }}</title>@endisset
     <style>
         @page { margin: 18mm; }
         body { font-family: DejaVu Sans, sans-serif; direction: rtl; font-size: 12px; color: #172033; }

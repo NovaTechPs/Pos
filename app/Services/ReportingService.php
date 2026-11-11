@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -26,7 +27,7 @@ class ReportingService
     public const REPORTS = [
         'statement' => ['كشف حساب زبون / مورد', 'customers.view'],
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
-        'sales' => ['ملخص المبيعات اليومي', 'reports.sales'],
+        'sales' => ['ملخص مبيعات نقطة البيع اليومي (زبون نقدي)', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
         'product-profit' => ['أرباح الأصناف خلال فترة', 'reports.profit'],
         'product-history' => ['حركة صنف — مبيعات ومشتريات', 'reports.inventory'],
@@ -39,7 +40,36 @@ class ReportingService
         'movement-summary' => ['ملخص حركة المخزون', 'reports.inventory'],
         'inventory' => ['تقييم المخزون والنواقص', 'reports.inventory'],
         'cashflow' => ['المقبوضات والمدفوعات', 'accounting.payments.view'],
+        'daily-cash' => ['حركة الصندوق اليومية حسب طريقة الدفع', 'accounting.payments.view'],
+        'expenses' => ['المصروفات التشغيلية', 'accounting.payments.view'],
+        'aging' => ['أعمار الذمم المدينة والدائنة', 'customers.view'],
+        'tax' => ['تقرير الضريبة: المبيعات والمشتريات', 'reports.sales'],
+        'branches' => ['ملخص أداء الفروع', 'reports.profit'],
+        'settlements' => ['سجل التسويات اليومية', 'reports.daily_settlement'],
     ];
+
+    /** @var array<string, list<string>> */
+    public const REPORT_GROUPS = [
+        'الحسابات والذمم' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
+        'المبيعات والأرباح' => ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'tax'],
+        'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory'],
+        'الموظفون' => ['payroll', 'salary-payments'],
+    ];
+
+    /** @var list<string> */
+    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'voucher_type', 'payment_method'];
+
+    /**
+     * Amount a walk-in POS invoice put in the drawer. Walk-in POS invoices no longer create
+     * receipt vouchers, and delivery fees are collected by the delivery company.
+     */
+    private const WALK_IN_COLLECTION_SQL = "CASE WHEN orders.source = 'api' THEN orders.paid_amount WHEN orders.paid_amount > orders.delivery_fee THEN orders.paid_amount - orders.delivery_fee ELSE 0 END";
+
+    /** Purchase invoices are dated by their invoice date, like the supplier statement. */
+    private const PURCHASE_DATE_SQL = 'COALESCE(purchases.invoice_date, purchases.created_at)';
+
+    /** Net revenue of a sales document without tax and without the delivery fee collected by the courier. */
+    private const ORDER_REVENUE_SQL = "CASE WHEN orders.type = 'return' THEN -(ABS(orders.total) - ABS(orders.tax_amount) - ABS(orders.delivery_fee)) ELSE orders.total - orders.tax_amount - orders.delivery_fee END";
 
     public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true)
     {
@@ -82,6 +112,8 @@ class ReportingService
             'source' => ['nullable', Rule::in(['', 'pos', 'web', 'api', 'online'])],
             'sale_kind' => ['nullable', Rule::in(['', 'retail', 'wholesale'])],
             'cost_method' => ['nullable', Rule::in(['recorded', 'latest_purchase', 'weighted_average'])],
+            'voucher_type' => ['nullable', Rule::in(['', 'receipt', 'payment'])],
+            'payment_method' => ['nullable', Rule::in(['', 'cash', 'card', 'bank_transfer', 'cheque'])],
         ])->validate();
         foreach (['party_id' => 'parties', 'product_id' => 'products'] as $key => $table) {
             if (! empty($this->filters[$key])) {
@@ -97,6 +129,8 @@ class ReportingService
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
             'inventory' => $this->inventory(), 'cashflow' => $this->cashflow(),
+            'daily-cash' => $this->dailyCash(), 'expenses' => $this->expenses(), 'aging' => $this->aging(),
+            'tax' => $this->tax(), 'branches' => $this->branches(), 'settlements' => $this->settlements(),
         };
     }
 
@@ -106,7 +140,9 @@ class ReportingService
             return '—';
         }
         $quantity = ['quantity', 'quantity_before', 'quantity_after', 'sold', 'returned', 'net_quantity', 'stock_quantity', 'alert_quantity', 'incoming', 'outgoing', 'gift_quantity'];
-        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit'];
+        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit',
+            'cash_in', 'cash_out', 'net_cash', 'card_in', 'transfer_in', 'cheque_in', 'total_in', 'total_out', 'net_total', 'taxable', 'output_tax', 'input_tax', 'total',
+            'age_0_30', 'age_31_60', 'age_61_90', 'age_over_90', 'purchases_total', 'delivery_fees', 'tax_amount', 'total_sales', 'total_returns', 'total_cash', 'total_card'];
         if (in_array($column, $quantity, true)) {
             return number_format((float) $value, 3, '.', '');
         }
@@ -123,6 +159,7 @@ class ReportingService
             'opening' => 'افتتاحي', 'manual' => 'تصحيح', 'order' => 'بيع', 'purchase' => 'شراء',
             'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'stock_transfer' => 'تحويل مخزون',
             'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس بيع', 'sync' => 'مزامنة',
+            'open' => 'مفتوح', 'closed' => 'مغلق',
             default => (string) $value,
         };
     }
@@ -149,7 +186,7 @@ class ReportingService
         return $query->when($this->branchId, fn (Builder $query): Builder => $query->where($column, $this->branchId));
     }
 
-    private function period(Builder $query, string $column): Builder
+    private function period(Builder $query, string|Expression $column): Builder
     {
         return $query->where($column, '>=', $this->filters['from'].' 00:00:00')
             ->where($column, '<', Carbon::parse($this->filters['to'])->addDay()->toDateString().' 00:00:00');
@@ -180,7 +217,7 @@ class ReportingService
         $partyIds = $this->parties()->select('parties.id');
         $orders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
             ->whereIn('type', ['pos', 'wholesale', 'online', 'return'])->whereIn('customer_id', clone $partyIds)
-            ->selectRaw("customer_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'فاتورة مبيعات / مردود' as description, CASE WHEN type = 'return' THEN -ABS(total) ELSE ABS(total - delivery_fee) END as amount, 1 as source_order, id as source_id, orders.notes as notes");
+            ->selectRaw("customer_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'فاتورة مبيعات / مردود' as description, (CASE WHEN type = 'return' THEN -1 ELSE 1 END) * (CASE WHEN ABS(total) > delivery_fee THEN ABS(total) - delivery_fee ELSE 0 END) as amount, 1 as source_order, id as source_id, orders.notes as notes");
         $deliveryOrders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
             ->whereNotNull('delivery_party_id')->whereIn('delivery_party_id', clone $partyIds)->where('delivery_fee', '>', 0)
             ->selectRaw("delivery_party_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'رسوم توصيل' as description, -ABS(delivery_fee) as amount, 2 as source_order, id as source_id, orders.notes as notes");
@@ -246,9 +283,9 @@ class ReportingService
             ->selectRaw("(CASE WHEN ? = 1 AND parties.branch_id IS NULL THEN 0 WHEN parties.type = 'supplier' THEN -parties.opening_balance ELSE parties.opening_balance END) + COALESCE(totals.movement, 0) as balance", [$this->branchId ? 1 : 0]);
         $query = DB::query()->fromSub($base, 'balances');
         match ($this->filters['balance_side']) {
-            'debit' => $query->where('balance', '>', .005),
-            'credit' => $query->where('balance', '<', -.005),
-            'settled' => $query->whereBetween('balance', [-.005, .005]),
+            'debit' => $query->whereRaw('balance > 0.005'),
+            'credit' => $query->whereRaw('balance < -0.005'),
+            'settled' => $query->whereRaw('ABS(balance) <= 0.005'),
             default => null,
         };
         $sums = (clone $query)->selectRaw('COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END),0) as debit, COALESCE(SUM(CASE WHEN balance < 0 THEN -balance ELSE 0 END),0) as credit')->first();
@@ -263,8 +300,22 @@ class ReportingService
     {
         return $this->period($this->branch($this->table('orders'), 'orders.branch_id'), 'orders.created_at')
             ->where('orders.status', 'completed')->whereIn('orders.type', ['pos', 'wholesale', 'online', 'return'])
-            ->when(! empty($this->filters['source']), fn (Builder $q): Builder => $q->where('orders.source', $this->filters['source']))
+            ->when(! empty($this->filters['source']), fn (Builder $q): Builder => $this->sourceFilter($q))
             ->when(! empty($this->filters['sale_kind']), fn (Builder $q): Builder => $q->where('orders.sale_kind', $this->filters['sale_kind']));
+    }
+
+    /**
+     * POS sales are walk-in invoices only. A POS invoice issued to a registered customer stays
+     * editable from the POS screen but is reported with the sales invoices.
+     */
+    private function sourceFilter(Builder $query): Builder
+    {
+        return match ($this->filters['source']) {
+            'pos' => $query->where('orders.source', 'pos')->whereNull('orders.customer_id'),
+            'web' => $query->where(fn (Builder $q): Builder => $q->where('orders.source', 'web')
+                ->orWhere(fn (Builder $q): Builder => $q->where('orders.source', 'pos')->whereNotNull('orders.customer_id'))),
+            default => $query->where('orders.source', $this->filters['source']),
+        };
     }
 
     private function shopSalesOrders(): Builder
@@ -426,16 +477,23 @@ class ReportingService
     private function profit(): array
     {
         $orders = $this->orders();
-        $sales = (clone $orders)->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN -(ABS(total) - ABS(tax_amount)) ELSE total - tax_amount END),0) as revenue, COALESCE(SUM(CASE WHEN type != 'return' THEN total_cost ELSE 0 END),0) as cost, COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END),0) as returns")->first();
+        $sales = (clone $orders)->selectRaw('COALESCE(SUM('.self::ORDER_REVENUE_SQL.'),0) as revenue')
+            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END),0) as gross_sales, COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END),0) as returns")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(tax_amount) ELSE tax_amount END),0) as tax, COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(delivery_fee) ELSE delivery_fee END),0) as delivery")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN discount ELSE 0 END),0) as discount, COALESCE(SUM(CASE WHEN type != 'return' THEN total_cost ELSE 0 END),0) as cost")->first();
         $returnCost = (clone $orders)->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)->sum(DB::raw('ABS(order_items.total_cost)'));
-        $expenses = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payment_date')->where('type', 'payment')->whereNull('party_id')->whereNull('order_id')->whereNull('purchase_id')->sum('amount');
+        $expenses = $this->expenseVouchers()->sum('payments.amount');
         $cost = ($this->filters['cost_method'] ?? 'recorded') === 'recorded'
             ? (float) $sales->cost - (float) $returnCost
             : (float) DB::query()->fromSub($this->itemCosts(), 'cost_lines')->sum('signed_cost');
         $gross = (float) $sales->revenue - $cost;
         $rows = [
-            ['label' => 'صافي المبيعات دون ضريبة (يشمل التوصيل)', 'amount' => $sales->revenue],
-            ['label' => 'مردود المبيعات ضمن الفترة (للعرض فقط)', 'amount' => $sales->returns],
+            ['label' => 'إجمالي فواتير البيع (شامل الضريبة والتوصيل)', 'amount' => $sales->gross_sales],
+            ['label' => 'مردودات المبيعات', 'amount' => $sales->returns],
+            ['label' => 'الخصومات الممنوحة على الفواتير (للعرض؛ مخصومة من الفواتير)', 'amount' => $sales->discount],
+            ['label' => 'رسوم التوصيل المحصلة لشركة التوصيل (تُستبعد)', 'amount' => $sales->delivery],
+            ['label' => 'ضريبة المبيعات الصافية (تُستبعد)', 'amount' => $sales->tax],
+            ['label' => 'صافي الإيرادات دون ضريبة وتوصيل', 'amount' => $sales->revenue],
             ['label' => 'تكلفة البضاعة بعد عكس تكلفة المردود', 'amount' => $cost],
             ['label' => 'مجمل الربح', 'amount' => $gross],
             ['label' => 'المصروفات التشغيلية المسجلة', 'amount' => $expenses],
@@ -455,6 +513,7 @@ class ReportingService
         return $this->definition(DB::query()->fromSub($query, 'profit')->orderBy('row_index'), ['label' => 'البند', 'amount' => 'القيمة'], [], [
             ...$this->costNotes(),
             'تقرير إداري تقديري؛ لا يعتبر شراء المخزون مصروفاً فورياً.',
+            'رسوم التوصيل تحصّلها شركة التوصيل ولا تدخل في الإيراد أو الربح؛ الضريبة أمانة مستحقة ولا تُعدّ إيراداً.',
             'الرواتب هنا على أساس الصرف، وليست تسوية استحقاق محاسبية. السلف وسداد الموردين ليست مصروفات تشغيلية. لا تسجّل الراتب نفسه مرة ثانية كمصروف عام.',
             'التكاليف التاريخية الناقصة أو المصروفات غير المسجلة تؤثر على الدقة. لا يُحسب هذا التقرير من المقبوضات بدلاً من المبيعات.',
         ]);
@@ -463,26 +522,29 @@ class ReportingService
     /** @return ReportDefinition */
     private function shifts(): array
     {
-        $orders = $this->period($this->branch($this->table('orders'), 'orders.branch_id'), 'orders.created_at')
+        $shiftIds = $this->period($this->branch($this->table('shifts'), 'shifts.branch_id'), 'shifts.opened_at')->select('shifts.id');
+        $orders = $this->branch($this->table('orders'), 'orders.branch_id')
             ->where('orders.status', 'completed')
-            ->whereNotNull('orders.shift_id')
+            ->whereIn('orders.shift_id', clone $shiftIds)
             ->whereIn('orders.type', ['pos', 'wholesale', 'online', 'return'])
-            ->when(! empty($this->filters['source']), fn (Builder $query): Builder => $query->where('orders.source', $this->filters['source']))
+            ->when(! empty($this->filters['source']), fn (Builder $query): Builder => $this->sourceFilter($query))
             ->when(! empty($this->filters['sale_kind']), fn (Builder $query): Builder => $query->where('orders.sale_kind', $this->filters['sale_kind']))
             ->select('orders.shift_id')
             ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END) as invoices")
             ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END) as sales")
             ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END) as returns")
             ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END) as net")
+            ->selectRaw('SUM('.self::ORDER_REVENUE_SQL.') as revenue')
             ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total_cost) ELSE orders.total_cost END) as cost")
             ->groupBy('orders.shift_id');
 
-        $expenses = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payments.payment_date')
+        $expenses = $this->branch($this->table('payments'), 'payments.branch_id')
             ->where('payments.type', 'payment')
-            ->whereNotNull('payments.shift_id')
+            ->whereIn('payments.shift_id', clone $shiftIds)
             ->whereNull('payments.party_id')
             ->whereNull('payments.order_id')
             ->whereNull('payments.purchase_id')
+            ->whereNull('payments.purchase_return_id')
             ->select('payments.shift_id')
             ->selectRaw('SUM(payments.amount) as expenses')
             ->groupBy('payments.shift_id');
@@ -500,9 +562,9 @@ class ReportingService
             ->selectRaw('COALESCE(shift_orders.returns, 0) as returns')
             ->selectRaw('COALESCE(shift_orders.net, 0) as net')
             ->selectRaw('COALESCE(shift_orders.cost, 0) as cost')
-            ->selectRaw('COALESCE(shift_orders.net, 0) - COALESCE(shift_orders.cost, 0) as gross_profit')
+            ->selectRaw('COALESCE(shift_orders.revenue, 0) - COALESCE(shift_orders.cost, 0) as gross_profit')
             ->selectRaw('COALESCE(shift_expenses.expenses, 0) as expenses')
-            ->selectRaw('COALESCE(shift_orders.net, 0) - COALESCE(shift_orders.cost, 0) - COALESCE(shift_expenses.expenses, 0) as net_profit');
+            ->selectRaw('COALESCE(shift_orders.revenue, 0) - COALESCE(shift_orders.cost, 0) - COALESCE(shift_expenses.expenses, 0) as net_profit');
 
         $totals = DB::query()->fromSub(clone $query, 'shift_totals')
             ->selectRaw('COALESCE(SUM(sales), 0) as sales, COALESCE(SUM(returns), 0) as returns, COALESCE(SUM(net), 0) as net, COALESCE(SUM(gross_profit), 0) as gross_profit, COALESCE(SUM(expenses), 0) as expenses, COALESCE(SUM(net_profit), 0) as net_profit')
@@ -513,7 +575,8 @@ class ReportingService
         ], [
             'إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net, 'مجمل الربح' => $totals->gross_profit, 'مصروفات الشيفت' => $totals->expenses, 'الربح بعد المصروفات' => $totals->net_profit,
         ], [
-            'يعتمد التقرير على الفواتير المكتملة المرتبطة بالشيفت. تقرير اليوم متاح أيضاً من تقريري «ملخص المبيعات اليومي» و«الأرباح والمصروفات» باختيار زر اليوم.',
+            'الفترة تُحدَّد بوقت فتح الشيفت، وتُحتسب كل فواتير الشيفت ومصروفاته حتى لو تجاوزت منتصف الليل. مجمل الربح دون الضريبة ورسوم التوصيل.',
+            'يعتمد التقرير على الفواتير المكتملة المرتبطة بالشيفت. تقرير اليوم متاح أيضاً من تقريري «ملخص مبيعات نقطة البيع اليومي» و«الأرباح والمصروفات» باختيار زر اليوم.',
             'التكلفة هي تكلفة البيع المحفوظة وقت الفاتورة. مصروفات الشيفت تشمل سندات الصرف التشغيلية غير المرتبطة بطرف أو فاتورة، ولا تشمل الرواتب أو سداد الموردين.',
         ]);
     }
@@ -521,11 +584,11 @@ class ReportingService
     /** @return ReportDefinition */
     private function purchases(): array
     {
-        $purchases = $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), 'purchases.created_at')
+        $purchases = $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), DB::raw(self::PURCHASE_DATE_SQL))
             ->leftJoin('parties', function ($join): void {
                 $join->on('parties.id', '=', 'purchases.supplier_id')->where('parties.tenant_id', $this->tenantId);
             })
-            ->selectRaw("purchases.id, purchases.created_at as event_date, reference_number as reference, parties.name as name, 'شراء' as kind, total as amount, paid_amount, total - paid_amount as remaining");
+            ->selectRaw('purchases.id, '.self::PURCHASE_DATE_SQL." as event_date, reference_number as reference, parties.name as name, 'شراء' as kind, total as amount, paid_amount, total - paid_amount as remaining");
         $returns = $this->period($this->branch($this->table('purchase_returns'), 'purchase_returns.branch_id'), 'purchase_returns.created_at')
             ->leftJoin('parties', function ($join): void {
                 $join->on('parties.id', '=', 'purchase_returns.supplier_id')->where('parties.tenant_id', $this->tenantId);
@@ -588,10 +651,232 @@ class ReportingService
     /** @return ReportDefinition */
     private function cashflow(): array
     {
-        $query = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payment_date');
-        $sums = (clone $query)->selectRaw("COALESCE(SUM(CASE WHEN type = 'receipt' THEN amount ELSE 0 END),0) as incoming, COALESCE(SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END),0) as outgoing")->first();
+        $query = $this->cashEvents();
+        $sums = (clone $query)->selectRaw("COALESCE(SUM(CASE WHEN voucher_type = 'receipt' THEN amount ELSE 0 END),0) as incoming, COALESCE(SUM(CASE WHEN voucher_type = 'payment' THEN amount ELSE 0 END),0) as outgoing")
+            ->selectRaw("COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN (CASE WHEN voucher_type = 'receipt' THEN amount ELSE -amount END) ELSE 0 END),0) as net_cash")->first();
 
-        return $this->definition($query->select('id', 'payment_date', 'voucher_number', 'payment_method', 'notes')->selectRaw("CASE WHEN type = 'receipt' THEN 'قبض' ELSE 'صرف' END as kind, CASE WHEN type = 'receipt' THEN amount ELSE -amount END as amount")->orderBy('payment_date')->orderBy('id'),
-            ['payment_date' => 'التاريخ', 'voucher_number' => 'السند', 'kind' => 'النوع', 'payment_method' => 'الطريقة', 'notes' => 'البيان', 'amount' => 'الحركة'], ['المقبوضات' => $sums->incoming, 'المدفوعات' => $sums->outgoing, 'صافي السندات' => (float) $sums->incoming - (float) $sums->outgoing], ['يشمل السندات المسجلة بكل طرق الدفع، وليس رصيد الصندوق أو الربح. مدفوع الشراء داخل الفاتورة ودفعات الموظفين لها تقارير مستقلة.']);
+        return $this->definition($query->select('event_date', 'reference', 'party_name', 'source_label', 'payment_method', 'notes', 'source_order', 'row_id')
+            ->selectRaw("CASE WHEN voucher_type = 'receipt' THEN 'قبض' ELSE 'صرف' END as kind, CASE WHEN voucher_type = 'receipt' THEN amount ELSE -amount END as amount")
+            ->orderBy('event_date')->orderBy('source_order')->orderBy('row_id'),
+            ['event_date' => 'التاريخ', 'reference' => 'السند / الفاتورة', 'kind' => 'النوع', 'source_label' => 'المصدر', 'party_name' => 'الطرف', 'payment_method' => 'الطريقة', 'notes' => 'البيان', 'amount' => 'الحركة'],
+            ['المقبوضات' => $sums->incoming, 'المدفوعات' => $sums->outgoing, 'صافي الحركة' => (float) $sums->incoming - (float) $sums->outgoing, 'صافي النقد' => $sums->net_cash],
+            ['يشمل سندات القبض والصرف وتحصيل فواتير نقطة البيع للزبون النقدي (لم تعد تُنشئ سند قبض)، دون رسوم التوصيل التي تحصّلها شركة التوصيل.', 'ليس رصيد الصندوق أو الربح. دفعات الموظفين لها تقرير مستقل؛ مدفوع فواتير الشراء القديمة غير الموثق بسند لا يظهر هنا.']);
+    }
+
+    /**
+     * Money that entered or left the business in the period: vouchers plus walk-in POS collections.
+     * Vouchers that belong to a walk-in POS invoice are skipped because the invoice itself carries the collection.
+     */
+    private function cashEvents(): Builder
+    {
+        $payments = $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payments.payment_date')
+            ->leftJoin('orders as linked_order', function ($join): void {
+                $join->on('linked_order.id', '=', 'payments.order_id')->where('linked_order.tenant_id', $this->tenantId)->whereNull('linked_order.deleted_at');
+            })
+            ->leftJoin('parties', function ($join): void {
+                $join->on('parties.id', '=', 'payments.party_id')->where('parties.tenant_id', $this->tenantId);
+            })
+            ->where(fn (Builder $q): Builder => $q->whereNull('linked_order.id')->orWhere('linked_order.type', '!=', 'pos')->orWhereNotNull('linked_order.customer_id'))
+            ->selectRaw("payments.branch_id, payments.payment_date as event_date, payments.voucher_number as reference, payments.type as voucher_type, payments.payment_method, COALESCE(parties.name, '') as party_name, payments.party_id, payments.notes, ABS(payments.amount) as amount")
+            ->selectRaw("CASE WHEN payments.purchase_return_id IS NOT NULL THEN 'مردود مشتريات' WHEN payments.order_id IS NOT NULL THEN 'سند فاتورة بيع / مردود' WHEN payments.purchase_id IS NOT NULL THEN 'سند فاتورة شراء' WHEN payments.party_id IS NULL AND payments.type = 'payment' THEN 'مصروف' WHEN payments.type = 'receipt' THEN 'سند قبض' ELSE 'سند صرف' END as source_label")
+            ->selectRaw('payments.id as row_id, 1 as source_order');
+        $walkIn = $this->period($this->branch($this->table('orders'), 'orders.branch_id'), 'orders.created_at')
+            ->where('orders.status', 'completed')->where('orders.type', 'pos')->whereNull('orders.customer_id')
+            ->whereRaw('('.self::WALK_IN_COLLECTION_SQL.') > 0')
+            ->selectRaw("orders.branch_id, orders.created_at as event_date, orders.invoice_number as reference, 'receipt' as voucher_type, COALESCE(orders.payment_method, 'cash') as payment_method, COALESCE(NULLIF(orders.customer_name, ''), 'زبون نقدي') as party_name, NULL as party_id, orders.notes")
+            ->selectRaw('('.self::WALK_IN_COLLECTION_SQL.") as amount, 'تحصيل فاتورة نقطة بيع' as source_label, orders.id as row_id, 2 as source_order");
+        $search = trim($this->filters['search'] ?? '');
+
+        return DB::query()->fromSub($payments->unionAll($walkIn), 'cash_events')
+            ->when(! empty($this->filters['voucher_type']), fn (Builder $q): Builder => $q->where('voucher_type', $this->filters['voucher_type']))
+            ->when(! empty($this->filters['payment_method']), fn (Builder $q): Builder => $q->where('payment_method', $this->filters['payment_method']))
+            ->when(! empty($this->filters['party_id']), fn (Builder $q): Builder => $q->where('party_id', $this->filters['party_id']))
+            ->when($search !== '', fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q->where('reference', 'like', '%'.$search.'%')->orWhere('notes', 'like', '%'.$search.'%')->orWhere('party_name', 'like', '%'.$search.'%')));
+    }
+
+    /** @return ReportDefinition */
+    private function dailyCash(): array
+    {
+        $signed = "CASE WHEN voucher_type = 'receipt' THEN amount ELSE -amount END";
+        $query = $this->cashEvents()->selectRaw('DATE(event_date) as day')
+            ->selectRaw("SUM(CASE WHEN payment_method = 'cash' AND voucher_type = 'receipt' THEN amount ELSE 0 END) as cash_in")
+            ->selectRaw("SUM(CASE WHEN payment_method = 'cash' AND voucher_type = 'payment' THEN amount ELSE 0 END) as cash_out")
+            ->selectRaw("SUM(CASE WHEN payment_method = 'cash' THEN $signed ELSE 0 END) as net_cash")
+            ->selectRaw("SUM(CASE WHEN payment_method = 'card' THEN $signed ELSE 0 END) as card_in")
+            ->selectRaw("SUM(CASE WHEN payment_method = 'bank_transfer' THEN $signed ELSE 0 END) as transfer_in")
+            ->selectRaw("SUM(CASE WHEN payment_method IN ('cheque', 'check') THEN $signed ELSE 0 END) as cheque_in")
+            ->selectRaw("SUM(CASE WHEN voucher_type = 'receipt' THEN amount ELSE 0 END) as total_in")
+            ->selectRaw("SUM(CASE WHEN voucher_type = 'payment' THEN amount ELSE 0 END) as total_out")
+            ->selectRaw("SUM($signed) as net_total")
+            ->groupByRaw('DATE(event_date)')->orderBy('day');
+        $totals = DB::query()->fromSub(clone $query, 'daily_cash')
+            ->selectRaw('COALESCE(SUM(cash_in),0) as cash_in, COALESCE(SUM(cash_out),0) as cash_out, COALESCE(SUM(net_cash),0) as net_cash, COALESCE(SUM(card_in),0) as card_in, COALESCE(SUM(transfer_in),0) as transfer_in, COALESCE(SUM(cheque_in),0) as cheque_in, COALESCE(SUM(net_total),0) as net_total')->first();
+
+        return $this->definition($query,
+            ['day' => 'اليوم', 'cash_in' => 'مقبوضات نقدية', 'cash_out' => 'مدفوعات نقدية', 'net_cash' => 'صافي النقد', 'card_in' => 'صافي البطاقة', 'transfer_in' => 'صافي التحويل', 'cheque_in' => 'صافي الشيكات', 'total_in' => 'إجمالي المقبوض', 'total_out' => 'إجمالي المدفوع', 'net_total' => 'صافي الحركة'],
+            ['مقبوضات نقدية' => $totals->cash_in, 'مدفوعات نقدية' => $totals->cash_out, 'صافي النقد' => $totals->net_cash, 'صافي البطاقة' => $totals->card_in, 'صافي التحويل' => $totals->transfer_in, 'صافي الشيكات' => $totals->cheque_in, 'صافي الحركة لكل الطرق' => $totals->net_total],
+            ['يجمع سندات القبض والصرف وتحصيلات نقطة البيع لكل يوم حسب طريقة الدفع. صافي النقد = المقبوض نقداً − المدفوع نقداً، ولا يشمل رصيد افتتاح الصندوق.', 'لمطابقة الصندوق مع الجرد الفعلي استخدم تقرير الشيفتات أو شاشة التسوية اليومية.']);
+    }
+
+    private function expenseVouchers(): Builder
+    {
+        return $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payments.payment_date')
+            ->where('payments.type', 'payment')->whereNull('payments.party_id')->whereNull('payments.order_id')
+            ->whereNull('payments.purchase_id')->whereNull('payments.purchase_return_id');
+    }
+
+    /** @return ReportDefinition */
+    private function expenses(): array
+    {
+        $search = trim($this->filters['search'] ?? '');
+        $query = $this->expenseVouchers()
+            ->when(! empty($this->filters['payment_method']), fn (Builder $q): Builder => $q->where('payments.payment_method', $this->filters['payment_method']))
+            ->when($search !== '', fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q->where('payments.notes', 'like', '%'.$search.'%')->orWhere('payments.voucher_number', 'like', '%'.$search.'%')))
+            ->leftJoin('branches', function ($join): void {
+                $join->on('branches.id', '=', 'payments.branch_id')->where('branches.tenant_id', $this->tenantId);
+            })
+            ->leftJoin('users as expense_user', 'expense_user.id', '=', 'payments.created_by');
+        $sums = (clone $query)->selectRaw("COALESCE(SUM(payments.amount),0) as total, COALESCE(SUM(CASE WHEN payments.payment_method = 'cash' THEN payments.amount ELSE 0 END),0) as cash, COUNT(*) as vouchers")->first();
+
+        return $this->definition($query->select('payments.id', 'payments.payment_date', 'payments.voucher_number', 'payments.notes', 'payments.payment_method', 'payments.shift_id', 'payments.amount', 'branches.name as branch_name', 'expense_user.name as user_name')
+            ->orderBy('payments.payment_date')->orderBy('payments.id'),
+            ['payment_date' => 'التاريخ', 'voucher_number' => 'السند', 'notes' => 'البيان', 'branch_name' => 'الفرع', 'shift_id' => 'الشيفت', 'user_name' => 'المستخدم', 'payment_method' => 'الطريقة', 'amount' => 'المبلغ'],
+            ['إجمالي المصروفات' => $sums->total, 'منها نقداً' => $sums->cash, 'عدد السندات' => $sums->vouchers],
+            ['سندات الصرف غير المرتبطة بطرف أو فاتورة أو مردود فقط. سداد الموردين والرواتب والسلف ليست مصروفات تشغيلية ولها تقاريرها.']);
+    }
+
+    /** @return ReportDefinition */
+    private function aging(): array
+    {
+        $end = Carbon::parse($this->filters['to'])->addDay();
+        $cutoffs = [$end->copy()->subDays(30)->toDateString().' 00:00:00', $end->copy()->subDays(60)->toDateString().' 00:00:00', $end->copy()->subDays(90)->toDateString().' 00:00:00'];
+        $events = $this->partyEvents()->where('event_date', '<', $end->toDateString().' 00:00:00')->select('party_id')
+            ->selectRaw('SUM(amount) as movement')
+            ->selectRaw('SUM(CASE WHEN amount > 0 AND event_date >= ? THEN amount ELSE 0 END) as debit_0', [$cutoffs[0]])
+            ->selectRaw('SUM(CASE WHEN amount > 0 AND event_date >= ? AND event_date < ? THEN amount ELSE 0 END) as debit_1', [$cutoffs[1], $cutoffs[0]])
+            ->selectRaw('SUM(CASE WHEN amount > 0 AND event_date >= ? AND event_date < ? THEN amount ELSE 0 END) as debit_2', [$cutoffs[2], $cutoffs[1]])
+            ->selectRaw('SUM(CASE WHEN amount < 0 AND event_date >= ? THEN -amount ELSE 0 END) as credit_0', [$cutoffs[0]])
+            ->selectRaw('SUM(CASE WHEN amount < 0 AND event_date >= ? AND event_date < ? THEN -amount ELSE 0 END) as credit_1', [$cutoffs[1], $cutoffs[0]])
+            ->selectRaw('SUM(CASE WHEN amount < 0 AND event_date >= ? AND event_date < ? THEN -amount ELSE 0 END) as credit_2', [$cutoffs[2], $cutoffs[1]])
+            ->groupBy('party_id');
+        $balances = $this->parties()->leftJoinSub($events, 'totals', 'totals.party_id', '=', 'parties.id')
+            ->select('parties.id', 'parties.code', 'parties.name', 'parties.phone')
+            ->selectRaw("CASE WHEN parties.type = 'supplier' THEN 'مورد' WHEN parties.type = 'both' THEN 'زبون ومورد' ELSE 'زبون' END as party_kind")
+            ->selectRaw("(CASE WHEN ? = 1 AND parties.branch_id IS NULL THEN 0 WHEN parties.type = 'supplier' THEN -parties.opening_balance ELSE parties.opening_balance END) + COALESCE(totals.movement, 0) as balance", [$this->branchId ? 1 : 0])
+            ->selectRaw('COALESCE(totals.debit_0,0) as debit_0, COALESCE(totals.debit_1,0) as debit_1, COALESCE(totals.debit_2,0) as debit_2, COALESCE(totals.credit_0,0) as credit_0, COALESCE(totals.credit_1,0) as credit_1, COALESCE(totals.credit_2,0) as credit_2');
+        // Open balance is matched against the newest documents first (oldest documents are assumed settled first).
+        $level1 = DB::query()->fromSub($balances, 'aging_balances')->whereRaw('ABS(balance) > 0.005')
+            ->select('id', 'code', 'name', 'phone', 'party_kind', 'balance')
+            ->selectRaw('CASE WHEN balance < 0 THEN -balance ELSE balance END as open_amount')
+            ->selectRaw('CASE WHEN balance < 0 THEN credit_0 ELSE debit_0 END as bucket_0, CASE WHEN balance < 0 THEN credit_1 ELSE debit_1 END as bucket_1, CASE WHEN balance < 0 THEN credit_2 ELSE debit_2 END as bucket_2');
+        $level2 = DB::query()->fromSub($level1, 'aging_1')->select('*')->selectRaw('CASE WHEN open_amount < bucket_0 THEN open_amount ELSE bucket_0 END as part_0');
+        $level3 = DB::query()->fromSub($level2, 'aging_2')->select('*')->selectRaw('CASE WHEN open_amount - part_0 < bucket_1 THEN open_amount - part_0 ELSE bucket_1 END as part_1');
+        $level4 = DB::query()->fromSub($level3, 'aging_3')->select('*')->selectRaw('CASE WHEN open_amount - part_0 - part_1 < bucket_2 THEN open_amount - part_0 - part_1 ELSE bucket_2 END as part_2');
+        $query = DB::query()->fromSub($level4, 'aging_4')->select('id', 'code', 'name', 'phone', 'party_kind', 'balance')
+            ->selectRaw('CASE WHEN balance < 0 THEN -1 ELSE 1 END * part_0 as age_0_30, CASE WHEN balance < 0 THEN -1 ELSE 1 END * part_1 as age_31_60, CASE WHEN balance < 0 THEN -1 ELSE 1 END * part_2 as age_61_90')
+            ->selectRaw('CASE WHEN balance < 0 THEN -1 ELSE 1 END * (open_amount - part_0 - part_1 - part_2) as age_over_90');
+        $query = DB::query()->fromSub($query, 'aging');
+        match ($this->filters['balance_side']) {
+            'debit' => $query->whereRaw('balance > 0.005'),
+            'credit' => $query->whereRaw('balance < -0.005'),
+            'settled' => $query->whereRaw('1 = 0'),
+            default => null,
+        };
+        $sums = (clone $query)->selectRaw('COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END),0) as debit, COALESCE(SUM(CASE WHEN balance < 0 THEN -balance ELSE 0 END),0) as credit')
+            ->selectRaw('COALESCE(SUM(CASE WHEN balance > 0 THEN age_over_90 ELSE 0 END),0) as overdue_debit, COALESCE(SUM(CASE WHEN balance < 0 THEN -age_over_90 ELSE 0 END),0) as overdue_credit')->first();
+
+        return $this->definition($query->select('*')->orderByDesc(DB::raw('ABS(balance)'))->orderBy('id'),
+            ['code' => 'الرمز', 'name' => 'الطرف', 'party_kind' => 'النوع', 'phone' => 'الهاتف', 'balance' => 'الرصيد', 'age_0_30' => 'حتى 30 يوم', 'age_31_60' => '31 - 60 يوم', 'age_61_90' => '61 - 90 يوم', 'age_over_90' => 'أكثر من 90 يوم'],
+            ['إجمالي الذمم المدينة (لنا)' => $sums->debit, 'ذمم مدينة أقدم من 90 يوماً' => $sums->overdue_debit, 'إجمالي الذمم الدائنة (علينا)' => $sums->credit, 'ذمم دائنة أقدم من 90 يوماً' => $sums->overdue_credit],
+            ['الأعمار محسوبة حتى '.$this->filters['to'].': يُطابق الرصيد المفتوح مع أحدث المستندات، باعتبار أن السداد يغطي الأقدم أولاً. الرصيد الافتتاحي يُعدّ أقدم من 90 يوماً.', 'موجب: مستحق لنا؛ سالب: مستحق علينا. الأطراف المسددة لا تظهر.']);
+    }
+
+    /** @return ReportDefinition */
+    private function tax(): array
+    {
+        $sales = $this->orders()->leftJoin('parties', function ($join): void {
+            $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId);
+        })->selectRaw("orders.created_at as event_date, orders.invoice_number as reference, CASE WHEN orders.type = 'return' THEN 'مردود مبيعات' ELSE 'مبيعات' END as kind, COALESCE(parties.name, NULLIF(orders.customer_name, ''), 'زبون نقدي') as name, parties.tax_number")
+            ->selectRaw('('.self::ORDER_REVENUE_SQL.') as taxable')
+            ->selectRaw("CASE WHEN orders.type = 'return' THEN -ABS(orders.tax_amount) ELSE orders.tax_amount END as output_tax, 0 as input_tax, 1 as source_order, orders.id as row_id");
+        $purchases = $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), DB::raw(self::PURCHASE_DATE_SQL))
+            ->leftJoin('parties', function ($join): void {
+                $join->on('parties.id', '=', 'purchases.supplier_id')->where('parties.tenant_id', $this->tenantId);
+            })->selectRaw(self::PURCHASE_DATE_SQL." as event_date, purchases.reference_number as reference, 'مشتريات' as kind, COALESCE(parties.name, 'بدون مورد') as name, parties.tax_number")
+            ->selectRaw('purchases.total - COALESCE(purchases.tax_amount, 0) as taxable, 0 as output_tax, COALESCE(purchases.tax_amount, 0) as input_tax, 2 as source_order, purchases.id as row_id');
+        $returns = $this->period($this->branch($this->table('purchase_returns'), 'purchase_returns.branch_id'), 'purchase_returns.created_at')
+            ->leftJoin('parties', function ($join): void {
+                $join->on('parties.id', '=', 'purchase_returns.supplier_id')->where('parties.tenant_id', $this->tenantId);
+            })->selectRaw("purchase_returns.created_at as event_date, purchase_returns.reference_number as reference, 'مردود مشتريات' as kind, COALESCE(parties.name, 'بدون مورد') as name, parties.tax_number")
+            ->selectRaw('-(ABS(purchase_returns.total) - ABS(COALESCE(purchase_returns.tax_amount, 0))) as taxable, 0 as output_tax, -ABS(COALESCE(purchase_returns.tax_amount, 0)) as input_tax, 3 as source_order, purchase_returns.id as row_id');
+        $query = DB::query()->fromSub($sales->unionAll($purchases)->unionAll($returns), 'tax_documents');
+        $sums = (clone $query)->selectRaw('COALESCE(SUM(CASE WHEN source_order = 1 THEN taxable ELSE 0 END),0) as sales_taxable, COALESCE(SUM(output_tax),0) as output_tax, COALESCE(SUM(CASE WHEN source_order > 1 THEN taxable ELSE 0 END),0) as purchase_taxable, COALESCE(SUM(input_tax),0) as input_tax')->first();
+
+        return $this->definition($query->select('*')->orderBy('event_date')->orderBy('source_order')->orderBy('row_id'),
+            ['event_date' => 'التاريخ', 'kind' => 'المستند', 'reference' => 'الرقم', 'name' => 'الطرف', 'tax_number' => 'الرقم الضريبي', 'taxable' => 'المبلغ قبل الضريبة', 'output_tax' => 'ضريبة المبيعات', 'input_tax' => 'ضريبة المشتريات'],
+            ['المبيعات الخاضعة قبل الضريبة' => $sums->sales_taxable, 'ضريبة المبيعات (المخرجات)' => $sums->output_tax, 'المشتريات قبل الضريبة' => $sums->purchase_taxable, 'ضريبة المشتريات (المدخلات)' => $sums->input_tax, 'صافي الضريبة المستحقة' => (float) $sums->output_tax - (float) $sums->input_tax],
+            ['المبيعات المكتملة ومردوداتها حسب تاريخ الإنشاء، والمشتريات حسب تاريخ الفاتورة، ومردودات المشتريات. المبلغ قبل الضريبة لا يشمل رسوم التوصيل.', 'صافي الضريبة الموجب مستحق للدفع، والسالب رصيد قابل للخصم. راجع المحاسب قبل تقديم الإقرار الضريبي.']);
+    }
+
+    /** @return ReportDefinition */
+    private function branches(): array
+    {
+        $orders = $this->orders()->select('orders.branch_id')
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END) as invoices")
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END) as sales")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END) as returns")
+            ->selectRaw('SUM('.self::ORDER_REVENUE_SQL.') as revenue')
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN orders.total_cost ELSE 0 END) as cost")
+            ->groupBy('orders.branch_id');
+        $returnCosts = $this->orders()->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->where('order_items.tenant_id', $this->tenantId)->select('orders.branch_id')->selectRaw('SUM(ABS(order_items.total_cost)) as return_cost')->groupBy('orders.branch_id');
+        $expenses = $this->expenseVouchers()->select('payments.branch_id')->selectRaw('SUM(payments.amount) as expenses')->groupBy('payments.branch_id');
+        $purchases = DB::query()->fromSub(
+            $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), DB::raw(self::PURCHASE_DATE_SQL))->selectRaw('purchases.branch_id, purchases.total as amount')
+                ->unionAll($this->period($this->branch($this->table('purchase_returns'), 'purchase_returns.branch_id'), 'purchase_returns.created_at')->selectRaw('purchase_returns.branch_id, -ABS(purchase_returns.total) as amount')),
+            'branch_purchases')->select('branch_id')->selectRaw('SUM(amount) as purchases_total')->groupBy('branch_id');
+        $cash = $this->cashEvents()->select('branch_id')
+            ->selectRaw("SUM(CASE WHEN voucher_type = 'receipt' THEN amount ELSE 0 END) as total_in, SUM(CASE WHEN voucher_type = 'payment' THEN amount ELSE 0 END) as total_out")->groupBy('branch_id');
+        $query = $this->table('branches')->when($this->branchId, fn (Builder $q): Builder => $q->where('branches.id', $this->branchId))
+            ->leftJoinSub($orders, 'branch_orders', 'branch_orders.branch_id', '=', 'branches.id')
+            ->leftJoinSub($returnCosts, 'branch_return_costs', 'branch_return_costs.branch_id', '=', 'branches.id')
+            ->leftJoinSub($expenses, 'branch_expenses', 'branch_expenses.branch_id', '=', 'branches.id')
+            ->leftJoinSub($purchases, 'branch_purchase_totals', 'branch_purchase_totals.branch_id', '=', 'branches.id')
+            ->leftJoinSub($cash, 'branch_cash', 'branch_cash.branch_id', '=', 'branches.id')
+            ->where(fn (Builder $q): Builder => $q->whereNull('branches.deleted_at')->orWhereNotNull('branch_orders.branch_id')->orWhereNotNull('branch_expenses.branch_id')
+                ->orWhereNotNull('branch_purchase_totals.branch_id')->orWhereNotNull('branch_cash.branch_id'))
+            ->select('branches.id', 'branches.name as branch_name')
+            ->selectRaw('COALESCE(branch_orders.invoices, 0) as invoices, COALESCE(branch_orders.sales, 0) as sales, COALESCE(branch_orders.returns, 0) as returns, COALESCE(branch_orders.revenue, 0) as revenue')
+            ->selectRaw('COALESCE(branch_orders.cost, 0) - COALESCE(branch_return_costs.return_cost, 0) as cost')
+            ->selectRaw('COALESCE(branch_orders.revenue, 0) - COALESCE(branch_orders.cost, 0) + COALESCE(branch_return_costs.return_cost, 0) as gross_profit')
+            ->selectRaw('COALESCE(branch_expenses.expenses, 0) as expenses')
+            ->selectRaw('COALESCE(branch_orders.revenue, 0) - COALESCE(branch_orders.cost, 0) + COALESCE(branch_return_costs.return_cost, 0) - COALESCE(branch_expenses.expenses, 0) as net_profit')
+            ->selectRaw('COALESCE(branch_purchase_totals.purchases_total, 0) as purchases_total, COALESCE(branch_cash.total_in, 0) as total_in, COALESCE(branch_cash.total_out, 0) as total_out');
+        $totals = DB::query()->fromSub(clone $query, 'branch_totals')
+            ->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(revenue),0) as revenue, COALESCE(SUM(gross_profit),0) as gross_profit, COALESCE(SUM(expenses),0) as expenses, COALESCE(SUM(net_profit),0) as net_profit, COALESCE(SUM(purchases_total),0) as purchases_total')->first();
+
+        return $this->definition($query->orderBy('branches.name')->orderBy('branches.id'),
+            ['branch_name' => 'الفرع', 'invoices' => 'فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'revenue' => 'صافي الإيراد', 'cost' => 'التكلفة', 'gross_profit' => 'مجمل الربح', 'expenses' => 'المصروفات', 'net_profit' => 'الربح بعد المصروفات', 'purchases_total' => 'صافي المشتريات', 'total_in' => 'المقبوضات', 'total_out' => 'المدفوعات'],
+            ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي الإيراد' => $totals->revenue, 'مجمل الربح' => $totals->gross_profit, 'المصروفات' => $totals->expenses, 'الربح بعد المصروفات' => $totals->net_profit, 'صافي المشتريات' => $totals->purchases_total],
+            ['صافي الإيراد دون الضريبة ورسوم التوصيل؛ التكلفة هي المسجلة وقت البيع بعد عكس تكلفة المردود. الرواتب غير موزعة على الفروع.', 'المقبوضات والمدفوعات تشمل السندات وتحصيل فواتير نقطة البيع، ولا تعني الربح.']);
+    }
+
+    /** @return ReportDefinition */
+    private function settlements(): array
+    {
+        $query = $this->branch($this->table('daily_settlements'), 'daily_settlements.branch_id')
+            ->whereDate('daily_settlements.settlement_date', '>=', $this->filters['from'])
+            ->whereDate('daily_settlements.settlement_date', '<=', $this->filters['to'])
+            ->leftJoin('branches', function ($join): void {
+                $join->on('branches.id', '=', 'daily_settlements.branch_id')->where('branches.tenant_id', $this->tenantId);
+            })
+            ->leftJoin('users as settlement_user', 'settlement_user.id', '=', 'daily_settlements.closed_by');
+        $sums = (clone $query)->selectRaw('COALESCE(SUM(daily_settlements.total_sales),0) as sales, COALESCE(SUM(daily_settlements.total_returns),0) as returns, COALESCE(SUM(daily_settlements.total_cash),0) as cash, COALESCE(SUM(daily_settlements.total_card),0) as card')->first();
+
+        return $this->definition($query->select('daily_settlements.id', 'daily_settlements.settlement_date', 'branches.name as branch_name', 'daily_settlements.total_shifts_count', 'daily_settlements.total_sales', 'daily_settlements.total_returns', 'daily_settlements.total_cash', 'daily_settlements.total_card', 'daily_settlements.closed_at', 'settlement_user.name as user_name', 'daily_settlements.notes')
+            ->orderBy('daily_settlements.settlement_date')->orderBy('daily_settlements.id'),
+            ['settlement_date' => 'تاريخ التسوية', 'branch_name' => 'الفرع', 'total_shifts_count' => 'عدد الشيفتات', 'total_sales' => 'المبيعات', 'total_returns' => 'المردودات', 'total_cash' => 'النقد المعتمد', 'total_card' => 'البطاقات', 'closed_at' => 'وقت الاعتماد', 'user_name' => 'اعتمد بواسطة', 'notes' => 'ملاحظات'],
+            ['المبيعات' => $sums->sales, 'المردودات' => $sums->returns, 'النقد المعتمد' => $sums->cash, 'البطاقات' => $sums->card],
+            ['التسويات اليومية المعتمدة كما حُفظت وقت الإغلاق. لتفاصيل كل شيفت استخدم تقرير الشيفتات.']);
     }
 }

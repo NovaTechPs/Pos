@@ -84,7 +84,6 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:sales_invoices.view')
             ->name('sale-invoices');
         Route::get('/sale-invoices/{orderId}/pdf', [TenantInvoicePdfController::class, 'sales'])
-            ->middleware('can:sales_invoices.view')
             ->name('sale-invoices.pdf');
 
         // Wholesale

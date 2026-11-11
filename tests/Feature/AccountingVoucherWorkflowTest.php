@@ -479,3 +479,19 @@ test('voucher printing rejects other tenants and voucher types', function (strin
     ['receipts', 'receipt', false],
     ['payment', 'payment', false],
 ]);
+
+test('voucher balance preview lists current balance and amount before the balance summary', function (string $page, string $type): void {
+    $party = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'أيمن السدر', 'type' => $type, 'current_balance' => 5723]);
+
+    $html = Livewire::test('pages::tenant.accounting.'.$page)
+        ->call('openCreate')
+        ->call('selectParty', $party->id)
+        ->set('amount', 500)
+        ->html();
+
+    $preview = substr($html, strpos($html, 'data-voucher-balance-preview'));
+    $positions = array_map(fn (string $text): int|false => mb_strpos($preview, $text), ['الرصيد الحالي', '5,723.00', 'قيمة السند', '500.00', 'ملخص الرصيد', 'أيمن السدر', 'بعد العملية', '5,223.00']);
+
+    expect($positions)->not->toContain(false)
+        ->and($positions)->toBe(collect($positions)->sort()->values()->all());
+})->with([['receipts', 'customer'], ['payment', 'supplier']]);

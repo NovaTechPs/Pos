@@ -2,7 +2,7 @@
 
 use Symfony\Component\Process\Process;
 
-test('flash notices show once for five seconds and can appear again after expiry', function (): void {
+test('flash notices flash once for three seconds and can appear again after expiry', function (): void {
     $script = <<<'JS'
     const fs = require('node:fs');
     const vm = require('node:vm');
@@ -39,11 +39,11 @@ test('flash notices show once for five seconds and can appear again after expiry
     notifyToast({ detail: { message: 'تم حفظ السند', type: 'success' } });
     assert.equal(toasts.length, 2, 'Legacy toast events must display a notice');
     assert.equal(toasts[1].attributes.role, 'status');
-    assert.equal(timers.filter(timer => timer.delay === 5000).length, 4, 'Dedupe and hide timers must both use five seconds for each notice');
+    assert.equal(timers.filter(timer => timer.delay === 3000).length, 4, 'Dedupe and hide timers must both use three seconds for each notice');
 
-    for (const timer of timers.filter(timer => timer.delay === 5000)) timer.callback();
+    for (const timer of timers.filter(timer => timer.delay === 3000)) timer.callback();
     notify({ detail: { message: 'تم الحفظ', variant: 'success' } });
-    assert.equal(toasts.length, 3, 'The notice may appear again after the five-second window expires');
+    assert.equal(toasts.length, 3, 'The notice may appear again after the three-second window expires');
     console.log('FLASH_NOTICES_OK');
     JS;
 

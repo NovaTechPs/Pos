@@ -765,41 +765,10 @@
                     {{-- Balance preview --}}
                     @if($selectedParty)
 
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-voucher-balance-preview>
 
-                            <div class="flex items-center justify-between gap-4">
-
-                                <div>
-                                    <p class="text-xs font-medium text-slate-500">
-                                        ملخص الرصيد
-                                    </p>
-
-                                    <p class="mt-1 text-sm font-bold text-slate-800">
-                                        {{ $selectedParty->name }}
-                                    </p>
-                                </div>
-
-                                <div class="text-end">
-
-                                    <p class="text-[11px] text-slate-400">
-                                        بعد العملية
-                                    </p>
-
-                                    <p class="mt-1 text-base font-bold text-{{ $accent }}-600">
-                                        {{ number_format(
-                                            (float) $selectedParty->current_balance
-                                            - ($isPayment ? $selectedParty->purchaseBalanceDirection() : $selectedParty->saleBalanceDirection()) * (float) ($amount ?: 0),
-                                            2
-                                        ) }}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                            <div class="mt-3 h-px bg-slate-200"></div>
-
-                            <div class="mt-3 flex items-center justify-between text-xs">
+                            {{-- الرصيد الحالي وقيمة السند أولاً --}}
+                            <div class="flex items-center justify-between text-xs">
 
                                 <span class="text-slate-500">
                                     الرصيد الحالي
@@ -826,6 +795,39 @@
                                         2
                                     ) }}
                                 </span>
+
+                            </div>
+
+                            <div class="mt-3 h-px bg-slate-200"></div>
+
+                            {{-- ملخص الرصيد بعد العملية في الأسفل --}}
+                            <div class="mt-3 flex items-center justify-between gap-4">
+
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500">
+                                        ملخص الرصيد
+                                    </p>
+
+                                    <p class="mt-1 text-sm font-bold text-slate-800">
+                                        {{ $selectedParty->name }}
+                                    </p>
+                                </div>
+
+                                <div class="text-end">
+
+                                    <p class="text-[11px] text-slate-400">
+                                        بعد العملية
+                                    </p>
+
+                                    <p class="mt-1 text-base font-bold text-{{ $accent }}-600">
+                                        {{ number_format(
+                                            (float) $selectedParty->current_balance
+                                            - ($isPayment ? $selectedParty->purchaseBalanceDirection() : $selectedParty->saleBalanceDirection()) * (float) ($amount ?: 0),
+                                            2
+                                        ) }}
+                                    </p>
+
+                                </div>
 
                             </div>
 

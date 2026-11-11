@@ -1,4 +1,5 @@
 const shown = new Set();
+const FLASH_DURATION = 3000;
 
 function showNotice(text, variant = 'error') {
     const message = String(text || '').trim();
@@ -7,20 +8,22 @@ function showNotice(text, variant = 'error') {
     const key = `${variant}:${message}`;
     if (shown.has(key)) return;
     shown.add(key);
-    window.setTimeout(() => shown.delete(key), 10000);
+    window.setTimeout(() => shown.delete(key), FLASH_DURATION);
 
     const toast = document.createElement('div');
-    toast.dataset.livewireFlashToast = 'true';
+    toast.setAttribute('data-livewire-flash-toast', 'true');
     toast.setAttribute('role', variant === 'success' ? 'status' : 'alert');
     toast.dir = 'rtl';
-    toast.className = `fixed left-4 top-4 z-[99999] max-w-md rounded-xl border px-4 py-3 text-sm font-bold text-white shadow-xl transition ${variant === 'success' ? 'border-emerald-200 bg-emerald-600' : 'border-rose-200 bg-rose-600'}`;
+    toast.className = `fixed left-4 top-4 z-[99999] max-w-md rounded-xl border px-4 py-3 text-sm font-bold text-white shadow-xl cursor-pointer transition ${variant === 'success' ? 'border-emerald-200 bg-emerald-600' : 'border-rose-200 bg-rose-600'}`;
     toast.textContent = message;
+    toast.title = 'اضغط للإغلاق';
+    toast.onclick = () => toast.remove();
     document.body.appendChild(toast);
 
     window.setTimeout(() => {
         toast.classList.add('opacity-0');
         window.setTimeout(() => toast.remove(), 250);
-    }, 10000);
+    }, FLASH_DURATION);
 }
 
 function scanVisibleNotices() {

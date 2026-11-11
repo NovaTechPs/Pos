@@ -6,6 +6,15 @@
     $receiptDue = max(0, $receiptTotal - $receiptPaid);
     $showPaid = isset($receipt['paid']) && abs($receiptPaid - $receiptTotal) > 0.001;
     $showChange = isset($receipt['change']) && $receiptChange > 0.001;
+    $receiptDiscount = (float) str_replace(',', '', (string) ($receipt['discount'] ?? 0));
+    // Customer invoices also print the payment with the previous and new account balance.
+    $receiptSummary = $receipt['summary'] ?? [
+        'total' => $receiptTotal + $receiptDiscount,
+        'discount' => $receiptDiscount,
+        'payment' => min($receiptPaid, $receiptTotal),
+        'previous_balance' => null,
+        'new_balance' => isset($receipt['account_balance']) ? (float) $receipt['account_balance'] : null,
+    ];
 
     // Generate CODE128-B on the server so the barcode is part of the HTML
     // sent to the printer. This does not depend on JavaScript or external libraries.
@@ -78,31 +87,51 @@
     </div>
 
     <div class="meta-info">
-        <span>فاتورة: {{ $receipt['invoice_no'] ?? '-' }}</span>
-        <span>{{ $receipt['date'] ?? '' }}</span>
-        <span>{{ $receipt['time'] ?? '' }}</span>
+        <span>رقم: <b dir="ltr">{{ $receipt['invoice_no'] ?? '-' }}</b></span>
+        <span>التاريخ: <b dir="ltr">{{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}</b></span>
     </div>
 
     @if (!empty($receipt['cashier']))
         <div class="cashier">الكاشير: {{ $receipt['cashier'] }}</div>
+    @endif
+    @if (!empty($receipt['customer_name']))
+        <div class="cashier">الزبون: {{ $receipt['customer_name'] }}</div>
+    @endif
+
+    @if (!empty($receipt['delivery']))
+        <div class="delivery-box" data-receipt-delivery>
+            <div class="delivery-title">معلومات التوصيل</div>
+            @if (!empty($receipt['delivery']['name']))
+                <div>الاسم: {{ $receipt['delivery']['name'] }}</div>
+            @endif
+            @if (!empty($receipt['delivery']['phone']))
+                <div>الهاتف: <span dir="ltr">{{ $receipt['delivery']['phone'] }}</span></div>
+            @endif
+            @if (!empty($receipt['delivery']['address']))
+                <div>العنوان: {{ $receipt['delivery']['address'] }}</div>
+            @endif
+            @if (!empty($receipt['delivery']['notes']))
+                <div class="notes-content">ملاحظة التوصيل: {{ $receipt['delivery']['notes'] }}</div>
+            @endif
+        </div>
     @endif
 
     <table class="items-table">
         <thead>
             <tr>
                 <th style="width:8%">#</th>
-                <th style="width:46%">البيان</th>
-                <th style="width:14%">كمية</th>
-                <th style="width:16%">سعر</th>
-                <th style="width:16%">مبلغ</th>
+                <th style="width:47%">الصنف</th>
+                <th style="width:9%">ك</th>
+                <th style="width:17%">سعر</th>
+                <th style="width:19%">مبلغ</th>
             </tr>
         </thead>
         <tbody>
             @foreach (($receipt['items'] ?? []) as $item)
                 <tr>
-                    <td>{{ $item['id'] }}</td>
+                    <td>{{ $loop->iteration }}</td>
                     <td class="item-name">
-                        {{ $item['name'] }}
+                        <span class="item-name-text">{{ $item['name'] }}</span>
 
                         @if (!empty($item['has_promotion']))
                             <div class="receipt-promotion-label">
@@ -131,65 +160,51 @@
         </tbody>
     </table>
 
-    @if (isset($receipt['subtotal']))
-        <div class="info-box">
-            <span>المجموع :</span>
-            <strong>{{ $receipt['subtotal'] }}</strong>
-        </div>
-    @endif
-
-    @if (isset($receipt['discount']) && (float) str_replace(',', '', $receipt['discount']) > 0)
-        <div class="info-box">
-            <span>الخصم :</span>
-            <strong>{{ $receipt['discount'] }}</strong>
-        </div>
-    @endif
-    @if ($receiptDelivery > 0)
-        <div class="info-box">
-            <span>التوصيل :</span>
-            <strong>{{ number_format($receiptDelivery, 2) }}</strong>
-        </div>
-    @endif
-    @if (isset($receipt['total_promotion_savings']) && (float) str_replace(',', '', $receipt['total_promotion_savings']) > 0)
-        <div class="promotion-total-box">
-            <div class="promotion-total-title">✓ وفّرت من العروض</div>
-            <div class="promotion-total-value">{{ $receipt['total_promotion_savings'] }}</div>
-        </div>
-    @endif
-
-
-    <div class="net-box">
-        <span>الصافي للدفع ({{ $receipt['currency'] ?? 'ش.ض' }}) :</span>
-        <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
+    <div class="receipt-stats" data-receipt-stats>
+        <span>عدد الأصناف: <b>{{ count($receipt['items'] ?? []) }}</b></span>
+        <span>إجمالي الكمية: <b>{{ rtrim(rtrim(number_format((float) ($receipt['total_qty'] ?? collect($receipt['items'] ?? [])->sum(fn ($item) => abs((float) str_replace(',', '', (string) ($item['qty'] ?? 0))))), 2, '.', ''), '0'), '.') }}</b></span>
     </div>
 
-    @if ($showPaid)
-        <div class="info-box">
-            <span>المدفوع :</span>
-            <strong>{{ $receipt['paid'] }}</strong>
+    <div data-invoice-balance-summary>
+        <div class="total-line">
+            <span>المجموع :</span>
+            <strong>{{ $receipt['subtotal'] ?? number_format((float) $receiptSummary['total'], 2) }}</strong>
         </div>
-    @endif
+        @if ($receiptDiscount > 0.001)
+            <div class="total-line minor">
+                <span>الخصم :</span>
+                <strong>{{ number_format($receiptDiscount, 2) }}</strong>
+            </div>
+        @endif
+        @if ($receiptDelivery > 0.001)
+            <div class="total-line minor">
+                <span>التوصيل :</span>
+                <strong>{{ number_format($receiptDelivery, 2) }}</strong>
+            </div>
+        @endif
 
-    @if ($receiptDue > 0.001)
-        <div class="info-box">
-            <span>المتبقي :</span>
-            <strong>{{ number_format($receiptDue, 2) }}</strong>
+        <div class="net-box">
+            <span>الصافي للدفع ({{ $receipt['currency'] ?? '₪' }}):</span>
+            <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
         </div>
-    @endif
 
-    @if (isset($receipt['account_balance']))
-        <div class="info-box">
-            <span>رصيد الحساب الحالي بعد الفاتورة :</span>
-            <strong>{{ number_format((float) $receipt['account_balance'], 2) }}</strong>
-        </div>
-    @endif
-
-    @if ($showChange)
-        <div class="info-box">
-            <span>الباقي :</span>
-            <strong>{{ $receipt['change'] }}</strong>
-        </div>
-    @endif
+        @if ($receiptSummary['new_balance'] !== null)
+            <div class="total-line minor">
+                <span>دفعة :</span>
+                <strong>{{ number_format((float) $receiptSummary['payment'], 2) }}</strong>
+            </div>
+            @if ($receiptSummary['previous_balance'] !== null)
+                <div class="total-line minor">
+                    <span>رصيد سابق :</span>
+                    <strong>{{ number_format((float) $receiptSummary['previous_balance'], 2) }}</strong>
+                </div>
+            @endif
+            <div class="total-line">
+                <span>رصيد جديد :</span>
+                <strong>{{ number_format((float) $receiptSummary['new_balance'], 2) }}</strong>
+            </div>
+        @endif
+    </div>
 
     @if (!empty($receipt['notes']))
         <div class="notes-box">
@@ -257,8 +272,8 @@
     }
 
     .header .copy-type {
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 18px;
+        font-weight: 700;
         margin: 2px 0 6px;
     }
 
@@ -267,8 +282,8 @@
         justify-content: space-between;
         flex-wrap: wrap;
         overflow-wrap: anywhere;
-        gap: 4px;
-        font-size: 12px;
+        gap: 2px 6px;
+        font-size: 11px;
         font-weight: 500;
         margin-bottom: 4px;
         padding: 0 2px;
@@ -298,7 +313,8 @@
     }
 
     .items-table th {
-        font-weight: 600;
+        font-weight: 700;
+        font-size: 13px;
     }
 
     .items-table td {
@@ -393,23 +409,83 @@
         white-space: pre-wrap;
     }
 
+    /* Payable total printed white on black, as on the shop's receipt. */
     .net-box {
         border: 2px solid #000;
-        padding: 5px 6px;
+        background: #000;
+        color: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        padding: 6px 8px;
         margin: 4px 0;
         display: flex;
-        justify-content: center;
+        justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
         overflow-wrap: anywhere;
         gap: 4px 8px;
-        font-size: 15px;
+        font-size: 17px;
         font-weight: 700;
     }
 
     .net-value {
-        font-size: 16px;
+        font-size: 20px;
         font-weight: 700;
+        direction: ltr;
+    }
+
+    .receipt-stats {
+        display: flex;
+        justify-content: space-around;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        padding: 5px 2px;
+        border-bottom: 2px solid #000;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .total-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 6px 3px;
+        font-size: 18px;
+        font-weight: 700;
+    }
+
+    .total-line strong {
+        direction: ltr;
+    }
+
+    .total-line.minor {
+        padding: 2px 6px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    .items-table .item-name-text {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .delivery-box {
+        border: 1px dashed #000;
+        padding: 4px 6px;
+        margin: 0 0 5px;
+        text-align: right;
+        font-size: 13px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
+
+    .delivery-title {
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 2px;
     }
 
     .receipt-box strong {

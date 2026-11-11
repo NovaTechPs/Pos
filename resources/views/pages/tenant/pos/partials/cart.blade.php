@@ -195,6 +195,10 @@
                             <div class="font-black text-slate-900 {{ ! $mergeSimilarProducts ? 'dark:text-slate-100' : '' }}">
                                 {{ $item['name'] }}
                                 <button type="button" wire:click="$dispatch('show-product-history', { productId: {{ $item['id'] }} })" class="rounded px-2 py-1 text-xs text-indigo-700">حركة الصنف</button>
+                                <button type="button" data-pos-price-history wire:click="$dispatch('open-product-price-history', { productId: {{ $item['id'] }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" title="آخر سعر للزبون وأسعار كل الزبائن والتكلفة" class="rounded px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50">الأسعار</button>
+                                @if (! empty($item['customer_price']))
+                                    <span data-pos-customer-price class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">آخر سعر للزبون</span>
+                                @endif
                                 @if (! $mergeSimilarProducts)
                                     <span data-pos-product-occurrence="{{ $productOccurrence }}" class="pos-cart-occurrence"
                                         aria-label="تكرار الصنف في السلة: {{ $productOccurrence }}">{{ $productOccurrence }}</span>

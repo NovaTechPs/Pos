@@ -30,9 +30,14 @@
                     <div data-pos-barcode-results class="mt-3 max-h-52 space-y-2 overflow-y-auto">
                         @forelse ($missingBarcodeProducts as $product)
                             <button data-pos-barcode-result type="button" wire:click="attachMissingBarcode({{ $product->id }})" wire:loading.attr="disabled" wire:target="attachMissingBarcode" x-on:keydown.arrow-down.prevent="$el.nextElementSibling?.matches('[data-pos-barcode-result]') ? $el.nextElementSibling.focus() : $el.closest('[data-pos-missing-barcode-dialog]')?.querySelector('[data-pos-barcode-search]')?.focus()" x-on:keydown.arrow-up.prevent="$el.previousElementSibling?.matches('[data-pos-barcode-result]') ? $el.previousElementSibling.focus() : $el.closest('[data-pos-missing-barcode-dialog]')?.querySelector('[data-pos-barcode-search]')?.focus()" class="group flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-right shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-indigo-500 disabled:cursor-wait disabled:opacity-50" wire:key="missing-barcode-product-{{ $product->id }}">
+                                @php $resultStock = $product->branchProducts->first(); @endphp
                                 <span class="min-w-0">
                                     <span class="block break-words text-sm font-bold leading-6 text-slate-800">{{ $product->name }}</span>
-                                    <span class="mt-1 block text-xs text-slate-400">رقم الصنف: <b class="font-mono font-medium text-slate-600">{{ $product->product_number ?: $product->id }}</b></span>
+                                    <span data-pos-barcode-result-details class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                                        <span>رقم الصنف: <b class="font-mono font-medium text-slate-600">{{ $product->product_number ?: $product->id }}</b></span>
+                                        <span>السعر: <b class="font-mono font-bold text-emerald-700">{{ $resultStock ? number_format((float) $resultStock->retail_price, 2) : '—' }}</b></span>
+                                        <span>الكمية المتبقية: <b class="font-mono font-bold {{ $resultStock && (float) $resultStock->stock_quantity <= 0 ? 'text-rose-600' : 'text-slate-700' }}">{{ $resultStock ? number_format((float) $resultStock->stock_quantity, 2) : '—' }}</b></span>
+                                    </span>
                                 </span>
                                 <span class="shrink-0 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white">ربط</span>
                             </button>

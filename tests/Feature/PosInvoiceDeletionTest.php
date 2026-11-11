@@ -32,8 +32,21 @@ beforeEach(function (): void {
     $this->order = Order::query()->sole();
 });
 
+/**
+ * Walk-in cash sales no longer create a standalone receipt, so attach the receipt a
+ * customer sale would have to exercise payment deletion and rollback.
+ */
+function posInvoiceReceipt(object $context): Payment
+{
+    return Payment::query()->create([
+        'tenant_id' => $context->tenant->id, 'branch_id' => $context->branch->id, 'shift_id' => $context->shift->id,
+        'created_by' => $context->user->id, 'type' => 'receipt', 'voucher_number' => 'PAY-'.$context->order->invoice_number,
+        'amount' => 10, 'payment_method' => 'cash', 'order_id' => $context->order->id, 'payment_date' => now(),
+    ]);
+}
+
 test('POS soft deletes saved invoice and payment while restoring stock and hiding it from navigation and search', function (): void {
-    $payment = Payment::query()->where('order_id', $this->order->id)->sole();
+    $payment = posInvoiceReceipt($this);
     $this->pos->call('loadInvoice', $this->order->id)->assertSee('حذف الفاتورة')
         ->call('deleteInvoice')->assertSet('errorMessage', null)->assertSet('currentInvoiceId', null)->assertSet('cart', []);
     $this->assertSoftDeleted($this->order);
@@ -99,6 +112,7 @@ test('deleting held invoice does not increase stock', function (): void {
 });
 
 test('missing stock rolls back invoice and payment deletion', function (): void {
+    posInvoiceReceipt($this);
     BranchProduct::addGlobalScope('missing-stock', fn ($query) => $query->whereKeyNot($this->stock->id));
     $this->beforeApplicationDestroyed(fn () => BranchProduct::clearBootedModels());
     $this->pos->set('currentInvoiceId', $this->order->id)->call('deleteInvoice');

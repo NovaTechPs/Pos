@@ -198,3 +198,35 @@ test('invoice product and party menus close locally outside and reopen when sear
     }
     expect(file_get_contents(resource_path('css/app.css')))->toContain('[data-invoice-search-group]:not(:focus-within) [data-invoice-search-results]');
 })->with(['sales', 'purchases']);
+
+test('invoice search finds products by any part of their barcode', function (string $page, string $search): void {
+    Product::create(['tenant_id' => $this->tenant->id, 'name' => 'صنف آخر', 'product_number' => 'OTHER-1', 'cost_price' => 1]);
+
+    Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', $search)
+        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+})->with(['sales', 'purchases'])->with(['90123', '٩٠١٢٣', '456789']);
+
+test('invoice search ignores barcode fragments that match nothing or are too short', function (string $page): void {
+    Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', '99999')
+        ->assertViewHas('productResults', fn ($results): bool => $results->isEmpty());
+
+    $other = Product::create(['tenant_id' => Tenant::create(['name' => 'متجر آخر'])->id, 'name' => 'صنف متجر آخر', 'cost_price' => 1]);
+    ProductBarcode::create(['tenant_id' => $other->tenant_id, 'product_id' => $other->id, 'barcode' => '5550001112223']);
+
+    Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', '12223')
+        ->assertViewHas('productResults', fn ($results): bool => $results->isEmpty());
+})->with(['sales', 'purchases']);
+
+test('invoice search lists matching items from the highest to the lowest branch stock', function (string $page): void {
+    $stocks = ['قهوة تركية قليلة' => 3, 'قهوة تركية كثيرة' => 90, 'قهوة تركية متوسطة' => 40];
+    $ids = [];
+    foreach ($stocks as $name => $stock) {
+        $product = Product::create(['tenant_id' => $this->tenant->id, 'name' => $name, 'cost_price' => 1]);
+        BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id, 'stock_quantity' => $stock, 'retail_price' => 5]);
+        $ids[$stock] = $product->id;
+    }
+    $noStock = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'قهوة تركية بلا فرع', 'cost_price' => 1]);
+
+    Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', 'قهوة تركية')
+        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$ids[90], $ids[40], $ids[3], $noStock->id]);
+})->with(['sales', 'purchases']);

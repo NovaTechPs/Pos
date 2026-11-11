@@ -1096,6 +1096,9 @@ new class extends Component {
                 app(PosProductSearch::class)->apply($standard->getQuery(), $normalized, $tenantId);
             })->orWhereRaw("LOWER(products.product_number) LIKE ? ESCAPE '!'", ['%' . $escaped . '%']);
 
+            // Any part of a barcode, e.g. its last 5 digits.
+            app(PosProductSearch::class)->orWhereBarcodeContains($matches->getQuery(), $normalized, $tenantId);
+
             // Match all words, even with additional words between them.
             $matches->orWhere(function ($nameQuery) use ($words, $escape, $nameSql): void {
                 foreach ($words as $word) {
@@ -1146,7 +1149,9 @@ new class extends Component {
                 'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
             ]);
          $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+        // Keep the usual relevance ranking; within each level, the items with the most stock come first.
         app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
+        app(PosProductSearch::class)->applyBranchStockOrdering($query->getQuery(), (int) $branchId);
         $this->inlineSearchResults = $query->orderBy('name')->orderBy('id')
             ->limit(12)
             ->get()
@@ -1579,7 +1584,9 @@ new class extends Component {
         // An empty search means "All": do not apply the search service's no-results guard.
         if ($search !== '') {
              $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
+            // Keep the usual relevance ranking; within each level, the items with the most stock come first.
             app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
+            app(PosProductSearch::class)->applyBranchStockOrdering($query->getQuery(), (int) $branchId);
         }
 
         $resultLimit = 24;
@@ -1841,6 +1848,9 @@ new class extends Component {
             }
         } else {
             $lineKey = $this->mergeSimilarProducts ? (string) $productId . ($isGift ? '_gift' : '') : 'line_' . str()->uuid()->toString();
+            $customerPrice = ! $isGift && ! $this->isReturnMode && $this->selectedCustomerId
+                ? ($this->lastCustomerPrices([$productId])[$productId] ?? null)
+                : null;
 
             $this->cart[$lineKey] = [
                 'id' => $productId,
@@ -1849,11 +1859,13 @@ new class extends Component {
                 'barcode' => $scannedBarcode ?: $product->barcodes->first()?->barcode ?? '',
                 'is_gift' => $isGift,
                 'returned_to_stock' => true,
-                'price' => $isGift ? 0.0 : (float) $branchProduct->retail_price,
+                'price' => $isGift ? 0.0 : ($customerPrice ?? (float) $branchProduct->retail_price),
                 'cost_price' => (float) ($product->cost_price ?? 0),
                 'quantity' => $changeQty,
-                'subtotal' => $this->roundMoney((float) $branchProduct->retail_price * $changeQty),
-                'price_manual' => false,
+                'subtotal' => $this->roundMoney(($customerPrice ?? (float) $branchProduct->retail_price) * $changeQty),
+                // A customer's last price is kept like a manual price so offers and server refreshes don't replace it.
+                'price_manual' => $customerPrice !== null,
+                'customer_price' => $customerPrice !== null,
                 'offer_quantity' => $offerQuantity,
                 'offer_price' => $offerPrice,
             ];
@@ -1930,6 +1942,7 @@ new class extends Component {
 
         $this->cart[$lineKey]['price'] = ! empty($this->cart[$lineKey]['is_gift']) ? 0.0 : max(0, (float) $newPrice);
         $this->cart[$lineKey]['price_manual'] = true;
+        $this->cart[$lineKey]['customer_price'] = false;
         $this->cart[$lineKey]['subtotal'] = $this->roundMoney((float) $this->cart[$lineKey]['quantity'] * (float) $this->cart[$lineKey]['price']);
         $this->recalculatePrices();
     }
@@ -1972,6 +1985,7 @@ new class extends Component {
 
         $this->cart[$lineKey]['price'] = round($unitPrice, 6);
         $this->cart[$lineKey]['price_manual'] = true;
+        $this->cart[$lineKey]['customer_price'] = false;
         $this->cart[$lineKey]['subtotal'] = $targetTotal;
     }
 
@@ -2531,6 +2545,7 @@ new class extends Component {
         $this->customerSearch = '';
         $this->showCustomerModal = false;
         $this->errorMessage = null;
+        $this->applyCustomerPricesToCart();
     }
 
     public function clearCustomer(): void
@@ -2543,6 +2558,78 @@ new class extends Component {
         $this->showCustomerModal = false;
         $this->showCustomerPhoneModal = false;
         $this->customerPhoneInput = '';
+        $this->applyCustomerPricesToCart();
+    }
+
+    /**
+     * Last unit price each product was sold at to the selected customer.
+     *
+     * @param  array<int, int>  $productIds
+     * @return array<int, float>
+     */
+    private function lastCustomerPrices(array $productIds): array
+    {
+        $tenantId = $this->tenantId();
+        if (! $tenantId || ! $this->selectedCustomerId || $productIds === []) {
+            return [];
+        }
+
+        return DB::table('order_items as items')
+            ->join('orders', 'orders.id', '=', 'items.order_id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('items.tenant_id', $tenantId)
+            ->where('orders.customer_id', $this->selectedCustomerId)
+            ->whereIn('items.product_id', $productIds)
+            ->whereNull('orders.deleted_at')
+            ->where('orders.status', 'completed')
+            ->where('orders.type', '!=', 'return')
+            ->where('items.quantity', '>', 0)
+            ->where('items.is_gift', false)
+            ->when($this->currentInvoiceId, fn ($query) => $query->where('orders.id', '!=', $this->currentInvoiceId))
+            ->orderByDesc('orders.created_at')
+            ->orderByDesc('items.id')
+            ->get(['items.product_id', 'items.unit_price'])
+            ->unique('product_id')
+            ->mapWithKeys(fn (object $row): array => [(int) $row->product_id => (float) $row->unit_price])
+            ->all();
+    }
+
+    /**
+     * Uses the selected customer's last price on cart lines whose price the cashier did not
+     * type, and returns lines priced for a previous customer to the branch price.
+     */
+    private function applyCustomerPricesToCart(): void
+    {
+        if ($this->cart === [] || $this->isReturnMode) {
+            return;
+        }
+
+        $lines = collect($this->cart)->filter(fn (array $item): bool => empty($item['is_gift'])
+            && (float) ($item['quantity'] ?? 0) > 0
+            && (empty($item['price_manual']) || ! empty($item['customer_price'])));
+        if ($lines->isEmpty()) {
+            return;
+        }
+
+        $productIds = $lines->pluck('id')->map(fn ($id): int => (int) $id)->unique()->values()->all();
+        $customerPrices = $this->lastCustomerPrices($productIds);
+        $branchPrices = BranchProduct::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
+            ->whereIn('product_id', $productIds)->pluck('retail_price', 'product_id');
+
+        foreach ($lines as $lineKey => $item) {
+            $productId = (int) $item['id'];
+            if (array_key_exists($productId, $customerPrices)) {
+                $this->cart[$lineKey]['price'] = $customerPrices[$productId];
+                $this->cart[$lineKey]['price_manual'] = true;
+                $this->cart[$lineKey]['customer_price'] = true;
+            } elseif (! empty($item['customer_price'])) {
+                $this->cart[$lineKey]['price'] = (float) ($branchPrices[$productId] ?? $item['price']);
+                $this->cart[$lineKey]['price_manual'] = false;
+                $this->cart[$lineKey]['customer_price'] = false;
+            }
+        }
+
+        $this->recalculatePrices();
     }
 
     public function openCustomerPhoneModal(): void
@@ -4147,6 +4234,22 @@ new class extends Component {
 
         $createdAt = $order->created_at ?: now();
         $tenant = Tenant::query()->find($this->tenantId());
+
+        // Delivery details are printed with the invoice; the delivery company is never printed.
+        $receiptNotes = trim((string) ($order->notes ?? ''));
+        $deliveryNote = '';
+        $deliveryNotePosition = mb_strpos($receiptNotes, 'ملاحظة التوصيل: ');
+        if ($deliveryNotePosition !== false) {
+            $deliveryNote = trim(mb_substr($receiptNotes, $deliveryNotePosition + mb_strlen('ملاحظة التوصيل: ')));
+            $receiptNotes = trim(mb_substr($receiptNotes, 0, $deliveryNotePosition));
+        }
+        $isDeliveryOrder = (float) ($order->delivery_fee ?? 0) > 0 || $order->delivery_party_id || $deliveryNote !== '';
+        $receiptDelivery = $isDeliveryOrder ? array_filter([
+            'name' => trim((string) $order->customer_name),
+            'phone' => trim((string) $order->customer_phone),
+            'address' => trim((string) $order->customer_address),
+            'notes' => $deliveryNote,
+        ], fn (string $value): bool => $value !== '') : [];
         $currency = (string) TenantSetting::get((int) $this->tenantId(), 'currency', 'ILS');
         $currencySymbols = ['ILS' => '₪', 'USD' => '$', 'JOD' => 'د.أ'];
         $this->receipt = [
@@ -4158,7 +4261,8 @@ new class extends Component {
             'date' => $createdAt->format('Y/m/d'),
             'time' => $createdAt->format('h:i A'),
             'cashier' => $order->user?->name ?? 'الكاشير',
-            'notes' => trim((string) ($order->notes ?? '')),
+            'notes' => $receiptNotes,
+            'delivery' => $receiptDelivery,
             'items' => $items,
             'total_qty' => $totalQty,
             'total_promotion_savings' => number_format($totalPromotionSavings, 2),
@@ -4169,6 +4273,8 @@ new class extends Component {
             'paid' => number_format(max(0, (float) $order->paid_amount - ($this->customerInvoiceCopy ? (float) $order->delivery_fee : 0)), 2),
             'account_balance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
             'change' => number_format(max(0, (float) $order->paid_amount - abs((float) $order->total)), 2),
+            'customer_name' => $order->customer_id ? ($order->customer_name ?: Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name')) : null,
+            'summary' => \App\Services\InvoiceBalanceSummary::forOrder($order),
             'currency' => $currencySymbols[$currency] ?? '₪',
             'notice' => TenantSetting::get((int) $this->tenantId(), 'receipt_footer', 'شكراً لتعاملكم معنا'),
         ];
@@ -4437,7 +4543,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, 'invoice-' . $order->invoice_number . '.pdf');
+        }, \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'));
     }
 
     /** @return array{local: array<int, float|null>, shared: array<int, float|null>} */
@@ -4518,7 +4624,10 @@ new class extends Component {
                             }
                         })->orWhere('product_number', 'like', '%'.$search.'%')
                             ->orWhereHas('barcodes', fn ($query) => $query->where('barcode', 'like', '%'.$normalizedSearch.'%'));
-                    })->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
+                    })
+                    ->with(['branchProducts' => fn ($query) => $query->where('tenant_id', $tenantId)->where('branch_id', $this->getActiveBranchId())
+                        ->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])])
+                    ->orderBy('name')->limit(15)->get(['id', 'name', 'product_number']);
             }
         }
         $stockPreviews = $this->cartStockPreviews();
@@ -4540,6 +4649,7 @@ new class extends Component {
     </div>
     <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
         <livewire:product-history />
+        <livewire:product-price-history-modal :key="'pos-price-history-singleton'" />
 
         <div x-data="{
                 printInProgress: false,

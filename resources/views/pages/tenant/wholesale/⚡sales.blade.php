@@ -2451,7 +2451,9 @@ new class extends Component {
                     $like = "%{$term}%";
 
                     $query->where(function ($sub) use ($like) {
-                        $sub->where('name', 'like', $like)->orWhereHas('barcodes', fn($barcode) => $barcode->where('barcode', 'like', $like));
+                        $sub->where('name', 'like', $like)
+                            ->orWhere('product_number', 'like', $like)
+                            ->orWhereHas('barcodes', fn($barcode) => $barcode->where('barcode', 'like', $like));
                     });
                 },
                 fn($query) => $query->whereRaw('1 = 0'),

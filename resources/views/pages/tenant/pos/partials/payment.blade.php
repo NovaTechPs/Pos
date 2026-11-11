@@ -657,6 +657,21 @@
                 class="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
                 dir="rtl"
                 @click.stop
+                data-pos-customer-picker
+                x-data="{
+                    move(step) {
+                        const results = [...this.$root.querySelectorAll('[data-pos-customer-result]')];
+                        const index = results.indexOf(document.activeElement);
+                        if (step > 0) {
+                            (index === -1 ? results[0] : results[index + 1])?.focus();
+                        } else if (index <= 0) {
+                            this.$refs.customerSearch?.focus();
+                        } else {
+                            results[index - 1].focus();
+                        }
+                    },
+                }"
+                x-on:keydown.escape.stop="$wire.set('showCustomerModal', false)"
             >
 
                 <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -693,6 +708,12 @@
                         placeholder="ابحث باسم الزبون أو الهاتف..."
                         autocomplete="off"
                         autofocus
+                        data-pos-customer-search
+                        x-ref="customerSearch"
+                        x-init="$nextTick(() => requestAnimationFrame(() => { $el.focus({ preventScroll: true }); $el.select(); }))"
+                        x-on:keydown.arrow-down.prevent.stop="move(1)"
+                        x-on:keydown.arrow-up.prevent.stop
+                        x-on:keydown.enter.prevent.stop="$root.querySelector('[data-pos-customer-result]')?.click()"
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white"
                     >
 
@@ -703,8 +724,12 @@
 
                             <button
                                 type="button"
+                                data-pos-customer-result
+                                wire:key="pos-customer-result-{{ $customer->id }}"
                                 wire:click="selectCustomer({{ $customer->id }})"
-                                class="mb-1 flex w-full items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-3 text-right hover:border-indigo-100 hover:bg-indigo-50"
+                                x-on:keydown.arrow-down.prevent.stop="move(1)"
+                                x-on:keydown.arrow-up.prevent.stop="move(-1)"
+                                class="mb-1 flex w-full items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-3 text-right outline-none hover:border-indigo-100 hover:bg-indigo-50 focus:border-indigo-300 focus:bg-indigo-50 focus:ring-2 focus:ring-indigo-100"
                             >
 
                                 <div class="min-w-0">

@@ -329,3 +329,35 @@ test('repeated search in one request reuses results while explicit refresh reads
     $instance->loadQuickProducts(true);
     expect($reads)->toBe(3);
 });
+
+test('pos search finds items by any part of their barcode in both search controls', function (string $search): void {
+    $product = searchablePosProduct($this, 'منتج بالباركود', 'BC-1', '6291041500213');
+    searchablePosProduct($this, 'منتج آخر', 'BC-2', '4000000000000');
+
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', $search);
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$product->id]);
+    $component->set('inlineSearchQuery', $search);
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$product->id]);
+})->with(['00213', '٠٠٢١٣', '104150']);
+
+test('pos search lists matches from the highest to the lowest stock with exact barcodes first', function (): void {
+    $ids = [];
+    foreach (['حليب قليل' => 2, 'حليب كثير' => 80, 'حليب متوسط' => 30] as $name => $stock) {
+        $product = searchablePosProduct($this, $name);
+        BranchProduct::query()->where('product_id', $product->id)->update(['stock_quantity' => $stock]);
+        $ids[$stock] = $product->id;
+    }
+
+    $component = Livewire::test('pages::tenant.pos.sales')->set('productSearchQuery', 'حليب');
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$ids[80], $ids[30], $ids[2]]);
+    $component->set('inlineSearchQuery', 'حليب');
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$ids[80], $ids[30], $ids[2]]);
+
+    $exact = searchablePosProduct($this, 'منتج مختلف', null, '777');
+    BranchProduct::query()->where('product_id', $exact->id)->update(['stock_quantity' => 1]);
+    $other = searchablePosProduct($this, 'منتج 2', null, '7771234');
+    BranchProduct::query()->where('product_id', $other->id)->update(['stock_quantity' => 500]);
+
+    $component->set('inlineSearchQuery', '777');
+    expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$exact->id, $other->id]);
+});

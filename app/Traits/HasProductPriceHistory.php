@@ -39,7 +39,7 @@ trait HasProductPriceHistory
         $this->resetPage('priceCustomerPage');
     }
 
-    /** @return array{product: Product, customers: Collection, customerSales: ?LengthAwarePaginator, sales: LengthAwarePaginator, costs: LengthAwarePaginator} */
+    /** @return array{product: Product, branchPrices: Collection, customers: Collection, customerSales: ?LengthAwarePaginator, sales: LengthAwarePaginator, costs: LengthAwarePaginator} */
     #[Computed]
     public function productPriceHistory(): array
     {
@@ -70,8 +70,17 @@ trait HasProductPriceHistory
             ->select('items.id', 'items.unit_cost as price', 'items.quantity', 'parties.name as party', 'purchases.reference_number as invoice', 'purchases.created_at as date')
             ->orderByDesc('purchases.created_at')->orderByDesc('items.id');
 
+        $branchPrices = DB::table('branch_products')
+            ->join('branches', 'branches.id', '=', 'branch_products.branch_id')
+            ->where('branch_products.tenant_id', $tenantId)
+            ->where('branches.tenant_id', $tenantId)
+            ->where('branch_products.product_id', $product->id)
+            ->orderBy('branches.name')
+            ->get(['branches.name as branch', 'branch_products.retail_price', 'branch_products.wholesale_price', 'branch_products.stock_quantity']);
+
         return [
             'product' => $product,
+            'branchPrices' => $branchPrices,
             'customers' => DB::table('parties')->where('tenant_id', $tenantId)->whereNull('deleted_at')->whereIn('type', ['customer', 'supplier', 'both'])->orderBy('name')->get(['id', 'name']),
             'customerSales' => $this->priceHistoryCustomerId ? (clone $sales)->where('orders.customer_id', $this->priceHistoryCustomerId)->paginate(10, ['*'], 'priceCustomerPage') : null,
             'sales' => $sales->paginate(10, ['*'], 'priceSalesPage'),
