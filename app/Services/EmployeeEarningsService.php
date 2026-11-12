@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Models\Employee;
 use App\Models\EmployeeDeparture;
+use App\Models\PayrollHoliday;
 use App\Models\PayrollPeriod;
-use App\Models\TenantSetting;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -25,8 +25,15 @@ class EmployeeEarningsService
         $histories = $employee->salaryHistories()->orderByDesc('effective_from')->get();
         $shifts = $employee->shifts()->orderByDesc('effective_from')->get();
         $basic = $deductions = $overtimePay = 0.0;
-        $workedDays = $paidLeaveDays = $absentDays = $openSessions = 0;
-        $overtimeMultiplier = max(1, (float) TenantSetting::get((int) $employee->tenant_id, 'overtime_multiplier', 1));
+        $workedDays = $paidLeaveDays = $absentDays = $openSessions = $holidayDays = 0;
+        // Overtime is paid at its own rate: ordinary overtime, work on the weekly rest day, and work on a public holiday.
+        $settings = app(PayrollSettings::class);
+        $overtimeMultiplier = max(1, $settings->get((int) $employee->tenant_id, 'overtime_multiplier'));
+        $restDayMultiplier = max(1, $settings->get((int) $employee->tenant_id, 'rest_day_multiplier'));
+        $holidayMultiplier = max(1, $settings->get((int) $employee->tenant_id, 'holiday_multiplier'));
+        $holidays = PayrollHoliday::withoutGlobalScopes()->where('tenant_id', $employee->tenant_id)
+            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])->get()
+            ->keyBy(fn (PayrollHoliday $holiday): string => $holiday->date->toDateString());
         $lastDailyRate = 0.0;
         for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
             $date = $day->toDateString();
@@ -35,7 +42,11 @@ class EmployeeEarningsService
             $salary = (float) ($history->basic_salary ?? $employee->basic_salary);
             $hourRate = (float) ($history->hourly_rate ?? $employee->hourly_rate);
             $shift = $shifts->first(fn ($s): bool => $s->effective_from <= $date && (! $s->effective_until || $s->effective_until >= $date));
-            $workingDay = ! $shift || in_array(strtolower($day->format('D')), $shift->work_days, true);
+            $scheduledDay = ! $shift || in_array(strtolower($day->format('D')), $shift->work_days, true);
+            // A public holiday is not a working day: no absence is deducted and any work on it is overtime.
+            $holiday = $holidays->get($date);
+            $workingDay = $scheduledDay && ! $holiday;
+            $holidayDays += $holiday && $scheduledDay ? 1 : 0;
             $attendance = $attendances->get($date);
             $windowStart = Carbon::parse($date.' '.($shift->start_time ?? $attendance->check_in ?? '09:00:00'));
             $windowEnd = $shift ? Carbon::parse($date.' '.$shift->end_time) : $windowStart->copy()->addHours(8);
@@ -47,7 +58,8 @@ class EmployeeEarningsService
             $lastDailyRate = $dailyRate;
             $ratePerMinute = $salaryType === 'hourly' ? $hourRate / 60 : $dailyRate / max(1, $scheduledMinutes);
             $leave = $leaves->first(fn ($leave): bool => $leave->start_date <= $date && $leave->end_date >= $date);
-            $paidLeave = $workingDay && $leave && $leave->type !== 'unpaid';
+            // A paid holiday on a scheduled day is paid like a paid leave for hourly and daily pay.
+            $paidLeave = ($workingDay && $leave && $leave->type !== 'unpaid') || ($holiday && $holiday->is_paid && $scheduledDay);
             $absent = $workingDay && (($leave && $leave->type === 'unpaid') || ($attendance?->status === 'absent' && ! $paidLeave));
             $paidLeaveDays += $paidLeave ? 1 : 0;
             $absentDays += $absent ? 1 : 0;
@@ -92,7 +104,7 @@ class EmployeeEarningsService
                 $basic += (float) ($attendance->production_units ?? 0) * $salary;
             }
             if ($salaryType !== 'production') {
-                $overtimePay += $approvedOvertime * $ratePerMinute * $overtimeMultiplier;
+                $overtimePay += $approvedOvertime * $ratePerMinute * ($holiday ? $holidayMultiplier : ($scheduledDay ? $overtimeMultiplier : $restDayMultiplier));
             }
             if (in_array($salaryType, ['monthly', 'daily'], true)) {
                 if ($absent && $salaryType === 'monthly') {
@@ -105,7 +117,7 @@ class EmployeeEarningsService
 
         return ['basic_salary' => round($basic, 2), 'attendance_deductions' => round(min($basic, $deductions), 2),
             'overtime_pay' => round($overtimePay, 2), 'actual_worked_days' => $workedDays, 'paid_leave_days' => $paidLeaveDays,
-            'unpaid_absent_days' => $absentDays, 'open_sessions' => $openSessions, 'daily_rate' => round($lastDailyRate, 2)];
+            'unpaid_absent_days' => $absentDays, 'holiday_days' => $holidayDays, 'open_sessions' => $openSessions, 'daily_rate' => round($lastDailyRate, 2)];
     }
 
     /**

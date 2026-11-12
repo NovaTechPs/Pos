@@ -51,6 +51,7 @@ class ReportController extends Controller
             ->where('branch_id', $branchId)
             ->where('type', 'payment')
             ->whereNull('order_id')->whereNull('purchase_id')->whereNull('purchase_return_id')->whereNull('party_id')
+            ->whereNull('employee_payment_id') // salaries and advances are not operating expenses
             ->whereBetween('payment_date', [$from, $to])
             ->sum('amount');
 

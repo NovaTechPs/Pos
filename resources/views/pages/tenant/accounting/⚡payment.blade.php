@@ -210,6 +210,11 @@ new class extends Component
 
             return false;
         }
+        if ($payment->employee_payment_id || \App\Models\CasualJob::query()->where('payment_id', $payment->id)->exists()) {
+            $this->dispatch('toast', type: 'error', message: 'دفعات الرواتب والسلف وأجور الأعمال المؤقتة تُدار من شاشة الرواتب ولا تُعدَّل من السندات.');
+
+            return false;
+        }
 
         return true;
     }

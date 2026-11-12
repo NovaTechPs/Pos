@@ -506,7 +506,7 @@ class ReportingService
     /** @return ReportDefinition */
     private function salaryPayments(): array
     {
-        $query = $this->employeeQuery('employee_payments')->whereBetween('employee_payments.payment_date', [$this->filters['from'], $this->filters['to']]);
+        $query = $this->period($this->employeeQuery('employee_payments'), 'employee_payments.payment_date');
         $summary = (clone $query)->selectRaw("COALESCE(SUM(CASE WHEN payment_type = 'payroll' THEN amount ELSE 0 END),0) as salaries, COALESCE(SUM(CASE WHEN payment_type = 'advance' THEN amount ELSE 0 END),0) as advances")->first();
 
         return $this->definition($query->select('employee_payments.id', 'employees.first_name', 'employees.last_name', 'payment_date', 'reference_number', 'payment_method', 'amount')
@@ -542,7 +542,9 @@ class ReportingService
             ['label' => 'الربح بعد المصروفات وقبل الرواتب', 'amount' => $gross - (float) $expenses],
         ];
         if ($this->user->can('payroll.view')) {
-            $salaries = $this->employeeQuery('employee_payments')->where('payment_type', 'payroll')->whereBetween('payment_date', [$this->filters['from'], $this->filters['to']])->sum('amount');
+            $salaries = $this->employeeQuery('employee_payments')->where('payment_type', 'payroll')
+                ->whereDate('employee_payments.payment_date', '>=', $this->filters['from'])
+                ->whereDate('employee_payments.payment_date', '<=', $this->filters['to'])->sum('amount');
             $rows[] = ['label' => 'رواتب مصروفة خلال الفترة (دون السلف)', 'amount' => $salaries];
             $rows[] = ['label' => 'صافي تقديري بعد الرواتب المصروفة', 'amount' => $gross - (float) $expenses - (float) $salaries];
         }
@@ -764,7 +766,9 @@ class ReportingService
     {
         return $this->period($this->branch($this->table('payments'), 'payments.branch_id'), 'payments.payment_date')
             ->where('payments.type', 'payment')->whereNull('payments.party_id')->whereNull('payments.order_id')
-            ->whereNull('payments.purchase_id')->whereNull('payments.purchase_return_id');
+            ->whereNull('payments.purchase_id')->whereNull('payments.purchase_return_id')
+            // Salaries have their own line in the profit report and advances are loans, not expenses.
+            ->whereNull('payments.employee_payment_id');
     }
 
     /** @return ReportDefinition */

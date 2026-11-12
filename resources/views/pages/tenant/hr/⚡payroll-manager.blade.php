@@ -331,7 +331,24 @@
             abort_unless(in_array($type, ['leave', 'departure'], true), 404);
             $request = $type === 'leave' ? EmployeeLeave::findOrFail($id) : EmployeeDeparture::findOrFail($id);
             abort_unless($request->status === 'pending', 422, 'تمت مراجعة الطلب سابقًا.');
+            if ($approved && $type === 'leave' && ($message = $this->leaveBalanceError($request->employee, $request->type, (string) $request->start_date, (float) $request->total_days))) {
+                $this->dispatch('toast', type: 'error', message: $message);
+
+                return;
+            }
             $request->update(['status' => $approved ? 'approved' : 'rejected', 'approved_by' => auth()->id()]);
+        }
+
+        /** Annual and sick leave cannot exceed the employee's yearly entitlement. */
+        private function leaveBalanceError(Employee $employee, string $type, string $startDate, float $days): ?string
+        {
+            $remaining = app(\App\Services\PayrollSettings::class)->remainingDays($employee, $type, $startDate);
+            if ($remaining === null || $days <= $remaining + 0.0001) {
+                return null;
+            }
+            $label = $type === 'annual' ? 'السنوية' : 'المرضية';
+
+            return "رصيد الإجازة {$label} المتبقي هذه السنة {$remaining} يوم، والطلب {$days} يوم. سجّل الباقي كإجازة غير مدفوعة.";
         }
 
         public function saveLeave()
@@ -355,6 +372,11 @@
             }
 
             $days = Carbon::parse($this->leave_start_date)->diffInDays(Carbon::parse($this->leave_end_date)) + 1;
+            if ($message = $this->leaveBalanceError(Employee::findOrFail($this->leave_employee_id), (string) $this->leave_type, $this->leave_start_date, (float) $days)) {
+                $this->addError('leave_type', $message);
+
+                return;
+            }
 
             EmployeeLeave::create([
                 'employee_id' => $this->leave_employee_id,
@@ -425,7 +447,7 @@
                     ]);
                 }
 
-                EmployeePayment::create([
+                $employeePayment = EmployeePayment::create([
                     'employee_id' => $this->payment_employee_id,
                     'employee_payroll_id' => $payroll->id,
                     'amount' => round((float) $this->payment_amount, 2),
@@ -434,6 +456,8 @@
                     'payment_method' => $this->payment_method,
                     'notes' => $this->payment_notes,
                 ]);
+                // The salary also leaves the cash box: record it as a payment voucher for the cash reports.
+                app(\App\Services\EmployeePaymentVoucher::class)->record($employeePayment, $payroll->employee, $period->title);
 
                 $actuallyPaid = (float) EmployeePayment::query()
                     ->where('employee_payroll_id', $payroll->id)
@@ -753,7 +777,24 @@
                 icon="calculator">
                 مسير الرواتب
             </flux:button>
+            <flux:button :variant="$activeTab === 'adjustments' ? 'primary' : 'ghost'" wire:click="$set('activeTab', 'adjustments')" icon="scale">
+                المكافآت والخصومات
+            </flux:button>
+            <flux:button :variant="$activeTab === 'casual' ? 'primary' : 'ghost'" wire:click="$set('activeTab', 'casual')" icon="wrench-screwdriver">
+                أعمال مؤقتة
+            </flux:button>
+            <flux:button :variant="$activeTab === 'settings' ? 'primary' : 'ghost'" wire:click="$set('activeTab', 'settings')" icon="cog-6-tooth">
+                العطل والإعدادات
+            </flux:button>
         </div>
+
+        @if ($activeTab === 'adjustments')
+            <livewire:pages::tenant.hr.payroll-adjustments :key="'payroll-adjustments'" />
+        @elseif ($activeTab === 'casual')
+            <livewire:pages::tenant.hr.casual-jobs :key="'casual-jobs'" />
+        @elseif ($activeTab === 'settings')
+            <livewire:pages::tenant.hr.payroll-settings :key="'payroll-settings'" />
+        @endif
 
         @if (in_array($activeTab, ['employees', 'attendance', 'departures', 'leaves', 'advances'], true))
             <div class="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900">

@@ -49,8 +49,10 @@ trait NavigatesVoucherArchive
         return Payment::query()->visibleTo(auth()->user())
             ->where('tenant_id', $this->getTenantId())
             ->where('type', $this->voucherArchiveType())
-            // Return refunds are changed from their return document, so the archive skips them.
+            // Return refunds and salary payments are changed from their own screens, so the archive skips them.
             ->whereNull('purchase_return_id')
+            ->whereNull('employee_payment_id')
+            ->whereNotExists(fn ($jobs) => $jobs->selectRaw('1')->from('casual_jobs')->whereColumn('casual_jobs.payment_id', 'payments.id'))
             ->where(fn (Builder $query) => $query->whereNull('order_id')
                 ->orWhereHas('order', fn (Builder $order) => $order->where('type', '!=', 'return')));
     }

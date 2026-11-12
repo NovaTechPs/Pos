@@ -11,6 +11,7 @@ use App\Models\EmployeeLeave;
 use App\Models\EmployeePayment;
 use App\Models\EmployeePayroll;
 use App\Services\EmployeeAttendanceService;
+use App\Services\EmployeePaymentVoucher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -243,6 +244,8 @@ class EmployeeApiController extends Controller
                 'employee_id' => $lockedAdvance->employee_id, 'employee_advance_id' => $lockedAdvance->id,
                 'payment_type' => 'advance', 'payment_date' => $data['payment_date'] ?? today(),
             ]);
+            // The advance also leaves the cash box: record it as a payment voucher for the cash reports.
+            app(EmployeePaymentVoucher::class)->record($payment, $lockedAdvance->employee);
             $lockedAdvance->paid_amount = (float) $lockedAdvance->paid_amount + (float) $data['amount'];
             if ((float) $lockedAdvance->paid_amount >= (float) $lockedAdvance->amount) {
                 $lockedAdvance->status = 'completed';

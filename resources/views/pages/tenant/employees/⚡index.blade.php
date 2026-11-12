@@ -9,6 +9,8 @@ use App\Models\Branch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use App\Models\Tenant;
 
 new class extends Component
 {
@@ -39,6 +41,9 @@ new class extends Component
     public $role_id = null;
 
     public bool $is_active = true;
+
+    /** A partner is another store owner: full permissions, and a salary like any employee. */
+    public bool $is_partner = false;
 
     /*
     |--------------------------------------------------------------------------
@@ -130,7 +135,7 @@ new class extends Component
             ],
 
             'role_id' => [
-                'required',
+                $this->is_partner && $this->actorIsOwner() ? 'nullable' : 'required',
                 'integer',
                 Rule::exists('roles', 'id')
                     ->where(fn ($query) => $query->where('tenant_id', $tenantId)),
@@ -176,7 +181,7 @@ new class extends Component
                 'branch:id,name',
             ])
             ->where('tenant_id', $tenantId)
-            ->where('is_owner', false)
+            ->when(! $this->actorIsOwner(), fn ($query) => $query->where('is_owner', false))
 
             ->when(
                 filled(trim($this->search)),
@@ -324,10 +329,11 @@ new class extends Component
 
         $employee = User::query()
             ->where('tenant_id', $tenantId)
-            ->where('is_owner', false)
+            ->when(! $this->actorIsOwner(), fn ($query) => $query->where('is_owner', false))
             ->findOrFail($id);
 
         $this->user_id = $employee->id;
+        $this->is_partner = (bool) $employee->is_owner;
         $this->email = $employee->email;
         $this->role_id = $employee->role_id;
         $this->is_active = (bool) $employee->is_active;
@@ -360,6 +366,11 @@ new class extends Component
     |--------------------------------------------------------------------------
     */
 
+    private function actorIsOwner(): bool
+    {
+        return (bool) auth()->user()?->isTenantOwner();
+    }
+
     public function save(): void
     {
         $this->authorize($this->user_id ? 'employees.edit' : 'employees.create');
@@ -371,6 +382,16 @@ new class extends Component
             );
 
             return;
+        }
+
+        if ($this->user_id && ! $this->is_partner) {
+            $target = User::query()->where('tenant_id', $tenantId)->where('is_owner', true)->find($this->user_id);
+            $isFounder = $target && (int) Tenant::query()->whereKey($tenantId)->value('owner_id') === (int) $target->id;
+            if ($target && ((int) $target->id === (int) auth()->id() || $isFounder)) {
+                $this->addError('is_partner', 'لا يمكن إلغاء صفة صاحب المتجر عن حسابك أو عن مؤسس المتجر.');
+
+                return;
+            }
         }
 
         $validated = $this->validate();
@@ -405,14 +426,26 @@ new class extends Component
             } else {
                 $employee = User::query()
                     ->where('tenant_id', $tenantId)
-                    ->where('is_owner', false)
+                    ->when(! $this->actorIsOwner(), fn ($query) => $query->where('is_owner', false))
                     ->findOrFail($this->user_id);
             }
+
+            // Only an owner can make or keep a partner, and nobody can lock themselves or the store's founder out.
+            $makePartner = $this->actorIsOwner() && $this->is_partner;
+            $isSelf = (int) $employee->id === (int) auth()->id();
+            $isFounder = $employee->exists && (int) Tenant::query()->whereKey($tenantId)->value('owner_id') === (int) $employee->id;
+            if ($employee->is_owner && ! $makePartner && ($isSelf || $isFounder)) {
+                throw ValidationException::withMessages(['is_partner' => 'لا يمكن إلغاء صفة صاحب المتجر عن حسابك أو عن مؤسس المتجر.']);
+            }
+            if ($isSelf && ! $validated['is_active']) {
+                throw ValidationException::withMessages(['is_active' => 'لا يمكنك تعطيل حسابك.']);
+            }
+            $employee->is_owner = $makePartner;
 
             $employee->name = trim($profile->first_name.' '.$profile->last_name);
             $employee->email = $validated['email'];
             $employee->branch_id = $validated['branch_id'];
-            $employee->role_id = $validated['role_id'];
+            $employee->role_id = $validated['role_id'] ?? null;
             $employee->is_active = $validated['is_active'];
 
             if (filled($validated['password'] ?? null)) {
@@ -487,6 +520,7 @@ new class extends Component
         $this->password = '';
 
         $this->employee_profile_id = null;
+        $this->is_partner = false;
         $this->branch_id = null;
         $this->role_id = null;
 
@@ -941,6 +975,9 @@ new class extends Component
 
                         <flux:table.cell>
 
+                            @if ($employee->is_owner)
+                                <span class="me-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-800">صاحب متجر</span>
+                            @endif
                             @if ($employee->role)
 
                                 <flux:badge
@@ -1293,6 +1330,11 @@ new class extends Component
                     {{-- Role --}}
 
                     <flux:field>
+
+                        @if (auth()->user()?->isTenantOwner())
+                            <flux:checkbox wire:model.live="is_partner" label="شريك / صاحب متجر (كل الصلاحيات، وراتبه من ملف الموظف المرتبط)" class="mb-3" />
+                            <flux:error name="is_partner" />
+                        @endif
 
                         <flux:label>
                             الدور الوظيفي
