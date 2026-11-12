@@ -610,9 +610,18 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
+        $linkedReceipts = \App\Models\Payment::query()->where('tenant_id', $party->tenant_id)->where('type', 'receipt')
+            ->whereIn('order_id', $party->orders->modelKeys())->selectRaw('order_id, SUM(amount) as received')
+            ->groupBy('order_id')->pluck('received', 'order_id');
+
         foreach ($party->orders as $order) {
             $isReturn = $order->type === 'return';
             $amount = max(0, abs((float) $order->total) - (float) $order->delivery_fee);
+            if (! $isReturn) {
+                // Paid on the invoice itself without a receipt voucher (older invoices): settled by that payment,
+                // matching the statement report. Linked receipt vouchers are listed on their own.
+                $amount = max(0, $amount - max(0, (float) $order->paid_amount - (float) $order->delivery_fee - (float) ($linkedReceipts[$order->id] ?? 0)));
+            }
 
             $transactions->push([
                 'id' => 'order-' . $order->id,
@@ -854,8 +863,8 @@ new class extends Component {
                 ->where('tenant_id', $tenantId)
                 ->lockForUpdate()
                 ->findOrFail($id);
-            $transactions = $this->buildStatementTransactions($party);
-            $party->current_balance = round($this->calculateStatementBalance($party, $transactions), 2);
+            // Reconcile against the same ledger the statement report uses, so both always agree.
+            $party->current_balance = (new \App\Services\ReportingService(auth()->user(), null, false))->partyLedgerBalance($party->id);
             $party->save();
 
             return $party->fresh();

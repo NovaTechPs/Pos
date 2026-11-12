@@ -338,7 +338,7 @@ new class extends Component
 
                 $payment->update([
                     'party_id' => $newParty->id,
-                    'voucher_number' => $validated['voucherNumber'],
+                    'voucher_number' => $payment->voucher_number,
                     'payment_date' => $validated['paymentDate'],
                     'payment_method' => $validated['paymentMethod'],
                     'amount' => $newAmount,
@@ -353,7 +353,7 @@ new class extends Component
                     'branch_id' => $this->purchaseId ? \App\Models\Purchase::query()->where('tenant_id', $tenantId)->whereKey($this->purchaseId)->value('branch_id') : null,
                     'created_by' => Auth::id(),
                     'type' => 'payment',
-                    'voucher_number' => $validated['voucherNumber'],
+                    'voucher_number' => $this->voucherNumber = $this->freeVoucherNumber($validated['voucherNumber']),
                     'payment_date' => $validated['paymentDate'],
                     'payment_method' => $validated['paymentMethod'],
                     'amount' => $newAmount,

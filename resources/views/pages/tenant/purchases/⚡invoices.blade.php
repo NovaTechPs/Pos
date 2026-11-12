@@ -982,6 +982,27 @@ new class extends Component {
             return;
         }
 
+        // A purchase invoice number identifies one invoice in the store. A number typed by the user
+        // (usually the supplier's own invoice number) is never replaced silently.
+        $this->invoiceNumber = mb_substr(trim($this->invoiceNumber), 0, 255);
+        if ($this->invoiceNumber === '') {
+            $this->invoiceNumber = $this->makeInvoiceNumber();
+        }
+        $numberTaken = fn (): bool => DB::table('purchases')->where('tenant_id', $this->tenantId())->whereNull('deleted_at')
+            ->where('reference_number', $this->invoiceNumber)
+            ->when($this->currentPurchaseId, fn ($query) => $query->where('id', '!=', $this->currentPurchaseId))->exists();
+        if ($numberTaken()) {
+            if (! str_starts_with($this->invoiceNumber, 'PUR-')) {
+                $this->errorMessage = 'رقم فاتورة المشتريات «'.$this->invoiceNumber.'» مستخدم في فاتورة أخرى. غيّر الرقم ثم احفظ.';
+                $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+                return;
+            }
+            do {
+                $this->invoiceNumber = $this->makeInvoiceNumber();
+            } while ($numberTaken());
+        }
+
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {

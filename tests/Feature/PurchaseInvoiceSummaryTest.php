@@ -92,3 +92,21 @@ test('balance after payment includes prior account balance without counting the 
     ['customer', 100.0, -50.0],
     ['both', 100.0, 250.0],
 ]);
+
+test('a typed purchase invoice number already used is refused instead of being replaced silently', function (): void {
+    $tenant = Tenant::create(['name' => 'المتجر']);
+    $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+    foreach (['SUP-77', 'PUR-20261111000000-123'] as $number) {
+        Purchase::query()->forceCreate(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'reference_number' => $number, 'total' => 10, 'paid_amount' => 0, 'payment_status' => 'unpaid']);
+    }
+    $cart = [['id' => 1, 'name' => 'الصنف', 'quantity' => 2, 'price' => 100, 'discount' => 0]];
+
+    Livewire::test('pages::tenant.purchases.invoices')->set('cart', $cart)->set('invoiceNumber', ' SUP-77 ')->call('saveInvoice')
+        ->assertSet('errorMessage', 'رقم فاتورة المشتريات «SUP-77» مستخدم في فاتورة أخرى. غيّر الرقم ثم احفظ.');
+    expect(Purchase::query()->count())->toBe(2);
+
+    $component = Livewire::test('pages::tenant.purchases.invoices')->set('cart', $cart)->set('invoiceNumber', 'PUR-20261111000000-123')->call('saveInvoice');
+    expect($component->get('invoiceNumber'))->not->toBe('PUR-20261111000000-123')->toStartWith('PUR-');
+});

@@ -94,3 +94,18 @@ test('payment vouchers are hidden on android devices and shown on the desktop ap
     'employee' => fn () => $this->employee,
     'owner' => fn () => $this->owner,
 ]);
+
+test('two users opening a new voucher at once both save it under different numbers', function (string $page, string $type, string $save): void {
+    $this->actingAs($this->owner)->withSession(['active_tenant_id' => $this->tenant->id]);
+    $party = Party::query()->where('tenant_id', $this->tenant->id)->firstOrFail();
+    $form = Livewire::test('pages::tenant.accounting.'.$page)->call('openCreate');
+    $shown = $form->get('voucherNumber');
+    Payment::query()->create(['tenant_id' => $this->tenant->id, 'created_by' => $this->colleague->id, 'party_id' => $party->id,
+        'type' => $type, 'voucher_number' => $shown, 'amount' => 5, 'payment_method' => 'cash', 'payment_date' => now()]);
+
+    $form->set('partyId', $party->id)->set('amount', '12')->call($save)->assertHasNoErrors();
+
+    $saved = Payment::query()->where('created_by', $this->owner->id)->sole();
+    expect($saved->voucher_number)->not->toBe($shown)
+        ->and(Payment::query()->where('voucher_number', $shown)->count())->toBe(1);
+})->with([['receipts', 'receipt', 'saveReceipt'], ['payment', 'payment', 'savePayment']]);

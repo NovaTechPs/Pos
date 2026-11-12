@@ -22,6 +22,27 @@ trait NavigatesVoucherArchive
     /** The voucher type this page manages: receipt or payment. */
     abstract protected function voucherArchiveType(): string;
 
+    abstract protected function generateVoucherNumber(): string;
+
+    /**
+     * The number a new voucher is saved under. The form shows a number when it opens; if another
+     * user saved a voucher with that number meanwhile, the next free number is used instead of failing.
+     */
+    protected function freeVoucherNumber(string $shown): string
+    {
+        $taken = fn (string $number): bool => Payment::withTrashed()->where('tenant_id', $this->getTenantId())
+            ->where('voucher_number', $number)->exists();
+        $number = trim($shown) !== '' ? trim($shown) : $this->generateVoucherNumber();
+        for ($attempt = 0; $taken($number) && $attempt < 5; $attempt++) {
+            $number = $this->generateVoucherNumber();
+        }
+        while ($taken($number)) {
+            $number = $this->generateVoucherNumber().'-'.random_int(100, 999);
+        }
+
+        return $number;
+    }
+
     /** @return Builder<Payment> */
     private function voucherArchiveQuery(): Builder
     {

@@ -666,7 +666,7 @@ new class extends Component {
 
                     'party_id' => $newParty->id,
 
-                    'voucher_number' => $validated['voucherNumber'],
+                    'voucher_number' => $receipt->voucher_number,
 
                     'payment_date' => $validated['paymentDate'],
 
@@ -702,7 +702,7 @@ new class extends Component {
 
                     'type' => 'receipt',
 
-                    'voucher_number' => $validated['voucherNumber'],
+                    'voucher_number' => $this->voucherNumber = $this->freeVoucherNumber($validated['voucherNumber']),
 
                     'payment_date' => $validated['paymentDate'],
 

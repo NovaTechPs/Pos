@@ -2525,6 +2525,8 @@ new class extends Component {
                     })->lockForUpdate()->get() as $payment) {
                     $payment->delete();
                 }
+                app(\App\Services\PartyBalance::class)->moveSaleOutstanding((int) $this->tenantId(),
+                    $order->customer_id ? (int) $order->customer_id : null, app(\App\Services\PartyBalance::class)->saleOutstanding($order), null, 0);
                 $order->delete();
             });
         } catch (\RuntimeException $exception) {
@@ -3411,6 +3413,8 @@ new class extends Component {
                 }
 
                 $order = null;
+                $previousCustomerId = null;
+                $previousOutstanding = 0.0;
 
                 if ($editingInvoiceId) {
                     $order = $this->onlyOwnInvoices(Order::query())
@@ -3429,6 +3433,9 @@ new class extends Component {
                         ->where('original_order_id', $order->id)->exists()) {
                         throw new \DomainException('لا يمكن تعديل فاتورة مرتبطة بمرتجع؛ سجّل مرتجعاً جديداً أو أنشئ فاتورة جديدة.');
                     }
+
+                    $previousCustomerId = $order->customer_id ? (int) $order->customer_id : null;
+                    $previousOutstanding = app(\App\Services\PartyBalance::class)->saleOutstanding($order);
 
                     app(\App\Services\BranchStockAllocator::class)->restore($order);
 
@@ -3757,6 +3764,11 @@ new class extends Component {
                     } elseif ($existingPayment) {
                     $existingPayment->delete();
                 }
+
+                // The unpaid part of a customer sale is owed by the customer, like on every other sales screen.
+                $order->refresh();
+                app(\App\Services\PartyBalance::class)->moveSaleOutstanding((int) $tenantId, $previousCustomerId, $previousOutstanding,
+                    $order->customer_id ? (int) $order->customer_id : null, app(\App\Services\PartyBalance::class)->saleOutstanding($order));
 
                 $this->queueSaleForSync($order, $lockedShift->fresh());
 

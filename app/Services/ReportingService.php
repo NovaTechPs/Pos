@@ -85,6 +85,22 @@ class ReportingService
         }
     }
 
+    /**
+     * The balance a party's documents add up to across every branch, in the same sign as
+     * parties.current_balance. This is the figure the statement report compares as «فرق المطابقة».
+     */
+    public function partyLedgerBalance(int $partyId): float
+    {
+        abort_unless($this->branchId === null, 422, 'Reconciliation covers every branch.');
+        $party = $this->table('parties')->where('id', $partyId)->first(['id', 'type', 'opening_balance']);
+        abort_unless($party !== null, 404);
+        $this->filters = ['party_type' => 'all', 'party_id' => $partyId, 'search' => ''];
+        $sign = $party->type === 'supplier' ? -1 : 1;
+        $ledger = $sign * (float) $party->opening_balance + (float) $this->partyEvents()->sum('amount');
+
+        return round($sign * $ledger, 2);
+    }
+
     /** @return array<string, array{string, string}> */
     public function availableReports(): array
     {
@@ -215,9 +231,15 @@ class ReportingService
     {
         // Party balance is expressed uniformly: positive = receivable, negative = payable.
         $partyIds = $this->parties()->select('parties.id');
-        $orders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
-            ->whereIn('type', ['pos', 'wholesale', 'online', 'return'])->whereIn('customer_id', clone $partyIds)
-            ->selectRaw("customer_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'فاتورة مبيعات / مردود' as description, (CASE WHEN type = 'return' THEN -1 ELSE 1 END) * (CASE WHEN ABS(total) > delivery_fee THEN ABS(total) - delivery_fee ELSE 0 END) as amount, 1 as source_order, id as source_id, orders.notes as notes");
+        // A sale paid on the invoice itself without a receipt voucher (older invoices) is settled by that
+        // payment, like purchases below; vouchers linked to the invoice appear separately on their own date.
+        $linkedOrderReceipts = $this->table('payments')->whereNotNull('order_id')->where('type', 'receipt')
+            ->select('order_id')->selectRaw('SUM(amount) as linked_received')->groupBy('order_id');
+        $unlinkedPaid = 'CASE WHEN orders.paid_amount - orders.delivery_fee - COALESCE(order_paid.linked_received, 0) > 0 THEN orders.paid_amount - orders.delivery_fee - COALESCE(order_paid.linked_received, 0) ELSE 0 END';
+        $orders = $this->branch($this->table('orders'), 'orders.branch_id')->where('orders.status', 'completed')
+            ->whereIn('orders.type', ['pos', 'wholesale', 'online', 'return'])->whereIn('orders.customer_id', clone $partyIds)
+            ->leftJoinSub($linkedOrderReceipts, 'order_paid', 'order_paid.order_id', '=', 'orders.id')
+            ->selectRaw("orders.customer_id as party_id, COALESCE(orders.invoice_date, orders.created_at) as event_date, orders.invoice_number as reference, 'فاتورة مبيعات / مردود' as description, CASE WHEN orders.type = 'return' THEN -(CASE WHEN ABS(orders.total) > orders.delivery_fee THEN ABS(orders.total) - orders.delivery_fee ELSE 0 END) ELSE (CASE WHEN orders.total > orders.delivery_fee THEN orders.total - orders.delivery_fee ELSE 0 END) - ({$unlinkedPaid}) END as amount, 1 as source_order, orders.id as source_id, orders.notes as notes");
         $deliveryOrders = $this->branch($this->table('orders'), 'orders.branch_id')->where('status', 'completed')
             ->whereNotNull('delivery_party_id')->whereIn('delivery_party_id', clone $partyIds)->where('delivery_fee', '>', 0)
             ->selectRaw("delivery_party_id as party_id, COALESCE(invoice_date, created_at) as event_date, invoice_number as reference, 'رسوم توصيل' as description, -ABS(delivery_fee) as amount, 2 as source_order, id as source_id, orders.notes as notes");
