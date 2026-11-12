@@ -86,16 +86,16 @@
         <p class="copy-type">{{ $receipt['copy_type'] ?? 'فاتورة بيع' }}</p>
     </div>
 
-    <div class="meta-info">
-        <span>رقم: <b dir="ltr">{{ $receipt['invoice_no'] ?? '-' }}</b></span>
-        <span>التاريخ: <b dir="ltr">{{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}</b></span>
+    <div class="meta-info" data-receipt-meta>
+        <span dir="ltr">{{ $receipt['invoice_no'] ?? '-' }}</span>
+        <span dir="ltr">{{ $receipt['date'] ?? '' }}</span>
+        <span dir="ltr">{{ $receipt['time'] ?? '' }}</span>
     </div>
 
-    @if (!empty($receipt['cashier']))
-        <div class="cashier">الكاشير: {{ $receipt['cashier'] }}</div>
-    @endif
     @if (!empty($receipt['customer_name']))
-        <div class="cashier">الزبون: {{ $receipt['customer_name'] }}</div>
+        <div class="cashier">
+            <span>الزبون: {{ $receipt['customer_name'] }}</span>
+        </div>
     @endif
 
     @if (!empty($receipt['delivery']))
@@ -160,64 +160,49 @@
         </tbody>
     </table>
 
-    <div class="receipt-stats" data-receipt-stats>
-        <span>عدد الأصناف: <b>{{ count($receipt['items'] ?? []) }}</b></span>
-        <span>إجمالي الكمية: <b>{{ rtrim(rtrim(number_format((float) ($receipt['total_qty'] ?? collect($receipt['items'] ?? [])->sum(fn ($item) => abs((float) str_replace(',', '', (string) ($item['qty'] ?? 0))))), 2, '.', ''), '0'), '.') }}</b></span>
+    <div class="summary-box" data-receipt-stats>
+        مجموع الكميات : <b>{{ rtrim(rtrim(number_format((float) ($receipt['total_qty'] ?? collect($receipt['items'] ?? [])->sum(fn ($item) => abs((float) str_replace(',', '', (string) ($item['qty'] ?? 0))))), 2, '.', ''), '0'), '.') }}</b>
     </div>
 
     <div data-invoice-balance-summary>
-        <div class="total-line">
-            <span>المجموع :</span>
-            <strong>{{ $receipt['subtotal'] ?? number_format((float) $receiptSummary['total'], 2) }}</strong>
+        <div class="summary-box">
+            المجموع : <b dir="ltr">{{ $receipt['subtotal'] ?? number_format((float) $receiptSummary['total'], 2) }}</b>
         </div>
         @if ($receiptDiscount > 0.001)
-            <div class="total-line minor">
-                <span>الخصم :</span>
-                <strong>{{ number_format($receiptDiscount, 2) }}</strong>
+            <div class="summary-box">
+                الخصم : <b dir="ltr">{{ number_format($receiptDiscount, 2) }}</b>
             </div>
         @endif
         @if ($receiptDelivery > 0.001)
-            <div class="total-line minor">
-                <span>التوصيل :</span>
-                <strong>{{ number_format($receiptDelivery, 2) }}</strong>
+            <div class="summary-box">
+                التوصيل : <b dir="ltr">{{ number_format($receiptDelivery, 2) }}</b>
             </div>
         @endif
 
         <div class="net-box">
-            <span>الصافي للدفع ({{ $receipt['currency'] ?? '₪' }}):</span>
-            <strong class="net-value">{{ $receipt['total_amount'] ?? 0 }}</strong>
+            الصافي للدفع ({{ $receipt['currency'] ?? '₪' }}) : <b class="net-value" dir="ltr">{{ $receipt['total_amount'] ?? 0 }}</b>
         </div>
 
         @if ($receiptSummary['new_balance'] !== null)
-            <div class="total-line minor">
-                <span>دفعة :</span>
-                <strong>{{ number_format((float) $receiptSummary['payment'], 2) }}</strong>
+            <div class="summary-box">
+                دفعة : <b dir="ltr">{{ number_format((float) $receiptSummary['payment'], 2) }}</b>
             </div>
             @if ($receiptSummary['previous_balance'] !== null)
-                <div class="total-line minor">
-                    <span>رصيد سابق :</span>
-                    <strong>{{ number_format((float) $receiptSummary['previous_balance'], 2) }}</strong>
+                <div class="summary-box">
+                    رصيد سابق : <b dir="ltr">{{ number_format((float) $receiptSummary['previous_balance'], 2) }}</b>
                 </div>
             @endif
-            <div class="total-line">
-                <span>رصيد جديد :</span>
-                <strong>{{ number_format((float) $receiptSummary['new_balance'], 2) }}</strong>
+            <div class="summary-box">
+                رصيد جديد : <b dir="ltr">{{ number_format((float) $receiptSummary['new_balance'], 2) }}</b>
             </div>
         @endif
     </div>
 
     @if (!empty($receipt['notes']))
-        <div class="notes-box">
-            <span class="notes-title">ملاحظات:</span>
-            <span class="notes-content">{{ $receipt['notes'] }}</span>
-        </div>
+        <div class="notes-line">ملاحظات : {{ $receipt['notes'] }}</div>
     @endif
 
     <div class="barcode-section">
-        <p class="print-time">
-            تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
-        </p>
-
         <div class="invoice-barcode-wrap">
             @if (!empty($barcodeBars))
                 @php $barcodeOffset = 10; @endphp
@@ -234,6 +219,10 @@
                 </svg>
             @endif
         </div>
+
+        <p class="print-time">
+            تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
+        </p>
     </div>
     <x-invoice-copyright />
 </div>
@@ -260,21 +249,21 @@
     }
 
     .header .store-title {
-        font-size: 20px;
+        font-size: 12px;
         font-weight: 700;
-        margin: 0 0 2px;
+        margin: 0;
     }
 
     .header .notice {
-        font-size: 14px;
-        margin: 1px 0;
+        font-size: 9px;
+        margin: 0;
         font-weight: 400;
     }
 
     .header .copy-type {
-        font-size: 18px;
+        font-size: 10px;
         font-weight: 700;
-        margin: 2px 0 6px;
+        margin: 1px 0 4px;
     }
 
     .meta-info {
@@ -284,15 +273,20 @@
         overflow-wrap: anywhere;
         gap: 2px 6px;
         font-size: 11px;
-        font-weight: 500;
-        margin-bottom: 4px;
+        font-weight: 400;
+        margin-bottom: 3px;
         padding: 0 2px;
     }
 
     .cashier {
-        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 2px 6px;
+        font-size: 11px;
         font-weight: 400;
-        margin-bottom: 5px;
+        margin-bottom: 3px;
+        padding: 0 2px;
     }
 
     .items-table {
@@ -387,82 +381,24 @@
         font-weight: 500;
     }
 
-    .notes-box {
-        border: 1px dashed #000;
-        padding: 5px 6px;
-        margin: 5px 0;
-        text-align: right;
-        font-size: 13px;
-        line-height: 1.45;
-        font-weight: 400;
-        white-space: normal;
-        word-break: break-word;
-    }
-
-    .notes-title {
-        display: block;
-        margin-bottom: 3px;
-    }
-
     .notes-content {
         display: block;
         white-space: pre-wrap;
     }
 
-    /* Payable total printed white on black, as on the shop's receipt. */
     .net-box {
         border: 2px solid #000;
-        background: #000;
-        color: #fff;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-        padding: 6px 8px;
+        padding: 4px 6px;
         margin: 4px 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        overflow-wrap: anywhere;
-        gap: 4px 8px;
-        font-size: 17px;
+        text-align: center;
+        font-size: 13px;
         font-weight: 700;
+        overflow-wrap: anywhere;
     }
 
     .net-value {
-        font-size: 20px;
-        font-weight: 700;
-        direction: ltr;
-    }
-
-    .receipt-stats {
-        display: flex;
-        justify-content: space-around;
-        flex-wrap: wrap;
-        gap: 4px 12px;
-        padding: 5px 2px;
-        border-bottom: 2px solid #000;
-        font-size: 13px;
-        font-weight: 500;
-    }
-
-    .total-line {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 6px 3px;
-        font-size: 18px;
-        font-weight: 700;
-    }
-
-    .total-line strong {
-        direction: ltr;
-    }
-
-    .total-line.minor {
-        padding: 2px 6px;
         font-size: 14px;
-        font-weight: 500;
+        font-weight: 700;
     }
 
     .items-table .item-name-text {
@@ -470,6 +406,24 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .summary-box {
+        border: 1px solid #000;
+        padding: 3px 6px;
+        margin: 3px 0;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 400;
+        overflow-wrap: anywhere;
+    }
+
+    .notes-line {
+        margin: 3px 0;
+        text-align: center;
+        font-size: 11px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
     }
 
     .delivery-box {
@@ -499,16 +453,13 @@
     }
 
     .invoice-barcode-wrap {
-        margin-top: 6px;
-        padding-top: 5px;
-        border-top: 1px dashed #000;
         text-align: center;
     }
 
     .receipt-barcode {
         display: block;
-        width: 94%;
-        height: 40px;
+        width: 80%;
+        height: 32px;
         margin: 0 auto;
         padding: 0;
         box-sizing: border-box;
@@ -524,8 +475,8 @@
     }
 
     .print-time {
-        font-size: 11px;
-        margin: 1px 0;
+        font-size: 9px;
+        margin: 2px 0 0;
     }
 
     @media print {

@@ -85,14 +85,15 @@ test('thermal receipt matches the shop layout for a walk-in sale', function () {
     $summary = substr($html, strpos($html, 'data-invoice-balance-summary'));
     $summary = substr($summary, 0, strpos($summary, 'barcode-section'));
 
-    expect($html)->toContain('رقم: <b dir="ltr">INV-1001</b>', 'التاريخ:', 'الكاشير: الموظف', '<th style="width:47%">الصنف</th>', '<th style="width:9%">ك</th>',
-        'عدد الأصناف: <b>2</b>', 'إجمالي الكمية: <b>3</b>', 'item-name-text')
+    expect($html)->toContain('data-receipt-meta', '<span dir="ltr">INV-1001</span>', '<span dir="ltr">2026/10/14</span>', '<th style="width:47%">الصنف</th>', '<th style="width:9%">ك</th>',
+        'مجموع الكميات : <b>3</b>', 'item-name-text', 'summary-box')
         ->and(strpos($html, '<td>1</td>'))->toBeLessThan(strpos($html, '<td>2</td>'))
         ->and($summary)->toContain('المجموع :', '80.00', 'الصافي للدفع', 'net-box')
         ->not->toContain('الخصم :', 'دفعة :', 'المدفوع :', 'المتبقي :', 'الباقي :', 'رصيد سابق', 'رصيد جديد', '100.00');
+    expect($html)->not->toContain('الكاشير');
 });
 
-test('thermal receipt itemizes delivery before the black payable total', function (mixed $delivery, string $formatted): void {
+test('thermal receipt itemizes delivery before the boxed payable total', function (mixed $delivery, string $formatted): void {
     $html = posReceiptPrintView([
         'items' => [['id' => 1, 'name' => 'طلب', 'qty' => 1, 'price' => '55.00', 'total' => '55.00']],
         'subtotal' => '55.00', 'delivery_fee' => $delivery,
@@ -147,7 +148,7 @@ test('long receipt preserves every item and its final payment details', function
     foreach ($items as $item) {
         expect($html)->toContain($item['name']);
     }
-    expect($html)->toContain('750.00', 'عدد الأصناف: <b>75</b>', 'break-inside: avoid;');
+    expect($html)->toContain('750.00', 'مجموع الكميات : <b>75</b>', 'break-inside: avoid;');
 });
 
 test('long invoice barcode scales to the available receipt width without dropping bars', function (): void {
