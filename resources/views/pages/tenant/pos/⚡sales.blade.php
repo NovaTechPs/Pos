@@ -503,8 +503,15 @@ new class extends Component {
             return null;
         }
 
-        return Branch::query()->where('tenant_id', $tenantId)->whereKey((int) $branchId)->exists() ? (int) $branchId : null;
+        // Checked once per request: this is called many times while handling a single scan or click.
+        $cacheKey = $tenantId.':'.$branchId;
+        $this->validBranches[$cacheKey] ??= Branch::query()->where('tenant_id', $tenantId)->whereKey((int) $branchId)->exists();
+
+        return $this->validBranches[$cacheKey] ? (int) $branchId : null;
     }
+
+    /** @var array<string, bool> Branch checks made during the current request. */
+    private array $validBranches = [];
 
     private function draftFields(): array
     {
@@ -611,7 +618,7 @@ new class extends Component {
             return null;
         }
 
-        $this->applyShiftSummary($shift, $this->shiftFinancialSummary($shift));
+        // Shift totals are not shown while selling; closing the shift computes them itself.
         $this->activeShiftCache = $shift;
 
         return $this->activeShiftCache;
@@ -684,16 +691,6 @@ new class extends Component {
             'bank_receipts' => $cardReceipts + $bankTransferReceipts,
             'expected_cash' => (float) $shift->opening_cash + $cashReceipts - $cashPayments,
         ];
-    }
-
-    /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, card_receipts: float, bank_transfer_receipts: float, bank_receipts: float, expected_cash: float} $summary */
-    private function applyShiftSummary(Shift $shift, array $summary): void
-    {
-        $shift->setAttribute('live_total_sales', $summary['sales']);
-        $shift->setAttribute('live_total_returns', $summary['returns']);
-        $shift->setAttribute('live_cash_sales', $summary['cash_receipts']);
-        $shift->setAttribute('live_cash_returns', $summary['cash_payments']);
-        $shift->setAttribute('live_expected_cash', $summary['expected_cash']);
     }
 
     /** @param array{sales: float, returns: float, cash_receipts: float, cash_payments: float, expected_cash: float} $summary */
@@ -1114,24 +1111,9 @@ new class extends Component {
             return;
         }
 
-        // Normalize the actual product name as well as the typed query.
-        // This handles أ/إ/آ vs ا, ة vs ه, ى vs ي, and Arabic-Indic digits.
-        // REPLACE is supported by PostgreSQL and MySQL.
-        $nameSql = 'LOWER(products.name)';
-        foreach ([
-            'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا',
-            'ى' => 'ي', 'ة' => 'ه', 'ـ' => '',
-            'َ' => '', 'ً' => '', 'ُ' => '', 'ٌ' => '',
-            'ِ' => '', 'ٍ' => '', 'ْ' => '', 'ّ' => '', 'ٰ' => '',
-            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
-            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
-            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
-            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
-        ] as $from => $to) {
-            $fromSql = str_replace("'", "''", $from);
-            $toSql = str_replace("'", "''", $to);
-            $nameSql = "REPLACE({$nameSql}, '{$fromSql}', '{$toSql}')";
-        }
+        // products.search_name holds the name already normalized (أ/إ/آ → ا, ة → ه, ى → ي, Arabic-Indic digits,
+        // lower case), so the words are matched without normalizing every row on each search.
+        $nameSql = 'products.search_name';
 
         $escaped = $escape($normalized);
         $query->where(function ($matches) use ($normalized, $tenantId, $escaped, $words, $escape, $nameSql): void {

@@ -68,7 +68,10 @@ test('both POS search controls find products from the first typed letter', funct
 test('POS product results fit the panel and add by selecting a wrapped result row', function (): void {
     $template = file_get_contents(resource_path('views/pages/tenant/pos/partials/quick-product-results.blade.php'));
 
-    expect($template)->toContain('table-fixed')
+    // Names are capped so the table fits the panel, and price and stock sit right next to the name.
+    expect($template)->toContain('table-auto')
+        ->and($template)->toContain('max-w-[min(24rem,55vw)]')
+        ->and($template)->toContain('<th class="w-full p-0" aria-hidden="true"></th>')
         ->and($template)->toContain('data-pos-product data-product-index')
         ->and($template)->toContain('break-words')
         ->and($template)->toContain('break-all')

@@ -1255,6 +1255,14 @@ new class extends Component {
                     ]);
                 }
 
+                // Payments on an invoice belong to the invoice's customer, also after the customer is changed,
+                // so both customers' statements stay right.
+                if ($customer) {
+                    Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)
+                        ->where(fn ($query) => $query->whereNull('party_id')->orWhere('party_id', '!=', $customer->id))
+                        ->update(['party_id' => $customer->id]);
+                }
+
                 $newReceiptAmount = (float) Payment::query()
                     ->where('tenant_id', $tenantId)
                     ->where('order_id', $order->id)

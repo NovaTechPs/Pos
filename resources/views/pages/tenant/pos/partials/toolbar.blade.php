@@ -405,7 +405,7 @@
                 <label for="pos-notes-{{ $this->getId() }}" class="font-bold text-slate-900">ملاحظات الفاتورة</label>
                 <button type="button" x-on:click="notesOpen = false" aria-label="إغلاق الملاحظات" class="h-10 w-10 rounded-lg bg-slate-100">✕</button>
             </div>
-            <textarea x-ref="notesInput" id="pos-notes-{{ $this->getId() }}" data-pos-notes-input wire:model.live.debounce.300ms="notes" @disabled($this->invoiceIsLocked()) rows="4" placeholder="ملاحظة الفاتورة..." class="w-full rounded-xl border border-slate-200 p-3 text-base text-slate-900 focus:border-indigo-500"></textarea>
+            <textarea x-ref="notesInput" id="pos-notes-{{ $this->getId() }}" data-pos-notes-input wire:model="notes" @disabled($this->invoiceIsLocked()) rows="4" placeholder="ملاحظة الفاتورة..." class="w-full rounded-xl border border-slate-200 p-3 text-base text-slate-900 focus:border-indigo-500"></textarea>
             <button type="button" x-on:click="notesOpen = false" class="mt-3 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white">تم</button>
         </section>
     </div>
