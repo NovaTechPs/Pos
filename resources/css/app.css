@@ -156,3 +156,14 @@ body [data-stock-voucher-product-result]:focus * {
     background-color: #1e40af !important;
     color: #ffffff !important;
 }
+
+/* Report tables navigated with the arrow keys (resources/js/table-keyboard.js). */
+[data-keyboard-tables] tr[data-keyboard-row]:focus {
+    outline: 2px solid #6366f1;
+    outline-offset: -2px;
+    background-color: #eef2ff;
+}
+
+.dark [data-keyboard-tables] tr[data-keyboard-row]:focus {
+    background-color: #1e293b;
+}

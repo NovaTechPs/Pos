@@ -754,7 +754,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="min-h-screen bg-slate-50 p-4 font-sans sm:p-6" dir="rtl">
+<flux:main class="min-h-screen bg-slate-50 p-4 font-sans sm:p-6" dir="rtl" data-keyboard-tables>
     <div class="mb-4"><a href="{{ route('tenant.reports') }}" wire:navigate class="inline-flex rounded-xl bg-blue-600 px-4 py-2 font-bold text-white">مركز التقارير وكشوف الحساب</a></div>
 
 

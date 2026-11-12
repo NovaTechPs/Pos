@@ -445,3 +445,35 @@ test('costing choice is validated and shared by the report screen print and csv 
     expect($response->streamedContent())->toContain('متوسط أسعار الشراء المرجّح بالكميات');
     expect(fn () => (new ReportingService($this->user))->prepare('profit', $this->filters + ['cost_method' => 'invalid']))->toThrow(ValidationException::class);
 });
+
+test('statement directory starts with all parties and supports keyboard navigation into the ledger', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'KEYBOARD-ROW']);
+    $component = Livewire::test('pages::tenant.reports.center')->set('report', 'statement')
+        ->set('from', '2026-10-10')->set('to', '2026-10-20')
+        ->assertSet('statementPartyType', 'all')
+        ->assertSee($this->customer->name)->assertSee($this->supplier->name)
+        ->assertSeeHtml('data-statement-party')
+        ->assertSeeHtml('x-on:keydown.arrow-left.prevent="toStatement()"')
+        ->assertSeeHtml('x-on:keydown.arrow-right.prevent="toParties()"')
+        ->call('selectStatementParty', $this->customer->id)
+        ->assertSeeHtml('data-selected="true"')
+        ->assertSeeHtml('data-statement-row tabindex="0"')
+        ->assertSee('KEYBOARD-ROW');
+
+    $html = $component->html();
+    expect(substr_count($html, 'x-on:keydown.enter.prevent="$el.click()"'))->toBeGreaterThan(0)
+        ->and(strpos($html, 'statement-party-type-all'))->toBeLessThan(strpos($html, 'statement-party-type-customer'))
+        ->and(strpos($html, 'statement-party-type-customer'))->toBeLessThan(strpos($html, 'statement-party-type-supplier'));
+});
+
+test('report pages enable arrow key navigation across their tables', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'ARROW-ROW']);
+
+    Livewire::test('pages::tenant.reports.center')->set('report', 'sales')->set('from', '2026-10-10')->set('to', '2026-10-20')
+        ->assertSeeHtml('data-keyboard-tables');
+    Livewire::test('pages::tenant.reports.analytics')->assertSeeHtml('data-keyboard-tables');
+
+    $script = file_get_contents(resource_path('js/table-keyboard.js'));
+    expect(file_get_contents(resource_path('js/app.js')))->toContain("import './table-keyboard.js';")
+        ->and($script)->toContain('ArrowDown', 'ArrowUp', 'Home', 'End', "event.key === 'Enter'", 'event.defaultPrevented', 'data-statement-row');
+});

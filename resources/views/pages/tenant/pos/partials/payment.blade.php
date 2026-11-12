@@ -240,404 +240,158 @@
 
 
 <div
-    class="pos-payment min-w-0 shrink-0 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm"
+    class="pos-payment min-w-0 shrink-0 rounded-xl border border-slate-200 bg-white p-2 shadow-sm"
     x-data
     dir="rtl"
 >
+    @php
+        $amountLabelClass = 'text-xs font-bold text-slate-500';
+        $smallInputClass = 'mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-center font-mono text-base font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50';
+        $hasRemaining = $this->remaining > 0;
+    @endphp
 
     <div class="pos-payment-grid grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-[repeat(13,minmax(0,1fr))]">
-
-
-        {{-- =========================================================
-             ملخص المبالغ
-        ========================================================== --}}
-
-        <div class="pos-payment-totals md:order-1 lg:order-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:col-span-2 lg:col-span-6 lg:grid-cols-6">
-
-
-            {{-- الإجمالي --}}
-
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
-
-                <div class="text-[9px] font-black text-slate-500">
-                    الإجمالي
-                </div>
-
-                <div class="mt-1 rounded-lg bg-white px-2 py-2 text-center">
-
-                    <span class="font-mono text-base font-black text-slate-900">
-                        {{ number_format($this->subtotal, 2) }}
-                    </span>
-
-                </div>
-
-            </div>
-
-
-            {{-- الخصم --}}
-
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
-
-                <div class="flex items-center justify-between">
-
-                    <span class="text-[9px] font-black text-slate-500">
-                        الخصم
-                    </span>
-
-
-                    <button
-                        type="button"
-                        wire:click="$set('discount_type', 'fixed')" @disabled($invoiceLocked)
-                        class="text-[9px] font-black text-indigo-600"
-                    >
-                        {{ $discount_type === 'percentage' ? '%' : 'مبلغ' }}
-                    </button>
-
-                </div>
-
-
-                <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    wire:model.live.debounce.300ms="discount_amount" @disabled($invoiceLocked)
-                    class="mt-1 h-[38px] w-full rounded-lg border border-slate-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-700 outline-none focus:border-indigo-500"
-                    placeholder="0.00"
-                >
-
-            </div>
-
-
-            {{-- التوصيل --}}
-
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
-
-                <div class="text-[9px] font-black text-slate-500">
-                    التوصيل
-                </div>
-
-                <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputmode="decimal"
-                    wire:model.live.debounce.300ms="delivery_fee" @disabled($invoiceLocked)
-                    class="mt-1 h-[38px] w-full rounded-lg border border-slate-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-700 outline-none focus:border-indigo-500"
-                    placeholder="0.00"
-                >
-
-                @if ($delivery_fee > 0)
-                    <button
-                        type="button"
-                        wire:click="openDeliveryDetails"
-                        @disabled($invoiceLocked)
-                        class="mt-2 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                    >
-                        🚚 بيانات التوصيل
-                    </button>
-                @endif
-
-            </div>
-
-
-            {{-- المطلوب --}}
-
-            <div class="rounded-xl border border-amber-200 bg-amber-50 p-2">
-
-                <div class="text-[9px] font-black text-amber-700">
-
-                    {{ $this->total < 0 ? 'المسترد' : 'الصافي للدفع' }}
-
-                </div>
-
-
-                <div class="mt-1 rounded-lg bg-white px-2 py-2 text-center">
-
-                    <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputmode="decimal"
-                        wire:model.live.debounce.300ms="custom_final_total" @disabled($invoiceLocked)
-                        class="w-full bg-transparent text-center font-mono text-base font-black text-amber-700 outline-none"
-                        placeholder="0.00"
-                    >
-
-                </div>
-
-            </div>
-
-
-            {{-- المدفوع --}}
-
-            <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2">
-
-                <div class="text-[9px] font-black text-indigo-700">
-
-                    {{ $isReturnMode ? 'المصروف' : 'المدفوع' }}
-
-                </div>
-
-
-                <input
-                    id="paid-amount-input"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputmode="decimal"
-                    wire:model.live.debounce.300ms="paid_amount" @disabled($invoiceLocked)
-                    class="mt-1 h-[38px] w-full rounded-lg border-2 border-indigo-200 bg-white px-2 text-center font-mono text-base font-black text-indigo-800 outline-none focus:border-indigo-500"
-                    placeholder="0.00"
-                >
-
-            </div>
-
-
-            {{-- الباقي --}}
-
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2">
-
-                <div
-                    class="text-[9px] font-black
-                    {{ $this->remaining > 0
-                        ? 'text-rose-700'
-                        : 'text-emerald-700' }}"
-                >
-
-                    {{ $this->remaining > 0 ? 'المتبقي' : 'الباقي' }}
-
-                </div>
-
-
-                <div class="mt-1 rounded-lg bg-white px-2 py-2 text-center">
-
-                    <span
-                        class="font-mono text-base font-black
-                        {{ $this->remaining > 0
-                            ? 'text-rose-700'
-                            : 'text-emerald-700' }}"
-                    >
-
-                        {{
-                            number_format(
-                                $this->remaining > 0
-                                    ? $this->remaining
-                                    : $this->change,
-                                2
-                            )
-                        }}
-
-                    </span>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-
-        {{-- =========================================================
-             طرق الدفع
-        ========================================================== --}}
-
-        <div data-pos-payment-methods class="md:order-3 lg:order-2 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
-
-            <div class="mb-1.5 flex items-center justify-between">
-
-                <div>
-
-                    <div class="text-[10px] font-black text-slate-800">
-                        طريقة الدفع
-                    </div>
-
-                    <div class="text-[8px] font-bold text-slate-400">
-
-                        {{
-                            $isReturnMode
-                                ? 'طريقة صرف المرتجع'
-                                : 'اختر طريقة الدفع'
-                        }}
-
-                    </div>
-
-                </div>
-
-
-                <span
-                    class="rounded-lg px-2 py-1 text-[8px] font-black
-                    {{
-                        $isReturnMode
-                            ? 'bg-rose-50 text-rose-700'
-                            : 'bg-emerald-50 text-emerald-700'
-                    }}"
-                >
-
-                    {{ $isReturnMode ? 'مرتجع' : 'بيع' }}
-
-                </span>
-
-            </div>
-
-
-            <div class="grid grid-cols-2 gap-1.5">
-
-                @foreach ([
-                    ['cash', 'نقدي', '💵'],
-                    ['card', 'بطاقة', '💳'],
-                    ['bank_transfer', 'تحويل', '🏦'],
-                    ['cheque', 'شيك', '🧾']
-                ] as [$value, $label, $icon])
-
-                    <button
-                        type="button"
-                        wire:click="$set('payment_method', '{{ $value }}')" @disabled($invoiceLocked)
-                        class="rounded-xl border px-2 py-2.5 text-[10px] font-black transition
-                            {{
-                                $payment_method === $value
-                                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
-                            }}"
-                    >
-
-                        {{ $icon }}
-                        {{ $label }}
-
-                    </button>
-
-                @endforeach
-
-            </div>
-
-        </div>
-
-
 
         {{-- =========================================================
              العميل
         ========================================================== --}}
-
-        <div data-pos-customer-notes class="md:order-2 lg:order-1 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
-            @if ($selectedCustomerId && auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
-                <a class="text-xs font-bold text-indigo-700" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener">كشف حساب الزبون</a>
-            @endif
-            @if (filled($deliveryNotes))
-                <p class="my-2 whitespace-pre-wrap text-xs text-slate-700">ملاحظة التوصيل: {{ $deliveryNotes }}</p>
-            @endif
-
-
+        <div data-pos-customer-notes class="md:order-2 lg:order-1 flex flex-col rounded-lg border border-slate-200 bg-slate-50 p-2 lg:col-span-2">
             <div class="mb-1.5 flex items-center justify-between">
-
-                <span class="text-[10px] font-black text-slate-800">
-                    العميل
-                </span>
-
-
+                <span class="text-xs font-bold text-slate-600">العميل</span>
                 @if ($selectedCustomerId)
-
-                    <button
-                        type="button"
-                        wire:click="clearCustomer" @disabled($invoiceLocked)
-                        class="text-[9px] font-black text-rose-600 hover:text-rose-700"
-                    >
-                        إزالة
-                    </button>
-
+                    <button type="button" wire:click="clearCustomer" @disabled($invoiceLocked) class="text-[11px] font-bold text-rose-600 hover:text-rose-700">إزالة</button>
                 @endif
-
             </div>
 
-
             @if ($selectedCustomerId)
-
                 @php
-
-                    $selectedCustomer =
-                        $this->customerResults->firstWhere(
-                            'id',
-                            $selectedCustomerId
-                        );
-
-                    if (!$selectedCustomer) {
-
-                        $selectedCustomer =
-                            \App\Models\Party::query()
-                                ->where('tenant_id', $this->tenantId())
-                                ->whereKey($selectedCustomerId)
-                                ->first();
-
-                    }
-
+                    $selectedCustomer = $this->customerResults->firstWhere('id', $selectedCustomerId)
+                        ?? \App\Models\Party::query()->where('tenant_id', $this->tenantId())->whereKey($selectedCustomerId)->first();
                 @endphp
-
-
-                <button
-                    type="button"
-                    wire:click="openCustomerModal" @disabled($invoiceLocked)
-                    class="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-right hover:bg-indigo-100"
-                >
-
-                    <div class="truncate text-xs font-black text-indigo-800">
-
-                        {{ $selectedCustomer?->name ?? 'العميل المحدد' }}
-
-                    </div>
-
-
+                <button type="button" wire:click="openCustomerModal" @disabled($invoiceLocked) class="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-2 text-right hover:bg-emerald-100">
+                    <div class="truncate text-sm font-black text-emerald-900">{{ $selectedCustomer?->name ?? 'العميل المحدد' }}</div>
                     @if ($selectedCustomer?->phone)
-
-                        <div class="mt-0.5 text-[9px] font-bold text-indigo-500">
-
-                            {{ $selectedCustomer->phone }}
-
-                        </div>
-
+                        <div class="mt-0.5 text-[11px] font-bold text-emerald-700">{{ $selectedCustomer->phone }}</div>
                     @else
-
-                        <div class="mt-0.5 text-[9px] font-bold text-rose-500">
-
-                            بدون رقم هاتف
-
-                        </div>
-
+                        <div class="mt-0.5 text-[11px] font-bold text-rose-500">بدون رقم هاتف</div>
                     @endif
-
                 </button>
-
+                @if (auth()->user()->can('reports.analytics') && auth()->user()->can('customers.view'))
+                    <a class="mt-1 text-[11px] font-bold text-indigo-700 hover:underline" href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $selectedCustomerId, 'party_type' => 'customer']) }}" target="_blank" rel="noopener">كشف حساب الزبون</a>
+                @endif
             @else
-
-                <button
-                    type="button"
-                    wire:click="openCustomerModal" @disabled($invoiceLocked)
-                    class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50"
-                >
-
-                    👤 إضافة زبون للفاتورة
-
+                <button type="button" wire:click="openCustomerModal" @disabled($invoiceLocked) class="flex w-full flex-1 items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2 py-2.5 text-sm font-bold text-slate-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50">
+                    <flux:icon.user-plus class="size-4" /> إضافة زبون للفاتورة
                 </button>
-
             @endif
 
-
-
-
+            @if (filled($deliveryNotes))
+                <p class="mt-1.5 whitespace-pre-wrap text-[11px] text-slate-600">ملاحظة التوصيل: {{ $deliveryNotes }}</p>
+            @endif
         </div>
 
-
+        {{-- =========================================================
+             طرق الدفع
+        ========================================================== --}}
+        <div data-pos-payment-methods class="md:order-3 lg:order-2 rounded-lg border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
+            <div class="mb-1.5 flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-600">{{ $isReturnMode ? 'طريقة صرف المرتجع' : 'طريقة الدفع' }}</span>
+                <span class="rounded-md px-2 py-0.5 text-[11px] font-black {{ $isReturnMode ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700' }}">{{ $isReturnMode ? 'مرتجع' : 'بيع' }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5">
+                @foreach ([
+                    ['cash', 'نقدي', 'banknotes'],
+                    ['card', 'بطاقة', 'credit-card'],
+                    ['bank_transfer', 'تحويل', 'building-library'],
+                    ['cheque', 'شيك', 'document-text'],
+                ] as [$value, $label, $icon])
+                    <button type="button" wire:key="pos-payment-method-{{ $value }}" wire:click="$set('payment_method', '{{ $value }}')" @disabled($invoiceLocked)
+                        class="inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-2.5 text-sm font-bold transition
+                            {{ $payment_method === $value ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50' }}">
+                        <flux:icon :name="$icon" class="size-4" /> {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+        </div>
 
         {{-- =========================================================
-             لوحة الأرقام
+             المبالغ: الأرقام المهمة أكبر
         ========================================================== --}}
+        <div class="pos-payment-totals md:order-1 lg:order-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:col-span-2 lg:col-span-6 lg:grid-cols-[repeat(9,minmax(0,1fr))]">
 
+            {{-- الإجمالي --}}
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-2 lg:col-span-1">
+                <div class="{{ $amountLabelClass }}">الإجمالي</div>
+                <div class="mt-1 flex h-10 items-center justify-center rounded-lg bg-white font-mono text-base font-black text-slate-900">{{ number_format($this->subtotal, 2) }}</div>
+            </div>
 
+            {{-- الخصم --}}
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-2 lg:col-span-1">
+                <div class="flex items-center justify-between">
+                    <span class="{{ $amountLabelClass }}">الخصم</span>
+                    <button type="button" wire:click="$set('discount_type', 'fixed')" @disabled($invoiceLocked) class="text-[11px] font-black text-blue-600">{{ $discount_type === 'percentage' ? '%' : 'مبلغ' }}</button>
+                </div>
+                <input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="discount_amount" @disabled($invoiceLocked) class="{{ $smallInputClass }} text-rose-600" placeholder="0.00">
+            </div>
 
+            {{-- التوصيل --}}
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-2 lg:col-span-1">
+                <div class="{{ $amountLabelClass }}">التوصيل</div>
+                <input type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="delivery_fee" @disabled($invoiceLocked) class="{{ $smallInputClass }}" placeholder="0.00">
+                @if ($delivery_fee > 0)
+                    <button type="button" wire:click="openDeliveryDetails" @disabled($invoiceLocked) class="mt-1 inline-flex w-full items-center justify-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                        <flux:icon.truck class="size-3.5" /> بيانات التوصيل
+                    </button>
+                @endif
+            </div>
+
+            {{-- الصافي للدفع --}}
+            <div class="rounded-lg border-2 border-slate-800 bg-slate-900 p-2 text-white lg:col-span-2">
+                <div class="text-xs font-bold text-slate-300">{{ $this->total < 0 ? 'المسترد' : 'الصافي للدفع' }}</div>
+                <input type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="custom_final_total" @disabled($invoiceLocked)
+                    aria-label="{{ $this->total < 0 ? 'المسترد' : 'الصافي للدفع' }}"
+                    title="المبلغ المطلوب. اكتب مبلغاً آخر لتعديل الإجمالي النهائي."
+                    class="mt-1 h-12 w-full rounded-lg bg-transparent text-center font-mono text-3xl font-black text-white outline-none placeholder:text-white focus:bg-white/10" placeholder="{{ number_format(abs($this->total), 2, '.', '') }}">
+            </div>
+
+            {{-- المدفوع --}}
+            <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 lg:col-span-2">
+                <div class="text-xs font-bold text-blue-800">{{ $isReturnMode ? 'المصروف' : 'المدفوع' }}</div>
+                <input id="paid-amount-input" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="paid_amount" @disabled($invoiceLocked)
+                    class="mt-1 h-12 w-full rounded-lg border-2 border-blue-300 bg-white px-2 text-center font-mono text-2xl font-black text-blue-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="0.00">
+            </div>
+
+            {{-- الباقي / المتبقي --}}
+            <div class="rounded-lg border p-2 lg:col-span-2 {{ $hasRemaining ? 'border-rose-200 bg-rose-50' : 'border-emerald-200 bg-emerald-50' }}">
+                <div class="text-xs font-bold {{ $hasRemaining ? 'text-rose-700' : 'text-emerald-700' }}">{{ $hasRemaining ? 'المتبقي' : 'الباقي' }}</div>
+                <div class="mt-1 flex h-12 items-center justify-center rounded-lg bg-white font-mono text-3xl font-black {{ $hasRemaining ? 'text-rose-700' : 'text-emerald-700' }}">
+                    {{ number_format($hasRemaining ? $this->remaining : $this->change, 2) }}
+                </div>
+            </div>
+        </div>
 
         {{-- =========================================================
-             أزرار الفاتورة
+             الحفظ والطباعة بجانب المبالغ
         ========================================================== --}}
-
-
-
+        <div data-pos-save-actions class="md:order-4 md:col-span-2 grid grid-cols-2 gap-2 lg:order-4 lg:col-span-2 lg:grid-cols-1">
+            <button type="button" x-on:click="saveAndPrint()" x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
+                title="{{ $invoiceLocked ? 'طباعة الفاتورة المحفوظة' : 'حفظ الفاتورة وطباعتها' }}"
+                class="flex flex-col items-center justify-center rounded-lg px-2 py-2 text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 {{ $isReturnMode ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-500' }}">
+                <span class="inline-flex items-center gap-1.5 text-base font-black"><flux:icon.printer class="size-5" /> {{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}</span>
+                <span class="text-[11px] font-bold opacity-80">F6</span>
+            </button>
+            <button type="button" wire:click="saveOrEditInvoice" @disabled(empty($cart) && !$invoiceLocked)
+                class="flex flex-col items-center justify-center rounded-lg px-2 py-2 shadow-sm transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 {{ $invoiceLocked ? 'border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100' : 'bg-slate-900 text-white hover:bg-slate-800' }}">
+                <span class="inline-flex items-center gap-1.5 text-sm font-black">
+                    @if ($invoiceLocked)
+                        <flux:icon.pencil-square class="size-4" /> تعديل
+                    @else
+                        <flux:icon.check-circle class="size-4" /> حفظ
+                    @endif
+                </span>
+                <span class="text-[11px] font-bold opacity-80">F3</span>
+            </button>
+        </div>
     </div>
 
 

@@ -65,30 +65,23 @@
     {{-- =========================================================
         Cart
     ========================================================== --}}
-    <div class="shrink-0 border-b border-slate-100 bg-white px-3 py-2">
-        <div class="flex items-center justify-between gap-3" dir="rtl">
-            <div>
-                <div class="flex items-center gap-2 text-xs font-black text-slate-800">
-                    <span>تجميع الأصناف المتشابهة</span>
-                    <span
-                        class="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
-                        الكمية: {{ collect($cart)->sum(fn($item) => abs((float) ($item['quantity'] ?? 0))) }}
-                    </span>
-                </div>
-                <div class="text-[10px] font-bold text-slate-400">
-                    {{ $isReturnMode ? 'كل صنف مرتجع في سطر مستقل لتحديد حالته' : ($mergeSimilarProducts ? 'الصنف المتكرر يجمع في سطر واحد' : 'كل إضافة تظهر كسطر مستقل') }}
-                </div>
-            </div>
+    <div class="shrink-0 border-b border-slate-100 bg-white px-3 py-1.5">
+        <div class="flex items-center justify-between gap-3 text-xs font-bold text-slate-600" dir="rtl">
+            <span class="inline-flex items-center gap-3">
+                <span>عدد الأصناف: <strong class="font-mono text-slate-900">{{ count($cart) }}</strong></span>
+                <span>الكمية: <strong class="font-mono text-slate-900">{{ collect($cart)->sum(fn($item) => abs((float) ($item['quantity'] ?? 0))) }}</strong></span>
+            </span>
 
-            <button type="button" wire:click="toggleMergeSimilarProducts" role="switch" @disabled($invoiceLocked || $isReturnMode)
-                aria-checked="{{ $mergeSimilarProducts ? 'true' : 'false' }}"
-                class="relative h-7 w-12 shrink-0 rounded-full transition
-                    {{ $mergeSimilarProducts ? 'bg-indigo-600' : 'bg-slate-300' }}"
-                title="{{ $mergeSimilarProducts ? 'إيقاف التجميع' : 'تشغيل التجميع' }}">
-                <span
-                    class="absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition
-                    {{ $mergeSimilarProducts ? 'right-1' : 'right-6' }}"></span>
-            </button>
+            <label class="inline-flex items-center gap-2" title="{{ $isReturnMode ? 'كل صنف مرتجع في سطر مستقل لتحديد حالته' : ($mergeSimilarProducts ? 'الصنف المتكرر يجمع في سطر واحد' : 'كل إضافة تظهر كسطر مستقل') }}">
+                <span>تجميع الأصناف المتشابهة</span>
+                <button type="button" wire:click="toggleMergeSimilarProducts" role="switch" @disabled($invoiceLocked || $isReturnMode)
+                    aria-checked="{{ $mergeSimilarProducts ? 'true' : 'false' }}"
+                    aria-label="تجميع الأصناف المتشابهة"
+                    class="relative h-5 w-9 shrink-0 rounded-full transition disabled:opacity-50
+                        {{ $mergeSimilarProducts ? 'bg-blue-600' : 'bg-slate-300' }}">
+                    <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition {{ $mergeSimilarProducts ? 'right-0.5' : 'right-4.5' }}"></span>
+                </button>
+            </label>
         </div>
     </div>
 
@@ -105,8 +98,8 @@
                         #
                     </th>
                     {{-- رقم الصنف ID --}}
-                    <th class="w-16 px-2 py-2 text-center">
-                        رقم المنتج
+                    <th class="w-20 px-2 py-2 text-center">
+                        رقم الصنف
                     </th>
 
                     {{-- الصنف --}}
@@ -124,7 +117,7 @@
                         السعر
                     </th>
 
-                    <th class="px-2 py-2 text-center">المتبقي</th>
+                    <th class="px-2 py-2 text-center" title="الكمية المتبقية في المخزون بعد هذه الفاتورة">المخزون بعد البيع</th>
 
                     {{-- الإجمالي --}}
                     <th class="px-2 py-2 text-center">

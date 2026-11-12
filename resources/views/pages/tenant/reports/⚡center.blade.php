@@ -34,7 +34,7 @@ new class extends Component {
     public string $voucherType = '';
     public string $paymentMethod = '';
     public string $partySearch = '';
-    public string $statementPartyType = 'customer';
+    public string $statementPartyType = 'all';
     public string $productSearch = '';
     /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
     public ?array $statementDocument = null;
@@ -53,7 +53,7 @@ new class extends Component {
         if ($this->report === 'statement' && request()->integer('party_id') > 0) {
             $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
                 ->whereKey(request()->integer('party_id'))->value('id');
-            $this->statementPartyType = request('party_type') === 'supplier' ? 'supplier' : 'customer';
+            $this->statementPartyType = in_array(request('party_type'), ['customer', 'supplier'], true) ? request('party_type') : 'all';
         }
     }
 
@@ -161,7 +161,7 @@ new class extends Component {
         $this->search = '';
         $this->partyType = 'all';
         $this->balanceSide = 'all';
-        $this->statementPartyType = 'customer';
+        $this->statementPartyType = 'all';
         $this->partyId = null;
         $this->productId = null;
         $this->voucherType = '';
@@ -245,7 +245,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main dir="rtl" class="space-y-6">
+<flux:main dir="rtl" class="space-y-6" data-keyboard-tables>
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div><flux:heading size="xl">مركز التقارير</flux:heading><flux:text>تقارير الحسابات والمبيعات والمخزون والموظفين حسب الصلاحيات والفروع المسموحة.</flux:text></div>
         <div class="flex flex-wrap gap-2">
@@ -323,19 +323,36 @@ new class extends Component {
     </form>
     <div wire:loading role="status" class="text-sm text-blue-700 dark:text-blue-300">جارٍ تجهيز التقرير…</div>
     @if ($report === 'statement' && $statementParties)
-        <div class="grid gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]" wire:loading.class="opacity-60" wire:target="selectStatementParty,partySearch,statementPartyType,applyFilters,setPeriod">
-            <aside class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <div class="grid gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]" wire:loading.class="opacity-60" wire:target="selectStatementParty,partySearch,statementPartyType,applyFilters,setPeriod"
+            x-data="{
+                parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
+                rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
+                move(items, step) {
+                    if (!items.length) return;
+                    const index = items.indexOf(document.activeElement);
+                    const next = items[index < 0 ? 0 : Math.max(0, Math.min(items.length - 1, index + step))];
+                    next.focus();
+                    next.scrollIntoView({ block: 'nearest' });
+                },
+                toStatement() { this.rows()[0]?.focus() },
+                toParties() { const parties = this.parties(); (parties.find((party) => party.dataset.selected === 'true') ?? parties[0])?.focus() },
+            }">
+            <aside data-statement-directory class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+                x-on:keydown.arrow-down.prevent="move(parties(), 1)"
+                x-on:keydown.arrow-up.prevent="move(parties(), -1)"
+                x-on:keydown.arrow-left.prevent="toStatement()">
                 <div class="border-b border-slate-200 p-4 dark:border-slate-700">
                     <div class="flex items-center justify-between gap-2"><div><h2 class="font-bold">دليل الحسابات</h2><p class="text-xs text-slate-500">اختر طرفاً لعرض كشفه بالتاريخ المحدد.</p></div><span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{{ $statementParties->count() }}</span></div>
                     <div class="mt-3 grid grid-cols-3 gap-1">
-                        @foreach (['customer' => 'الزبائن', 'supplier' => 'الموردون', 'all' => 'الكل'] as $type => $label)
-                            <button type="button" wire:click="$set('statementPartyType', '{{ $type }}')" class="rounded-lg px-2 py-2 text-xs font-bold {{ $statementPartyType === $type ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }}">{{ $label }}</button>
+                        @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
+                            <button type="button" wire:key="statement-party-type-{{ $type }}" wire:click="$set('statementPartyType', '{{ $type }}')" class="rounded-lg px-2 py-2 text-xs font-bold {{ $statementPartyType === $type ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }}">{{ $label }}</button>
                         @endforeach
                     </div>
+                    <p class="mt-2 text-[11px] text-slate-400">↑ ↓ للتنقل · Enter لعرض الكشف · ← للانتقال إلى الكشف</p>
                 </div>
                 <div class="max-h-[580px] overflow-y-auto p-2">
                     @forelse ($statementParties as $party)
-                        <button type="button" wire:click="selectStatementParty({{ $party->id }})" wire:key="statement-party-{{ $party->id }}" class="mb-1 w-full rounded-lg p-3 text-right transition {{ (int) $partyId === (int) $party->id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-800' }}">
+                        <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:click="selectStatementParty({{ $party->id }})" wire:key="statement-party-{{ $party->id }}" class="mb-1 w-full rounded-lg p-3 text-right transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 {{ (int) $partyId === (int) $party->id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-slate-50 focus:bg-indigo-50 dark:hover:bg-slate-800' }}">
                             <div class="flex items-center justify-between gap-3"><span class="truncate font-bold">{{ $party->name }}</span><span class="shrink-0 text-xs tabular-nums {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}">{{ number_format((float) $party->current_balance, 2) }}</span></div>
                             <div class="mt-1 flex gap-2 text-xs {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}"><span>{{ $party->code ?: 'بدون رمز' }}</span><span>{{ $party->phone ?: '' }}</span></div>
                         </button>
@@ -345,7 +362,10 @@ new class extends Component {
                 </div>
                 @if ($statementParties->hasPages())<div class="border-t border-slate-200 px-3 py-2 dark:border-slate-700">{{ $statementParties->links() }}</div>@endif
             </aside>
-            <section class="min-w-0 space-y-4">
+            <section data-statement-ledger class="min-w-0 space-y-4"
+                x-on:keydown.arrow-down.prevent="move(rows(), 1)"
+                x-on:keydown.arrow-up.prevent="move(rows(), -1)"
+                x-on:keydown.arrow-right.prevent="toParties()">
                 @include('pages.tenant.reports.partials.statement-result', ['definition' => $definition, 'rows' => $rows, 'from' => $from, 'to' => $to])
             </section>
         </div>
@@ -361,7 +381,7 @@ new class extends Component {
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
     @endif
     @if ($showStatementDocument && $statementDocument)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" wire:click.self="closeStatementDocument">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" wire:click.self="closeStatementDocument" x-data x-on:keydown.escape.window="$wire.closeStatementDocument()">
             <section role="dialog" aria-modal="true" aria-label="تفاصيل المستند" class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
                 <div class="flex items-start justify-between gap-4"><div><h2 class="text-lg font-black">{{ $statementDocument['title'] }}</h2><p class="mt-1 font-mono text-sm text-indigo-700" dir="ltr">{{ $statementDocument['reference'] }}</p></div><button type="button" wire:click="closeStatementDocument" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">إغلاق</button></div>
                 <dl class="mt-5 grid gap-3 sm:grid-cols-2"><div><dt class="text-xs text-slate-500">التاريخ</dt><dd class="mt-1 font-bold">{{ $statementDocument['date'] }}</dd></div><div><dt class="text-xs text-slate-500">الطرف</dt><dd class="mt-1 font-bold">{{ $statementDocument['party'] }}</dd></div><div><dt class="text-xs text-slate-500">المبلغ</dt><dd class="mt-1 text-lg font-black tabular-nums" dir="ltr">{{ number_format($statementDocument['amount'], 2) }}</dd></div><div><dt class="text-xs text-slate-500">الحالة / الطريقة</dt><dd class="mt-1 font-bold">{{ $statementDocument['status'] ?: '—' }}</dd></div></dl>

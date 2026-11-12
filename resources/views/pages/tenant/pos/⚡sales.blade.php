@@ -4874,7 +4874,7 @@ new class extends Component {
             @endif
             <div class="pos-content min-w-0">
                 <section class="pos-content-section min-w-0">
-                    <div class="pos-content-grid grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(320px,32%)]"
+                    <div class="pos-content-grid grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(300px,25%)]"
                         dir="ltr">
                         <aside id="pos-products-panel"
                             class="pos-products min-w-0 min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm {{ $this->invoiceIsLocked() ? 'opacity-70' : '' }}"
