@@ -2108,6 +2108,11 @@ new class extends Component {
         $this->cart[$lineKey]['price_manual'] = true;
         $this->cart[$lineKey]['customer_price'] = false;
         $this->cart[$lineKey]['subtotal'] = $targetTotal;
+        $this->cart[$lineKey]['normal_total'] = $targetTotal;
+        $this->cart[$lineKey]['promotion_savings'] = 0;
+
+        // Keep the amount to pay in step with the edited line, as every other cart change does.
+        $this->custom_final_total = $this->roundMoney(max(0, $this->subtotal - $this->calculated_discount + $this->delivery_fee));
     }
 
     public function updateCostPrice(string $lineKey, $newCost): void
