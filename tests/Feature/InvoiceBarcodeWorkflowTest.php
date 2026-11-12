@@ -88,6 +88,46 @@ test('purchase invoice scanner loads barcode details and Enter progression commi
         ->and($cart[0]['price'])->toBe(5.0);
 });
 
+test('a purchase invoice scan ending in Enter moves to the quantity without adding the item', function (): void {
+    $component = Livewire::test('pages::tenant.purchases.invoices')
+        ->call('scanBarcodeToCart', '1234567890123')
+        ->assertReturned(true)
+        ->assertSet('selectedProductId', $this->product->id)
+        ->assertSet('selectedPurchasePrice', 4.25)
+        ->assertDispatched('focus-quantity')
+        ->assertNotDispatched('focus-product-search');
+
+    expect($component->get('cart'))->toBeEmpty();
+
+    // The live search can select the product before Enter arrives; Enter then only moves on.
+    $component->call('scanBarcodeToCart', 'صنف تجريبي')
+        ->assertReturned(true)
+        ->assertSet('selectedProductId', $this->product->id);
+    expect($component->get('cart'))->toBeEmpty();
+
+    $component->call('commitRowWithValues', '2', '4.25')
+        ->assertSet('selectedProductId', null)
+        ->assertSet('selectedPurchasePrice', 0.0)
+        ->assertSet('selectedQuantity', 1.0);
+    expect(array_values($component->get('cart'))[0]['quantity'])->toBe(2.0);
+});
+
+test('an unknown barcode scanned in a purchase invoice selects nothing', function (): void {
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->call('scanBarcodeToCart', '0000000000000')
+        ->assertReturned(false)
+        ->assertSet('selectedProductId', null);
+});
+
+test('the purchase entry row guards its fields against a barcode scan', function (): void {
+    $this->user->update(['is_owner' => true]);
+
+    $this->get(route('tenant.purchase-invoices'))
+        ->assertOk()
+        ->assertSee('rejectScanInEntryField(event)', false)
+        ->assertSee('$wire.selectedProductId ? Math.max(0', false);
+});
+
 test('sales invoice scanner loads barcode details and Enter progression commits the row', function (): void {
     $component = Livewire::test('pages::tenant.sales.invoices')
         ->call('selectProductByBarcode', '1234567890123')

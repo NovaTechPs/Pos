@@ -478,51 +478,20 @@ new class extends Component {
         $barcode = trim($barcode);
         if (! $tenantId || $barcode === '' || mb_strlen($barcode) > 100) return false;
 
-        if ($this->editingCartKey !== null) {
-            if (! $this->selectProductByBarcode($barcode)) {
-                return false;
-            }
+        // A scan only fills the entry row and moves to the quantity; the line is added
+        // after the quantity and cost are confirmed, like a product picked by name.
+        if ($this->selectProductByBarcode($barcode)) {
+            return true;
+        }
 
-            $this->commitRowToCart();
+        // The live search may already have picked the scanned product before Enter arrived.
+        if ($this->selectedProductId && trim($this->rowSearch) === $this->selectedProductName) {
+            $this->dispatch('focus-quantity');
 
             return true;
         }
 
-        $product = Product::query()->where('tenant_id', $tenantId)
-            ->where(function ($q) use ($barcode, $tenantId) {
-                $q->where('product_number', $barcode)
-                    ->orWhereHas('barcodes', fn ($b) => $b->where('tenant_id', $tenantId)->where('barcode', $barcode));
-            })->first();
-        if (! $product) return false;
-
-        foreach ($this->cart as $key => $item) {
-            if ((int) ($item['id'] ?? 0) === (int) $product->id) {
-                $this->cart[$key]['quantity'] = round((float) $item['quantity'] + 1, 2);
-                unset($this->cart[$key]['total_override']);
-                $this->rowSearch = '';
-                $this->selectedProductId = null;
-                $this->dispatch('focus-product-search');
-                return true;
-            }
-        }
-
-        $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
-        $bp = BranchProduct::query()->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)->where('product_id', $product->id)->first();
-        $key = $product->id . '-' . Str::uuid()->toString();
-        $this->cart[$key] = [
-            'id' => $product->id,
-            'name' => $product->name,
-            'price' => round((float) ($product->cost_price ?? 0), 2),
-            'retail_price' => round((float) ($bp?->retail_price ?? 0), 2),
-            'quantity' => 1.0,
-            'discount' => 0.0,
-            'stock' => round((float) ($bp?->stock_quantity ?? 0), 2),
-        ];
-        $this->rowSearch = '';
-        $this->selectedProductId = null;
-        $this->dispatch('focus-product-search');
-        return true;
+        return false;
     }
 
     // Pass current DOM values in one request so blur/morphing cannot lose edits.
@@ -2452,7 +2421,7 @@ new class extends Component {
                                     min="0"
                                     step="0.01"
                                     aria-label="إجمالي الصنف"
-                                    x-effect="if (document.activeElement !== $el) $el.value = Math.max(0, Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)).toFixed(2)"
+                                    x-effect="if (document.activeElement !== $el) $el.value = $wire.selectedProductId ? Math.max(0, Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)).toFixed(2) : ''"
                                     x-on:input="const total = Number($event.target.value); const quantity = Number($wire.selectedQuantity); if ($event.target.value !== '' && Number.isFinite(total) && total >= 0 && Number.isFinite(quantity) && quantity > 0) { $wire.selectedPurchasePrice = Math.round(total / quantity * 100) / 100; }"
                                     x-ref="purchaseEntryTotalInput"
                                     x-on:focus="$event.target.select()"
@@ -2720,6 +2689,7 @@ new class extends Component {
         livewireCleanup: [],
         addingRow: false,
         entryDiscount: 0,
+        scanBurst: null,
 
         /** Finds an x-ref anywhere in this page, including refs declared inside nested x-data scopes. */
         /** Sizes the page to the visible window on desktop so only the items table scrolls. */
@@ -2776,6 +2746,45 @@ new class extends Component {
 
         entryRef(name) {
             return this.$root.querySelector(`[x-ref="${name}"]`);
+        },
+
+        /**
+         * A barcode scanner types a burst of characters a few milliseconds apart and ends with Enter.
+         * When that burst lands in the entry row's quantity, cost or total, it is a new item scanned
+         * before the current one was added, so the field gets its old value back and nothing is added.
+         */
+        rejectScanInEntryField(event) {
+            const field = event.target;
+            if (!['quantity', 'purchasePriceInput', 'purchaseEntryTotalInput'].includes(field?.getAttribute?.('x-ref'))) {
+                this.scanBurst = null;
+                return false;
+            }
+
+            const now = performance.now();
+            const burst = this.scanBurst?.field === field && now - this.scanBurst.lastAt < 60 ? this.scanBurst : null;
+
+            if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                this.scanBurst = burst
+                    ? { ...burst, count: burst.count + 1, lastAt: now }
+                    : { field, valueBefore: field.value, count: 1, lastAt: now };
+                return false;
+            }
+
+            if (event.key !== 'Enter' || !burst || burst.count < 4) return false;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            field.value = burst.valueBefore;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            this.scanBurst = null;
+            window.dispatchEvent(new CustomEvent('toast', { detail: {
+                variant: 'error',
+                message: 'أضف الصنف الحالي أولاً (Enter حتى زر الإضافة)، ثم امسح الصنف التالي من خانة البحث.',
+            } }));
+            field.focus();
+            field.select();
+
+            return true;
         },
 
         async addCurrentPurchaseRow() {
@@ -2888,6 +2897,7 @@ new class extends Component {
             window.addEventListener('keydown', async (event) => {
                 if (!this.$el.isConnected || this.$el.getClientRects().length === 0) return;
                 const target = event.target;
+                if (this.rejectScanInEntryField(event)) return;
 
                 const isTextField =
                     target instanceof HTMLInputElement ||
