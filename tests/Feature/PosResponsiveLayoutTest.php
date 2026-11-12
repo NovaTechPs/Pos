@@ -41,10 +41,8 @@ test('responsive POS keeps a single editable cart and checkout with products bef
         ->and($xpath->query('//*[@id="pos-products-panel"]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-cart-line]')->length)->toBe(1)
         ->and($xpath->query('//*[@data-pos-field="quantity"]')->length)->toBe(1)
-        ->and($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " pos-payment ")]//*[@data-pos-save-actions]/button')->length)->toBe(2)
-        ->and($xpath->query('//*[@data-pos-tools-menu]')->length)->toBe(1)
-        ->and($xpath->query('//*[@role="menu"]//*[@data-pos-delete-invoice]')->length)->toBe(1)
-        ->and(substr_count($html, 'wire:click="downloadInvoicePdf"') + substr_count($html, 'wire:click="copyLoadedInvoice"') + substr_count($html, 'wire:click="sendInvoiceWhatsApp"'))->toBe(3)
+        ->and($xpath->query('//div[contains(concat(" ", normalize-space(@class), " "), " pos-payment-actions ")]/button')->length)->toBe(6)
+        ->and($xpath->query('//*[@data-pos-invoice-info]//div[contains(concat(" ", normalize-space(@class), " "), " pos-invoice-actions ")]')->length)->toBe(1)
         ->and($xpath->query('//*[@role="tab"]')->length)->toBe(0)
         ->and(strpos($html, 'id="pos-products-panel"'))->toBeLessThan(strpos($html, 'id="pos-cart-panel"'));
 

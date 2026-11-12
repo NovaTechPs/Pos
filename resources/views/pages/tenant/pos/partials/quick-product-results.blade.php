@@ -2,9 +2,9 @@
     <table data-pos-product-grid class="w-full table-fixed border-collapse text-right text-[11px]">
         <thead class="sticky top-0 z-[1] bg-slate-800 text-white">
             <tr>
-                <th class="px-2 py-2">الصنف / رقم الصنف / الباركود</th>
-                <th class="w-[4.75rem] px-1 py-2 text-center">سعر البيع</th>
-                <th class="w-[3.75rem] px-1 py-2 text-center">المتوفر</th>
+                <th class="w-[56%] px-2 py-2">الصنف / رقم الصنف / الباركود</th>
+                <th class="w-[20%] px-1 py-2 text-center">سعر البيع</th>
+                <th class="w-[24%] px-1 py-2 text-center">المتوفر</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">

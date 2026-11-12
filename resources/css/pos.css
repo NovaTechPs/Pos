@@ -108,7 +108,7 @@
     .pos-payment [data-pos-payment-methods] > .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem; }
     .pos-payment [data-pos-payment-methods] > .grid > button { padding: 0.625rem 0.25rem; font-size: 0.7rem; }
     .pos-payment-totals > div { padding: 0.375rem; }
-    .pos-payment-totals input:not(.h-12) { height: 2.5rem; }
+    .pos-payment-totals input { height: 2.5rem; }
 }
 
 @media screen and (max-width: 767px) {
@@ -211,7 +211,7 @@
 
     .pos-cart [data-pos-cart-line] > td:nth-child(4)::before { content: 'الكمية'; }
     .pos-cart [data-pos-cart-line] > td:nth-child(5)::before { content: 'السعر'; }
-    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before { content: 'المخزون بعد البيع'; }
+    .pos-cart [data-pos-cart-line] > td:nth-child(6)::before { content: 'المتبقي'; }
     .pos-cart [data-pos-cart-line] > td:nth-child(7)::before { content: 'الإجمالي'; }
 
     .pos-cart [data-pos-cart-line] input {
@@ -254,7 +254,7 @@
     }
 
     .pos-content-grid {
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 25%);
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 32%);
     }
 
     .pos-layout,
@@ -310,14 +310,9 @@
         padding: 0.375rem;
     }
 
-    .pos-payment input:not(.h-12) {
+    .pos-payment input {
         height: 2rem;
         padding-block: 0.25rem;
-    }
-
-    .pos-payment input.h-12,
-    .pos-payment .pos-payment-totals .h-12 {
-        height: 2.5rem;
     }
 
     .pos-payment .grid-cols-2 > button {
