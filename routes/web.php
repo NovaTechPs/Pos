@@ -178,5 +178,8 @@ Route::middleware(['auth', 'verified'])
         Route::livewire('/payroll-manager', 'pages::tenant.hr.payroll-manager')
             ->middleware('can:payroll.view')
             ->name('payroll-manager');
+        Route::livewire('/employee-tasks', 'pages::tenant.hr.tasks')
+            ->middleware('can:tasks.access')
+            ->name('employee-tasks');
     });
 require __DIR__.'/settings.php';

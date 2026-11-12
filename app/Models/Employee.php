@@ -117,6 +117,18 @@ class Employee extends Model
         return $this->hasMany(EmployeeAdvance::class);
     }
 
+    /** @return HasMany<EmployeeTask, $this> */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(EmployeeTask::class);
+    }
+
+    /** @return HasMany<EmployeeRecurringTask, $this> */
+    public function recurringTasks(): HasMany
+    {
+        return $this->hasMany(EmployeeRecurringTask::class);
+    }
+
     /** @return HasMany<EmployeeBonus, $this> */
     public function bonuses(): HasMany
     {

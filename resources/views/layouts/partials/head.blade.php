@@ -33,6 +33,7 @@
         'tenant.online-orders' => ['ar' => 'الطلبات الإلكترونية', 'en' => 'Online Orders'],
         'tenant.payment' => ['ar' => 'سندات صرف', 'en' => 'Payments'],
         'tenant.payroll-manager' => ['ar' => 'مسير الرواتب', 'en' => 'Payroll'],
+        'tenant.employee-tasks' => ['ar' => 'مهام الموظفين', 'en' => 'Employee Tasks'],
         'tenant.pos' => ['ar' => 'نقطة البيع', 'en' => 'Point of Sale'],
         'tenant.product' => ['ar' => 'المنتجات', 'en' => 'Products'],
         'tenant.returns' => ['ar' => 'المردودات', 'en' => 'Returns'],

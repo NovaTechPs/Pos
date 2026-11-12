@@ -2,6 +2,7 @@
 
 use App\Models\Tenant;
 use App\Services\PartyBalanceCheck;
+use App\Services\RecurringTaskGenerator;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -28,5 +29,14 @@ Schedule::call(fn () => Tenant::query()->pluck('id')
     ->each(fn (int $tenantId) => app(PartyBalanceCheck::class)->run($tenantId)))
     ->weekly()
     ->name('party-balance-check')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge');
+
+// Create today's recurring employee tasks shortly after midnight (the tasks page also does this
+// when it is opened, so stores without a running scheduler still get them).
+Schedule::call(fn () => Tenant::query()->pluck('id')
+    ->each(fn (int $tenantId) => app(RecurringTaskGenerator::class)->generate($tenantId)))
+    ->dailyAt('00:05')
+    ->name('recurring-employee-tasks')
     ->withoutOverlapping()
     ->when(fn (): bool => config('branch-sync.mode') !== 'edge');

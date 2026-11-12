@@ -70,6 +70,11 @@ class AppServiceProvider extends ServiceProvider
             return $user->hasPermission($ability) ? true : null;
         });
 
+        // مدير المهام: يفتحه من يدير المهام، أو الموظف المرتبط بحسابه ليرى مهامه
+        Gate::define('tasks.access', function (User $user): bool {
+            return $user->hasPermission('tasks.manage') || $user->employee()->exists();
+        });
+
         // Gate للتحقق من إمكانية الوصول إلى نظام POS
         Gate::define('access-pos', function (User $user) {
             return $user->tenant && $user->tenant->hasFeature('pos_system');

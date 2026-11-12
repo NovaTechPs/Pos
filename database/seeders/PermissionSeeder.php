@@ -765,6 +765,11 @@ class PermissionSeeder extends Seeder
                 'display_name' => 'صرف رواتب الموظفين',
                 'group' => 'الموارد البشرية',
             ],
+            [
+                'name' => 'tasks.manage',
+                'display_name' => 'إدارة مهام الموظفين',
+                'group' => 'الموارد البشرية',
+            ],
 
         ];
 

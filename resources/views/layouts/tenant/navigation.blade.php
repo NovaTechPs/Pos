@@ -53,6 +53,7 @@
                 ['permission' => 'currency_rates.manage', 'route' => 'tenant.currency-rates', 'label' => 'أسعار الصرف / Exchange Rates', 'icon' => 'currency-dollar'],
                 ['permission' => 'accounting.receipt.view', 'route' => 'tenant.receipts', 'label' => 'Receipts', 'icon' => 'receipt-percent'],
                 ['permission' => 'payroll.view', 'route' => 'tenant.payroll-manager', 'label' => 'Payroll', 'icon' => 'banknotes'],
+                ['permission' => 'tasks.access', 'route' => 'tenant.employee-tasks', 'label' => 'Employee Tasks', 'icon' => 'clipboard-document-check'],
             ],
         ],
         [
