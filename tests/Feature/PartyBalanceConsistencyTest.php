@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -93,4 +94,36 @@ test('balance reconciliation can correct chosen parties only', function (): void
     $this->artisan('parties:reconcile-balances', ['--party' => [$this->customer->id], '--fix' => true])->assertSuccessful();
 
     expect((float) $this->customer->fresh()->current_balance)->toBe(0.0)->and((float) $other->fresh()->current_balance)->toBe(9.0);
+});
+
+test('the one-time server reconciliation skips Al-Azm, Hook and shared delivery companies and logs every correction', function (): void {
+    $party = fn (string $name, float $stored) => Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => $name, 'type' => 'customer', 'current_balance' => $stored]);
+    $azm = $party('مؤسسة العزم / ابو ديس', 7);
+    $hook = $party('شركة توصيل هوك', -1019);
+    $courier = $party('شركة توصيل أخرى', 0);
+    Order::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'customer_id' => $courier->id,
+        'delivery_party_id' => $courier->id, 'customer_name' => 'x', 'invoice_number' => 'SHARED-1', 'type' => 'pos', 'status' => 'completed',
+        'subtotal' => 100, 'total' => 100, 'delivery_fee' => 20, 'paid_amount' => 0, 'payment_status' => 'unpaid']);
+    $this->customer->update(['current_balance' => 55]);
+
+    (require database_path('migrations/2026_11_12_115038_reconcile_party_balances_after_pos_credit_fix.php'))->up();
+
+    expect((float) $this->customer->fresh()->current_balance)->toBe(0.0)
+        ->and((float) $azm->fresh()->current_balance)->toBe(7.0)
+        ->and((float) $hook->fresh()->current_balance)->toBe(-1019.0)
+        ->and((float) $courier->fresh()->current_balance)->toBe(0.0);
+    $log = DB::table('party_balance_corrections')->sole();
+    expect($log->party_id)->toBe($this->customer->id)
+        ->and((float) $log->previous_balance)->toBe(55.0)
+        ->and((float) $log->corrected_balance)->toBe(0.0)
+        ->and($log->reason)->toBe('pos-credit-sale-fix-2026-11-12');
+});
+
+test('the one-time reconciliation never runs on branch devices', function (): void {
+    config(['branch-sync.mode' => 'edge']);
+    $this->customer->update(['current_balance' => 55]);
+
+    (require database_path('migrations/2026_11_12_115038_reconcile_party_balances_after_pos_credit_fix.php'))->up();
+
+    expect((float) $this->customer->fresh()->current_balance)->toBe(55.0);
 });
