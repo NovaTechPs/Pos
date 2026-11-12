@@ -293,6 +293,14 @@ new class extends Component {
             : ($user?->branch_id ? (int) $user->branch_id : $user?->activeBranchId());
     }
 
+    /** Employees reopen only the invoices they created; the store owner sees every invoice. */
+    private function invoiceCreatorScopeId(): ?int
+    {
+        $user = auth()->user();
+
+        return $user?->isTenantOwner() || $user?->isSaaSAdmin() ? null : $user?->id;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | فاتورة جديدة
@@ -1462,7 +1470,7 @@ new class extends Component {
 
     public function searchInvoice(): void
     {
-        $search = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+        $search = trim(strtr(trim($this->searchInvoiceQuery), array_combine(mb_str_split('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'), str_split('01234567890123456789'))));
         $tenantId = $this->tenantId();
 
         if ($search === '' || !$tenantId) {
@@ -1477,6 +1485,7 @@ new class extends Component {
             })
             ->where('status', 'completed')
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where(function ($query) use ($search) {
                 $query->where('invoice_number', 'like', "%{$search}%")
                     ->orWhere('customer_name', 'like', "%{$search}%")
@@ -1506,6 +1515,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $this->tenantId())
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where(function ($query): void {
                 $query->where('type', 'wholesale')
                     ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
@@ -1535,6 +1545,11 @@ new class extends Component {
 
         if ($this->invoiceBranchScopeId() && (int) $order->branch_id !== $this->invoiceBranchScopeId()) {
             $this->errorMessage = 'لا يمكنك عرض فواتير فرع آخر ضمن نطاق الفرع المحدد.';
+            return;
+        }
+
+        if ($this->invoiceCreatorScopeId() && (int) $order->created_by !== $this->invoiceCreatorScopeId()) {
+            $this->errorMessage = 'يمكنك عرض الفواتير التي أنشأتها أنت فقط.';
             return;
         }
 
@@ -1630,7 +1645,8 @@ new class extends Component {
         $query = Order::query()
             ->where('tenant_id', $tenantId)
             ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
-            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId));
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId));
 
         if ($this->currentOrderId) {
             $query->where('id', '<', $this->currentOrderId);
@@ -1658,6 +1674,7 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
             ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where('id', '>', $this->currentOrderId)
             ->orderBy('id')
             ->first();
@@ -1735,6 +1752,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $tenantId)
             ->whereKey($this->currentOrderId)
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->with('items.product')
             ->first();
 
@@ -1775,6 +1793,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $this->tenantId())
             ->whereKey($this->currentOrderId)
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->with(['items.product', 'user', 'branch'])
             ->withSum('payments as collected_amount', 'amount')
             ->first();
@@ -1944,7 +1963,7 @@ new class extends Component {
 
         $invoiceSearchResults = collect();
         if ($tenantId && $this->showInvoiceSearch) {
-            $search = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+            $search = trim(strtr(trim($this->searchInvoiceQuery), array_combine(mb_str_split('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'), str_split('01234567890123456789'))));
             $invoiceSearchResults = Order::query()
                 ->where('tenant_id', $tenantId)
                 ->where('status', 'completed')
@@ -1953,6 +1972,7 @@ new class extends Component {
                         ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id'));
                 })
                 ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+                ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
                 ->when($search !== '', function ($query) use ($search): void {
                     $query->where(function ($matches) use ($search): void {
                         $matches->where('invoice_number', 'like', "%{$search}%")

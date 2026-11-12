@@ -89,11 +89,14 @@ class PushBranchSyncOperations extends Command
 
         $operations->each(fn (BranchSyncOperation $operation) => $operation->increment('attempts'));
 
+        // Uploads started from the cashier's screen must stay short; the desktop's background sync
+        // process may wait longer so a large backlog queued while offline can finish after reconnecting.
+        $interactive = config('app.desktop') && ! app()->runningInConsole();
         try {
             $response = Http::acceptJson()
                 ->withToken($token)
-                ->connectTimeout(config('app.desktop') ? 1 : 3)
-                ->timeout(config('app.desktop') ? 4 : 20)
+                ->connectTimeout($interactive ? 1 : 3)
+                ->timeout($interactive ? 4 : 30)
                 ->post($serverUrl.'/api/branch-sync/operations', [
                     'operations' => $operations->map(fn (BranchSyncOperation $operation): array => [
                         'operation_uuid' => $operation->operation_uuid,

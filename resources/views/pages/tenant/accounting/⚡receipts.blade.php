@@ -21,6 +21,12 @@ new class extends Component {
 
     use WithPagination;
     use \App\Traits\FiltersVouchers;
+    use \App\Concerns\NavigatesVoucherArchive;
+
+    protected function voucherArchiveType(): string
+    {
+        return 'receipt';
+    }
 
     public string $partySearch = '';
 
@@ -107,7 +113,7 @@ new class extends Component {
 
         }
 
-        $paginator = Payment::query()
+        $paginator = Payment::query()->visibleTo(auth()->user())
 
             /*
              * سندات القبض القادمة من مبيعات الجملة لها order_id،
@@ -203,7 +209,7 @@ new class extends Component {
 
         }
 
-        return Payment::query()
+        return Payment::query()->visibleTo(auth()->user())
 
             ->where('tenant_id', $tenantId)
 
@@ -231,7 +237,7 @@ new class extends Component {
 
         }
 
-        return (float) Payment::query()
+        return (float) Payment::query()->visibleTo(auth()->user())
 
             ->where('tenant_id', $tenantId)
 
@@ -346,7 +352,7 @@ new class extends Component {
         if (!$id) {
             return true;
         }
-        $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        $payment = Payment::query()->visibleTo(auth()->user())->where('tenant_id', $this->getTenantId())->findOrFail($id);
         if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
             $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
 
@@ -366,7 +372,7 @@ new class extends Component {
             return false;
         }
 
-        $payment = Payment::query()->with('order')->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        $payment = Payment::query()->visibleTo(auth()->user())->with('order')->where('tenant_id', $this->getTenantId())->findOrFail($id);
         if ($payment->order?->type === 'pos' && !$payment->order?->customer_id) {
             $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف حركة هذه الفاتورة من الفاتورة نفسها.');
 
@@ -419,7 +425,7 @@ new class extends Component {
 
         $tenantId = $this->getTenantId();
 
-        $receipt = Payment::query()
+        $receipt = Payment::query()->visibleTo(auth()->user())
 
             ->where('tenant_id', $tenantId)
 
@@ -550,7 +556,7 @@ new class extends Component {
 
             if ($this->paymentId) {
 
-                $receipt = Payment::query()
+                $receipt = Payment::query()->visibleTo(auth()->user())
 
                     ->where('tenant_id', $tenantId)
 
@@ -771,7 +777,7 @@ new class extends Component {
 
         $tenantId = $this->getTenantId();
 
-        Payment::query()
+        Payment::query()->visibleTo(auth()->user())
 
             ->where('tenant_id', $tenantId)
 
@@ -804,7 +810,7 @@ new class extends Component {
 
         DB::transaction(function () use ($tenantId) {
 
-            $receipt = Payment::query()
+            $receipt = Payment::query()->visibleTo(auth()->user())
 
                 ->where('tenant_id', $tenantId)
 
@@ -867,7 +873,7 @@ new class extends Component {
 
         $tenantId = $this->getTenantId();
 
-        $this->printVoucher = Payment::query()
+        $this->printVoucher = Payment::query()->visibleTo(auth()->user())
 
             ->with(['party', 'creator'])
 
@@ -897,7 +903,7 @@ new class extends Component {
 
         $tenantId = $this->getTenantId();
 
-        $receipt = Payment::query()
+        $receipt = Payment::query()->visibleTo(auth()->user())
 
             ->with('party')
 

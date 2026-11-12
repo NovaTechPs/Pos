@@ -74,6 +74,7 @@ class PullBranchSyncCatalog extends Command
                         'categories' => ['present', 'array'],
                         'barcodes' => ['present', 'array'],
                         'prices' => ['present', 'array'],
+                        'offers' => ['sometimes', 'array'],
                         'settings' => ['sometimes', 'array:allow_negative_stock,unified_stock,merge_similar_products'],
                         'settings.*' => ['boolean'],
                     ])->validate();
@@ -105,6 +106,17 @@ class PullBranchSyncCatalog extends Command
                                     throw new RuntimeException('Unexpected branch price.');
                                 }
                                 $this->storeRow('branch_products', $price, $tenantId, ['stock_quantity']);
+                            }
+                            // Older servers do not send offers; keep the local ones in that case.
+                            if (array_key_exists('offers', $page)) {
+                                DB::table('product_offers')->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+                                    ->whereIn('product_id', $productIds)->delete();
+                                foreach ($page['offers'] as $offer) {
+                                    if ((int) $offer['branch_id'] !== $branchId || ! in_array($offer['product_id'], $productIds, true)) {
+                                        throw new RuntimeException('Unexpected branch offer.');
+                                    }
+                                    $this->storeRow('product_offers', $offer, $tenantId);
+                                }
                             }
                         }
                     });

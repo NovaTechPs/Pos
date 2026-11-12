@@ -1,10 +1,11 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, shell } = require('electron');
 const fs = require('node:fs/promises');
 const { createWriteStream } = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { initializeData, buildEnvironment, reservePort, runPhp, isLocalNavigation, createSyncRunner, ensureMigrations } = require('./runtime.cjs');
-const { pageKey, printerMenu, printSnapshot } = require('./printing.cjs');
+const { pageKey, printerMenu, printSnapshot, savePdfForPrinting } = require('./printing.cjs');
+const { centralUrl, isCentralNavigation, centralReachable, isConnectionFailure } = require('./central.cjs');
 
 const smokeTest = process.argv.includes('--smoke-test');
 if (smokeTest && process.env.WASLA_DESKTOP_TEST_DATA) app.setPath('userData', process.env.WASLA_DESKTOP_TEST_DATA);
@@ -19,6 +20,65 @@ let preferences = {};
 let synchronizeNow = async () => {};
 const children = new Set();
 const dataRoot = app.getPath('userData');
+let centralServer = 'https://waslapos.app';
+let centralWindow;
+let centralLastUrl;
+let centralRetryTimer;
+
+/**
+ * Store pages other than the point of sale open here from the central server, so they always show live data.
+ * When the connection drops, the window shows an offline notice, the point of sale (which keeps selling locally)
+ * comes to the front, and the page reopens by itself once the server answers again.
+ */
+function openCentralWindow(url) {
+    centralLastUrl = url;
+    if (!centralWindow || centralWindow.isDestroyed()) {
+        centralWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 1024, minHeight: 700,
+            backgroundColor: '#f3f6fc', title: 'WaslaPOS — النظام المركزي', parent: undefined,
+            webPreferences: { preload: path.join(__dirname, 'central-preload.cjs'), nodeIntegration: false,
+                contextIsolation: true, sandbox: true } });
+        centralWindow.setMenu(null);
+        centralWindow.maximize();
+        const contents = centralWindow.webContents;
+        contents.on('will-navigate', (event, target) => {
+            if (!isCentralNavigation(target, centralServer)) {
+                event.preventDefault();
+                if (target.startsWith('https://')) shell.openExternal(target);
+            }
+        });
+        contents.setWindowOpenHandler(({ url: target }) => {
+            if (target === 'about:blank' || isCentralNavigation(target, centralServer)) {
+                return { action: 'allow', overrideBrowserWindowOptions: {
+                    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } } };
+            }
+            if (target.startsWith('https://')) shell.openExternal(target);
+            return { action: 'deny' };
+        });
+        contents.on('did-navigate', (event, target) => {
+            if (isCentralNavigation(target, centralServer)) centralLastUrl = target;
+        });
+        contents.on('did-fail-load', (event, errorCode, description, target, isMainFrame) => {
+            if (!isMainFrame || !isConnectionFailure(errorCode) || closing) return;
+            if (isCentralNavigation(target, centralServer)) centralLastUrl = target;
+            void contents.loadFile(path.join(__dirname, 'central-offline.html'));
+            if (window && !window.isDestroyed()) window.focus();
+            clearInterval(centralRetryTimer);
+            centralRetryTimer = setInterval(async () => {
+                if (closing || !centralWindow || centralWindow.isDestroyed()) return clearInterval(centralRetryTimer);
+                if (await centralReachable(net.fetch, centralServer)) {
+                    clearInterval(centralRetryTimer);
+                    void centralWindow.loadURL(centralLastUrl);
+                }
+            }, 15000);
+        });
+        centralWindow.on('closed', () => { clearInterval(centralRetryTimer); centralWindow = undefined; });
+    }
+    clearInterval(centralRetryTimer);
+    if (centralWindow.isMinimized()) centralWindow.restore();
+    centralWindow.focus();
+    // A failed load is handled by did-fail-load; redirects such as the sign-in page are normal.
+    return centralWindow.loadURL(url).catch(() => {});
+}
 
 function stopChildren() {
     clearInterval(syncTimer);
@@ -42,6 +102,10 @@ async function showMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
         { label: 'WaslaPOS', submenu: [
             { label: 'مزامنة الآن', click: async () => { await synchronizeNow(); if (!closing) window.webContents.reload(); } },
+            { label: 'النظام الكامل (أونلاين)', click: async () => {
+                if (await centralReachable(net.fetch, centralServer)) await openCentralWindow(centralUrl(centralServer, '/dashboard'));
+                else dialog.showMessageBox(window, { type: 'info', message: 'لا يوجد اتصال بالسيرفر الآن. نقطة البيع تعمل دون اتصال.' });
+            } },
             { label: 'مجلد البيانات والنسخ الاحتياطية', click: () => shell.openPath(dataRoot) },
             { type: 'separator' }, { role: 'quit', label: 'خروج' },
         ] },
@@ -90,6 +154,7 @@ async function start() {
     const port = await reservePort();
     origin = `http://127.0.0.1:${port}`;
     const environment = buildEnvironment(process.env, dataRoot, backend, port, state.key);
+    centralServer = environment.BRANCH_SYNC_SERVER_URL;
     const phpOptions = { cwd: backend, env: environment, onSpawn: child => {
         children.add(child);
         child.on('exit', () => children.delete(child));
@@ -152,6 +217,25 @@ async function start() {
     ipcMain.handle('wasla:print', async (event, request) => {
         if (event.sender !== window.webContents || !isLocalNavigation(event.senderFrame.url, origin)) throw new Error('Printing is unavailable.');
         return printSnapshot({ BrowserWindow, owner: window, origin, preferences, request });
+    });
+    ipcMain.handle('wasla:print-pdf', async (event, request) => {
+        // The local app and the central window may each print their own documents, never another origin's.
+        const fromLocal = event.sender === window.webContents && isLocalNavigation(event.senderFrame.url, origin);
+        const fromCentral = centralWindow && !centralWindow.isDestroyed() && event.sender === centralWindow.webContents
+            && isCentralNavigation(event.senderFrame.url, centralServer);
+        if (!fromLocal && !fromCentral) throw new Error('Printing is unavailable.');
+        const file = await savePdfForPrinting({ session: event.sender.session, origin: fromLocal ? origin : new URL(centralServer).origin,
+            folder: path.join(dataRoot, 'printouts'), request });
+        const error = await shell.openPath(file);
+        if (error) throw new Error(error);
+        return true;
+    });
+    ipcMain.handle('wasla:open-central', async (event, target) => {
+        if (event.sender !== window.webContents || !isLocalNavigation(event.senderFrame.url, origin)) throw new Error('Unavailable.');
+        const url = centralUrl(centralServer, target);
+        if (!(await centralReachable(net.fetch, centralServer))) throw new Error('offline');
+        await openCentralWindow(url);
+        return true;
     });
     const synchronize = createSyncRunner(
         () => closing ? undefined : runPhp(php, ini, ['artisan', 'branch-sync:push', '--no-interaction'], phpOptions),

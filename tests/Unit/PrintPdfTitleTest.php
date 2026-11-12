@@ -45,3 +45,27 @@ test('printing a pdf from a workspace tab names the file after the document in e
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('PRINT_PDF_TITLE_OK');
 });
+
+test('the desktop app opens the document pdf through its bridge instead of a hidden frame', function (): void {
+    $script = <<<'JS'
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const assert = require('node:assert/strict');
+    const requests = [];
+    let framesCreated = 0;
+    const topWindow = { waslaDesktop: { printPdf: async (request) => { requests.push(request); return true; } } };
+    const document = { querySelectorAll() { return []; }, createElement() { framesCreated++; return { style: {}, setAttribute() {} }; }, body: { appendChild() {} } };
+    const window = { top: topWindow, location: { href: 'http://127.0.0.1:9000/dashboard/sale-invoices' }, addEventListener() {}, alert(message) { throw new Error(message); } };
+    vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), { window, document, URL });
+    window.printPdf('/dashboard/sale-invoices/5/pdf', 'ابو هاشم - SAL-1');
+    assert.equal(JSON.stringify(requests), JSON.stringify([{ url: 'http://127.0.0.1:9000/dashboard/sale-invoices/5/pdf?inline=1', title: 'ابو هاشم - SAL-1' }]));
+    assert.equal(framesCreated, 0);
+    console.log('DESKTOP_PRINT_PDF_OK');
+    JS;
+
+    $process = new Process(['node', '-e', $script, dirname(__DIR__, 2).'/resources/js/print-pdf.js']);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('DESKTOP_PRINT_PDF_OK');
+});

@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Shift;
 use App\Models\TenantSetting;
 use App\Models\User;
@@ -37,7 +38,95 @@ class BranchSyncOperationProcessor
             return;
         }
 
+        if ($operation->operation_type === 'expense.created') {
+            $this->processExpense($operation);
+
+            return;
+        }
+
+        if ($operation->operation_type === 'barcode.attached') {
+            $this->processBarcodeAttachment($operation);
+
+            return;
+        }
+
         throw new RuntimeException('نوع عملية المزامنة غير مدعوم.');
+    }
+
+    /** Adds a barcode scanned at a branch to a product of that branch, unless another product already uses it. */
+    private function processBarcodeAttachment(BranchSyncOperation $operation): void
+    {
+        $data = Validator::make($operation->payload['barcode'] ?? [], [
+            'product_id' => ['required', 'integer', 'min:1'],
+            'barcode' => ['required', 'string', 'max:100'],
+        ])->validate();
+        $productExists = Product::query()->where('tenant_id', $operation->tenant_id)->whereKey($data['product_id'])
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $operation->branch_id))->exists();
+        if (! $productExists) {
+            throw new RuntimeException('الصنف غير مرتبط بفرع المزامنة في المركز.');
+        }
+        $barcode = ProductBarcode::query()->where('tenant_id', $operation->tenant_id)->where('barcode', $data['barcode'])
+            ->lockForUpdate()->first();
+        if ($barcode && (int) $barcode->product_id !== (int) $data['product_id']) {
+            throw new RuntimeException('الباركود مسجل لصنف آخر في المركز.');
+        }
+        if (! $barcode) {
+            ProductBarcode::query()->create(['tenant_id' => $operation->tenant_id,
+                'product_id' => $data['product_id'], 'barcode' => $data['barcode']]);
+        }
+    }
+
+    /** Records a cash expense paid from a desktop shift drawer; the voucher number makes a resend harmless. */
+    private function processExpense(BranchSyncOperation $operation): void
+    {
+        $data = Validator::make($operation->payload, [
+            'payment' => ['required', 'array'],
+            'payment.voucher_number' => ['required', 'string', 'max:255'],
+            'payment.amount' => ['required', 'numeric', 'gt:0'],
+            'payment.payment_method' => ['required', 'in:cash,card,bank_transfer,cheque'],
+            'payment.payment_date' => ['required', 'date'],
+            'payment.created_by' => ['nullable', 'integer'],
+            'payment.notes' => ['nullable', 'string', 'max:5000'],
+            'shift' => ['required', 'array'],
+            'shift.sync_uuid' => ['required', 'uuid'],
+            'shift.opening_cash' => ['required', 'numeric', 'min:0'],
+            'shift.opened_at' => ['required', 'date'],
+            'shift.opened_by' => ['nullable', 'integer'],
+            'shift.notes' => ['nullable', 'string'],
+        ])->validate();
+        $this->assertTenantUser($operation->tenant_id, $data['payment']['created_by'] ?? null);
+        $this->assertTenantUser($operation->tenant_id, $data['shift']['opened_by'] ?? null);
+
+        $shift = Shift::query()->where('tenant_id', $operation->tenant_id)->where('branch_id', $operation->branch_id)
+            ->where('sync_uuid', $data['shift']['sync_uuid'])->lockForUpdate()->first()
+            ?? Shift::query()->create([
+                'tenant_id' => $operation->tenant_id,
+                'branch_id' => $operation->branch_id,
+                'sync_uuid' => $data['shift']['sync_uuid'],
+                'opening_cash' => $data['shift']['opening_cash'],
+                'status' => 'open',
+                'opened_at' => $data['shift']['opened_at'],
+                'opened_by' => $data['shift']['opened_by'] ?? null,
+                'notes' => $data['shift']['notes'] ?? null,
+            ]);
+
+        if (Payment::withTrashed()->where('tenant_id', $operation->tenant_id)
+            ->where('voucher_number', $data['payment']['voucher_number'])->exists()) {
+            return;
+        }
+
+        Payment::query()->create([
+            'tenant_id' => $operation->tenant_id,
+            'branch_id' => $operation->branch_id,
+            'shift_id' => $shift->id,
+            'created_by' => $data['payment']['created_by'] ?? null,
+            'type' => 'payment',
+            'voucher_number' => $data['payment']['voucher_number'],
+            'amount' => $data['payment']['amount'],
+            'payment_method' => $data['payment']['payment_method'],
+            'notes' => $data['payment']['notes'] ?? null,
+            'payment_date' => $data['payment']['payment_date'],
+        ]);
     }
 
     private function processShiftOpen(BranchSyncOperation $operation): void

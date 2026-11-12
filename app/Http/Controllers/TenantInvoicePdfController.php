@@ -8,6 +8,7 @@ use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
+use App\Services\PaymentVoucherAccess;
 use App\Services\PdfFilename;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,9 @@ class TenantInvoicePdfController extends Controller
         $order = Order::query()
             ->where('tenant_id', $request->user()->tenant_id)
             ->whereKey($orderId)
+            // Employees open only the invoices they created; the store owner opens every invoice.
+            ->when(! $request->user()->isTenantOwner() && ! $request->user()->isSaaSAdmin(),
+                fn ($query) => $query->where('created_by', $request->user()->id))
             ->with(['items.product', 'user', 'branch'])
             ->withSum('payments as collected_amount', 'amount')
             ->firstOrFail();
@@ -68,8 +72,9 @@ class TenantInvoicePdfController extends Controller
     {
         abort_unless(in_array($type, ['receipt', 'payment'], true), 404);
         abort_unless($request->user()?->can($type === 'receipt' ? 'accounting.receipt.view' : 'accounting.voucher.view'), 403);
+        abort_if($type === 'payment' && ! app(PaymentVoucherAccess::class)->available($request), 403);
         $tenantId = (int) (session('active_tenant_id') ?? $request->user()->tenant_id);
-        $voucher = Payment::query()->where('tenant_id', $tenantId)->where('type', $type)
+        $voucher = Payment::query()->visibleTo($request->user())->where('tenant_id', $tenantId)->where('type', $type)
             ->with(['party', 'creator', 'branch', 'tenant'])->findOrFail($paymentId);
 
         return $this->pdfResponse($request, 'pages.tenant.accounting.partials.voucher-pdf', ['voucher' => $voucher],

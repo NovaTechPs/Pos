@@ -209,3 +209,26 @@ test('catalog pull follows pages without skipping product identifiers', function
     expect(Product::query()->count())->toBe(2);
     Http::assertSentCount(3);
 });
+
+test('catalog download keeps branch offers available for offline sales and removes ended ones', function (): void {
+    $offers = [['id' => 70, 'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => 50,
+        'offer_quantity' => 3, 'offer_price' => 20, 'start_at' => now()->subDay()->toDateTimeString(), 'is_active' => true]];
+    Http::fake(function ($request) use (&$offers) {
+        if ($request['entity'] === 'customers') {
+            return Http::response(catalogPage($this->tenant->id, $this->branch->id));
+        }
+        $page = catalogPage($this->tenant->id, $this->branch->id, [['id' => 50, 'tenant_id' => $this->tenant->id, 'name' => 'Juice']]);
+        $page['prices'] = [['id' => 60, 'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+            'product_id' => 50, 'retail_price' => 8, 'stock_quantity' => 10]];
+        $page['offers'] = $offers;
+
+        return Http::response($page);
+    });
+
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+    expect(DB::table('product_offers')->where('product_id', 50)->value('offer_price'))->toEqual(20);
+
+    $offers = [];
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+    expect(DB::table('product_offers')->where('product_id', 50)->exists())->toBeFalse();
+});

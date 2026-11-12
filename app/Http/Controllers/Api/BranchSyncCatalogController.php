@@ -52,6 +52,8 @@ class BranchSyncCatalogController extends Controller
                 $searchService = app(PosProductSearch::class);
                 $query->where(function ($matches) use ($searchService, $search, $device): void {
                     $searchService->apply($matches, $search, (int) $device->tenant_id);
+                    // Same as the web POS: any part of a barcode, e.g. its last digits.
+                    $searchService->orWhereBarcodeContains($matches, $search, (int) $device->tenant_id);
                     $matches->orWhere(function ($nameMatches) use ($searchService, $search): void {
                         $searchService->applyContains($nameMatches, $search);
                     });
@@ -126,6 +128,9 @@ class BranchSyncCatalogController extends Controller
             'prices' => $validated['entity'] === 'products'
                 ? DB::table('branch_products')->where('tenant_id', $device->tenant_id)
                     ->where('branch_id', $device->branch_id)->whereIn('product_id', $ids)->get() : [],
+            'offers' => $validated['entity'] === 'products'
+                ? DB::table('product_offers')->where('tenant_id', $device->tenant_id)
+                    ->where('branch_id', $device->branch_id)->whereIn('product_id', $ids)->whereNull('deleted_at')->get() : [],
         ]);
     }
 }

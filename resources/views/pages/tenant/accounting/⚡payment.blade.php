@@ -13,6 +13,18 @@ new class extends Component
 {
     use WithPagination;
     use \App\Traits\FiltersVouchers;
+    use \App\Concerns\NavigatesVoucherArchive;
+
+    protected function voucherArchiveType(): string
+    {
+        return 'payment';
+    }
+
+    /** Payment vouchers are hidden on Android devices; this also covers every action sent from the page. */
+    public function boot(): void
+    {
+        abort_unless(app(\App\Services\PaymentVoucherAccess::class)->available(), 403);
+    }
 
     public string $partySearch = '';
     public string $tableSearch = '';
@@ -74,7 +86,7 @@ new class extends Component
                 ->paginate(15);
         }
 
-        return Payment::query()
+        return Payment::query()->visibleTo(auth()->user())
             ->with(['party'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
@@ -109,7 +121,7 @@ new class extends Component
             return 0;
         }
 
-        return Payment::query()
+        return Payment::query()->visibleTo(auth()->user())
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->count();
@@ -124,7 +136,7 @@ new class extends Component
             return 0;
         }
 
-        return (float) Payment::query()
+        return (float) Payment::query()->visibleTo(auth()->user())
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->whereDate('payment_date', today())
@@ -192,7 +204,7 @@ new class extends Component
         if (!$id) {
             return true;
         }
-        $payment = Payment::query()->where('tenant_id', $this->getTenantId())->findOrFail($id);
+        $payment = Payment::query()->visibleTo(auth()->user())->where('tenant_id', $this->getTenantId())->findOrFail($id);
         if ($payment->purchase_return_id || ($payment->order_id && $payment->order?->type === 'return')) {
             $this->dispatch('toast', type: 'error', message: 'عدّل أو احذف الدفعة من فاتورة المردود المرتبطة بها.');
 
@@ -210,7 +222,7 @@ new class extends Component
 
         $tenantId = $this->getTenantId();
 
-        $payment = Payment::query()
+        $payment = Payment::query()->visibleTo(auth()->user())
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);
@@ -288,7 +300,7 @@ new class extends Component
 
             // تعديل سند صرف موجود
             if ($this->paymentId) {
-                $payment = Payment::query()
+                $payment = Payment::query()->visibleTo(auth()->user())
                     ->where('tenant_id', $tenantId)
                     ->where('type', 'payment')
                     ->lockForUpdate()
@@ -388,7 +400,7 @@ new class extends Component
 
         $tenantId = $this->getTenantId();
 
-        Payment::query()
+        Payment::query()->visibleTo(auth()->user())
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
             ->findOrFail($id);
@@ -411,7 +423,7 @@ new class extends Component
         }
 
         DB::transaction(function () use ($tenantId) {
-            $payment = Payment::query()
+            $payment = Payment::query()->visibleTo(auth()->user())
                 ->where('tenant_id', $tenantId)
                 ->where('type', 'payment')
                 ->lockForUpdate()
@@ -449,7 +461,7 @@ new class extends Component
 
         $tenantId = $this->getTenantId();
 
-        $this->printVoucher = Payment::query()
+        $this->printVoucher = Payment::query()->visibleTo(auth()->user())
             ->with(['party', 'creator'])
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')
@@ -468,7 +480,7 @@ new class extends Component
     {
         $tenantId = $this->getTenantId();
 
-        $payment = Payment::query()
+        $payment = Payment::query()->visibleTo(auth()->user())
             ->with('party')
             ->where('tenant_id', $tenantId)
             ->where('type', 'payment')

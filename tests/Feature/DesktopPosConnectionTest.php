@@ -61,7 +61,7 @@ test('desktop reads central prices stock and names into its offline cache', func
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer device-secret'));
 });
 
-test('barcode addition checks the server once and checkout avoids reloading the entire catalog', function (): void {
+test('cached barcode addition is instant and checkout verifies only the cart with the server', function (): void {
     Http::fake(function ($request) {
         if ($request->method() === 'POST') {
             return Http::response(['accepted' => collect($request['operations'])->pluck('operation_uuid')
@@ -73,7 +73,7 @@ test('barcode addition checks the server once and checkout avoids reloading the 
     $component = Livewire::test('pages::tenant.pos.sales');
     $beforeScan = count(Http::recorded());
     $component->set('barcode', '123456')->call('scanBarcode');
-    expect(count(Http::recorded()) - $beforeScan)->toBe(1)
+    expect(count(Http::recorded()) - $beforeScan)->toBe(0)
         ->and($component->get('cart'))->toHaveCount(1);
     $beforeCheckout = count(Http::recorded());
     $component->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null);
@@ -192,9 +192,11 @@ test('lost sale responses retain the same operation uuid and never create a seco
             return Http::response(['accepted' => array_fill_keys($received, 'synced')]);
         }
 
-        return $online ? Http::response(desktopCatalogPage($this, 10, 4)) : Http::failedConnection();
+        // The catalog stays reachable; only the sale upload loses its response until the connection returns.
+        return Http::response(desktopCatalogPage($this, 10, $online ? 4 : 5));
     });
-    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)
+    $component = Livewire::test('pages::tenant.pos.sales')->assertSet('connectionState', 'online')
+        ->call('selectInlineProduct', $this->product->id)
         ->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null)->assertSet('pendingSyncOperations', 1);
     $operation = BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->firstOrFail();
     expect((float) $this->stock->fresh()->stock_quantity)->toBe(4.0);
@@ -360,4 +362,106 @@ test('central customer data is cached and refreshed without overwriting pending 
     $connection->read($this->tenant->id, $this->branch->id, 'customers');
 
     expect((float) $customer->fresh()->current_balance)->toBe(60.0);
+});
+
+test('manual offline mode sells locally without contacting the server and going online uploads the queued sale', function (): void {
+    $uploaded = [];
+    Http::fake(function ($request) use (&$uploaded) {
+        if ($request->method() === 'POST') {
+            $uploaded = [...$uploaded, ...collect($request['operations'])->pluck('operation_uuid')->all()];
+
+            return Http::response(['accepted' => array_fill_keys($uploaded, 'synced')]);
+        }
+
+        return Http::response(desktopCatalogPage($this, 10));
+    });
+    $component = Livewire::test('pages::tenant.pos.sales')->assertSet('connectionState', 'online')
+        ->call('selectInlineProduct', $this->product->id)
+        ->call('setManualOffline', true)->assertSet('connectionState', 'manual_offline');
+    $before = count(Http::recorded());
+
+    $component->set('paid_amount', 10)->call('checkout')->assertSet('errorMessage', null)
+        ->assertSet('pendingSyncOperations', 1)
+        ->call('refreshLiveData')->assertSet('connectionState', 'manual_offline')
+        ->assertSee('العودة للاتصال والمزامنة');
+    expect(count(Http::recorded()))->toBe($before)
+        ->and(Order::query()->count())->toBe(1)
+        ->and(app(DesktopPosConnection::class)->isManuallyOffline($this->tenant->id, $this->branch->id))->toBeTrue();
+
+    $operation = BranchSyncOperation::query()->where('operation_type', 'sale.upsert')->sole();
+    $component->call('setManualOffline', false)->assertSet('connectionState', 'online')
+        ->assertSet('pendingSyncOperations', 0)->assertSee('العمل دون اتصال');
+    expect($operation->fresh()->status)->toBe('synced')
+        ->and($uploaded)->toBe([$operation->operation_uuid])
+        ->and(Order::query()->count())->toBe(1);
+});
+
+test('after a failed connection the cashier keeps working locally without waiting on the server', function (): void {
+    Http::fake(fn () => Http::failedConnection());
+    $component = Livewire::test('pages::tenant.pos.sales')->assertSet('connectionState', 'offline');
+    $before = count(Http::recorded());
+
+    $component->call('selectInlineProduct', $this->product->id)->set('paid_amount', 10)
+        ->call('checkout')->assertSet('errorMessage', null)->assertSet('pendingSyncOperations', 1);
+    expect(count(Http::recorded()))->toBe($before)
+        ->and($component->get('successMessage'))->toContain('محلياً');
+
+    $this->travel(16)->seconds();
+    $component->call('refreshLiveData')->assertSet('connectionState', 'offline');
+    expect(count(Http::recorded()))->toBe($before + 1);
+});
+
+test('desktop shift expenses are queued for the central server', function (): void {
+    Http::fake(fn () => Http::failedConnection());
+    Livewire::test('pages::tenant.pos.sales')->call('openExpenseModal')
+        ->set('expense_amount', 20)->set('expense_notes', 'Water')->call('saveExpense')
+        ->assertSet('errorMessage', null)->assertSet('pendingSyncOperations', 1);
+
+    $operation = BranchSyncOperation::query()->sole();
+    expect($operation->operation_type)->toBe('expense.created')
+        ->and($operation->payload['payment']['amount'])->toEqual(20)
+        ->and($operation->payload['shift']['sync_uuid'])->toBe(Shift::query()->sole()->sync_uuid);
+});
+
+test('live catalog search matches like the web pos: any word order, product numbers and barcode endings', function (): void {
+    config(['branch-sync.mode' => 'central']);
+    BranchSyncDevice::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'device_uuid' => (string) Str::uuid(), 'name' => 'Desktop', 'token_hash' => hash('sha256', 'device-secret'), 'is_active' => true]);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'شاحن سامسونج سريع', 'product_number' => 'I00000077']);
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id]);
+    ProductBarcode::query()->create(['tenant_id' => $this->tenant->id, 'product_id' => $product->id, 'barcode' => '6291041500213']);
+
+    foreach (['سريع شاحن', 'سامسونج', '77', '00213'] as $search) {
+        $this->withToken('device-secret')->getJson('/api/branch-sync/pos-catalog?entity=products&search='.urlencode($search))
+            ->assertOk()->assertJsonPath('rows.0.id', $product->id);
+    }
+});
+
+test('a missing barcode linked on the desktop works offline and syncs to the central product', function (): void {
+    $online = false;
+    Http::fake(function ($request) use (&$online) {
+        if (! $online) {
+            return Http::failedConnection();
+        }
+        if ($request->method() === 'POST') {
+            return Http::response(['accepted' => collect($request['operations'])->pluck('operation_uuid')
+                ->mapWithKeys(fn (string $uuid): array => [$uuid => 'synced'])->all()]);
+        }
+        $page = desktopCatalogPage($this);
+        $page['barcodes'][] = ['id' => 501, 'tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'barcode' => '777000'];
+
+        return Http::response($page);
+    });
+    $component = Livewire::test('pages::tenant.pos.sales')->call('scanBarcode', '777000')
+        ->assertSet('showMissingBarcodeModal', true)
+        ->call('createProductFromMissingBarcode')->assertHasErrors('missingBarcode')->assertSet('showNewProductModal', false)
+        ->call('chooseExistingProductForBarcode')->call('attachMissingBarcode', $this->product->id)
+        ->assertSet('showMissingBarcodeModal', false)->assertSet('pendingSyncOperations', 1)
+        ->call('scanBarcode', '777000');
+    expect($component->get('cart'))->toHaveCount(1)
+        ->and(BranchSyncOperation::query()->sole()->operation_type)->toBe('barcode.attached');
+
+    $online = true;
+    $component->call('refreshLiveData')->assertSet('connectionState', 'online')->assertSet('pendingSyncOperations', 0);
+    expect(ProductBarcode::query()->where('barcode', '777000')->sole()->id)->toBe(501);
 });

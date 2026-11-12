@@ -24,10 +24,27 @@ function titledDocuments() {
     return documents;
 }
 
+/** The desktop app's bridge, which lives on the top window even when this page runs inside a workspace tab. */
+function desktopBridge() {
+    try {
+        return window.top?.waslaDesktop?.printPdf ? window.top.waslaDesktop : undefined;
+    } catch (error) {
+        return undefined;
+    }
+}
+
 function printPdf(url, title = '') {
     if (!url) return;
 
     const source = inlinePdfUrl(url);
+    const desktop = desktopBridge();
+    if (desktop) {
+        // The desktop window has no built-in PDF viewer, so the app opens the PDF in the Windows PDF viewer to print or save it.
+        desktop.printPdf({ url: new URL(source, window.location.href).href, title })
+            .catch((error) => window.alert(error?.message || 'تعذر فتح ملف PDF للطباعة.'));
+
+        return;
+    }
     document.querySelectorAll('iframe[data-print-pdf]').forEach((frame) => frame.remove());
 
     const frame = document.createElement('iframe');

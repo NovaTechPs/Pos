@@ -77,6 +77,10 @@
                     return false;
                 }
 
+                if ($item['route'] === 'tenant.payment' && ! app(\App\Services\PaymentVoucherAccess::class)->available()) {
+                    return false;
+                }
+
                 if ($item['route'] === 'tenant.tenant-backups' && ! ($user->isSaaSAdmin() || $user->isTenantOwner())) {
                     return false;
                 }

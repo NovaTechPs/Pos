@@ -77,4 +77,21 @@ async function printSnapshot({ BrowserWindow, owner, origin, preferences, reques
     } finally { job.destroy(); }
 }
 
-module.exports = { pageKey, printerForPage, printerMenu, printSnapshot };
+/**
+ * Downloads a document's own PDF from the local app with the signed-in session and saves it under its
+ * document name («party - number»), so it can be opened in the Windows PDF viewer to print or save.
+ */
+async function savePdfForPrinting({ session, origin, folder, request, fs = require('node:fs/promises'), path = require('node:path') }) {
+    if (!request || typeof request.url !== 'string' || !isLocalNavigation(request.url, origin)) throw new Error('طلب الطباعة غير صالح.');
+    const response = await session.fetch(request.url);
+    if (!response.ok || !String(response.headers.get('content-type') || '').includes('pdf')) {
+        throw new Error('تعذر تجهيز ملف PDF للطباعة.');
+    }
+    const name = String(request.title || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'document';
+    await fs.mkdir(folder, { recursive: true });
+    const file = path.join(folder, name + '.pdf');
+    await fs.writeFile(file, Buffer.from(await response.arrayBuffer()));
+    return file;
+}
+
+module.exports = { pageKey, printerForPage, printerMenu, printSnapshot, savePdfForPrinting };

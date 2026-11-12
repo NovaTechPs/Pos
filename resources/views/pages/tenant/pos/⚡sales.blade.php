@@ -59,14 +59,52 @@ new class extends Component {
         return $ids;
     }
 
+    /**
+     * Checks the central server first, so an offline device pays for a single failed request.
+     * Queued offline work is uploaded only once the server answers, then the catalog is read again
+     * so local stock reflects the uploaded sales.
+     */
     public function refreshLiveData(): void
     {
-        if (app(DesktopPosConnection::class)->enabled() && $this->tenantId() && $this->getActiveBranchId()) {
-            app(DesktopPosConnection::class)->retry((int) $this->tenantId(), (int) $this->getActiveBranchId());
-            app(DesktopPosConnection::class)->flush((int) $this->tenantId(), (int) $this->getActiveBranchId());
+        $connection = app(DesktopPosConnection::class);
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->getActiveBranchId();
+        $desktop = $connection->enabled() && $tenantId && $branchId;
+        if ($desktop) {
+            $connection->retry($tenantId, $branchId);
         }
         $this->loadQuickProducts(force: true, refreshRemoteCatalog: true);
+        if ($desktop && $this->connectionState === 'pending' && $connection->hasPendingUploads($tenantId, $branchId)) {
+            $connection->flush($tenantId, $branchId);
+            $this->loadQuickProducts(force: true, refreshRemoteCatalog: true);
+        }
         $this->refreshBranchSyncStatus();
+    }
+
+    /** Lets the cashier work offline while the internet is slow, and return online to upload queued work. */
+    public function setManualOffline(bool $offline): void
+    {
+        $connection = app(DesktopPosConnection::class);
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->getActiveBranchId();
+        if (! $connection->enabled() || ! $tenantId || ! $branchId) {
+            return;
+        }
+        $connection->setManuallyOffline($tenantId, $branchId, $offline);
+        $this->errorMessage = null;
+        if ($offline) {
+            $this->connectionState = 'manual_offline';
+            $this->refreshBranchSyncStatus();
+            $this->successMessage = 'تم التحويل إلى العمل دون اتصال. البيع مستمر من البيانات المحفوظة على الجهاز.';
+
+            return;
+        }
+        $this->refreshLiveData();
+        $this->successMessage = match ($this->connectionState) {
+            'online' => 'تمت العودة للاتصال ومزامنة العمليات المحفوظة.',
+            'pending' => 'تمت العودة للاتصال؛ بعض العمليات ما زالت بانتظار المزامنة أو المراجعة.',
+            default => 'تعذر الوصول إلى السيرفر حالياً؛ سيستمر البيع محلياً وتُعاد المحاولة تلقائياً.',
+        };
     }
 
     #[Locked]
@@ -214,7 +252,8 @@ new class extends Component {
 
         $this->loadHeldInvoices();
         $this->checkActiveShift();
-        $this->loadQuickProducts();
+        // On desktop, the first load also checks the central server so the connection status is known immediately.
+        $this->loadQuickProducts(refreshRemoteCatalog: app(DesktopPosConnection::class)->enabled());
         $this->refreshBranchSyncStatus();
         $this->restoreCurrentDraft();
 
@@ -1011,7 +1050,7 @@ new class extends Component {
                     throw new \RuntimeException('لا يوجد شيفت مفتوح لتسجيل المصروف.');
                 }
 
-                Payment::create([
+                $expense = Payment::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
                     'shift_id' => $shift->id,
@@ -1023,7 +1062,12 @@ new class extends Component {
                     'notes' => trim($this->expense_category.($this->expense_notes !== '' ? ' — '.$this->expense_notes : '')),
                     'payment_date' => now(),
                 ]);
+                $this->queueExpenseForSync($expense, $shift);
             });
+            if (app(DesktopPosConnection::class)->enabled()) {
+                app(DesktopPosConnection::class)->flush((int) $tenantId, (int) $branchId);
+                $this->refreshBranchSyncStatus();
+            }
 
             $this->invalidateActiveShiftCache();
             $this->showExpenseModal = false;
@@ -1348,7 +1392,7 @@ new class extends Component {
         }
         $this->authorize('returns.create');
 
-        return Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
+        return $this->onlyOwnInvoices(Order::query())->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
             ->where('type', 'return')->where('invoice_number', 'like', 'RET-CASH-%')
             ->latest('id')->limit(10)->get();
     }
@@ -1649,6 +1693,15 @@ new class extends Component {
             ->where('invoice_number', $invoiceBarcode)
             ->first();
 
+        if ($invoice && ! $this->onlyOwnInvoices(Order::query())->whereKey($invoice->id)->exists()) {
+            $this->errorMessage = 'هذه الفاتورة أنشأها مستخدم آخر؛ يمكنك فتح فواتيرك فقط.';
+            $this->barcode = '';
+            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $invoiceBarcode);
+            $this->dispatch('pos-sound', type: 'error');
+
+            return;
+        }
+
         if ($invoice) {
             $this->loadInvoice($invoice->id);
             $this->barcode = '';
@@ -1725,6 +1778,12 @@ new class extends Component {
         if (!$this->showMissingBarcodeModal || $this->missingBarcode === '') {
             return;
         }
+        if (config('branch-sync.mode') === 'edge') {
+            // A product created only on this device would never reach the central catalog and could clash with central identifiers.
+            $this->addError('missingBarcode', 'إضافة صنف جديد تتم من النظام المركزي (الموقع). أضف الصنف هناك ثم اضغط «مزامنة الآن»، أو اختر «لا» لربط الباركود بصنف موجود.');
+
+            return;
+        }
         $this->validate(['missingBarcode' => ['required', 'string', 'max:100']]);
         $this->showMissingBarcodeModal = false;
         $this->showNewProductModal = true;
@@ -1755,17 +1814,66 @@ new class extends Component {
         }
         $this->validate(['missingBarcode' => ['required', 'string', 'max:100']]);
         $product = Product::query()->where('tenant_id', $this->tenantId())->findOrFail($productId);
-        $record = ProductBarcode::query()->firstOrCreate(
-            ['tenant_id' => $this->tenantId(), 'barcode' => $this->missingBarcode],
-            ['product_id' => $product->id],
-        );
-        if ((int) $record->product_id !== (int) $product->id) {
-            $this->addError('missingBarcode', 'تم تسجيل هذا الباركود لصنف آخر. ألغِ العملية وأعد مسحه.');
-            return;
+        if (config('branch-sync.mode') === 'edge') {
+            if (!$this->attachMissingBarcodeOnBranch($product)) {
+                return;
+            }
+        } else {
+            $record = ProductBarcode::query()->firstOrCreate(
+                ['tenant_id' => $this->tenantId(), 'barcode' => $this->missingBarcode],
+                ['product_id' => $product->id],
+            );
+            if ((int) $record->product_id !== (int) $product->id) {
+                $this->addError('missingBarcode', 'تم تسجيل هذا الباركود لصنف آخر. ألغِ العملية وأعد مسحه.');
+                return;
+            }
         }
         $this->cancelMissingBarcode();
         $this->loadQuickProducts();
         $this->successMessage = 'تم ربط الباركود بالصنف. امسحه مرة أخرى لإضافته إلى الفاتورة.';
+    }
+
+    /**
+     * Links a scanned barcode to a central product from a branch device. The barcode works locally at once
+     * and is queued for the central server; its local row uses an identifier far above central ones so it
+     * can never clash with a barcode downloaded later, which replaces it once the server confirms it.
+     */
+    private function attachMissingBarcodeOnBranch(Product $product): bool
+    {
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->getActiveBranchId();
+        $existing = ProductBarcode::query()->where('tenant_id', $tenantId)->where('barcode', $this->missingBarcode)->first();
+        if ($existing && (int) $existing->product_id !== (int) $product->id) {
+            $this->addError('missingBarcode', 'تم تسجيل هذا الباركود لصنف آخر. ألغِ العملية وأعد مسحه.');
+
+            return false;
+        }
+        $operation = DB::transaction(function () use ($existing, $product, $tenantId, $branchId): BranchSyncOperation {
+            if (!$existing) {
+                (new ProductBarcode())->forceFill([
+                    'id' => 9_000_000_000_000 + random_int(1, 999_999_999),
+                    'tenant_id' => $tenantId, 'product_id' => $product->id, 'barcode' => $this->missingBarcode,
+                ])->save();
+            }
+
+            return BranchSyncOperation::query()->create([
+                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'operation_uuid' => (string) Str::uuid(),
+                'operation_type' => 'barcode.attached', 'status' => 'pending',
+                'payload' => ['barcode' => ['product_id' => (int) $product->id, 'barcode' => $this->missingBarcode]],
+            ]);
+        });
+        $connection = app(DesktopPosConnection::class);
+        if ($connection->enabled()) {
+            $connection->flush($tenantId, $branchId, $operation->operation_uuid);
+            if ($operation->fresh()->status === 'synced') {
+                $this->refreshRemoteCatalog(filters: ['ids' => [(int) $product->id]]);
+            } elseif ($operation->fresh()->status === 'conflict') {
+                $this->errorMessage = 'رفض السيرفر ربط الباركود: '.$operation->fresh()->last_error;
+            }
+        }
+        $this->refreshBranchSyncStatus();
+
+        return true;
     }
 
     public function addToCart(int $productId, string $scannedBarcode = '', float $quantity = 1): bool
@@ -2238,7 +2346,7 @@ new class extends Component {
 
     public function searchInvoice(): void
     {
-        $query = trim(strtr(trim($this->searchInvoiceQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+        $query = trim(strtr(trim($this->searchInvoiceQuery), array_combine(mb_str_split('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'), str_split('01234567890123456789'))));
         $tenantId = $this->tenantId();
         $branchId = $this->getActiveBranchId();
 
@@ -2253,7 +2361,7 @@ new class extends Component {
         }
 
         $digitsOnly = preg_replace('/\D+/', '', $query) ?: '';
-        $invoice = Order::query()
+        $invoice = $this->onlyOwnInvoices(Order::query())
             ->where('tenant_id', $tenantId)
             ->where('branch_id', $branchId)
             ->whereIn('type', ['pos', 'return'])
@@ -2283,7 +2391,7 @@ new class extends Component {
 
     public function loadInvoice(int $invoiceId): void
     {
-        $invoice = Order::query()
+        $invoice = $this->onlyOwnInvoices(Order::query())
             ->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->getActiveBranchId())
             ->whereIn('type', ['pos', 'return'])
@@ -2431,12 +2539,28 @@ new class extends Component {
         $this->successMessage = "تم حذف الفاتورة {$invoice->invoice_number} وإعادة مخزونها. لن تظهر في قوائم الفواتير.";
     }
 
+    /**
+     * Employees reopen, search and browse only the invoices they created; the store owner sees every invoice.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<Order>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<Order>
+     */
+    private function onlyOwnInvoices($query)
+    {
+        $user = Auth::user();
+        if ($user && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
+            $query->where('created_by', $user->id);
+        }
+
+        return $query;
+    }
+
     private function invoiceNavigationQuery()
     {
-        return Order::query()
+        return $this->onlyOwnInvoices(Order::query()
             ->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->getActiveBranchId())
-            ->whereIn('type', ['pos', 'return']);
+            ->whereIn('type', ['pos', 'return']));
     }
 
     public function previousInvoice(): void
@@ -3289,7 +3413,7 @@ new class extends Component {
                 $order = null;
 
                 if ($editingInvoiceId) {
-                    $order = Order::query()
+                    $order = $this->onlyOwnInvoices(Order::query())
                         ->where('tenant_id', $tenantId)
                         ->where('branch_id', $branchId)
                         ->whereIn('type', ['pos', 'return'])
@@ -3853,6 +3977,39 @@ new class extends Component {
         ]);
     }
 
+    /** Queues a cash expense paid from the drawer so the central accounts receive it too. */
+    private function queueExpenseForSync(Payment $expense, Shift $shift): void
+    {
+        if (config('branch-sync.mode') !== 'edge') {
+            return;
+        }
+
+        BranchSyncOperation::query()->create([
+            'tenant_id' => $expense->tenant_id,
+            'branch_id' => $expense->branch_id,
+            'operation_uuid' => (string) Str::uuid(),
+            'operation_type' => 'expense.created',
+            'status' => 'pending',
+            'payload' => [
+                'payment' => [
+                    'voucher_number' => $expense->voucher_number,
+                    'amount' => (float) $expense->amount,
+                    'payment_method' => $expense->payment_method,
+                    'payment_date' => $expense->payment_date->toISOString(),
+                    'created_by' => $expense->created_by,
+                    'notes' => $expense->notes,
+                ],
+                'shift' => [
+                    'sync_uuid' => $shift->sync_uuid,
+                    'opening_cash' => (float) $shift->opening_cash,
+                    'opened_at' => $shift->opened_at->toISOString(),
+                    'opened_by' => $shift->opened_by,
+                    'notes' => $shift->notes,
+                ],
+            ],
+        ]);
+    }
+
     private function queueShiftOpenForSync(Shift $shift): void
     {
         if (config('branch-sync.mode') !== 'edge') {
@@ -4283,7 +4440,7 @@ new class extends Component {
     public function printReceipt(): void
     {
         if ($this->currentInvoiceId) {
-            $order = Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->whereKey($this->currentInvoiceId)->with('items.product', 'user', 'branch')->first();
+            $order = $this->onlyOwnInvoices(Order::query())->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->whereKey($this->currentInvoiceId)->with('items.product', 'user', 'branch')->first();
 
             if ($order) {
                 $this->prepareReceiptFromOrder($order);
@@ -4307,7 +4464,7 @@ new class extends Component {
             return;
         }
 
-        $invoice = Order::query()
+        $invoice = $this->onlyOwnInvoices(Order::query())
             ->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->getActiveBranchId())
             ->whereIn('type', ['pos', 'return'])
@@ -4444,7 +4601,7 @@ new class extends Component {
     private function saveInvoiceBeforeAction(): ?Order
     {
         if ($this->currentInvoiceId && !$this->invoiceEditMode) {
-            return Order::query()
+            return $this->onlyOwnInvoices(Order::query())
                 ->where('tenant_id', $this->tenantId())
                 ->where('branch_id', $this->getActiveBranchId())
                 ->whereIn('type', ['pos', 'return'])
@@ -4501,7 +4658,7 @@ new class extends Component {
     public function getInvoiceCreatorProperty(): string
     {
         if ($this->currentInvoiceId) {
-            return Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->with('user')->find($this->currentInvoiceId)?->user?->name ?? 'غير محدد';
+            return $this->onlyOwnInvoices(Order::query())->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->with('user')->find($this->currentInvoiceId)?->user?->name ?? 'غير محدد';
         }
 
         return Auth::user()?->name ?? 'الكاشير الحالي';
@@ -4510,7 +4667,7 @@ new class extends Component {
     public function getInvoiceDateProperty(): string
     {
         if ($this->currentInvoiceId) {
-            $date = Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->find($this->currentInvoiceId)?->created_at;
+            $date = $this->onlyOwnInvoices(Order::query())->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())->find($this->currentInvoiceId)?->created_at;
 
             if ($date) {
                 return $date->locale('ar')->isoFormat('dddd، YYYY-MM-DD - h:mm A');
@@ -4572,7 +4729,7 @@ new class extends Component {
         }
         $original = [];
         $localOriginal = [];
-        if ($this->editingInvoiceId && $this->invoiceEditMode && Order::query()->where('tenant_id', $tenantId)
+        if ($this->editingInvoiceId && $this->invoiceEditMode && $this->onlyOwnInvoices(Order::query())->where('tenant_id', $tenantId)
             ->where('branch_id', $branchId)->whereKey($this->editingInvoiceId)->where('status', 'completed')->exists()) {
             $original = OrderItem::query()->where('tenant_id', $tenantId)->where('order_id', $this->editingInvoiceId)
                 ->where(fn ($query) => $query->where('quantity', '>', 0)->orWhere('returned_to_stock', true))

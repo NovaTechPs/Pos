@@ -145,6 +145,32 @@
                 </div>
             </div>
 
+            {{-- Archive: browse saved vouchers like the invoice archive --}}
+            <div data-voucher-archive class="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 sm:px-6">
+                <div class="inline-flex h-9 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+                    <button type="button" wire:click="previousVoucher" wire:loading.attr="disabled" wire:target="previousVoucher,nextVoucher" title="السند السابق" class="inline-flex items-center gap-1 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                        <flux:icon.chevron-right class="size-4" /> السابق
+                    </button>
+                    <button type="button" wire:click="nextVoucher" wire:loading.attr="disabled" wire:target="previousVoucher,nextVoucher" @disabled(! $paymentId) title="السند التالي" class="inline-flex items-center gap-1 border-r border-slate-300 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                        التالي <flux:icon.chevron-left class="size-4" />
+                    </button>
+                </div>
+                <form wire:submit="searchVoucherArchive" class="flex min-w-0 flex-1 items-center gap-1.5">
+                    <input type="text" wire:model="voucherArchiveSearch" maxlength="100" inputmode="search" autocomplete="off" aria-label="بحث برقم السند" placeholder="رقم السند…" class="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-2 {{ $isPayment ? 'focus:border-indigo-400 focus:ring-indigo-100' : 'focus:border-emerald-400 focus:ring-emerald-100' }}" />
+                    <button type="submit" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <flux:icon.magnifying-glass class="size-4" /> استعلام
+                    </button>
+                </form>
+                @if ($paymentId)
+                    <button type="button" wire:click="print({{ $paymentId }})" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <flux:icon.printer class="size-4" /> طباعة
+                    </button>
+                    <button type="button" wire:click="openCreate" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <flux:icon.plus-circle class="size-4 {{ $isPayment ? 'text-indigo-600' : 'text-emerald-600' }}" /> جديد
+                    </button>
+                @endif
+            </div>
+
             {{-- Body --}}
             <div class="min-h-0 flex-1 overflow-y-auto">
 

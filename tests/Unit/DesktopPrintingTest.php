@@ -136,3 +136,33 @@ test('desktop routes iframe receipts and barcode popups to their own silent prin
         unlink($file);
     }
 })->skip(PHP_OS_FAMILY !== 'Windows' || ! is_file(dirname(__DIR__, 2).'/node_modules/electron/dist/electron.exe'), 'Requires Electron on Windows.');
+
+test('desktop saves a document pdf under its document name and refuses foreign or non-pdf responses', function (): void {
+    $script = <<<'JAVASCRIPT'
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs/promises');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { savePdfForPrinting } = require(process.argv[1]);
+    (async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'wasla-printouts-'));
+        const response = (type) => ({ ok: true, headers: { get: () => type }, arrayBuffer: async () => Buffer.from('%PDF-1.4') });
+        let fetched;
+        const session = { fetch: async (url) => { fetched = url; return response('application/pdf'); } };
+        const origin = 'http://127.0.0.1:9000';
+        const file = await savePdfForPrinting({ session, origin, folder,
+            request: { url: origin + '/dashboard/sale-invoices/5/pdf?inline=1', title: 'ابو هاشم / ياسين - SAL-1' } });
+        assert.equal(path.basename(file), 'ابو هاشم ياسين - SAL-1.pdf');
+        assert.equal(await fs.readFile(file, 'utf8'), '%PDF-1.4');
+        assert.equal(fetched, origin + '/dashboard/sale-invoices/5/pdf?inline=1');
+        await assert.rejects(() => savePdfForPrinting({ session, origin, folder, request: { url: 'https://foreign.test/a.pdf' } }), /غير صالح/);
+        await assert.rejects(() => savePdfForPrinting({ session: { fetch: async () => response('text/html') }, origin, folder,
+            request: { url: origin + '/login' } }), /تعذر تجهيز/);
+        await fs.rm(folder, { recursive: true, force: true });
+        console.log('DESKTOP_PDF_SAVE_OK');
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+    JAVASCRIPT;
+    $process = new Process(['node', '-e', $script, dirname(__DIR__, 2).'/resources/desktop/printing.cjs']);
+    $process->mustRun();
+    expect($process->getOutput())->toContain('DESKTOP_PDF_SAVE_OK');
+});

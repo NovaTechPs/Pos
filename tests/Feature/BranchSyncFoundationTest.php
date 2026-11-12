@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
@@ -490,3 +491,48 @@ test('customer credit sales sync separately from shifts while payments retain th
     }
     expect((float) $customer->fresh()->current_balance)->toBe(25.0 - $paid);
 })->with([[0.0, 'unpaid'], [10.0, 'partial'], [25.0, 'paid']]);
+
+test('desktop shift expenses reach the central accounts once in their shift', function (): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id]);
+    $token = 'expense-branch-token';
+    BranchSyncDevice::query()->create(['device_uuid' => (string) Str::uuid(), 'tenant_id' => $tenant->id,
+        'branch_id' => $branch->id, 'name' => 'خادم الفرع', 'token_hash' => hash('sha256', $token)]);
+    $shiftUuid = (string) Str::uuid();
+    $operation = ['operation_uuid' => (string) Str::uuid(), 'operation_type' => 'expense.created', 'payload' => [
+        'payment' => ['voucher_number' => 'EXP-20261111-ABCDE', 'amount' => 35, 'payment_method' => 'cash',
+            'payment_date' => now()->toISOString(), 'created_by' => $user->id, 'notes' => 'كهرباء'],
+        'shift' => ['sync_uuid' => $shiftUuid, 'opening_cash' => 100, 'opened_at' => now()->subHour()->toISOString(),
+            'opened_by' => $user->id, 'notes' => null],
+    ]];
+
+    foreach (range(1, 2) as $attempt) {
+        $this->withToken($token)->postJson('/api/branch-sync/operations', ['operations' => [$operation]])
+            ->assertOk()->assertJsonPath('accepted.'.$operation['operation_uuid'], 'synced');
+    }
+
+    $expense = Payment::query()->sole();
+    expect($expense->type)->toBe('payment')
+        ->and((float) $expense->amount)->toBe(35.0)
+        ->and($expense->shift_id)->toBe(Shift::query()->where('sync_uuid', $shiftUuid)->sole()->id)
+        ->and($expense->branch_id)->toBe($branch->id);
+});
+
+test('barcodes linked at a branch are added to the central product once and never moved from another product', function (): void {
+    [$tenant, $branch] = branchSyncFixtures();
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'Linked']);
+    BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id]);
+    $other = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'Other']);
+    ProductBarcode::query()->create(['tenant_id' => $tenant->id, 'product_id' => $other->id, 'barcode' => 'TAKEN']);
+    $operation = fn (string $barcode) => BranchSyncOperation::create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'barcode.attached',
+        'payload' => ['barcode' => ['product_id' => $product->id, 'barcode' => $barcode]]]);
+    $linked = $operation('NEW-1');
+
+    app(BranchSyncOperationProcessor::class)->process($linked);
+    app(BranchSyncOperationProcessor::class)->process($linked->fresh());
+
+    expect($product->barcodes()->pluck('barcode')->all())->toBe(['NEW-1'])
+        ->and(fn () => app(BranchSyncOperationProcessor::class)->process($operation('TAKEN')))->toThrow(RuntimeException::class);
+    expect(ProductBarcode::query()->where('barcode', 'TAKEN')->sole()->product_id)->toBe($other->id);
+});

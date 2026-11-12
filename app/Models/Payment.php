@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -71,5 +72,20 @@ class Payment extends Model
     public function purchaseReturn(): BelongsTo
     {
         return $this->belongsTo(PurchaseReturn::class);
+    }
+
+    /**
+     * Employees see, reopen and change only the vouchers they created; the store owner sees every voucher.
+     *
+     * @param  Builder<Payment>  $query
+     * @return Builder<Payment>
+     */
+    public function scopeVisibleTo(Builder $query, ?User $user): Builder
+    {
+        if ($user && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
+            $query->where('created_by', $user->id);
+        }
+
+        return $query;
     }
 }

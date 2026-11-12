@@ -1950,7 +1950,7 @@ new class extends Component {
 
         $purchaseSearchResults = collect();
         if ($tenantId && $this->showPurchaseSearch) {
-            $search = trim(strtr(trim($this->searchPurchaseQuery), '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'));
+            $search = trim(strtr(trim($this->searchPurchaseQuery), array_combine(mb_str_split('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'), str_split('01234567890123456789'))));
             $purchaseSearchResults = DB::table('purchases as p')
                 ->leftJoin('parties as s', function ($join): void {
                     $join->on('s.id', '=', 'p.supplier_id')->on('s.tenant_id', '=', 'p.tenant_id');
@@ -2505,7 +2505,7 @@ new class extends Component {
                     <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات الفاتورة (اختياري)
                 </label>
                 <textarea id="purchase-notes" wire:model="notes" rows="3" placeholder="اكتب ملاحظة الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
-                @if ($currentPurchaseId && $linkedPayments->isNotEmpty())
+                @if ($currentPurchaseId && $linkedPayments->isNotEmpty() && app(\App\Services\PaymentVoucherAccess::class)->available())
                     <div class="mt-2 flex flex-wrap gap-2">
                         @foreach ($linkedPayments as $linkedPayment)
                             <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100">تعديل سند الصرف {{ $linkedPayment->voucher_number }}</a>

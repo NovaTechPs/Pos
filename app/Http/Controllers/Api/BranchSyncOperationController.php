@@ -23,7 +23,7 @@ class BranchSyncOperationController extends Controller
             'operations.*.operation_type' => [
                 'required',
                 'string',
-                Rule::in(['sale.upsert', 'shift.opened', 'shift.closed']),
+                Rule::in(['sale.upsert', 'shift.opened', 'shift.closed', 'expense.created', 'barcode.attached']),
             ],
             'operations.*.payload' => ['required', 'array'],
         ]);

@@ -23,15 +23,45 @@ class DesktopPosConnection
         return config('app.desktop') && config('branch-sync.mode') === 'edge';
     }
 
+    /** Seconds the POS keeps working locally after a failed server check before trying again. */
+    private const RETRY_AFTER_FAILURE_SECONDS = 15;
+
     public function retry(int $tenantId, int $branchId): void
     {
         Cache::forget('desktop-pos-retry:'.$tenantId.':'.$branchId);
+    }
+
+    /** Whether the cashier chose to work offline on this device, e.g. because the internet is slow. */
+    public function isManuallyOffline(int $tenantId, int $branchId): bool
+    {
+        return $this->enabled() && Cache::get($this->manualOfflineKey($tenantId, $branchId)) === true;
+    }
+
+    public function setManuallyOffline(int $tenantId, int $branchId, bool $offline): void
+    {
+        if ($offline) {
+            Cache::forever($this->manualOfflineKey($tenantId, $branchId), true);
+            $this->state = 'manual_offline';
+        } else {
+            Cache::forget($this->manualOfflineKey($tenantId, $branchId));
+        }
+        $this->retry($tenantId, $branchId);
+    }
+
+    private function manualOfflineKey(int $tenantId, int $branchId): string
+    {
+        return 'desktop-pos-manual-offline:'.$tenantId.':'.$branchId;
     }
 
     /** @return array{tenant_id: int, branch_id: int, token: string}|null */
     private function connection(int $tenantId, int $branchId): ?array
     {
         if (! $this->enabled() || parse_url((string) config('branch-sync.server_url'), PHP_URL_SCHEME) !== 'https') {
+            return null;
+        }
+        if ($this->isManuallyOffline($tenantId, $branchId)) {
+            $this->state = 'manual_offline';
+
             return null;
         }
 
@@ -45,9 +75,23 @@ class DesktopPosConnection
             ->where('status', '!=', 'synced')->exists();
     }
 
+    /** Whether operations still wait to be uploaded; conflicts need review instead and are not resent. */
+    public function hasPendingUploads(int $tenantId, int $branchId): bool
+    {
+        return BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
+            ->where('status', 'pending')->exists();
+    }
+
     public function flush(int $tenantId, int $branchId, ?string $operationUuid = null): void
     {
         $connection = $this->connection($tenantId, $branchId);
+        $previousFailure = Cache::get('desktop-pos-retry:'.$tenantId.':'.$branchId);
+        if (is_string($previousFailure)) {
+            // The server just failed; keep the sale queued instead of making the cashier wait again.
+            $this->state = $previousFailure;
+
+            return;
+        }
         if (! $connection || ! BranchSyncOperation::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
             ->when($operationUuid !== null, fn ($query) => $query->where('operation_uuid', $operationUuid))
             ->where('status', 'pending')->exists()) {
@@ -93,7 +137,7 @@ class DesktopPosConnection
                     401, 403 => 'unauthorized',
                     default => 'unavailable',
                 };
-                Cache::put($retryKey, $this->state, now()->addSeconds(3));
+                Cache::put($retryKey, $this->state, now()->addSeconds(self::RETRY_AFTER_FAILURE_SECONDS));
 
                 return null;
             }
@@ -171,7 +215,7 @@ class DesktopPosConnection
             $this->state = 'unavailable';
         }
 
-        Cache::put($retryKey, $this->state, now()->addSeconds(3));
+        Cache::put($retryKey, $this->state, now()->addSeconds(self::RETRY_AFTER_FAILURE_SECONDS));
 
         return null;
     }
