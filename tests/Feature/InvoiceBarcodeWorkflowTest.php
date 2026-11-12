@@ -53,9 +53,13 @@ test('invoice product search matches the full product number and its middle', fu
     Product::query()->create(['tenant_id' => $otherTenant->id, 'name' => 'صنف مخفي', 'product_number' => 'ITEM-100']);
     Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'صنف غير مطابق', 'product_number' => 'OTHER-200']);
 
-    Livewire::test('pages::tenant.'.$page.'.invoices')
-        ->set('rowSearch', $search)
-        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', $search);
+    if ($search === 'ITEM-100') {
+        // An exact item number, like a full barcode, selects the product straight away.
+        $component->assertSet('selectedProductId', $this->product->id);
+    } else {
+        $component->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+    }
 })->with([
     ['sales', 'ITEM-100'],
     ['sales', 'EM-10'],
@@ -126,6 +130,8 @@ test('loaded sales and purchase invoices stay read-only until edit is explicitly
         'tenant_id' => $this->tenant->id,
         'branch_id' => $this->branch->id,
         'invoice_number' => 'SAL-READ-ONLY',
+        // Employees reopen only invoices they created.
+        'created_by' => $this->user->id,
         'type' => 'wholesale',
         'status' => 'completed',
         'subtotal' => 10,

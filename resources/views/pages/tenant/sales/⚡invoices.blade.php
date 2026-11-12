@@ -1278,8 +1278,7 @@ new class extends Component {
                             ->find($oldCustomerId);
 
                         if ($oldCustomer) {
-                            $oldCustomer->current_balance = round((float) $oldCustomer->current_balance - $oldCustomer->saleBalanceDirection() * $oldOutstandingBalance, 2);
-                            $oldCustomer->save();
+                            app(\App\Services\PartyBalance::class)->applySale($oldCustomer, -($oldOutstandingBalance));
                         }
                     }
 
@@ -1290,8 +1289,7 @@ new class extends Component {
                             ->find($customer->id);
 
                         if ($newCustomer) {
-                            $newCustomer->current_balance = round((float) $newCustomer->current_balance + $newCustomer->saleBalanceDirection() * $newOutstandingBalance, 2);
-                            $newCustomer->save();
+                            app(\App\Services\PartyBalance::class)->applySale($newCustomer, $newOutstandingBalance);
                         }
                     }
                 } elseif ($customer) {
@@ -1304,8 +1302,7 @@ new class extends Component {
                         $balanceChange = $wasEditingInvoice
                             ? $newOutstandingBalance - $oldOutstandingBalance
                             : $newOutstandingBalance;
-                        $lockedCustomer->current_balance = round((float) $lockedCustomer->current_balance + $lockedCustomer->saleBalanceDirection() * $balanceChange, 2);
-                        $lockedCustomer->save();
+                        app(\App\Services\PartyBalance::class)->applySale($lockedCustomer, $balanceChange);
                     }
                 }
 
@@ -1441,8 +1438,7 @@ new class extends Component {
                 'payment_status' => $paidAmount >= (float) $order->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid'),
             ]);
 
-            $customer->current_balance = round((float) $customer->current_balance - $customer->saleBalanceDirection() * $amount, 2);
-            $customer->save();
+            app(\App\Services\PartyBalance::class)->applySale($customer, -($amount));
         });
 
         $this->showSettlementModal = false;

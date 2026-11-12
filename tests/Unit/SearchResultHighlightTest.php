@@ -29,6 +29,7 @@ test('arrow navigation moves the shared highlight between search results', funct
             productIndex: -1, customerIndex: -1,
             productResults: () => type === 'product' ? items : [],
             customerResults: () => type === 'customer' ? items : [],
+            replacementResults: () => [],
             refreshResultClasses: method(sales, 'refreshResultClasses'),
             moveResult: method(sales, 'moveResult'),
         };

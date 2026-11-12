@@ -311,11 +311,7 @@ new class extends Component
 
                 // نفس المورد
                 if ($oldPartyId === $newParty->id) {
-                    $newParty->current_balance =
-                        (float) $newParty->current_balance
-                        + $newParty->purchaseBalanceDirection() * $oldAmount
-                        - $newParty->purchaseBalanceDirection() * $newAmount;
-                    $newParty->save();
+                    app(\App\Services\PartyBalance::class)->applyPurchase($newParty, $oldAmount - $newAmount);
                 // تغيير المورد
                 } else {
                     $oldParty = Party::query()
@@ -324,16 +320,10 @@ new class extends Component
                         ->findOrFail($oldPartyId);
 
                     // إعادة تأثير سند الصرف القديم للمورد القديم
-                    $oldParty->current_balance =
-                        (float) $oldParty->current_balance
-                        + $oldParty->purchaseBalanceDirection() * $oldAmount;
-                    $oldParty->save();
+                    app(\App\Services\PartyBalance::class)->applyPurchase($oldParty, $oldAmount);
 
                     // تطبيق سند الصرف الجديد على المورد الجديد
-                    $newParty->current_balance =
-                        (float) $newParty->current_balance
-                        - $newParty->purchaseBalanceDirection() * $newAmount;
-                    $newParty->save();
+                    app(\App\Services\PartyBalance::class)->applyPurchase($newParty, -($newAmount));
                 }
 
                 $payment->update([
@@ -369,10 +359,7 @@ new class extends Component
                 }
 
                 // سند الصرف يقلل رصيد المورد
-                $newParty->current_balance =
-                    (float) $newParty->current_balance
-                    - $newParty->purchaseBalanceDirection() * $newAmount;
-                $newParty->save();
+                app(\App\Services\PartyBalance::class)->applyPurchase($newParty, -($newAmount));
             }
         });
 
@@ -435,10 +422,7 @@ new class extends Component
                 ->findOrFail($payment->party_id);
 
             // إعادة قيمة سند الصرف إلى رصيد المورد
-            $party->current_balance =
-                (float) $party->current_balance
-                + $party->purchaseBalanceDirection() * (float) $payment->amount;
-            $party->save();
+            app(\App\Services\PartyBalance::class)->applyPurchase($party, (float) $payment->amount);
 
             $payment->delete();
         });

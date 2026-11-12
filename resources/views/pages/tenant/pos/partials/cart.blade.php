@@ -40,7 +40,7 @@
                 x-on:pos-barcode-handled.window="if ($event.detail.componentId === $wire.$id &amp;&amp; $el.value.trim() === $event.detail.barcode) $el.value = ''"
                 data-pos-barcode-input data-pos-component-id="{{ $this->getId() }}" @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
-                placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود أو اكتب للبحث السريع...' }}"
+                placeholder="{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود · للكمية اكتب 3* ثم امسح' }}"
                 class="min-w-0 flex-1 rounded-xl border-2
                     {{ $isReturnMode ? 'border-rose-300 focus:border-rose-500' : 'border-indigo-200 focus:border-indigo-500' }}
                     bg-white px-4 py-2.5 text-sm font-black text-slate-900

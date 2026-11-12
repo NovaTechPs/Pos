@@ -15,6 +15,7 @@ use App\Models\ProductOffer;
 use App\Models\Shift;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
+use App\Services\PartyBalance;
 use App\Services\StockMovementContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -102,7 +103,7 @@ class PosController extends Controller
         $collected = (float) $payments->sum('amount');
         if ($order->customer_id) {
             $customer = Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
-            $customer->decrement('current_balance', $customer->saleBalanceDirection() * round((float) $order->total - $collected, 2));
+            app(PartyBalance::class)->applySale($customer, -(round((float) $order->total - $collected, 2)));
         }
         foreach ($payments as $payment) {
             $payment->delete();
@@ -528,7 +529,7 @@ class PosController extends Controller
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
+                app(PartyBalance::class)->applySale($customer, round($total - $received, 2));
             }
 
             return $order->load('items.product', 'party')
@@ -759,7 +760,7 @@ class PosController extends Controller
             }
 
             if ($customer) {
-                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
+                app(PartyBalance::class)->applySale($customer, round($total - $received, 2));
             }
 
             return $order->load(['items.product', 'branch', 'party'])

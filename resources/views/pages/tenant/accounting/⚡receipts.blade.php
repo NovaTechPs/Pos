@@ -600,15 +600,7 @@ new class extends Component {
 
                 if ($oldPartyId === $newParty->id) {
 
-                    $newParty->current_balance =
-
-                        (float) $newParty->current_balance
-
-                        + $newParty->saleBalanceDirection() * $oldAmount
-
-                        - $newParty->saleBalanceDirection() * $newAmount;
-
-                    $newParty->save();
+                    app(\App\Services\PartyBalance::class)->applySale($newParty, $oldAmount - $newAmount);
 
                 /*
 
@@ -632,13 +624,7 @@ new class extends Component {
 
                      */
 
-                    $oldParty->current_balance =
-
-                        (float) $oldParty->current_balance
-
-                        + $oldParty->saleBalanceDirection() * $oldAmount;
-
-                    $oldParty->save();
+                    app(\App\Services\PartyBalance::class)->applySale($oldParty, $oldAmount);
 
                     /*
 
@@ -646,20 +632,12 @@ new class extends Component {
 
                      */
 
-                    $newParty->current_balance =
-
-                        (float) $newParty->current_balance
-
-                        - $newParty->saleBalanceDirection() * $newAmount;
-
-                    $newParty->save();
+                    app(\App\Services\PartyBalance::class)->applySale($newParty, -($newAmount));
 
                 }
 
                 if ($oldPartyId === null) {
-                    $newParty->current_balance = (float) $newParty->current_balance
-                        - $newParty->saleBalanceDirection() * $newAmount;
-                    $newParty->save();
+                    app(\App\Services\PartyBalance::class)->applySale($newParty, -($newAmount));
                 }
 
                 $receipt->update([
@@ -731,13 +709,7 @@ new class extends Component {
 
                  */
 
-                $newParty->current_balance =
-
-                    (float) $newParty->current_balance
-
-                    - $newParty->saleBalanceDirection() * $newAmount;
-
-                $newParty->save();
+                app(\App\Services\PartyBalance::class)->applySale($newParty, -($newAmount));
 
             }
 
@@ -834,13 +806,7 @@ new class extends Component {
 
              */
 
-            $party->current_balance =
-
-                (float) $party->current_balance
-
-                + $party->saleBalanceDirection() * (float) $receipt->amount;
-
-            $party->save();
+            app(\App\Services\PartyBalance::class)->applySale($party, (float) $receipt->amount);
 
             $receipt->delete();
 

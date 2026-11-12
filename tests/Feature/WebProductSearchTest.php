@@ -20,10 +20,11 @@ beforeEach(function (): void {
 });
 
 test('clicking a purchase search result adds that product to the invoice', function (): void {
+    // Clicking a result loads it into the entry row for quantity and cost; adding it directly stays available.
     $component = Livewire::test('pages::tenant.purchases.invoices')->set('rowSearch', 'قهوه')
-        ->assertSee('wire:click="addProductFromSearch('.$this->product->id.')"', false)
-        ->assertSee('x-on:mousedown.prevent', false)
-        ->call('addProductFromSearch', $this->product->id)
+        ->assertSee('wire:click="selectProduct('.$this->product->id.')"', false)
+        ->call('addProductFromSearch', $this->product->id)->assertSet('selectedProductId', $this->product->id)
+        ->call('commitRowToCart')
         ->assertSet('rowSearch', '')->assertSet('selectedProductId', null)->assertSet('errorMessage', null)
         ->assertDispatched('focus-product-search');
     $items = array_values($component->get('cart'));
@@ -37,8 +38,13 @@ test('clicking a purchase search result adds that product to the invoice', funct
 
 test('invoice search uses POS matching for Arabic words numbers and barcodes', function (string $page, string $search): void {
     Product::create(['tenant_id' => $this->tenant->id, 'name' => 'صنف لا يطابق']);
-    Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', $search)
-        ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', $search);
+    if ($search === '1234567890123') {
+        // A full barcode is treated as a scan: the product is selected straight away.
+        $component->assertSet('selectedProductId', $this->product->id);
+    } else {
+        $component->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
+    }
 })->with(['sales', 'purchases'])->with(['فاتحه قهوه', 'ايطاليه', 'coffee-42', '1234567890123']);
 
 test('products page search uses POS matching for Arabic words numbers and barcodes', function (string $search): void {
@@ -116,13 +122,14 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
         const context = {
             Alpine: { data: (_, factory) => state = factory() },
             Livewire: { on() {}, hook: (_, callback) => morph = callback },
-            window: { addEventListener: (_, callback, options) => { listenerOptions = options; listeners.push({ callback, options }); } },
+            window: { addEventListener: (type, callback, options) => { if (type === 'keydown') { listenerOptions = options; listeners.push({ callback, options }); } } },
             AbortController,
             setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
             clearTimeout: id => timers.delete(id),
         };
         vm.runInNewContext(source.slice(start, end), context);
         state.$el = { isConnected: true, contains: () => true, addEventListener() {}, querySelectorAll: () => [visible, hidden] };
+        state.$root = state.$el;
         state.$nextTick = () => {};
         state.$refs = {};
         if (page === 'sales') {
@@ -131,7 +138,7 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
             state.refreshResultClasses = () => {};
             state.init();
             state.init();
-            assert.equal(listeners.length, 1, 'Initialization registered duplicate keyboard handlers');
+            assert.equal(listeners.length, 1, 'Initialization registered duplicate keyboard handlers'); // resize and load are separate events
             assert(!source.includes('x-init="init()"'), 'Alpine already calls init automatically');
             const rows = [0, 1, 2, 3].map(() => ({ scrollIntoView() {} }));
             state.productResults = () => rows;
@@ -147,8 +154,9 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
             press('ArrowUp');
             assert.equal(state.productIndex, 1);
 
+            const timersBeforeUpdates = timers.size; // init also schedules a viewport fit
             for (let i = 0; i < 100; i++) morph({ el: {} });
-            assert.equal(timers.size, 1, 'Repeated DOM updates queued redundant refreshes');
+            assert.equal(timers.size - timersBeforeUpdates, 1, 'Repeated DOM updates queued redundant refreshes');
         } else {
             assert.equal(state.visibleResults('[data-product-result]').length, 1);
             state.registerKeyboard();
@@ -166,8 +174,9 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
 
 test('invoice search prioritizes exact barcodes and bounds excessive searches', function (string $page): void {
     Product::create(['tenant_id' => $this->tenant->id, 'name' => '1234567890123']);
+    // The exact barcode wins over a product merely named like it, and is selected as a scan.
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')->set('rowSearch', '1234567890123')
-        ->assertViewHas('productResults', fn ($results): bool => $results->first()->id === $this->product->id);
+        ->assertSet('selectedProductId', $this->product->id);
     $component->set('rowSearch', str_repeat('ا', 121))->assertViewHas('productResults', fn ($results): bool => $results->isEmpty());
 })->with(['sales', 'purchases']);
 
@@ -176,15 +185,18 @@ test('invoice product and party menus close locally outside and reopen when sear
     $dom = new DOMDocument;
     $dom->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($dom);
-    expect($xpath->query('//*[@*[name()="x-on:click.outside"]="productSearchOpen = false"]')->length)->toBe(1)
-        ->and($xpath->query('//*[@*[name()="x-on:click.outside"]="partySearchOpen = false"]')->length)->toBe(1)
-        ->and($xpath->query('//*[@*[name()="x-show"]="productSearchOpen"]')->length)->toBe(1);
-    $delay = $page === 'purchases' ? 0 : 250;
-    expect($html)->toContain('wire:model.live.debounce.'.$delay.'ms="rowSearch"', 'x-on:focus="productSearchOpen = true"');
+    expect($html)->toContain('wire:model.live.debounce.120ms="rowSearch"', 'x-on:focus="productSearchOpen = true; updateSearchDirection($event.target)"');
     if ($page === 'purchases') {
         expect($html)->not->toContain('wire:model.live="discount"', '>الخصم</th>');
     }
-    foreach (['partySearchOpen', 'productSearchOpen'] as $state) {
+    // The party menu (both pages) and the purchase product menu close through Alpine when focus or a click leaves them.
+    $alpineMenus = $page === 'purchases' ? ['partySearchOpen', 'productSearchOpen'] : ['partySearchOpen'];
+    foreach ($alpineMenus as $state) {
+        expect($xpath->query('//*[@*[name()="x-on:click.outside"]="'.$state.' = false"]')->length)->toBe(1);
+        if ($state === 'productSearchOpen') {
+            // The party results list is rendered only when there are matches.
+            expect($xpath->query('//*[@*[name()="x-show"]="'.$state.'"]')->length)->toBe(1);
+        }
         $group = $xpath->query('//*[@data-invoice-search-group and @*[name()="x-data"]="{ '.$state.': false }"]')->item(0);
         expect($group)->not->toBeNull();
         $handler = $group->getAttribute('x-on:focusout');
@@ -196,6 +208,12 @@ test('invoice product and party menus close locally outside and reopen when sear
             .'assert.equal(evaluate({contains: () => true}, {relatedTarget: {}}, true), true);';
         (new Process(['node', '-e', $script]))->mustRun();
     }
+    if ($page === 'sales') {
+        // The sales product list stays open while searching and closes with Escape or after choosing a result.
+        expect($xpath->query('//*[@data-invoice-search-group and @*[name()="x-data"]="{ productSearchOpen: true }"]')->length)->toBe(1)
+            ->and($html)->toContain('if ($event.target.closest(\'[data-product-result]\')) productSearchOpen = false');
+    }
+    // Any results list is hidden by CSS as soon as focus leaves its search group.
     expect(file_get_contents(resource_path('css/app.css')))->toContain('[data-invoice-search-group]:not(:focus-within) [data-invoice-search-results]');
 })->with(['sales', 'purchases']);
 

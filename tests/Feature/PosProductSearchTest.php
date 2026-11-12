@@ -364,3 +364,47 @@ test('pos search lists matches from the highest to the lowest stock with exact b
     $component->set('inlineSearchQuery', '777');
     expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$exact->id, $other->id]);
 });
+
+test('a quantity typed before scanning adds that many of the scanned item', function (string $input, ?float $quantity): void {
+    $tenant = Tenant::query()->create(['name' => 'Quantity scan']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'Main']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+    Shift::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'opening_cash' => 0, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'Rice']);
+    BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'retail_price' => 10, 'stock_quantity' => 50]);
+    ProductBarcode::query()->create(['tenant_id' => $tenant->id, 'product_id' => $product->id, 'barcode' => '6291000000017']);
+
+    $pos = Livewire::test('pages::tenant.pos.sales')->call('scanBarcode', $input)
+        ->assertDispatched('pos-barcode-handled', fn (string $name, array $params): bool => $params['barcode'] === $input);
+    $cart = array_values($pos->get('cart'));
+
+    if ($quantity === null) {
+        expect($cart)->toBe([])->and($pos->get('errorMessage'))->toContain('الكمية قبل علامة *');
+    } else {
+        expect($cart)->toHaveCount(1)->and((float) $cart[0]['quantity'])->toBe($quantity)->and((int) $cart[0]['id'])->toBe($product->id);
+    }
+})->with([
+    'plain scan' => ['6291000000017', 1.0],
+    'three' => ['3*6291000000017', 3.0],
+    'arabic digits and decimal weight' => ['١٫٥*6291000000017', 1.5],
+    'multiplication sign with spaces' => ['2 × 6291000000017', 2.0],
+    'zero quantity' => ['0*6291000000017', null],
+]);
+
+test('out of stock items are highlighted in the product list', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'Stock highlight']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'Main']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+    foreach (['Available tea' => 4, 'Finished tea' => 0] as $name => $stock) {
+        $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => $name]);
+        BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'retail_price' => 5, 'stock_quantity' => $stock]);
+    }
+
+    $html = Livewire::test('pages::tenant.pos.sales')->html();
+
+    expect(substr_count($html, 'data-pos-out-of-stock'))->toBe(1)
+        ->and($html)->toMatch('/data-pos-out-of-stock[\s\S]*?Finished tea[\s\S]*?نافد/u')
+        ->and($html)->not->toMatch('/data-pos-out-of-stock[\s\S]*?Available tea/u');
+});

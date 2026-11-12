@@ -215,12 +215,14 @@ test('editing purchase invoice cannot erase stock already consumed', function ()
         'active_branch_id' => $branch->id,
     ]);
 
-    Livewire::actingAs($user)
+    // All 5 bought units were already sold (stock 0), so lowering the purchase to 2 would need 3 units back.
+    $component = Livewire::actingAs($user)
         ->test('pages::tenant.purchases.invoices')
         ->call('loadPurchase', $purchaseId)
-        ->call('editLoadedInvoice')
+        ->call('editLoadedInvoice');
+    $component->call('updateItemQuantity', (string) array_key_first($component->get('cart')), 2)
         ->call('saveInvoice')
-        ->assertSet('errorMessage', 'لا يمكن تعديل فاتورة الشراء لأن جزءًا من كمياتها استُهلك أو أُخرج من المخزون. سجّل حركة تصحيح للمخزون أولًا.');
+        ->assertSet('errorMessage', 'لا يمكن تقليل كمية الصنف في فاتورة المشتريات؛ الكمية المراد سحبها غير متوفرة حالياً في المخزون.');
 
     expect((float) $branchProduct->fresh()->stock_quantity)->toBe(0.0)
         ->and((float) DB::table('purchases')->where('id', $purchaseId)->value('total'))->toBe(50.0)
@@ -244,4 +246,24 @@ test('invoice source and sale kind remain independent and reports filter both', 
         'invoice_number' => 'SRC-RETURN', 'type' => 'return', 'original_order_id' => $original->id,
         'subtotal' => -10, 'total' => -10]);
     expect($return->source)->toBe('web')->and($return->sale_kind)->toBe('wholesale');
+});
+
+test('editing a purchase saved before stock movements were recorded adds only the difference', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر مشتريات قديمة']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'type' => 'tenant_user', 'is_owner' => true]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف قديم', 'cost_price' => 10]);
+    $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 5]);
+    $purchaseId = DB::table('purchases')->insertGetId(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'reference_number' => 'PUR-LEGACY',
+        'total' => 50, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('purchase_items')->insert(['purchase_id' => $purchaseId, 'product_id' => $product->id, 'quantity' => 5, 'unit_cost' => 10,
+        'subtotal' => 50, 'created_at' => now(), 'updated_at' => now()]);
+    $this->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    $component = Livewire::actingAs($user)->test('pages::tenant.purchases.invoices')
+        ->call('loadPurchase', $purchaseId)->call('editLoadedInvoice');
+    $component->call('updateItemQuantity', (string) array_key_first($component->get('cart')), 7)->call('saveInvoice')
+        ->assertSet('errorMessage', null);
+
+    expect((float) $stock->fresh()->stock_quantity)->toBe(7.0);
 });

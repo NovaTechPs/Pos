@@ -12,6 +12,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
+use App\Services\PartyBalance;
 use App\Services\StockMovementContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -185,7 +186,7 @@ class WholesaleWorkspaceController extends Controller
                 ]);
             }
             if ($customer) {
-                $customer->increment('current_balance', $customer->saleBalanceDirection() * round($total - $received, 2));
+                app(PartyBalance::class)->applySale($customer, round($total - $received, 2));
             }
 
             return $order->load(['items.product', 'party', 'branch'])
@@ -281,7 +282,7 @@ class WholesaleWorkspaceController extends Controller
             $oldReceived = round((float) $receipts->sum('amount'), 2);
             $amount = round((float) $data['amount'], 2);
             if ($oldCustomer) {
-                $oldCustomer->decrement('current_balance', $oldCustomer->saleBalanceDirection() * round((float) $locked->total - $oldReceived, 2));
+                app(PartyBalance::class)->applySale($oldCustomer, -(round((float) $locked->total - $oldReceived, 2)));
             }
 
             $receipt = $receipts->first();
@@ -317,7 +318,7 @@ class WholesaleWorkspaceController extends Controller
                 'payment_status' => $paid >= (float) $locked->total ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
             ]);
             $locked->save();
-            $customer->increment('current_balance', $customer->saleBalanceDirection() * round((float) $locked->total - $amount, 2));
+            app(PartyBalance::class)->applySale($customer, round((float) $locked->total - $amount, 2));
 
             $currentBalance = $customer->fresh()->current_balance;
             $updatedOrder = $locked->fresh()->load('party')
@@ -399,7 +400,7 @@ class WholesaleWorkspaceController extends Controller
         $collected = (float) $payments->sum('amount');
         if ($order->customer_id) {
             $party = Party::where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->lockForUpdate()->firstOrFail();
-            $party->decrement('current_balance', $party->saleBalanceDirection() * round((float) $order->total - $collected, 2));
+            app(PartyBalance::class)->applySale($party, -(round((float) $order->total - $collected, 2)));
         }
         foreach ($payments as $payment) {
             $payment->delete();
@@ -445,7 +446,7 @@ class WholesaleWorkspaceController extends Controller
                 $payment = Payment::where('tenant_id', $user->tenant_id)->where('branch_id', $data['branch_id'])->where('type', 'receipt')->whereNull('order_id')->lockForUpdate()->whereKey($data['receipt_id'])->firstOrFail();
                 if ($payment->party_id) {
                     $previousParty = Party::where('tenant_id', $user->tenant_id)->whereKey($payment->party_id)->lockForUpdate()->firstOrFail();
-                    $previousParty->increment('current_balance', $previousParty->saleBalanceDirection() * (float) $payment->amount);
+                    app(PartyBalance::class)->applySale($previousParty, (float) $payment->amount);
                 }
             }
             $party = Party::where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)->lockForUpdate()->whereKey($data['customer_id'])->firstOrFail();
@@ -460,7 +461,7 @@ class WholesaleWorkspaceController extends Controller
                 'shift_id' => $payment->shift_id ?? $shift?->id, 'party_id' => $party->id, 'type' => 'receipt', 'voucher_number' => $number,
                 'amount' => $data['amount'], 'payment_method' => $data['payment_method'], 'payment_date' => $data['payment_date'], 'notes' => $data['notes'] ?? null]);
             $payment->save();
-            $party->decrement('current_balance', $party->saleBalanceDirection() * (float) $data['amount']);
+            app(PartyBalance::class)->applySale($party, -((float) $data['amount']));
 
             return $payment->load('party')->setAttribute('previous_balance', $previous)->setAttribute('current_balance', $party->fresh()->current_balance);
         });

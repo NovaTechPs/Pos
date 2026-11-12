@@ -903,8 +903,7 @@ new class extends Component {
                 if ($oldCustomerId && (!$customer || (int) $customer->id !== $oldCustomerId)) {
                     $oldCustomer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($oldCustomerId);
                     if ($oldCustomer) {
-                        $oldCustomer->current_balance = round((float) $oldCustomer->current_balance - $oldCustomer->saleBalanceDirection() * $oldEffect, 2);
-                        $oldCustomer->save();
+                        app(\App\Services\PartyBalance::class)->applySale($oldCustomer, -($oldEffect));
                     }
                 }
 
@@ -1045,12 +1044,10 @@ new class extends Component {
                 if ($customer) {
                     if ($oldCustomerId && $oldCustomerId === (int) $customer->id) {
                         // ألغينا أثر الفاتورة القديمة من نفس الرصيد قبل حساب الأثر الجديد.
-                        $base = round((float) $customer->current_balance - $customer->saleBalanceDirection() * $oldEffect, 2);
-                        $customer->current_balance = round($base + $customer->saleBalanceDirection() * $newEffect, 2);
+                        app(\App\Services\PartyBalance::class)->applySale($customer, $newEffect - $oldEffect);
                     } else {
-                        $customer->current_balance = round((float) $customer->current_balance + $customer->saleBalanceDirection() * $newEffect, 2);
+                        app(\App\Services\PartyBalance::class)->applySale($customer, $newEffect);
                     }
-                    $customer->save();
                     $currentBalance = (float) $customer->current_balance;
                 } else {
                     $currentBalance = 0.0;
@@ -2275,8 +2272,7 @@ new class extends Component {
                     if ($oldPartyId && $oldPartyId !== (int) $party->id) {
                         $oldParty = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($oldPartyId);
                         if ($oldParty) {
-                            $oldParty->current_balance = round((float) $oldParty->current_balance + $oldParty->saleBalanceDirection() * $oldAmount, 2);
-                            $oldParty->save();
+                            app(\App\Services\PartyBalance::class)->applySale($oldParty, $oldAmount);
                         }
                     }
 
@@ -2292,9 +2288,9 @@ new class extends Component {
 
                     if ($oldPartyId === (int) $party->id) {
                         // نعيد الأثر القديم ثم نطبق الأثر الجديد.
-                        $party->current_balance = round((float) $party->current_balance + $party->saleBalanceDirection() * ($oldAmount - $amount), 2);
+                        app(\App\Services\PartyBalance::class)->applySale($party, ($oldAmount - $amount));
                     } else {
-                        $party->current_balance = round((float) $party->current_balance - $party->saleBalanceDirection() * $amount, 2);
+                        app(\App\Services\PartyBalance::class)->applySale($party, -($amount));
                     }
                     $party->save();
                     $remainingBalance = round((float) $party->current_balance, 2);
@@ -2314,8 +2310,7 @@ new class extends Component {
                         'payment_date' => $validated['receiptPaymentDate'],
                     ]);
 
-                    $party->current_balance = round((float) $party->current_balance - $party->saleBalanceDirection() * $amount, 2);
-                    $party->save();
+                    app(\App\Services\PartyBalance::class)->applySale($party, -($amount));
                     $remainingBalance = round((float) $party->current_balance, 2);
                 }
             });

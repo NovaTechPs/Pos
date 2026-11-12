@@ -381,7 +381,7 @@ class BranchSyncOperationProcessor
             $outstanding = max(0, round((float) $order->total - (float) $order->paid_amount, 2));
 
             if ($outstanding > 0) {
-                $party->increment('current_balance', $party->saleBalanceDirection() * $outstanding);
+                app(PartyBalance::class)->applySale($party, $outstanding);
             }
         }
     }

@@ -837,7 +837,14 @@ new class extends Component {
         ];
     }
 
-    private function synchronizePurchaseStock(int $tenantId, int $purchaseId, int $branchId): void
+    /**
+     * Moves branch stock by the difference between what this purchase already added and what it should add now.
+     * What it already added comes from its stock movements; a purchase saved before stock movements were recorded
+     * (or imported) has none, so its previously saved lines are used instead, never counting them as zero.
+     *
+     * @param  array<int, float>  $previousQuantities  product id => quantity saved on the purchase before this edit
+     */
+    private function synchronizePurchaseStock(int $tenantId, int $purchaseId, int $branchId, array $previousQuantities = [], ?int $previousBranchId = null): void
     {
         $desiredQuantities = [];
 
@@ -861,6 +868,12 @@ new class extends Component {
         foreach ($recordedMovements as $movement) {
             $key = $movement->branch_id.':'.$movement->product_id;
             $recordedQuantities[$key] = ($recordedQuantities[$key] ?? 0) + (float) $movement->quantity;
+        }
+
+        if ($recordedMovements->isEmpty() && $previousQuantities !== []) {
+            foreach ($previousQuantities as $productId => $quantity) {
+                $recordedQuantities[($previousBranchId ?? $branchId).':'.$productId] = (float) $quantity;
+            }
         }
 
         $desiredByLocation = [];
@@ -1085,6 +1098,11 @@ new class extends Component {
                         ? min((float) $totals['total'], $linkedPayments)
                         : min((float) $totals['total'], (float) $purchase->paid_amount);
 
+                    $previousQuantities = DB::table('purchase_items')->where('purchase_id', $purchase->id)
+                        ->selectRaw('product_id, SUM(quantity) as quantity')->groupBy('product_id')
+                        ->pluck('quantity', 'product_id')->map(fn ($quantity): float => (float) $quantity)->all();
+                    $previousBranchId = (int) $purchase->branch_id;
+
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
                         ->delete();
@@ -1141,7 +1159,7 @@ new class extends Component {
 
                 $purchaseId = $purchase->id;
 
-                $this->synchronizePurchaseStock($tenantId, (int) $purchaseId, (int) $this->selectedBranchId);
+                $this->synchronizePurchaseStock($tenantId, (int) $purchaseId, (int) $this->selectedBranchId, $previousQuantities ?? [], $previousBranchId ?? null);
 
                 foreach ($this->cart as $item) {
                     $quantity = max(0, (float) ($item['quantity'] ?? 0));
@@ -1212,8 +1230,7 @@ new class extends Component {
                         ->first();
 
                     if ($oldParty) {
-                        $oldParty->current_balance = (float) $oldParty->current_balance - $oldParty->purchaseBalanceDirection() * $oldOutstanding;
-                        $oldParty->save();
+                        app(\App\Services\PartyBalance::class)->applyPurchase($oldParty, -($oldOutstanding));
                     }
                 }
 
@@ -1225,8 +1242,7 @@ new class extends Component {
                         ->first();
 
                     if ($supplier) {
-                        $supplier->current_balance = (float) $supplier->current_balance + $supplier->purchaseBalanceDirection() * $newOutstanding;
-                        $supplier->save();
+                        app(\App\Services\PartyBalance::class)->applyPurchase($supplier, $newOutstanding);
                     }
                 }
 
@@ -1345,8 +1361,7 @@ new class extends Component {
                 'updated_at' => now(),
             ]);
 
-            $supplier->current_balance = round((float) $supplier->current_balance - $supplier->purchaseBalanceDirection() * $amount, 2);
-            $supplier->save();
+            app(\App\Services\PartyBalance::class)->applyPurchase($supplier, -($amount));
         });
 
         $this->showSettlementModal = false;

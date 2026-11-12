@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Services\ApiShiftLedger;
+use App\Services\PartyBalance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ class VoucherController extends Controller
                 'payment_date' => $validated['payment_date'] ?? now(), 'notes' => $validated['notes'] ?? 'سند قبض نقدي',
             ]);
             if ($customer) {
-                $customer->decrement('current_balance', $customer->saleBalanceDirection() * (float) $validated['amount']);
+                app(PartyBalance::class)->applySale($customer, -((float) $validated['amount']));
             }
 
             return $payment;
@@ -89,7 +90,7 @@ class VoucherController extends Controller
                 'payment_date' => $validated['payment_date'] ?? now(), 'notes' => $validated['notes'] ?? null,
             ]);
             if ($supplier) {
-                $supplier->decrement('current_balance', $supplier->purchaseBalanceDirection() * (float) $validated['amount']);
+                app(PartyBalance::class)->applyPurchase($supplier, -((float) $validated['amount']));
             }
 
             return $payment;

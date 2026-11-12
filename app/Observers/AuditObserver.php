@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\AuditLog;
+use App\Models\BranchProduct;
 use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -20,11 +21,25 @@ class AuditObserver
         $changes = $model->getChanges();
         $previous = Arr::only($model->getPrevious(), array_keys($changes));
 
-        if ($changes === []) {
+        if ($changes === [] || $this->isStockOnlyChange($model, $changes)) {
             return;
         }
 
         $this->log($model, 'updated', $previous, $changes);
+    }
+
+    /**
+     * Stock changes from sales, purchases and vouchers are already recorded, with their document and user,
+     * in the immutable stock_movements ledger; a second audit row per sold item only slows down saving.
+     *
+     * @param  array<string, mixed>  $changes
+     */
+    private function isStockOnlyChange(Model $model, array $changes): bool
+    {
+        return $model instanceof BranchProduct && array_diff(array_keys($changes), [
+            'stock_quantity', 'stock_source_type', 'stock_source_id', 'stock_source_reference',
+            'stock_operation_uuid', 'stock_actor_id', 'updated_at',
+        ]) === [];
     }
 
     public function deleted(Model $model): void

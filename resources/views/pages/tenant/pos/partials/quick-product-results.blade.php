@@ -11,16 +11,20 @@
         </thead>
         <tbody class="divide-y divide-slate-100">
             @forelse ($quickProducts as $product)
-                <tr data-pos-product data-product-index="{{ $loop->index }}"
+                @php
+                    // Out of stock in this branch, or in all branches when stock is shared.
+                    $isOutOfStock = (float) ($unifiedStock && isset($product['shared_stock_quantity']) ? $product['shared_stock_quantity'] : $product['stock_quantity']) <= 0;
+                @endphp
+                <tr data-pos-product data-product-index="{{ $loop->index }}" @if ($isOutOfStock) data-pos-out-of-stock @endif
                     wire:key="pos-product-row-{{ $product['id'] }}"
                     @unless ($this->invoiceIsLocked()) wire:click="selectInlineProduct({{ $product['id'] }})" @endunless
                     @if ($this->invoiceIsLocked()) aria-disabled="true" tabindex="-1" @else role="button" tabindex="0" @endif
                     aria-label="إضافة {{ $product['name'] }} إلى الفاتورة"
                     wire:loading.attr="aria-busy" wire:target="productSearchQuery,loadQuickProducts,selectInlineProduct"
-                    class="{{ $this->invoiceIsLocked() ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500' }}">
+                    class="{{ $isOutOfStock ? 'bg-rose-50/70' : '' }} {{ $this->invoiceIsLocked() ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500' }}">
                     <td class="px-2 py-2">
                         <div data-pos-product-name-cell class="w-max min-w-[10rem] max-w-[min(24rem,55vw)]">
-                        <div class="whitespace-normal break-words font-black leading-4 text-slate-800">{{ $product['name'] }}</div>
+                        <div class="whitespace-normal break-words font-black leading-4 {{ $isOutOfStock ? 'text-slate-500' : 'text-slate-800' }}">{{ $product['name'] }}@if ($isOutOfStock)<span class="ms-1.5 inline-block rounded-md bg-rose-100 px-1.5 py-0.5 align-middle text-[9px] font-black text-rose-700">نافد</span>@endif</div>
                         <div class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[9px] leading-3 text-slate-500">
                             <span>رقم: <bdi dir="ltr" class="font-mono">{{ $product['product_number'] ?? $product['id'] }}</bdi></span>
                             <span>باركود: <bdi dir="ltr" class="break-all font-mono">{{ $product['barcode_value'] ?: '—' }}</bdi></span>

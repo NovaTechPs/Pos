@@ -1667,7 +1667,17 @@ new class extends Component {
         if ($this->showMissingBarcodeModal || $this->showNewProductModal) {
             return;
         }
-        $invoiceBarcode = trim($scannedBarcode !== '' ? $scannedBarcode : $this->barcode);
+        $rawInput = trim($scannedBarcode !== '' ? $scannedBarcode : $this->barcode);
+        // «3*» typed before scanning adds three of the scanned item.
+        [$scanQuantity, $invoiceBarcode] = $this->splitScanQuantity($rawInput);
+        if ($scanQuantity === null) {
+            $this->errorMessage = 'الكمية قبل علامة * غير صالحة. اكتب مثلاً 3* ثم امسح الباركود.';
+            $this->barcode = '';
+            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $rawInput);
+            $this->dispatch('pos-sound', type: 'error');
+
+            return;
+        }
         $invoice = Order::query()
             ->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->getActiveBranchId())
@@ -1678,7 +1688,7 @@ new class extends Component {
         if ($invoice && ! $this->onlyOwnInvoices(Order::query())->whereKey($invoice->id)->exists()) {
             $this->errorMessage = 'هذه الفاتورة أنشأها مستخدم آخر؛ يمكنك فتح فواتيرك فقط.';
             $this->barcode = '';
-            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $invoiceBarcode);
+            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $rawInput);
             $this->dispatch('pos-sound', type: 'error');
 
             return;
@@ -1687,7 +1697,7 @@ new class extends Component {
         if ($invoice) {
             $this->loadInvoice($invoice->id);
             $this->barcode = '';
-            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $invoiceBarcode);
+            $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $rawInput);
 
             return;
         }
@@ -1696,13 +1706,13 @@ new class extends Component {
         }
         $this->errorMessage = null;
         $this->successMessage = null;
-        $barcode = trim($scannedBarcode !== '' ? $scannedBarcode : $this->barcode);
+        $barcode = $invoiceBarcode;
 
         if ($barcode === '') {
             return;
         }
 
-        $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $barcode);
+        $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $rawInput);
 
         if (!$this->activeShift()) {
             $this->errorMessage = 'افتح الشيفت أولاً قبل البيع أو الإرجاع.';
@@ -1739,8 +1749,29 @@ new class extends Component {
             return;
         }
 
-        $this->addToCart((int) $record->product_id, $barcode);
+        $this->addToCart((int) $record->product_id, $barcode, $scanQuantity);
         $this->barcode = '';
+    }
+
+    /**
+     * Splits an optional quantity typed before the barcode: «3*628…», «1.5*628…» or «٣*628…».
+     * Returns [1, input] without a prefix and [null, input] for an invalid quantity.
+     *
+     * @return array{0: float|null, 1: string}
+     */
+    private function splitScanQuantity(string $input): array
+    {
+        $normalized = strtr($input, array_combine(mb_str_split('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٫'), str_split('01234567890123456789.')));
+        if (! preg_match('/^\s*([0-9]+(?:[.,][0-9]+)?)\s*[*×]\s*(.*)$/u', $normalized, $parts)) {
+            return [1.0, $input];
+        }
+        $quantity = (float) str_replace(',', '.', $parts[1]);
+        $code = trim($parts[2]);
+        if ($code === '' || $quantity <= 0 || $quantity > 99999) {
+            return [null, $code];
+        }
+
+        return [$quantity, $code];
     }
 
     public function cancelMissingBarcode(): void
@@ -3748,11 +3779,13 @@ new class extends Component {
                 }
 
                 // The unpaid part of a customer sale is owed by the customer, like on every other sales screen.
-                $order->refresh();
-                app(\App\Services\PartyBalance::class)->moveSaleOutstanding((int) $tenantId, $previousCustomerId, $previousOutstanding,
-                    $order->customer_id ? (int) $order->customer_id : null, app(\App\Services\PartyBalance::class)->saleOutstanding($order));
+                if ($order->customer_id || $previousCustomerId) {
+                    $order->refresh();
+                    app(\App\Services\PartyBalance::class)->moveSaleOutstanding((int) $tenantId, $previousCustomerId, $previousOutstanding,
+                        $order->customer_id ? (int) $order->customer_id : null, app(\App\Services\PartyBalance::class)->saleOutstanding($order));
+                }
 
-                $this->queueSaleForSync($order, $lockedShift->fresh());
+                $this->queueSaleForSync($order, $lockedShift);
 
                 return Order::query()
                     ->whereKey($order->id)
@@ -3882,6 +3915,7 @@ new class extends Component {
         if (config('branch-sync.mode') !== 'edge') {
             return;
         }
+        $shift = $shift->fresh() ?? $shift;
 
         $payment = Payment::query()
             ->where('tenant_id', $order->tenant_id)

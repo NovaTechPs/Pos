@@ -39,8 +39,9 @@ test('printed invoices use the current store name and reflect a renamed store', 
         $event = $kind === 'sales' ? 'print-sales-invoice' : 'print-wholesale-invoice';
     }
 
-    foreach (['متجر ياسمين', 'متجر ياسمين الجديد'] as $storeName) {
-        $tenant->update(['name' => $storeName]);
+    // Invoices print the branch name (falling back to the store name), and a renamed branch shows at once.
+    foreach (['اسم الفرع', 'اسم الفرع الجديد'] as $storeName) {
+        $branch->update(['name' => $storeName]);
         if ($kind === 'wholesale') {
             $component->call('printOrder', $id);
         } else {

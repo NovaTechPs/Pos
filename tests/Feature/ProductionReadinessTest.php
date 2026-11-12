@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Order;
 use App\Models\Permission;
+use App\Models\Purchase;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
@@ -78,6 +80,10 @@ test('view only roles cannot change roles or branches', function (string $compon
     $test = Livewire::actingAs($user)->test($component);
     if ($action === 'delete' || $action === 'edit') {
         $test->call($action, 999)->assertForbidden();
+    } elseif ($action === 'saveInvoice') {
+        // Invoice pages refuse with a clear message instead of an error page, and save nothing.
+        expect($test->call($action)->get('errorMessage'))->toStartWith('لا تملك صلاحية');
+        expect(Order::query()->count() + Purchase::query()->count())->toBe(0);
     } else {
         $test->call($action)->assertForbidden();
     }

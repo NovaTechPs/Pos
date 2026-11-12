@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Services\ApiShiftLedger;
+use App\Services\PartyBalance;
 use App\Services\StockMovementContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -155,7 +156,7 @@ class ReturnController extends Controller
             if ($credit > 0 && $originalOrder->customer_id) {
                 $party = Party::query()->where('tenant_id', $tenantId)->whereKey($originalOrder->customer_id)
                     ->lockForUpdate()->firstOrFail();
-                $party->decrement('current_balance', $party->saleBalanceDirection() * $credit);
+                app(PartyBalance::class)->applySale($party, -($credit));
             }
 
             $returnOrder = Order::create([

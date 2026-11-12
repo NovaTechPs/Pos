@@ -663,8 +663,10 @@ new class extends Component {
     {
         $partyId = $this->kind === 'sale' ? $old->customer_id : $old->supplier_id;
         $party = Party::query()->where('tenant_id', $this->tenantId())->lockForUpdate()->findOrFail($partyId);
-        $direction = $this->kind === 'sale' ? $party->saleBalanceDirection() : $party->purchaseBalanceDirection();
-        $party->increment('current_balance', $direction * (abs((float) $old->total) - abs((float) $old->paid_amount)));
+        $unsettled = abs((float) $old->total) - abs((float) $old->paid_amount);
+        $this->kind === 'sale'
+            ? app(\App\Services\PartyBalance::class)->applySale($party, $unsettled)
+            : app(\App\Services\PartyBalance::class)->applyPurchase($party, $unsettled);
     }
 
     public function saveReturn(bool $print = false): void
@@ -767,8 +769,10 @@ new class extends Component {
                             fn () => $change['stock']->increment('stock_quantity', $change['delta']), $this->invoiceNumber);
                     }
                 }
-                $direction = $this->kind === 'sale' ? $party->saleBalanceDirection() : $party->purchaseBalanceDirection();
-                $party->refresh()->decrement('current_balance', $direction * ($totals['total'] - $totals['paid']));
+                $unsettled = $totals['total'] - $totals['paid'];
+                $this->kind === 'sale'
+                    ? app(\App\Services\PartyBalance::class)->applySale($party->refresh(), -$unsettled)
+                    : app(\App\Services\PartyBalance::class)->applyPurchase($party->refresh(), -$unsettled);
                 $payments = Payment::query()->where('tenant_id', $tenantId)->where($foreign, $id);
                 $payment = $payments->first();
                 if ($totals['paid'] > 0) {

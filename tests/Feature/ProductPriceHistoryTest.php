@@ -139,18 +139,19 @@ test('price modal displays customer names when invoice name snapshot is empty', 
 
 test('purchase invoice shows the inline entry row before selecting a product and adds its entered quantity and cost', function (): void {
     $component = Livewire::actingAs($this->user)->test('pages::tenant.purchases.invoices')
-        ->assertSee('wire:model.live="selectedQuantity"', false)
-        ->assertSee('wire:model.live="selectedPurchasePrice"', false)
+        ->assertSee('wire:model="selectedQuantity"', false)
+        ->assertSee('wire:model="selectedPurchasePrice"', false)
         ->assertSee('+ إضافة')
         ->assertSee('الإجمالي')
         ->call('selectProduct', $this->product->id)
         ->set('selectedQuantity', 3)
         ->set('selectedPurchasePrice', 14)
-        ->assertSee('42.00')
+        // The line total is calculated in the browser from quantity × cost.
+        ->assertSee('Number($wire.selectedPurchasePrice) * Number($wire.selectedQuantity)', false)
         ->call('commitRowToCart')
         ->assertSet('selectedProductId', null)
         ->assertSee('سجل الأسعار والتكلفة')
-        ->assertSee('wire:model.live="selectedPurchasePrice"', false);
+        ->assertSee('wire:model="selectedPurchasePrice"', false);
     expect(array_values($component->get('cart'))[0])->toMatchArray(['quantity' => 3, 'price' => 14]);
 });
 

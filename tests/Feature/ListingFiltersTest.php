@@ -148,7 +148,9 @@ test('customers combine type activity balance and search filters without leaking
 });
 
 test('voucher filters combine dates method amount and source and can be cleared', function (string $page, string $type): void {
-    $order = Order::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'invoice_number' => 'FILTER-INVOICE', 'type' => 'pos', 'status' => 'completed', 'subtotal' => 25, 'total' => 25]);
+    // A customer invoice: receipts linked to walk-in POS sales are not listed as vouchers.
+    $customer = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Filter customer', 'type' => 'both']);
+    $order = Order::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'customer_id' => $customer->id, 'invoice_number' => 'FILTER-INVOICE', 'type' => 'pos', 'status' => 'completed', 'subtotal' => 25, 'total' => 25]);
     $matching = null;
     foreach ([['2026-10-20 23:59:00', 'card', 25, $order->id], ['2026-10-19', 'card', 25, $order->id], ['2026-10-20', 'cash', 100, null]] as $index => [$date, $method, $amount, $orderId]) {
         $payment = Payment::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'type' => $type, 'voucher_number' => 'FILTER-'.$index, 'amount' => $amount, 'payment_method' => $method, 'payment_date' => $date, 'order_id' => $orderId]);

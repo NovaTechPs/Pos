@@ -404,7 +404,7 @@ test('saving a sales or purchase invoice without printing starts a fresh invoice
     ['purchases', Purchase::class, 'currentPurchaseId'],
 ]);
 
-test('sales and purchase invoice totals include the tax already present in item prices', function (string $page, string $model, string $priceField, string $taxField): void {
+test('sales and purchase invoice totals include the tax already present in item prices', function (string $page, string $model, string $priceField, string $taxField, float $expectedTax): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
         ->call('selectProduct', $this->product->id)
         ->set($priceField, 116)
@@ -415,10 +415,11 @@ test('sales and purchase invoice totals include the tax already present in item 
     $invoice = $model::query()->sole();
 
     expect((float) $invoice->total)->toBe(116.0)
-        ->and((float) $invoice->$taxField)->toBe(16.0);
+        ->and((float) $invoice->$taxField)->toBe($expectedTax);
 })->with([
-    ['sales', Order::class, 'selectedPrice', 'tax_amount'],
-    ['purchases', Purchase::class, 'selectedPurchasePrice', 'tax_amount'],
+    ['sales', Order::class, 'selectedPrice', 'tax_amount', 16.0],
+    // Purchase invoices carry no tax since tax was removed from them on purpose.
+    ['purchases', Purchase::class, 'selectedPurchasePrice', 'tax_amount', 0.0],
 ]);
 
 test('purchase invoice product search shows results and adds the chosen item', function (): void {
@@ -426,8 +427,8 @@ test('purchase invoice product search shows results and adds the chosen item', f
         ->set('rowSearch', 'الصنف')
         ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id])
         ->assertSee('data-invoice-search-results', false)
-        ->assertSee('wire:click="addProductFromSearch('.$this->product->id.')"', false)
-        ->call('addProductFromSearch', $this->product->id);
+        ->assertSee('wire:click="selectProduct('.$this->product->id.')"', false)
+        ->call('addProductFromSearch', $this->product->id)->call('commitRowToCart');
 
     expect(array_values($component->get('cart'))[0]['id'])->toBe($this->product->id);
 });

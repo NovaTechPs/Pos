@@ -46,5 +46,5 @@ test('vehicle wholesale invoice details calculate party payments through party_i
     Livewire::test('pages::tenant.customers.index')
         ->call('openStatementModal', $party->id)
         ->call('openStatementDocument', 'order', $order->id)
-        ->assertDispatched('open-statement-document', url: route('tenant.wholesale-sales', ['invoice' => $order->id]));
+        ->assertDispatched('open-statement-document', url: route('tenant.wholesale-sales', ['invoice' => $order->id, 'customer_copy' => 1]));
 });
