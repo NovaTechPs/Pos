@@ -96,7 +96,7 @@ test('balance reconciliation can correct chosen parties only', function (): void
     expect((float) $this->customer->fresh()->current_balance)->toBe(0.0)->and((float) $other->fresh()->current_balance)->toBe(9.0);
 });
 
-test('the one-time server reconciliation skips Al-Azm, Hook and shared delivery companies and logs every correction', function (): void {
+test('balance reconciliation skips excluded names and shared delivery companies and logs every correction', function (): void {
     $party = fn (string $name, float $stored) => Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => $name, 'type' => 'customer', 'current_balance' => $stored]);
     $azm = $party('مؤسسة العزم / ابو ديس', 7);
     $hook = $party('شركة توصيل هوك', -1019);
@@ -106,7 +106,7 @@ test('the one-time server reconciliation skips Al-Azm, Hook and shared delivery 
         'subtotal' => 100, 'total' => 100, 'delivery_fee' => 20, 'paid_amount' => 0, 'payment_status' => 'unpaid']);
     $this->customer->update(['current_balance' => 55]);
 
-    (require database_path('migrations/2026_11_12_115038_reconcile_party_balances_after_pos_credit_fix.php'))->up();
+    $this->artisan('parties:reconcile-balances', ['--fix' => true, '--except-name' => ['العزم', 'هوك'], '--reason' => 'pos-credit-sale-fix-2026-11-12'])->assertSuccessful();
 
     expect((float) $this->customer->fresh()->current_balance)->toBe(0.0)
         ->and((float) $azm->fresh()->current_balance)->toBe(7.0)
@@ -117,13 +117,4 @@ test('the one-time server reconciliation skips Al-Azm, Hook and shared delivery 
         ->and((float) $log->previous_balance)->toBe(55.0)
         ->and((float) $log->corrected_balance)->toBe(0.0)
         ->and($log->reason)->toBe('pos-credit-sale-fix-2026-11-12');
-});
-
-test('the one-time reconciliation never runs on branch devices', function (): void {
-    config(['branch-sync.mode' => 'edge']);
-    $this->customer->update(['current_balance' => 55]);
-
-    (require database_path('migrations/2026_11_12_115038_reconcile_party_balances_after_pos_credit_fix.php'))->up();
-
-    expect((float) $this->customer->fresh()->current_balance)->toBe(55.0);
 });
