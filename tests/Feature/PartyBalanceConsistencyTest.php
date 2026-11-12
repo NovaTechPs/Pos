@@ -5,10 +5,13 @@ use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\Party;
 use App\Models\Payment;
+use App\Models\Permission;
 use App\Models\Product;
+use App\Models\Role;
 use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\PartyBalanceCheck;
 use App\Services\ReportingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -117,4 +120,46 @@ test('balance reconciliation skips excluded names and shared delivery companies 
         ->and((float) $log->previous_balance)->toBe(55.0)
         ->and((float) $log->corrected_balance)->toBe(0.0)
         ->and($log->reason)->toBe('pos-credit-sale-fix-2026-11-12');
+});
+
+test('the weekly balance check lists only parties that differ from their statement', function (): void {
+    $this->customer->update(['current_balance' => 55]);
+    Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Matching', 'type' => 'customer', 'opening_balance' => 10, 'current_balance' => 10]);
+
+    $result = app(PartyBalanceCheck::class)->run($this->tenant->id);
+
+    expect($result['count'])->toBe(1)
+        ->and($result['differences'][0])->toMatchArray(['id' => $this->customer->id, 'stored' => 55.0, 'statement' => 0.0])
+        ->and((new ReportingService($this->owner, null, false))->partyLedgerBalances()[$this->customer->id])->toBe(ledgerBalance($this))
+        ->and(app(PartyBalanceCheck::class)->lastResult($this->tenant->id)['count'])->toBe(1);
+});
+
+test('the owner dashboard runs the check once a week and shows the differences', function (): void {
+    $this->withoutDefer();
+    $this->customer->update(['current_balance' => 55]);
+
+    // In tests the check runs immediately; on the server it runs after the page is sent.
+    $this->get(route('tenant.dashboard'))->assertOk();
+    expect(app(PartyBalanceCheck::class)->lastResult($this->tenant->id)['count'])->toBe(1);
+
+    $this->get(route('tenant.dashboard'))->assertOk()->assertSee('data-party-balance-alert', false)->assertSee('Customer');
+
+    $this->customer->update(['current_balance' => 0]);
+    $this->travel(3)->days();
+    $this->get(route('tenant.dashboard'))->assertSee('data-party-balance-alert', false);
+    $this->travel(5)->days();
+    $this->get(route('tenant.dashboard'));
+    $this->get(route('tenant.dashboard'))->assertDontSee('data-party-balance-alert', false);
+});
+
+test('employees do not start the check or see the alert', function (): void {
+    $this->withoutDefer();
+    app(PartyBalanceCheck::class)->run($this->tenant->id);
+    $this->customer->update(['current_balance' => 55]);
+    app(PartyBalanceCheck::class)->run($this->tenant->id);
+    $role = Role::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'مدير']);
+    $role->permissions()->attach(Permission::query()->firstOrCreate(['name' => 'dashboard.view'], ['display_name' => 'dashboard.view', 'group' => 'test']));
+    $employee = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'role_id' => $role->id, 'is_owner' => false]);
+
+    $this->actingAs($employee)->get(route('tenant.dashboard'))->assertOk()->assertDontSee('data-party-balance-alert', false);
 });

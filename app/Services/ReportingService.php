@@ -101,6 +101,26 @@ class ReportingService
         return round($sign * $ledger, 2);
     }
 
+    /**
+     * Every party's statement balance across all branches in one query, keyed by party id,
+     * in the same sign as parties.current_balance.
+     *
+     * @return array<int, float>
+     */
+    public function partyLedgerBalances(): array
+    {
+        abort_unless($this->branchId === null, 422, 'Reconciliation covers every branch.');
+        $this->filters = ['party_type' => 'all', 'party_id' => null, 'search' => ''];
+        $movements = $this->partyEvents()->select('party_id')
+            ->selectRaw('SUM(amount) as movement')->groupBy('party_id')->pluck('movement', 'party_id');
+
+        return $this->table('parties')->get(['id', 'type', 'opening_balance'])->mapWithKeys(function (object $party) use ($movements): array {
+            $sign = $party->type === 'supplier' ? -1 : 1;
+
+            return [(int) $party->id => round($sign * ($sign * (float) $party->opening_balance + (float) ($movements[$party->id] ?? 0)), 2)];
+        })->all();
+    }
+
     /** @return array<string, array{string, string}> */
     public function availableReports(): array
     {

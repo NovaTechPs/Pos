@@ -30,6 +30,31 @@
     <flux:main>
         <div class="min-h-[calc(100vh-5rem)] overflow-hidden bg-slate-50 px-4 py-6 dark:bg-zinc-950 sm:px-6 lg:px-8">
             <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
+                @php
+                    $balanceCheck = auth()->user()?->isTenantOwner()
+                        ? app(\App\Services\PartyBalanceCheck::class)->lastResult((int) auth()->user()->tenant_id)
+                        : null;
+                @endphp
+                @if ($balanceCheck && $balanceCheck['count'] > 0)
+                    <section data-party-balance-alert role="alert" class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100" dir="rtl">
+                        <h2 class="text-sm font-black">⚠ {{ $balanceCheck['count'] }} {{ $balanceCheck['count'] === 1 ? 'طرف رصيده' : 'أطراف أرصدتها' }} لا {{ $balanceCheck['count'] === 1 ? 'يطابق' : 'تطابق' }} كشف الحساب</h2>
+                        <p class="mt-1 text-xs leading-6">
+                            الفحص الأسبوعي · آخر فحص {{ \Illuminate\Support\Carbon::parse($balanceCheck['checked_at'])->locale('ar')->diffForHumans() }}.
+                            لم يُعدَّل أي رصيد تلقائياً: افتح كشف الحساب لكل طرف وراجعه، ثم استخدم «تسوية الرصيد» من صفحة العملاء إن كان الكشف صحيحاً.
+                        </p>
+                        <ul class="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
+                            @foreach (array_slice($balanceCheck['differences'], 0, 10) as $difference)
+                                <li class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-3 py-2 dark:bg-zinc-900/60">
+                                    <a href="{{ route('tenant.reports', ['report' => 'statement', 'party_id' => $difference['id'], 'party_type' => 'all']) }}" class="font-bold text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-300">{{ $difference['name'] }}</a>
+                                    <span class="font-mono">المسجل {{ number_format($difference['stored'], 2) }} · الكشف {{ number_format($difference['statement'], 2) }}</span>
+                                </li>
+                            @endforeach
+                        </ul>
+                        @if ($balanceCheck['count'] > 10)
+                            <p class="mt-2 text-xs font-bold">و{{ $balanceCheck['count'] - 10 }} أطراف أخرى؛ شغّل <span dir="ltr" class="font-mono">php artisan parties:reconcile-balances</span> لعرضهم جميعاً.</p>
+                        @endif
+                    </section>
+                @endif
                 <section class="relative isolate overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-950 via-indigo-800 to-violet-700 px-6 py-8 text-white shadow-2xl shadow-indigo-950/20 sm:px-10 sm:py-10 lg:px-12">
                     <div class="absolute -end-16 -top-28 size-80 rounded-full bg-fuchsia-400/20 blur-3xl dashboard-glow"></div>
                     <div class="absolute -bottom-32 start-1/3 size-72 rounded-full bg-cyan-300/20 blur-3xl dashboard-glow"></div>

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\Services\PartyBalanceCheck;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,6 +18,8 @@ class TenantDashboardController extends Controller
         $user = $request->user();
 
         if ($user->can('dashboard.view')) {
+            $this->checkPartyBalancesWeekly($user);
+
             return view('pages.tenant.dashboard');
         }
 
@@ -41,5 +45,18 @@ class TenantDashboardController extends Controller
         }
 
         abort(403, __('This action is unauthorized.'));
+    }
+
+    /**
+     * The server has no task scheduler, so the store owner's visit to the dashboard starts the weekly
+     * balance check once it is due. It runs after the page has been sent, so the owner never waits for it.
+     */
+    private function checkPartyBalancesWeekly(User $user): void
+    {
+        $check = app(PartyBalanceCheck::class);
+        if ($user->isTenantOwner() && $user->tenant_id && config('branch-sync.mode') !== 'edge' && $check->isDue((int) $user->tenant_id)) {
+            $tenantId = (int) $user->tenant_id;
+            defer(fn () => $check->run($tenantId));
+        }
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Tenant;
+use App\Services\PartyBalanceCheck;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -19,3 +21,12 @@ Schedule::command('branch-sync:pull')
     ->withoutOverlapping()
     ->runInBackground()
     ->when(fn (): bool => config('branch-sync.mode') === 'edge');
+
+// Where a scheduler runs, check every store's party balances against their statements each week
+// (the central server also starts this check from the owner's dashboard when it is due).
+Schedule::call(fn () => Tenant::query()->pluck('id')
+    ->each(fn (int $tenantId) => app(PartyBalanceCheck::class)->run($tenantId)))
+    ->weekly()
+    ->name('party-balance-check')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge');
