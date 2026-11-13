@@ -507,3 +507,43 @@ test('the stagnant items report lists stock that did not sell in the period with
         ->and($definition['summary']['قيمة المخزون الراكد'])->toBe(80.0)
         ->and((new ReportingService($this->user))->prepare('stagnant', $filters)['query']->count())->toBe(3);
 });
+
+test('the employees report ranks staff by net revenue and counts returns against whoever recorded them', function (): void {
+    $cashier = User::factory()->create(['tenant_id' => $this->tenant->id, 'type' => 'tenant_user', 'name' => 'سامي الكاشير']);
+    $rep = User::factory()->create(['tenant_id' => $this->tenant->id, 'type' => 'tenant_user', 'name' => 'خالد المندوب']);
+    ($this->makeOrder)(['created_by' => $cashier->id, 'subtotal' => 100, 'total' => 100, 'total_cost' => 60]);
+    ($this->makeOrder)(['created_by' => $cashier->id, 'subtotal' => 50, 'total' => 50, 'total_cost' => 30]);
+    ($this->makeOrder)(['created_by' => $rep->id, 'subtotal' => 400, 'total' => 400, 'total_cost' => 250]);
+    $return = ($this->makeOrder)(['created_by' => $rep->id, 'type' => 'return', 'subtotal' => -40, 'total' => -40, 'total_cost' => -25]);
+    $return->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => -1, 'unit_price' => 40, 'total_price' => -40, 'cost_price' => 25, 'total_cost' => -25]);
+    ($this->makeOrder)(['created_by' => $cashier->id, 'created_at' => '2026-09-01 10:00:00', 'subtotal' => 999, 'total' => 999]);
+
+    $definition = (new ReportingService($this->user))->prepare('employees', $this->filters);
+    $rows = $definition['query']->get();
+
+    expect($rows->pluck('employee_name')->all())->toBe(['خالد المندوب', 'سامي الكاشير'])
+        ->and((int) $rows[0]->invoices)->toBe(1)
+        ->and((float) $rows[0]->revenue)->toBe(360.0)
+        ->and((float) $rows[0]->gross_profit)->toBe(135.0)
+        ->and((int) $rows[1]->invoices)->toBe(2)
+        ->and((float) $rows[1]->revenue)->toBe(150.0)
+        ->and((float) $rows[1]->average_invoice)->toBe(75.0)
+        ->and($definition['summary']['عدد الموظفين'])->toBe(2);
+});
+
+test('the analytics cards link to the report behind each number, and the reports centre opens on that period', function (): void {
+    $seller = User::factory()->create(['tenant_id' => $this->tenant->id, 'type' => 'tenant_user', 'name' => 'منى البائعة']);
+    ($this->makeOrder)(['created_by' => $seller->id, 'created_at' => now()->toDateTimeString()]);
+
+    Livewire::test('pages::tenant.reports.analytics')
+        ->set('date_from', '2026-10-01')->set('date_to', '2026-10-31')
+        ->assertSee('data-kpi-link="profit"', false)
+        ->assertSee(route('tenant.reports', ['report' => 'profit', 'from' => '2026-10-01', 'to' => '2026-10-31']))
+        ->assertSee(route('tenant.reports', ['report' => 'balances', 'from' => '2026-10-01', 'to' => '2026-10-31']))
+        ->assertSee('data-top-employees', false)
+        ->assertSee('منى البائعة');
+
+    Livewire::withQueryParams(['report' => 'profit', 'from' => '2026-10-01', 'to' => '2026-10-31', 'branch_id' => $this->branch->id])
+        ->test('pages::tenant.reports.center')
+        ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-31')->assertSet('branchId', $this->branch->id);
+});

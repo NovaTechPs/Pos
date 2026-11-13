@@ -47,10 +47,23 @@ new class extends Component {
         $this->branchId = auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin()
             ? null
             : auth()->user()->activeBranchId();
+        // Links from the analytics dashboard open the report on the same period and branch.
+        foreach (['from', 'to'] as $key) {
+            $value = request()->query($key);
+            if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                $this->{$key} = $value;
+            }
+        }
+        if (request()->integer('branch_id') > 0) {
+            $this->updatedBranchId(request()->integer('branch_id'));
+        }
+        if (request()->integer('product_id') > 0) {
+            $this->productId = Product::query()->where('tenant_id', auth()->user()->tenant_id)->whereKey(request()->integer('product_id'))->value('id');
+        }
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
-        if ($this->report === 'expiring') {
+        if ($this->report === 'expiring' && ! request()->query('to')) {
             $this->to = today()->addDays(30)->toDateString();
         }
         if ($this->report === 'statement' && request()->integer('party_id') > 0) {

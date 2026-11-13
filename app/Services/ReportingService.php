@@ -47,13 +47,14 @@ class ReportingService
         'aging' => ['أعمار الذمم المدينة والدائنة', 'customers.view'],
         'tax' => ['تقرير الضريبة: المبيعات والمشتريات', 'reports.sales'],
         'branches' => ['ملخص أداء الفروع', 'reports.profit'],
+        'employees' => ['أفضل الموظفين: المبيعات والربح لكل موظف', 'reports.profit'],
         'settlements' => ['سجل التسويات اليومية', 'reports.daily_settlement'],
     ];
 
     /** @var array<string, list<string>> */
     public const REPORT_GROUPS = [
         'الحسابات والذمم' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
-        'المبيعات والأرباح' => ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'tax'],
+        'المبيعات والأرباح' => ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'employees', 'tax'],
         'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments'],
     ];
@@ -71,7 +72,7 @@ class ReportingService
     private const PURCHASE_DATE_SQL = 'COALESCE(purchases.invoice_date, purchases.created_at)';
 
     /** Net revenue of a sales document without tax and without the delivery fee collected by the courier. */
-    private const ORDER_REVENUE_SQL = "CASE WHEN orders.type = 'return' THEN -(ABS(orders.total) - ABS(orders.tax_amount) - ABS(orders.delivery_fee)) ELSE orders.total - orders.tax_amount - orders.delivery_fee END";
+    public const ORDER_REVENUE_SQL = "CASE WHEN orders.type = 'return' THEN -(ABS(orders.total) - ABS(orders.tax_amount) - ABS(orders.delivery_fee)) ELSE orders.total - orders.tax_amount - orders.delivery_fee END";
 
     public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true)
     {
@@ -168,7 +169,7 @@ class ReportingService
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
             'inventory' => $this->inventory(), 'stagnant' => $this->stagnant(), 'expiring' => $this->expiring(), 'cashflow' => $this->cashflow(),
             'daily-cash' => $this->dailyCash(), 'expenses' => $this->expenses(), 'aging' => $this->aging(),
-            'tax' => $this->tax(), 'branches' => $this->branches(), 'settlements' => $this->settlements(),
+            'tax' => $this->tax(), 'branches' => $this->branches(), 'employees' => $this->employees(), 'settlements' => $this->settlements(),
         };
     }
 
@@ -178,7 +179,7 @@ class ReportingService
             return '—';
         }
         $quantity = ['quantity', 'quantity_before', 'quantity_after', 'sold', 'returned', 'net_quantity', 'stock_quantity', 'alert_quantity', 'incoming', 'outgoing', 'gift_quantity'];
-        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit',
+        $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit', 'average_invoice',
             'cash_in', 'cash_out', 'net_cash', 'card_in', 'transfer_in', 'cheque_in', 'total_in', 'total_out', 'net_total', 'taxable', 'output_tax', 'input_tax', 'total',
             'age_0_30', 'age_31_60', 'age_61_90', 'age_over_90', 'purchases_total', 'delivery_fees', 'tax_amount', 'total_sales', 'total_returns', 'total_cash', 'total_card'];
         if (in_array($column, $quantity, true)) {
@@ -964,6 +965,42 @@ class ReportingService
             ['branch_name' => 'الفرع', 'invoices' => 'فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'revenue' => 'صافي الإيراد', 'cost' => 'التكلفة', 'gross_profit' => 'مجمل الربح', 'expenses' => 'المصروفات', 'net_profit' => 'الربح بعد المصروفات', 'purchases_total' => 'صافي المشتريات', 'total_in' => 'المقبوضات', 'total_out' => 'المدفوعات'],
             ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي الإيراد' => $totals->revenue, 'مجمل الربح' => $totals->gross_profit, 'المصروفات' => $totals->expenses, 'الربح بعد المصروفات' => $totals->net_profit, 'صافي المشتريات' => $totals->purchases_total],
             ['صافي الإيراد دون الضريبة ورسوم التوصيل؛ التكلفة هي المسجلة وقت البيع بعد عكس تكلفة المردود. الرواتب غير موزعة على الفروع.', 'المقبوضات والمدفوعات تشمل السندات وتحصيل فواتير نقطة البيع، ولا تعني الربح.']);
+    }
+
+    /**
+     * Sales and profit by the employee who created each invoice, best first. Returns count against the
+     * employee who recorded them.
+     *
+     * @return ReportDefinition
+     */
+    private function employees(): array
+    {
+        $orders = $this->orders()->select('orders.created_by')
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END) as invoices")
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END) as sales")
+            ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END) as returns")
+            ->selectRaw('SUM('.self::ORDER_REVENUE_SQL.') as revenue')
+            ->selectRaw("SUM(CASE WHEN orders.type != 'return' THEN orders.total_cost ELSE 0 END) as cost")
+            ->groupBy('orders.created_by');
+        $returnCosts = $this->orders()->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->where('order_items.tenant_id', $this->tenantId)->select('orders.created_by')->selectRaw('SUM(ABS(order_items.total_cost)) as return_cost')->groupBy('orders.created_by');
+        $query = DB::query()->fromSub($orders, 'employee_orders')
+            ->leftJoinSub($returnCosts, 'employee_return_costs', fn ($join) => $join->whereColumn('employee_return_costs.created_by', 'employee_orders.created_by')
+                ->orWhere(fn ($both) => $both->whereNull('employee_return_costs.created_by')->whereNull('employee_orders.created_by')))
+            ->leftJoin('users', 'users.id', '=', 'employee_orders.created_by')
+            ->select('employee_orders.created_by as id')
+            ->selectRaw("COALESCE(users.name, 'غير محدد') as employee_name")
+            ->selectRaw('employee_orders.invoices, employee_orders.sales, employee_orders.returns, employee_orders.revenue')
+            ->selectRaw('employee_orders.cost - COALESCE(employee_return_costs.return_cost, 0) as cost')
+            ->selectRaw('employee_orders.revenue - employee_orders.cost + COALESCE(employee_return_costs.return_cost, 0) as gross_profit')
+            ->selectRaw('CASE WHEN employee_orders.invoices > 0 THEN employee_orders.sales / employee_orders.invoices ELSE 0 END as average_invoice');
+        $totals = DB::query()->fromSub(clone $query, 'employee_totals')
+            ->selectRaw('COUNT(*) as employees, COALESCE(SUM(revenue),0) as revenue, COALESCE(SUM(gross_profit),0) as gross_profit')->first();
+
+        return $this->definition($query->orderByDesc('revenue')->orderBy('employee_orders.created_by'),
+            ['employee_name' => 'الموظف', 'invoices' => 'فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'revenue' => 'صافي الإيراد', 'cost' => 'التكلفة', 'gross_profit' => 'مجمل الربح', 'average_invoice' => 'متوسط الفاتورة'],
+            ['عدد الموظفين' => (int) $totals->employees, 'صافي الإيراد' => $totals->revenue, 'مجمل الربح' => $totals->gross_profit],
+            ['مرتبة من الأعلى صافي إيراد. كل فاتورة تُحسب لمن أنشأها، وكل مردود لمن سجّله. صافي الإيراد دون الضريبة ورسوم التوصيل، والتكلفة هي المسجلة وقت البيع.']);
     }
 
     /** @return ReportDefinition */

@@ -55,6 +55,10 @@
                         @endif
                     </section>
                 @endif
+                {{-- Managers get the live dashboard; everyone else keeps the welcome page. --}}
+                @if (auth()->user()?->tenant_id && auth()->user()->can('reports.analytics') && auth()->user()->can('reports.profit'))
+                    <livewire:pages::tenant.home-dashboard />
+                @else
                 <section class="relative isolate overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-950 via-indigo-800 to-violet-700 px-6 py-8 text-white shadow-2xl shadow-indigo-950/20 sm:px-10 sm:py-10 lg:px-12">
                     <div class="absolute -end-16 -top-28 size-80 rounded-full bg-fuchsia-400/20 blur-3xl dashboard-glow"></div>
                     <div class="absolute -bottom-32 start-1/3 size-72 rounded-full bg-cyan-300/20 blur-3xl dashboard-glow"></div>
@@ -185,6 +189,7 @@
                         </div>
                     </div>
                 </section>
+                @endif
             </div>
         </div>
     </flux:main>

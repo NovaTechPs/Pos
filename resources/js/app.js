@@ -9,3 +9,4 @@ import './print-pdf.js';
 import './table-keyboard.js';
 
 import './pos-cart-keyboard.js';
+import './dashboard-charts.js';

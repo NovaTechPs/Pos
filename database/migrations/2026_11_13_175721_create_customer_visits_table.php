@@ -3,7 +3,6 @@
 use App\Services\SchemaIntegrity;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -31,16 +30,10 @@ return new class extends Migration
             $table->unique(['user_id', 'party_id', 'visit_date']);
             $table->index(['tenant_id', 'visit_date', 'user_id']);
         });
-
-        // Deployed stores do not re-run the permission seeder, so the new permission is added here.
-        DB::table('permissions')->updateOrInsert(['name' => 'customer_visits.manage'], [
-            'display_name' => 'إدارة قوائم زيارات المندوبين', 'group' => 'المبيعات', 'created_at' => now(), 'updated_at' => now(),
-        ]);
     }
 
     public function down(): void
     {
         Schema::dropIfExists('customer_visits');
-        DB::table('permissions')->where('name', 'customer_visits.manage')->delete();
     }
 };

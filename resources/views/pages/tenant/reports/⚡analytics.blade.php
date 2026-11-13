@@ -10,6 +10,8 @@ use App\Models\BranchProduct;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\ReportingService;
+use Illuminate\Validation\ValidationException;
 
 new class extends Component {
     use WithPagination;
@@ -393,6 +395,7 @@ new class extends Component {
                 'stats' => $this->emptyStats(),
                 'dailySales' => collect(),
                 'topProducts' => collect(),
+                'topEmployees' => collect(),
                 'paymentBreakdown' => collect(),
                 'purchaseStats' => (object) ['count' => 0, 'total' => 0, 'paid' => 0, 'remaining' => 0],
                 'topCustomers' => collect(),
@@ -710,8 +713,21 @@ new class extends Component {
             'net_collected_after_returns' => $netCollectedAfterReturns,
         ];
 
+        // Same period and branch as the dashboard, from the employees report.
+        $topEmployees = collect();
+        if ($user->can('reports.profit')) {
+            try {
+                $topEmployees = (new ReportingService($user, $this->effectiveBranchId(), false))->prepare('employees', [
+                    'from' => $this->date_from, 'to' => $this->date_to, 'party_type' => 'all', 'balance_side' => 'all', 'stock_filter' => 'all',
+                ])['query']->limit(5)->get();
+            } catch (ValidationException) {
+                $topEmployees = collect();
+            }
+        }
+
         return $this->view([
             'orders' => $orders,
+            'topEmployees' => $topEmployees,
             'branches' => Branch::query()->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name']),
             'stats' => $stats,
             'dailySales' => $dailySales,
@@ -919,8 +935,17 @@ new class extends Component {
     {{-- ============================================================
          Primary KPIs
     ============================================================= --}}
-    <section class="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+    @php
+        $reportLink = fn (string $report): ?string => auth()->user()->can(\App\Services\ReportingService::REPORTS[$report][1])
+            ? route('tenant.reports', ['report' => $report, 'from' => $date_from, 'to' => $date_to] + ($selectedBranchId ? ['branch_id' => $selectedBranchId] : []))
+            : null;
+        $kpiLinks = ['sales' => $reportLink('branches'), 'net' => $reportLink('product-sales'), 'receivable' => $reportLink('balances'), 'profit' => $reportLink('profit')];
+    @endphp
+    <section class="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-analytics-kpis>
+        <div class="relative rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm transition hover:shadow-md">
+            @if ($kpiLinks['sales'])
+                <a href="{{ $kpiLinks['sales'] }}" wire:navigate data-kpi-link="sales" class="absolute inset-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500" aria-label="تفاصيل: إجمالي المبيعات حسب الفروع" title="تفاصيل: إجمالي المبيعات حسب الفروع"></a>
+            @endif
             <div class="flex items-center justify-between gap-3">
                 <div>
                     <div class="text-[11px] font-black text-emerald-700">إجمالي المبيعات</div>
@@ -933,7 +958,10 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+        <div class="relative rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm transition hover:shadow-md">
+            @if ($kpiLinks['net'])
+                <a href="{{ $kpiLinks['net'] }}" wire:navigate data-kpi-link="net" class="absolute inset-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label="تفاصيل: مبيعات الأصناف خلال الفترة" title="تفاصيل: مبيعات الأصناف خلال الفترة"></a>
+            @endif
             <div class="flex items-center justify-between gap-3">
                 <div>
                     <div class="text-[11px] font-black text-indigo-700">صافي المبيعات بعد المرتجعات</div>
@@ -946,7 +974,10 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+        <div class="relative rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm transition hover:shadow-md">
+            @if ($kpiLinks['receivable'])
+                <a href="{{ $kpiLinks['receivable'] }}" wire:navigate data-kpi-link="receivable" class="absolute inset-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500" aria-label="تفاصيل: الذمم المدينة والدائنة" title="تفاصيل: الذمم المدينة والدائنة"></a>
+            @endif
             <div class="flex items-center justify-between gap-3">
                 <div>
                     <div class="text-[11px] font-black text-amber-700">الذمم المستحقة</div>
@@ -959,7 +990,10 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4 shadow-sm">
+        <div class="relative rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4 shadow-sm transition hover:shadow-md">
+            @if ($kpiLinks['profit'])
+                <a href="{{ $kpiLinks['profit'] }}" wire:navigate data-kpi-link="profit" class="absolute inset-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500" aria-label="تفاصيل: الأرباح والمصروفات" title="تفاصيل: الأرباح والمصروفات"></a>
+            @endif
             <div class="flex items-center justify-between gap-3">
                 <div>
                     <div class="text-[11px] font-black text-violet-700">صافي الربح بعد المرتجعات</div>
@@ -1167,6 +1201,42 @@ new class extends Component {
             </div>
         </div>
     </section>
+
+    {{-- ============================================================
+         Best employees
+    ============================================================= --}}
+    @if ($topEmployees->isNotEmpty())
+        <section class="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" data-top-employees>
+            <div class="mb-4 flex items-center justify-between gap-3">
+                <div>
+                    <h3 class="text-sm font-black text-slate-900">أفضل الموظفين</h3>
+                    <p class="mt-0.5 text-[10px] font-semibold text-slate-400">حسب صافي الإيراد في الفترة المحددة؛ كل فاتورة لمن أنشأها.</p>
+                </div>
+                @if ($employeesLink = $reportLink('employees'))
+                    <a href="{{ $employeesLink }}" wire:navigate class="text-xs font-bold text-indigo-600 hover:underline">كل الموظفين ←</a>
+                @endif
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-right text-xs">
+                    <thead class="border-b border-slate-100 bg-slate-50 text-[10px] font-black text-slate-500">
+                        <tr><th class="px-3 py-2.5">#</th><th class="px-3 py-2.5">الموظف</th><th class="px-3 py-2.5 text-center">الفواتير</th><th class="px-3 py-2.5">صافي الإيراد</th><th class="px-3 py-2.5">مجمل الربح</th><th class="px-3 py-2.5">متوسط الفاتورة</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        @foreach ($topEmployees as $index => $employee)
+                            <tr class="transition hover:bg-slate-50">
+                                <td class="px-3 py-3 font-black text-slate-400">{{ $index + 1 }}</td>
+                                <td class="px-3 py-3 font-black text-slate-800">{{ $employee->employee_name }}</td>
+                                <td class="px-3 py-3 text-center font-mono font-black text-slate-700">{{ number_format((int) $employee->invoices) }}</td>
+                                <td class="px-3 py-3 font-mono font-black text-indigo-700">{{ number_format((float) $employee->revenue, 2) }}</td>
+                                <td class="px-3 py-3 font-mono font-black text-emerald-600">{{ number_format((float) $employee->gross_profit, 2) }}</td>
+                                <td class="px-3 py-3 font-mono font-bold text-slate-500">{{ number_format((float) $employee->average_invoice, 2) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    @endif
 
     {{-- ============================================================
          Purchases, customer and supplier reports
