@@ -776,6 +776,7 @@ new class extends Component {
 
     public function toggleWebsiteStatus(int $id): void
     {
+        $this->authorize('products.edit');
         $tenantId = $this->tenantId();
 
         if (!$tenantId) {
@@ -799,6 +800,7 @@ new class extends Component {
 
     public function removeSingleExistingImage(): void
     {
+        $this->authorize('products.edit');
         if (!$this->existing_image || !$this->product_id) {
             return;
         }
@@ -826,6 +828,7 @@ new class extends Component {
 
     public function removeExistingImage(int $index): void
     {
+        $this->authorize('products.edit');
         if (
             !isset($this->existing_images[$index]) ||
             !$this->product_id

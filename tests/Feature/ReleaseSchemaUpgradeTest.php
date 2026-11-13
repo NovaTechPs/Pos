@@ -58,6 +58,7 @@ test('release migration upgrades the legacy employees table with missing tenant 
         $table->dropUnique(['tenant_id', 'employee_code']);
         $table->dropUnique(['tenant_id', 'national_id']);
         $table->dropIndex('employees_tenant_active_salary_index');
+        $table->dropIndex(['tenant_id', 'branch_id']);
         $table->dropConstrainedForeignId('tenant_id');
         $table->dropConstrainedForeignId('branch_id');
     });

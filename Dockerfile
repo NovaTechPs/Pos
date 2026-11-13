@@ -23,7 +23,9 @@ RUN npm run build
 FROM backend
 COPY --from=assets /build/public/build ./public/build
 COPY nginx.conf /etc/nginx/sites-available/default
-ENV APP_ENV=production APP_DEBUG=false
+COPY docker/opcache.ini /usr/local/etc/php/conf.d/zz-opcache.ini
+COPY docker/php-fpm-pool.conf /usr/local/etc/php-fpm.d/zz-pool.conf
+ENV APP_ENV=production APP_DEBUG=false PHP_FPM_MAX_CHILDREN=10
 RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache

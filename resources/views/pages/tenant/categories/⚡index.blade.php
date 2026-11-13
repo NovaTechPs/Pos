@@ -152,6 +152,7 @@ new class extends Component {
 
     public function toggleStatus(int $id): void
     {
+        $this->authorize('categories.edit');
         $tenantId = session('active_tenant_id');
 
         $category = Category::query()

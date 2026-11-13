@@ -480,6 +480,7 @@ new class extends Component {
      */
     public function deactivateParty(int $id): void
     {
+        $this->authorize('customers.delete');
         $tenantId = $this->getTenantId();
 
         if (!$tenantId) {
