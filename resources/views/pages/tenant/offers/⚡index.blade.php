@@ -217,18 +217,20 @@ new class extends Component {
             ->with(['product:id,name,product_number', 'branch:id,name'])
             ->when($this->branchFilter !== '', fn ($query) => $query->where('branch_id', $this->branchFilter))
             ->when($this->statusFilter !== '', fn ($query) => $query->where('is_active', $this->statusFilter === 'active'))
-            ->when(trim($this->search) !== '', function ($query): void {
+            ->when(trim($this->search) !== '', function ($query) use ($tenantId): void {
                 $search = trim($this->search);
-                $query->whereHas('product', fn ($productQuery) => $productQuery->where('name', 'like', "%{$search}%")->orWhere('product_number', 'like', "%{$search}%"));
+                $query->whereHas('product', fn ($productQuery) => $productQuery->where(fn ($match) => $match->where('name', 'like', "%{$search}%")->orWhere('product_number', 'like', "%{$search}%")
+                    ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%"))));
             })
             ->orderByDesc('created_at')
             ->paginate(20);
 
         $branches = Branch::query()->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name']);
         $productResults = $this->showModal && trim($this->productSearch) !== '' && !$this->productId
-            ? Product::query()->where('tenant_id', $tenantId)->where(function ($query): void {
+            ? Product::query()->where('tenant_id', $tenantId)->where(function ($query) use ($tenantId): void {
                 $search = trim($this->productSearch);
-                $query->where('name', 'like', "%{$search}%")->orWhere('product_number', 'like', "%{$search}%");
+                $query->where('name', 'like', "%{$search}%")->orWhere('product_number', 'like', "%{$search}%")
+                    ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('tenant_id', $tenantId)->where('barcode', 'like', "%{$search}%"));
             })->orderBy('name')->limit(12)->get(['id', 'name', 'product_number'])
             : collect();
 

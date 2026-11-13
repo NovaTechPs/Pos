@@ -250,7 +250,8 @@ new class extends Component
                 foreach ($words as $word) {
                     $names->where(fn ($wordQuery) => $wordQuery->where('search_name', 'like', '%'.$word.'%')->orWhere('name', 'like', '%'.$word.'%'));
                 }
-            })->orWhere('product_number', 'like', '%'.$search.'%'))
+            })->orWhere('product_number', 'like', '%'.$search.'%')
+                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('tenant_id', $tenantId)->where('barcode', 'like', '%'.$search.'%')))
             ->orderBy('name')->limit(8)->get(['id', 'name', 'product_number']);
     }
 

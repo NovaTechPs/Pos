@@ -46,6 +46,9 @@ new class extends Component
                 ->where(fn ($productQuery) => $productQuery
                     ->where('searched_products.name', 'like', "%{$search}%")
                     ->orWhere('searched_products.product_number', 'like', "%{$search}%")
+                    ->orWhereExists(fn ($barcodes) => $barcodes->selectRaw('1')->from('product_barcodes')
+                        ->whereColumn('product_barcodes.product_id', 'searched_products.id')
+                        ->where('product_barcodes.tenant_id', $tenantId)->where('product_barcodes.barcode', 'like', "%{$search}%"))
                 ));
         return $this->view([
             'movements' => $query->with(['product', 'branch'])->latest('id')->paginate(30),
