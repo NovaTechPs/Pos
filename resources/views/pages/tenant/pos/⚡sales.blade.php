@@ -2822,6 +2822,7 @@ new class extends Component {
 
         $customer->phone = trim($validated['customerPhoneInput']);
         $customer->save();
+        $this->queueCustomerPhoneForSync($customer);
 
         $this->customerPhoneInput = $customer->phone;
         $this->showCustomerPhoneModal = false;
@@ -2839,6 +2840,27 @@ new class extends Component {
 
         $this->dispatch('customer-phone-saved', phone: $whatsappPhone);
         $this->dispatch('toast', type: 'success', message: 'تم حفظ رقم هاتف الزبون.');
+    }
+
+    /** On a branch device, sends a customer's new phone number to the central system so it is not lost at the next sync. */
+    private function queueCustomerPhoneForSync(Party $customer): void
+    {
+        if (config('branch-sync.mode') !== 'edge') {
+            return;
+        }
+
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->getActiveBranchId();
+        $operation = BranchSyncOperation::query()->create([
+            'tenant_id' => $tenantId, 'branch_id' => $branchId, 'operation_uuid' => (string) Str::uuid(),
+            'operation_type' => 'customer.phone_updated', 'status' => 'pending',
+            'payload' => ['customer' => ['id' => (int) $customer->id, 'phone' => $customer->phone]],
+        ]);
+        $connection = app(DesktopPosConnection::class);
+        if ($connection->enabled()) {
+            $connection->flush($tenantId, $branchId, $operation->operation_uuid);
+        }
+        $this->refreshBranchSyncStatus();
     }
 
     public function openCustomerModal(): void

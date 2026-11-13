@@ -5,12 +5,10 @@ namespace App\Services;
 use App\Models\BranchSyncOperation;
 use App\Models\TenantSetting;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use RuntimeException;
 
@@ -226,29 +224,8 @@ class DesktopPosConnection
      */
     private function store(string $table, array $row, int $tenantId, array $preserved = []): void
     {
-        if ((int) ($row['tenant_id'] ?? 0) !== $tenantId || ! isset($row['id'])) {
-            throw new RuntimeException('Unexpected live catalog tenant.');
-        }
-        $existing = DB::table($table)->where('id', $row['id'])->lockForUpdate()->first();
-        if ($existing && ((int) $existing->tenant_id !== $tenantId
-            || (isset($row['branch_id']) && isset($existing->branch_id) && (int) $row['branch_id'] !== (int) $existing->branch_id)
-            || (isset($row['product_id']) && (int) $row['product_id'] !== (int) $existing->product_id))) {
-            throw new RuntimeException('Live catalog identifier conflict.');
-        }
-        $columnsKey = 'desktop_catalog_columns:'.DB::getDefaultConnection().':'.$table;
-        if (! request()->attributes->has($columnsKey)) {
-            request()->attributes->set($columnsKey, Schema::getColumnListing($table));
-        }
-        $row = Arr::only(Arr::except($row, ['created_by', 'updated_by']), request()->attributes->get($columnsKey));
-        if ($existing) {
-            $changes = array_filter(Arr::except($row, $preserved),
-                fn (mixed $value, string $column): bool => ($value === null) !== ($existing->{$column} === null)
-                    || $value != $existing->{$column}, ARRAY_FILTER_USE_BOTH);
-            if ($changes !== []) {
-                DB::table($table)->where('id', $row['id'])->update($changes);
-            }
-        } else {
-            DB::table($table)->insert($row);
-        }
+        ($this->catalogStore ??= app(LocalCatalogStore::class))->store($table, $row, $tenantId, $preserved);
     }
+
+    private ?LocalCatalogStore $catalogStore = null;
 }

@@ -37,6 +37,7 @@ class PushBranchSyncOperations extends Command
                 $result = self::FAILURE;
             }
         }
+        BranchSyncOperation::clearPendingUploadMarkerWhenIdle();
 
         return $result;
     }

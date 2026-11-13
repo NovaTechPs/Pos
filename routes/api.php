@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\BranchSyncCatalogController;
 use App\Http\Controllers\Api\BranchSyncOperationController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\CustomerVisitController;
 use App\Http\Controllers\Api\EmployeeApiController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\PartyStatementController;
@@ -54,6 +55,11 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::get('/shifts/active', [ShiftController::class, 'active'])->middleware('can:pos.view');
     Route::post('/shifts/open', [ShiftController::class, 'open'])->middleware('can:pos.shift.open');
     Route::post('/shifts/close', [ShiftController::class, 'close'])->middleware('can:pos.shift.close');
+
+    Route::get('/customer-visits', [CustomerVisitController::class, 'index'])->middleware('can:wholesale_sales.view');
+    Route::post('/customer-visits', [CustomerVisitController::class, 'store'])->middleware('can:wholesale_sales.view');
+    Route::patch('/customer-visits/{visit}', [CustomerVisitController::class, 'update'])->middleware('can:wholesale_sales.view');
+    Route::delete('/customer-visits/{visit}', [CustomerVisitController::class, 'destroy'])->middleware('can:wholesale_sales.view');
 
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('can:customers.view');
     Route::post('/customers', [CustomerController::class, 'store'])->middleware('can:customers.create');

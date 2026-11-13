@@ -18,6 +18,7 @@
             'label' => 'Customers and Suppliers',
             'items' => [
                 ['permission' => 'customers.view', 'route' => 'tenant.customer', 'label' => 'Customers', 'icon' => 'users'],
+                ['permission' => 'customer_visits.manage', 'route' => 'tenant.customer-visits', 'label' => 'زيارات المندوبين', 'icon' => 'map'],
             ],
         ],
         [

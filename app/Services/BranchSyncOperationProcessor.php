@@ -50,7 +50,28 @@ class BranchSyncOperationProcessor
             return;
         }
 
+        if ($operation->operation_type === 'customer.phone_updated') {
+            $this->processCustomerPhone($operation);
+
+            return;
+        }
+
         throw new RuntimeException('نوع عملية المزامنة غير مدعوم.');
+    }
+
+    /** Saves a customer phone number entered at a branch point of sale on the central customer. */
+    private function processCustomerPhone(BranchSyncOperation $operation): void
+    {
+        $data = Validator::make($operation->payload['customer'] ?? [], [
+            'id' => ['required', 'integer', 'min:1'],
+            'phone' => ['required', 'string', 'max:40'],
+        ])->validate();
+        $customer = Party::query()->where('tenant_id', $operation->tenant_id)
+            ->whereIn('type', ['customer', 'supplier', 'both'])->whereKey($data['id'])->first();
+        if (! $customer) {
+            throw new RuntimeException('الزبون غير موجود في المركز.');
+        }
+        $customer->forceFill(['phone' => trim($data['phone'])])->save();
     }
 
     /** Adds a barcode scanned at a branch to a product of that branch, unless another product already uses it. */

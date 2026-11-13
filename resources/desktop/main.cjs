@@ -237,8 +237,17 @@ async function start() {
         await openCentralWindow(url);
         return true;
     });
+    // Laravel writes this marker while operations wait to be uploaded. Checking it avoids starting PHP every
+    // ten seconds for an empty queue; the first round after start-up always runs, for queues from older versions.
+    const pendingUploadMarker = path.join(dataRoot, 'storage/app/branch-sync-pending');
+    let firstUpload = true;
     const synchronize = createSyncRunner(
-        () => closing ? undefined : runPhp(php, ini, ['artisan', 'branch-sync:push', '--no-interaction'], phpOptions),
+        async () => {
+            if (closing) return;
+            const pending = firstUpload || await fs.access(pendingUploadMarker).then(() => true, () => false);
+            firstUpload = false;
+            if (pending) await runPhp(php, ini, ['artisan', 'branch-sync:push', '--no-interaction'], phpOptions);
+        },
         () => closing ? undefined : runPhp(php, ini, ['artisan', 'branch-sync:pull', '--no-interaction'], phpOptions),
         error => phpLog.write(error.message + '\n'),
     );
@@ -256,9 +265,11 @@ async function start() {
             void synchronizeNow();
         }
     });
+    // Uploads are checked every 10 seconds. The full catalog (every product, price and customer) is downloaded
+    // every 15 minutes; while online, the point of sale already refreshes the products the cashier looks up.
     let ticks = 0;
     syncTimer = setInterval(async () => {
-        if (!closing) await synchronize(++ticks % 30 === 0);
+        if (!closing) await synchronize(++ticks % 90 === 0);
     }, 10000);
     await setStartupStatus('جارٍ فتح نقطة البيع…');
     await window.loadURL(origin + '/dashboard/pos');

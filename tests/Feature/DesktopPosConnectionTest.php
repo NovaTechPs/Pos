@@ -465,3 +465,15 @@ test('a missing barcode linked on the desktop works offline and syncs to the cen
     $component->call('refreshLiveData')->assertSet('connectionState', 'online')->assertSet('pendingSyncOperations', 0);
     expect(ProductBarcode::query()->where('barcode', '777000')->sole()->id)->toBe(501);
 });
+
+test('live catalog keeps working when the server moved a cached price row to this branch', function (): void {
+    $oldBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Merged branch']);
+    $this->stock->update(['branch_id' => $oldBranch->id]);
+    Http::fake(fn () => Http::response(desktopCatalogPage($this)));
+    $connection = app(DesktopPosConnection::class);
+
+    expect($connection->read($this->tenant->id, $this->branch->id))->toBe([$this->product->id])
+        ->and($connection->state)->toBe('online')
+        ->and($this->stock->fresh()->branch_id)->toBe($this->branch->id)
+        ->and((float) $this->stock->fresh()->retail_price)->toBe(12.0);
+});

@@ -766,6 +766,11 @@ class PermissionSeeder extends Seeder
                 'group' => 'الموارد البشرية',
             ],
             [
+                'name' => 'customer_visits.manage',
+                'display_name' => 'إدارة قوائم زيارات المندوبين',
+                'group' => 'المبيعات',
+            ],
+            [
                 'name' => 'tasks.manage',
                 'display_name' => 'إدارة مهام الموظفين',
                 'group' => 'الموارد البشرية',

@@ -5,8 +5,8 @@ namespace App\Console\Commands;
 use App\Models\Branch;
 use App\Models\TenantSetting;
 use App\Services\BranchSyncCredentials;
+use App\Services\LocalCatalogStore;
 use Illuminate\Console\Command;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
@@ -141,22 +141,8 @@ class PullBranchSyncCatalog extends Command
      */
     private function storeRow(string $table, array $row, int $tenantId, array $preservedColumns = []): void
     {
-        if ((int) ($row['tenant_id'] ?? 0) !== $tenantId || ! isset($row['id'])) {
-            throw new RuntimeException('Unexpected catalog tenant or missing identifier.');
-        }
-        $existing = DB::table($table)->where('id', $row['id'])->lockForUpdate()->first();
-        if ($existing && (int) $existing->tenant_id !== $tenantId) {
-            throw new RuntimeException('Catalog identifier conflicts with another local tenant.');
-        }
-        if ($existing && $table === 'branch_products'
-            && ((int) $existing->branch_id !== (int) $row['branch_id'] || (int) $existing->product_id !== (int) $row['product_id'])) {
-            throw new RuntimeException('Catalog price identifier conflicts with another branch or product.');
-        }
-        $row = Arr::except($row, ['created_by', 'updated_by']);
-        if ($existing) {
-            DB::table($table)->where('id', $row['id'])->update(Arr::except($row, $preservedColumns));
-        } else {
-            DB::table($table)->insert($row);
-        }
+        ($this->catalogStore ??= app(LocalCatalogStore::class))->store($table, $row, $tenantId, $preservedColumns);
     }
+
+    private ?LocalCatalogStore $catalogStore = null;
 }

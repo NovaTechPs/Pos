@@ -232,3 +232,64 @@ test('catalog download keeps branch offers available for offline sales and remov
     $this->artisan('branch-sync:pull')->assertSuccessful();
     expect(DB::table('product_offers')->where('product_id', 50)->exists())->toBeFalse();
 });
+
+test('catalog pull replaces a price row the server moved to this branch instead of stopping', function (): void {
+    $oldBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Merged branch']);
+    $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Tea']);
+    // The device cached this price for the old branch; the server now reports the same row for this branch.
+    $price = BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $oldBranch->id,
+        'product_id' => $product->id, 'retail_price' => 5, 'stock_quantity' => 3]);
+    $page = catalogPage($this->tenant->id, $this->branch->id, [['id' => $product->id, 'tenant_id' => $this->tenant->id, 'name' => 'Tea']]);
+    $page['prices'] = [['id' => $price->id, 'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'product_id' => $product->id, 'retail_price' => 6, 'stock_quantity' => 9]];
+    Http::fake(fn ($request) => Http::response($request['entity'] === 'products' ? $page : catalogPage($this->tenant->id, $this->branch->id)));
+
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+
+    $price->refresh();
+    expect($price->branch_id)->toBe($this->branch->id)
+        ->and((float) $price->retail_price)->toBe(6.0)
+        ->and((float) $price->stock_quantity)->toBe(9.0);
+});
+
+test('catalog pull replaces stale local copies of a barcode and a price under other identifiers', function (): void {
+    $first = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'First']);
+    $second = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Second']);
+    DB::table('product_barcodes')->insert(['id' => 900, 'tenant_id' => $this->tenant->id, 'product_id' => $first->id, 'barcode' => '555']);
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'product_id' => $second->id, 'retail_price' => 1, 'stock_quantity' => 0]);
+    $page = catalogPage($this->tenant->id, $this->branch->id, [
+        ['id' => $first->id, 'tenant_id' => $this->tenant->id, 'name' => 'First'],
+        ['id' => $second->id, 'tenant_id' => $this->tenant->id, 'name' => 'Second'],
+    ]);
+    $page['barcodes'] = [['id' => 901, 'tenant_id' => $this->tenant->id, 'product_id' => $second->id, 'barcode' => '555']];
+    $page['prices'] = [['id' => 950, 'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'product_id' => $second->id, 'retail_price' => 4, 'stock_quantity' => 0]];
+    Http::fake(fn ($request) => Http::response($request['entity'] === 'products' ? $page : catalogPage($this->tenant->id, $this->branch->id)));
+
+    $this->artisan('branch-sync:pull')->assertSuccessful();
+
+    expect(DB::table('product_barcodes')->where('barcode', '555')->sole()->product_id)->toBe($second->id)
+        ->and(BranchProduct::query()->where('product_id', $second->id)->sole()->id)->toBe(950);
+});
+
+test('a queued operation marks the desktop upload as needed until the queue is empty', function (): void {
+    $marker = BranchSyncOperation::pendingUploadMarker();
+    @unlink($marker);
+    $operation = BranchSyncOperation::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'operation_uuid' => (string) Str::uuid(), 'operation_type' => 'sale.upsert',
+        'status' => 'pending', 'payload' => ['order' => ['invoice_number' => 'OFF-2']],
+    ]);
+    expect(file_exists($marker))->toBeTrue();
+
+    Http::fake(['central.example/*' => Http::failedConnection()]);
+    $this->artisan('branch-sync:push')->assertSuccessful();
+    expect(file_exists($marker))->toBeTrue();
+
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(['central.example/*' => Http::response(['accepted' => [$operation->operation_uuid => 'synced']])]);
+    $this->artisan('branch-sync:push')->assertSuccessful();
+    expect(file_exists($marker))->toBeFalse();
+});
