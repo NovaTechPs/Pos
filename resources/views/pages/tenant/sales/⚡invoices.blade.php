@@ -1340,27 +1340,19 @@ new class extends Component {
                 $this->dispatchPrint($order, $totals);
             }
 
-            if ($wasEditingInvoice) {
-                $this->loadOrder($order);
-                $this->successMessage = 'تم تعديل فاتورة المبيعات بنجاح.';
-                if ($openSettlementModal) {
-                    $this->openSettlementModal();
-                }
-                $this->dispatch('toast', type: 'success', message: $this->successMessage);
-
-                return;
-            }
-
             if ($openSettlementModal) {
                 $this->loadOrder($order);
                 $this->openSettlementModal();
-                $this->successMessage = 'تم حفظ الفاتورة. أدخل مبلغ سند القبض.';
+                $this->successMessage = $wasEditingInvoice
+                    ? 'تم تعديل فاتورة المبيعات. أدخل مبلغ سند القبض.'
+                    : 'تم حفظ الفاتورة. أدخل مبلغ سند القبض.';
+
                 return;
             }
 
             $this->startNewInvoice(false);
-            $this->successMessage = 'تم حفظ الفاتورة بنجاح وفتح فاتورة جديدة.';
-            $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المبيعات بنجاح.');
+            $this->successMessage = $wasEditingInvoice ? 'تم تعديل فاتورة المبيعات بنجاح وفتح فاتورة جديدة.' : 'تم حفظ الفاتورة بنجاح وفتح فاتورة جديدة.';
+            $this->dispatch('toast', type: 'success', message: $wasEditingInvoice ? 'تم تعديل فاتورة المبيعات بنجاح.' : 'تم حفظ فاتورة المبيعات بنجاح.');
 
         } catch (\Throwable $e) {
             report($e);
@@ -1442,8 +1434,16 @@ new class extends Component {
         });
 
         $this->showSettlementModal = false;
-        $this->loadOrder(Order::query()->where('tenant_id', $tenantId)->findOrFail($this->currentOrderId));
+        $this->startNewInvoice(false);
         $this->dispatch('toast', type: 'success', message: 'تم حفظ سند القبض وربطه بفاتورة المبيعات.');
+    }
+
+    /** The settlement voucher only opens right after saving, so closing it moves on to a new invoice too. */
+    public function updatedShowSettlementModal(bool $isOpen): void
+    {
+        if (! $isOpen) {
+            $this->startNewInvoice(false);
+        }
     }
 
     public function saveAndPrint(): void

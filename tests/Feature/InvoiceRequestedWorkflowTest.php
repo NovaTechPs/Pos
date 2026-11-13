@@ -336,6 +336,8 @@ test('editing a mobile invoice keeps its linked overpayment as the paid amount s
     $component->set("cart.{$lineKey}.price", 12)
         ->call('saveInvoice')
         ->assertSet('errorMessage', null)
+        ->assertSet('currentOrderId', null)
+        ->call('loadOrder', $order->id)
         ->assertSet('savedPaidAmount', 120);
 
     expect((float) $order->fresh()->total)->toBe(120.0)
@@ -527,3 +529,44 @@ test('notes button and dialog share the workspace Alpine state', function (): vo
     expect($toolbar)->not->toContain('mobileToolsOpen: false, notesOpen: false')
         ->and($toolbar)->toContain('x-on:click="notesOpen = true"', 'x-show="notesOpen"');
 });
+
+test('saving and paying an invoice opens a new invoice once the voucher is saved or skipped', function (string $page, string $partyType, string $partyField, string $currentIdField): void {
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'طرف فاتورة جديدة', 'type' => $partyType]);
+    $saveAndPay = fn () => Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set($partyField, $party->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('saveInvoice', false, true)
+        ->assertSet('showSettlementModal', true)
+        ->assertNotSet($currentIdField, null);
+
+    $saveAndPay()->set('settlementAmount', 5)->call('saveSettlementVoucher')->assertHasNoErrors()
+        ->assertSet('showSettlementModal', false)->assertSet($currentIdField, null)
+        ->assertSet($partyField, null)->assertSet('cart', []);
+    $saveAndPay()->set('showSettlementModal', false)
+        ->assertSet($currentIdField, null)->assertSet('cart', []);
+
+    expect(Payment::query()->count())->toBe(1);
+})->with([
+    ['sales', 'customer', 'selectedCustomerId', 'currentOrderId'],
+    ['purchases', 'supplier', 'selectedSupplierId', 'currentPurchaseId'],
+]);
+
+test('saving an edited invoice opens a new invoice', function (string $page, string $currentIdField, string $loadMethod): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('saveInvoice')
+        ->assertSet($currentIdField, null);
+    $invoiceId = $page === 'sales' ? Order::query()->sole()->id : Purchase::query()->sole()->id;
+
+    $component->call($loadMethod, $invoiceId)->call('editLoadedInvoice')
+        ->assertSet($currentIdField, $invoiceId)
+        ->call('saveInvoice')
+        ->assertSet('errorMessage', null)
+        ->assertSet($currentIdField, null)
+        ->assertSet('cart', []);
+})->with([
+    ['sales', 'currentOrderId', 'loadOrder'],
+    ['purchases', 'currentPurchaseId', 'loadPurchase'],
+]);

@@ -1226,27 +1226,19 @@ new class extends Component {
                 $this->printCurrentInvoice();
             }
 
-            if ($wasEditingInvoice) {
-                $this->loadPurchase($purchaseId);
-                $this->successMessage = 'تم تعديل فاتورة المشتريات بنجاح.';
-                if ($openSettlementModal) {
-                    $this->openSettlementModal();
-                }
-                $this->dispatch('toast', type: 'success', message: $this->successMessage);
-
-                return;
-            }
-
             if ($openSettlementModal) {
                 $this->loadPurchase($purchaseId);
                 $this->openSettlementModal();
-                $this->successMessage = 'تم حفظ الفاتورة. أدخل مبلغ سند الصرف.';
+                $this->successMessage = $wasEditingInvoice
+                    ? 'تم تعديل فاتورة المشتريات. أدخل مبلغ سند الصرف.'
+                    : 'تم حفظ الفاتورة. أدخل مبلغ سند الصرف.';
+
                 return;
             }
 
             $this->startNewInvoice(false);
-            $this->successMessage = 'تم حفظ فاتورة المشتريات بنجاح وفتح فاتورة جديدة.';
-            $this->dispatch('toast', type: 'success', message: 'تم حفظ فاتورة المشتريات بنجاح.');
+            $this->successMessage = $wasEditingInvoice ? 'تم تعديل فاتورة المشتريات بنجاح وفتح فاتورة جديدة.' : 'تم حفظ فاتورة المشتريات بنجاح وفتح فاتورة جديدة.';
+            $this->dispatch('toast', type: 'success', message: $wasEditingInvoice ? 'تم تعديل فاتورة المشتريات بنجاح.' : 'تم حفظ فاتورة المشتريات بنجاح.');
 
         } catch (\Throwable $e) {
             report($e);
@@ -1334,8 +1326,16 @@ new class extends Component {
         });
 
         $this->showSettlementModal = false;
-        $this->loadPurchase($this->currentPurchaseId);
+        $this->startNewInvoice(false);
         $this->dispatch('toast', type: 'success', message: 'تم حفظ سند الصرف وربطه بفاتورة المشتريات.');
+    }
+
+    /** The settlement voucher only opens right after saving, so closing it moves on to a new invoice too. */
+    public function updatedShowSettlementModal(bool $isOpen): void
+    {
+        if (! $isOpen) {
+            $this->startNewInvoice(false);
+        }
     }
 
     private function preparePriceUpdateCandidate(int $productId, float $purchaseCost, ?int $branchId): void
