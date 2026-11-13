@@ -74,10 +74,15 @@ test('a manager prepares a rep\'s list on the web and follows what was recorded'
         ->call('addCustomer', $this->shop->id)
         ->assertSee('لم تُزر بعد');
 
+    $page->assertSee('data-customer-result', false)->assertSee('data-manager-note', false);
     $visit = CustomerVisit::query()->sole();
+    $page->call('saveManagerNote', $visit->id, '  حصّل 500  ')->call('saveManagerNote', $visit->id, str_repeat('x', 1001))
+        ->assertHasErrors('managerNote.'.$visit->id);
+    expect($visit->fresh()->manager_note)->toBe('حصّل 500');
     expect($visit->user_id)->toBe($this->rep->id)->and($visit->visit_date->toDateString())->toBe(today()->toDateString());
 
     $this->actingAs($this->rep);
+    $this->getJson('/api/customer-visits')->assertJsonPath('visits.0.manager_note', 'حصّل 500');
     $this->patchJson("/api/customer-visits/{$visit->id}", ['outcome' => 'collection', 'notes' => 'دفع 200'])->assertOk();
 
     $this->actingAs($this->owner);

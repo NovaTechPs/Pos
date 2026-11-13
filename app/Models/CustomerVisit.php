@@ -17,7 +17,7 @@ class CustomerVisit extends Model
         'order' => 'يوجد طلبية',
     ];
 
-    protected $fillable = ['tenant_id', 'branch_id', 'user_id', 'party_id', 'visit_date', 'position', 'outcome', 'notes', 'visited_at', 'created_by'];
+    protected $fillable = ['tenant_id', 'branch_id', 'user_id', 'party_id', 'visit_date', 'position', 'outcome', 'notes', 'manager_note', 'visited_at', 'created_by'];
 
     protected $casts = ['visit_date' => 'date', 'visited_at' => 'datetime', 'position' => 'integer'];
 
@@ -58,6 +58,7 @@ class CustomerVisit extends Model
             'outcome' => $this->outcome,
             'outcome_label' => self::OUTCOMES[$this->outcome] ?? null,
             'notes' => $this->notes,
+            'manager_note' => $this->manager_note,
             'visited_at' => $this->visited_at?->toIso8601String(),
             'customer' => $this->party ? [
                 'id' => $this->party->id,

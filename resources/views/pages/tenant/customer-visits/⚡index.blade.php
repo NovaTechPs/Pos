@@ -47,6 +47,20 @@ new class extends Component
 
         CustomerVisit::addToList(User::query()->findOrFail($rep->id), $party->id, $this->date, auth()->id());
         $this->customerSearch = '';
+        $this->dispatch('customer-visit-added');
+    }
+
+    /** The manager's instruction to the rep for this customer, shown in the rep's app. */
+    public function saveManagerNote(int $visitId, ?string $note): void
+    {
+        $this->authorize('customer_visits.manage');
+        $note = trim((string) $note);
+        if (mb_strlen($note) > 1000) {
+            $this->addError('managerNote.'.$visitId, 'الملاحظة أطول من 1000 حرف.');
+
+            return;
+        }
+        CustomerVisit::query()->where('tenant_id', $this->tenantId())->findOrFail($visitId)->update(['manager_note' => $note !== '' ? $note : null]);
     }
 
     public function removeVisit(int $visitId): void
@@ -97,12 +111,17 @@ new class extends Component
             @endforeach
         </flux:select>
         @if ($repId)
-            <div class="relative">
-                <flux:input label="إضافة زبون لقائمته" wire:model.live.debounce.250ms="customerSearch" placeholder="اسم الزبون أو هاتفه..." />
+            {{-- Arrows move through the results and Enter adds the highlighted customer. --}}
+            <div class="relative" data-customer-search
+                x-on:customer-visit-added.window="$nextTick(() => $el.querySelector('input')?.focus())"
+                x-on:keydown.arrow-down.prevent="const items = [...$el.querySelectorAll('[data-customer-result]')]; const index = items.indexOf(document.activeElement); items[Math.min(index + 1, items.length - 1)]?.focus()"
+                x-on:keydown.arrow-up.prevent="const items = [...$el.querySelectorAll('[data-customer-result]')]; const index = items.indexOf(document.activeElement); index <= 0 ? $el.querySelector('input')?.focus() : items[index - 1].focus()"
+                x-on:keydown.escape="$wire.set('customerSearch', '')">
+                <flux:input label="إضافة زبون لقائمته" wire:model.live.debounce.250ms="customerSearch" placeholder="اسم الزبون أو هاتفه... ثم ↓ و Enter" autocomplete="off" />
                 @if ($customers->isNotEmpty())
                     <div class="absolute z-20 mt-1 w-full divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900">
                         @foreach ($customers as $customer)
-                            <button type="button" wire:key="add-customer-{{ $customer->id }}" wire:click="addCustomer({{ $customer->id }})" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm hover:bg-indigo-50 dark:hover:bg-slate-800">
+                            <button type="button" data-customer-result wire:key="add-customer-{{ $customer->id }}" wire:click="addCustomer({{ $customer->id }})" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm outline-none hover:bg-indigo-50 focus:bg-indigo-100 focus:ring-2 focus:ring-inset focus:ring-indigo-500 dark:hover:bg-slate-800 dark:focus:bg-slate-800">
                                 <span class="font-bold">{{ $customer->name }}</span><span class="font-mono text-xs text-slate-500">{{ $customer->phone }}</span>
                             </button>
                         @endforeach
@@ -120,9 +139,9 @@ new class extends Component
     </div>
 
     <section class="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <table class="w-full min-w-[720px] text-right text-sm">
+        <table class="w-full min-w-[900px] text-right text-sm">
             <thead class="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                <tr><th class="p-3">المندوب</th><th class="p-3">الزبون</th><th class="p-3">الرصيد</th><th class="p-3">النتيجة</th><th class="p-3">ملاحظة</th><th class="p-3">الوقت</th><th class="p-3"></th></tr>
+                <tr><th class="p-3">المندوب</th><th class="p-3">الزبون</th><th class="p-3">الرصيد</th><th class="p-3">ملاحظة للمندوب</th><th class="p-3">النتيجة</th><th class="p-3">ملاحظة المندوب</th><th class="p-3">الوقت</th><th class="p-3"></th></tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 @forelse ($visits as $visit)
@@ -130,6 +149,13 @@ new class extends Component
                         <td class="p-3">{{ $visit->user?->name }}</td>
                         <td class="p-3 font-bold">{{ $visit->party?->name }}<div class="font-mono text-xs font-normal text-slate-500">{{ $visit->party?->phone }}</div></td>
                         <td class="p-3 font-mono">{{ number_format((float) $visit->party?->current_balance, 2) }}</td>
+                        <td class="p-3">
+                            <input type="text" value="{{ $visit->manager_note }}" maxlength="1000" placeholder="مثال: حصّل 500 / اعرض الصنف الجديد"
+                                wire:change="saveManagerNote({{ $visit->id }}, $event.target.value)" x-on:keydown.enter="$el.blur()"
+                                aria-label="ملاحظة للمندوب عن {{ $visit->party?->name }}" data-manager-note
+                                class="w-full min-w-48 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
+                            @error('managerNote.'.$visit->id)<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
+                        </td>
                         <td class="p-3">
                             @if ($visit->outcome)
                                 <span @class(['rounded-full px-2.5 py-1 text-xs font-bold',
@@ -149,7 +175,7 @@ new class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7" class="p-8 text-center text-slate-500">{{ $repId ? 'لا توجد زيارات لهذا المندوب في هذا اليوم. أضف زبائن من خانة البحث.' : 'لا توجد زيارات في هذا اليوم.' }}</td></tr>
+                    <tr><td colspan="8" class="p-8 text-center text-slate-500">{{ $repId ? 'لا توجد زيارات لهذا المندوب في هذا اليوم. أضف زبائن من خانة البحث.' : 'لا توجد زيارات في هذا اليوم.' }}</td></tr>
                 @endforelse
             </tbody>
         </table>
