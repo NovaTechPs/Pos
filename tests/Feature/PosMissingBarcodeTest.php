@@ -187,7 +187,11 @@ test('the product form offers the phone camera next to each barcode field', func
 
     expect(substr_count($html, 'x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.'))->toBe(2)
         ->and(strpos($html, 'data-barcode-camera-field="barcodes.0"'))->toBeLessThan(strpos($html, 'data-barcode-camera-field="barcodes.1"'))
-        ->and($html)->toContain('مسح الباركود بكاميرا الموبايل', 'سيُكتب في خانة الباركود تلقائيًا');
+        ->and($html)->toContain('مسح الباركود بكاميرا الموبايل', 'سيُكتب في خانة الباركود تلقائيًا')
+        // The product form is itself a modal dialog, so the camera must open as one too to appear above it.
+        ->and(substr_count($html, '<dialog
+    data-barcode-camera-dialog'))->toBe(2)
+        ->and($html)->toContain('$el.showModal()')->not->toContain('x-teleport');
 });
 
 test('the product form is laid out in two compact columns', function (): void {
