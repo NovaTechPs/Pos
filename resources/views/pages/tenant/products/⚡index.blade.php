@@ -3017,42 +3017,339 @@ new class extends Component {
 
     <flux:modal
         wire:model="showModal"
-        class="w-full max-w-5xl"
+        class="w-full max-w-6xl"
     >
 
-        <div class="max-h-[85vh] overflow-y-auto px-1">
+        {{-- Two columns on laptops so the whole form fits without scrolling. --}}
+        <form
+            wire:submit.prevent="save"
+            x-on:keydown.enter="if ($event.target.matches('textarea')) return; $event.preventDefault(); if (!$event.target.matches('input, select')) return; const fields = Array.from($el.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled])')).filter(field => field.getClientRects().length > 0); const index = fields.indexOf($event.target); if (index >= 0) fields[index + 1]?.focus()"
+            x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }"
+            class="flex max-h-[88vh] flex-col"
+            data-product-form
+        >
 
-            {{-- Modal Header --}}
+            {{-- Header --}}
 
-            <div class="sticky top-0 z-20 -mx-1 mb-6 border-b border-zinc-200 bg-white/95 px-1 pb-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
+            <div class="flex items-center gap-2 border-b border-zinc-200 pb-3 pe-8 dark:border-zinc-800">
+                <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                    <flux:icon name="{{ $isEditing ? 'pencil-square' : 'cube' }}" class="size-4" />
+                </div>
+                <flux:heading size="lg">{{ $isEditing ? 'تعديل المنتج' : 'إضافة منتج جديد' }}</flux:heading>
+            </div>
 
-                <div class="flex items-start gap-3">
 
-                    <div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+            <div class="-mx-1 flex-1 overflow-y-auto px-1 py-3">
 
-                        <flux:icon
-                            name="{{ $isEditing ? 'pencil-square' : 'cube' }}"
-                            class="size-5"
-                        />
+                <div class="grid gap-3 lg:grid-cols-5">
+
+                    {{-- ================================================
+                        MAIN COLUMN: name, category, barcodes, prices
+                    ================================================= --}}
+
+                    <div class="space-y-3 lg:col-span-3">
+
+                        <section class="rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-800/30">
+
+                            <div class="grid gap-3 sm:grid-cols-2">
+
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">اسم المنتج</label>
+                                    <flux:input size="sm" wire:model="name" placeholder="مثال: آيفون 15 برو ماكس" />
+                                    <flux:error name="name" />
+                                </div>
+
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">التصنيف</label>
+                                    <div class="flex gap-2">
+                                        <select
+                                            wire:model="category_id"
+                                            class="h-8 min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2 text-sm text-zinc-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                                        >
+                                            <option value="">بدون تصنيف</option>
+                                            @foreach ($categories as $category)
+                                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <flux:button type="button" size="sm" variant="subtle" icon="plus" wire:click="openCategoryModal" title="إضافة تصنيف" />
+                                    </div>
+                                    <flux:error name="category_id" />
+                                </div>
+
+                            </div>
+
+
+                            {{-- Barcodes --}}
+
+                            <div class="mt-3">
+
+                                <div class="mb-1 flex items-center justify-between gap-2">
+                                    <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">الباركودات</span>
+                                    <flux:button type="button" size="xs" variant="subtle" icon="plus" wire:click="addBarcodeField">
+                                        إضافة باركود
+                                    </flux:button>
+                                </div>
+
+                                <div class="space-y-2">
+
+                                    @foreach ($barcodes as $index => $barcode)
+
+                                        <div wire:key="barcode-row-{{ $index }}" class="flex items-start gap-1.5">
+
+                                            <div class="flex-1">
+                                                <flux:input size="sm" wire:model="barcodes.{{ $index }}" placeholder="امسح الباركود أو أدخله يدوياً..." />
+                                                @error('barcodes.' . $index)
+                                                    <div class="mt-1 text-xs text-red-600">{{ $message }}</div>
+                                                @enderror
+                                            </div>
+
+                                            <div x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.{{ $index }}" data-product-barcode-camera>
+                                                <flux:button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="subtle"
+                                                    icon="camera"
+                                                    x-on:click="start()"
+                                                    title="مسح الباركود بكاميرا الموبايل"
+                                                    aria-label="مسح الباركود بكاميرا الموبايل"
+                                                />
+                                                <x-barcode-camera-dialog hint="وجّه الكاميرا إلى الباركود؛ سيُكتب في خانة الباركود تلقائيًا." />
+                                            </div>
+
+                                            <flux:button type="button" size="sm" variant="subtle" icon="sparkles" wire:click="generateBarcode({{ $index }})" title="توليد باركود" />
+
+                                            @if (count($barcodes) > 1)
+                                                <flux:button type="button" size="sm" variant="ghost" icon="trash" class="text-red-600" wire:click="removeBarcodeField({{ $index }})" title="حذف الباركود" />
+                                            @endif
+
+                                        </div>
+
+                                    @endforeach
+
+                                </div>
+
+                                <flux:error name="barcodes" />
+
+                            </div>
+
+                        </section>
+
+
+                        {{-- Prices and stock --}}
+
+                        @php
+                            $priceBranches = $allBranches->where('id', $activeBranchId);
+                        @endphp
+
+                        <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+
+                            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <span class="text-sm font-semibold">الأسعار</span>
+
+                                @if (!$isEditing)
+                                    <label class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" title="عند التفعيل يستخدم السعر نفسه في الفروع المرتبط بها المنتج، وعند الإيقاف يمكنك تحديد سعر مستقل لكل فرع.">
+                                        <span>سعر موحد لكل الفروع</span>
+                                        <flux:switch wire:model.live="is_price_unified" />
+                                    </label>
+                                @else
+                                    <span class="text-xs text-indigo-700 dark:text-indigo-300">يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.</span>
+                                @endif
+                            </div>
+
+                            @if ($is_price_unified)
+
+                                <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                    <div>
+                                        <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التكلفة</label>
+                                        <flux:input size="sm" type="number" step="0.01" min="0" wire:model="cost_price" placeholder="0.00" />
+                                        <flux:error name="cost_price" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التجزئة</label>
+                                        <flux:input size="sm" type="number" step="0.01" min="0" wire:model="retail_price" placeholder="0.00" />
+                                        <flux:error name="retail_price" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة</label>
+                                        <flux:input size="sm" type="number" step="0.01" min="0" wire:model="wholesale_price" placeholder="0.00" />
+                                        <flux:error name="wholesale_price" />
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة</label>
+                                        <flux:input size="sm" type="number" min="1" wire:model.number="min_wholesale_quantity" placeholder="1" />
+                                        <flux:error name="min_wholesale_quantity" />
+                                    </div>
+                                </div>
+
+                            @elseif ($priceBranches->isEmpty())
+
+                                <p class="text-sm text-zinc-500">يجب إنشاء فرع قبل تحديد أسعار المنتج.</p>
+
+                            @else
+
+                                @foreach ($priceBranches as $branch)
+                                    <div wire:key="branch-price-{{ $branch->id }}" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                        <div>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التكلفة</label>
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="cost_price" placeholder="0.00" />
+                                            <flux:error name="cost_price" />
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التجزئة · {{ $branch->name }}</label>
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" />
+                                            <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة</label>
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" />
+                                            <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
+                                        </div>
+                                        <div>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة</label>
+                                            <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" />
+                                            <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
+                                        </div>
+                                    </div>
+                                @endforeach
+
+                            @endif
+
+                            @can('products.stock.adjust')
+                                <div class="mt-3 grid grid-cols-2 items-end gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-4 dark:border-zinc-800">
+                                    <div>
+                                        <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">{{ $isEditing ? 'كمية الفرع الحالي' : 'كمية البداية' }}</label>
+                                        <flux:input size="sm" type="number" min="0" max="9999999999.99" step="0.01" wire:model="stockQuantity" placeholder="0.00" />
+                                        <flux:error name="stockQuantity" />
+                                    </div>
+                                    <p class="col-span-1 pb-1.5 text-[11px] leading-4 text-zinc-500 sm:col-span-3">
+                                        {{ $isEditing ? 'تعديل الكمية يسجل حركة مخزون يدوية للفرع الحالي.' : 'تُسجّل الكمية كرصيد افتتاحي للفرع الحالي.' }}
+                                    </p>
+                                </div>
+                            @endcan
+
+                        </section>
 
                     </div>
 
-                    <div>
 
-                        <flux:heading size="lg">
+                    {{-- ================================================
+                        SIDE COLUMN: images, offer, website
+                    ================================================= --}}
 
-                            {{ $isEditing ? 'تعديل المنتج' : 'إضافة منتج جديد' }}
+                    <div class="space-y-3 lg:col-span-2">
 
-                        </flux:heading>
+                        <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
 
-                        <flux:subheading class="mt-1">
+                            <div class="flex items-center gap-3">
 
-                            {{ $isEditing
-                                ? 'قم بتحديث بيانات المنتج والأسعار والباركودات والصور.'
-                                : 'أدخل البيانات الأساسية للمنتج ثم حدد الأسعار والفروع والباركودات.'
-                            }}
+                                @if ($image)
+                                    <div class="relative size-16 shrink-0 overflow-hidden rounded-xl border border-indigo-200 dark:border-indigo-900">
+                                        <img src="{{ $image->temporaryUrl() }}" class="size-full object-cover">
+                                        <div class="absolute inset-x-0 bottom-0 bg-indigo-600/80 py-0.5 text-center text-[9px] text-white">جديدة</div>
+                                    </div>
+                                @elseif ($existing_image)
+                                    <div class="group relative size-16 shrink-0 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
+                                        <img src="{{ Storage::url($existing_image) }}" class="size-full object-cover">
+                                        <button type="button" wire:click="removeSingleExistingImage" class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100" title="حذف الصورة">
+                                            <flux:icon name="trash" class="size-4" />
+                                        </button>
+                                    </div>
+                                @else
+                                    <div class="flex size-16 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+                                        <flux:icon name="photo" class="size-6" />
+                                    </div>
+                                @endif
 
-                        </flux:subheading>
+                                <div class="min-w-0 flex-1">
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">الصورة الرئيسية <span class="font-normal text-zinc-400">(حتى 2MB)</span></label>
+                                    <input type="file" wire:model="image" accept="image/*"
+                                        class="block w-full cursor-pointer text-xs text-zinc-500 file:me-2 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-zinc-800 dark:file:text-zinc-200">
+                                    <div wire:loading wire:target="image" class="mt-1 text-xs font-medium text-indigo-600">جاري تجهيز الصورة...</div>
+                                </div>
+
+                            </div>
+
+                            <flux:error name="image" />
+
+
+                            <div class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+
+                                <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">معرض الصور الإضافية</label>
+                                <input type="file" wire:model="images" multiple accept="image/*"
+                                    class="block w-full cursor-pointer text-xs text-zinc-500 file:me-2 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-200">
+                                <div wire:loading wire:target="images" class="mt-1 text-xs font-medium text-indigo-600">جاري تجهيز الصور...</div>
+
+                                @if (!empty($existing_images) || !empty($images))
+                                    <div class="mt-2 flex flex-wrap gap-1.5">
+                                        @foreach ($existing_images as $index => $imgPath)
+                                            <div class="group relative size-12 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700" title="صورة محفوظة">
+                                                <img src="{{ Storage::url($imgPath) }}" class="size-full object-cover">
+                                                <button type="button" wire:click="removeExistingImage({{ $index }})" class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100">
+                                                    <flux:icon name="trash" class="size-4" />
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                        @foreach ($images as $index => $newImage)
+                                            <div class="group relative size-12 overflow-hidden rounded-lg border border-indigo-300 dark:border-indigo-900" title="صورة جديدة">
+                                                <img src="{{ $newImage->temporaryUrl() }}" class="size-full object-cover">
+                                                <button type="button" wire:click="removeNewImage({{ $index }})" class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100">
+                                                    <flux:icon name="x-mark" class="size-4" />
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+
+                                <flux:error name="images.*" />
+
+                            </div>
+
+                        </section>
+
+
+                        <section data-product-new-offer data-arrow-nav class="rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+
+                            <div class="text-sm font-semibold">{{ $isEditing ? 'إضافة عرض جديد لهذا الصنف' : 'إضافة عرض لهذا الصنف مباشرة' }}</div>
+                            <div class="mt-0.5 text-[11px] text-zinc-500">اترك الحقول فارغة إذا لا تريد عرضاً.{{ $isEditing ? ' العروض الحالية تُعدّل من صفحة العروض.' : '' }}</div>
+
+                            <div class="mt-2 grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">كمية العرض</label>
+                                    <flux:input size="sm" type="number" min="0.001" step="0.001" wire:model="newOfferQuantity" />
+                                    <flux:error name="newOfferQuantity" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر العرض الإجمالي</label>
+                                    <flux:input size="sm" type="number" min="0" step="0.01" wire:model="newOfferPrice" />
+                                    <flux:error name="newOfferPrice" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">بداية العرض</label>
+                                    <flux:input size="sm" type="datetime-local" wire:model="newOfferStartAt" />
+                                    <flux:error name="newOfferStartAt" />
+                                </div>
+                                <div>
+                                    <label class="mb-1 flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                                        <input type="checkbox" wire:model.live="newOfferHasEndDate"> تحديد نهاية للعرض
+                                    </label>
+                                    @if ($newOfferHasEndDate)
+                                        <flux:input size="sm" type="datetime-local" wire:model="newOfferEndAt" aria-label="نهاية العرض" />
+                                        <flux:error name="newOfferEndAt" />
+                                    @endif
+                                </div>
+                            </div>
+
+                        </section>
+
+
+                        <section class="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+                            <div class="flex items-center gap-2 text-sm font-semibold">
+                                <flux:icon name="globe-alt" class="size-4 text-emerald-600" />
+                                الظهور في الموقع الإلكتروني
+                            </div>
+                            <flux:switch wire:model.live="show_in_website" />
+                        </section>
+                        <flux:error name="show_in_website" />
 
                     </div>
 
@@ -3061,883 +3358,24 @@ new class extends Component {
             </div>
 
 
-            <form
-                wire:submit.prevent="save"
-                x-on:keydown.enter="if ($event.target.matches('textarea')) return; $event.preventDefault(); if (!$event.target.matches('input, select')) return; const fields = Array.from($el.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled])')).filter(field => field.getClientRects().length > 0); const index = fields.indexOf($event.target); if (index >= 0) fields[index + 1]?.focus()"
-                x-on:keydown.window.f3.prevent.stop="if ($wire.showModal) { $wire.save() }"
-                class="space-y-6"
-            >
+            {{-- Footer --}}
 
-                {{-- ====================================================
-                    BASIC INFORMATION
-                ===================================================== --}}
+            <div class="flex flex-col-reverse gap-2 border-t border-zinc-200 pt-3 sm:flex-row sm:items-center sm:justify-end dark:border-zinc-800">
 
-                <section class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
+                <span class="me-auto hidden text-xs text-zinc-400 sm:inline">F3 للحفظ · Enter للانتقال للحقل التالي</span>
 
-                    <div class="mb-4 flex items-center gap-3">
+                <flux:button type="button" variant="ghost" wire:click="closeModal">
+                    إلغاء
+                </flux:button>
 
-                        <div class="flex size-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
-                            <flux:icon name="information-circle" class="size-5" />
-                        </div>
+                <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="save">
+                    <span wire:loading.remove wire:target="save">{{ $isEditing ? 'حفظ التعديلات' : 'حفظ المنتج' }}</span>
+                    <span wire:loading wire:target="save">جاري الحفظ...</span>
+                </flux:button>
 
-                        <div>
+            </div>
 
-                            <div class="font-semibold">
-                                المعلومات الأساسية
-                            </div>
-
-                            <div class="text-xs text-zinc-500">
-                                الاسم والتصنيف والصورة الرئيسية.
-                            </div>
-
-                        </div>
-
-                    </div>
-
-
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-                        <flux:field>
-
-                            <flux:label>
-                                اسم المنتج
-                            </flux:label>
-
-                            <flux:input
-                                wire:model="name"
-                                placeholder="مثال: آيفون 15 برو ماكس"
-                            />
-
-                            <flux:error name="name" />
-
-                        </flux:field>
-
-
-                        <flux:field>
-
-                            <flux:label>
-                                التصنيف
-                            </flux:label>
-
-                            <div class="flex gap-2">
-
-                                <select
-                                    wire:model="category_id"
-                                    class="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                                >
-
-                                    <option value="">
-                                        بدون تصنيف
-                                    </option>
-
-                                    @foreach ($categories as $category)
-
-                                        <option value="{{ $category->id }}">
-                                            {{ $category->name }}
-                                        </option>
-
-                                    @endforeach
-
-                                </select>
-
-                                <flux:button
-                                    type="button"
-                                    variant="subtle"
-                                    icon="plus"
-                                    wire:click="openCategoryModal"
-                                    title="إضافة تصنيف"
-                                />
-
-                            </div>
-
-                            <flux:error name="category_id" />
-
-                        </flux:field>
-
-                    </div>
-
-                </section>
-
-
-                {{-- ====================================================
-                    IMAGES
-                ===================================================== --}}
-
-                <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-
-                    <div class="mb-4 flex items-center gap-3">
-
-                        <div class="flex size-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
-                            <flux:icon name="photo" class="size-5" />
-                        </div>
-
-                        <div>
-
-                            <div class="font-semibold">
-                                صور المنتج
-                            </div>
-
-                            <div class="text-xs text-zinc-500">
-                                صورة رئيسية بالإضافة إلى معرض صور اختياري.
-                            </div>
-
-                        </div>
-
-                    </div>
-
-
-                    {{-- Main Image --}}
-
-                    <div class="rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
-
-                        <div class="mb-3 text-sm font-medium">
-                            الصورة الرئيسية
-                        </div>
-
-                        <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
-
-                            @if ($image)
-
-                                <div class="relative size-24 shrink-0 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-900">
-
-                                    <img
-                                        src="{{ $image->temporaryUrl() }}"
-                                        class="size-full object-cover"
-                                    >
-
-                                    <div class="absolute bottom-0 inset-x-0 bg-indigo-600/80 py-1 text-center text-[10px] text-white">
-                                        جديدة
-                                    </div>
-
-                                </div>
-
-                            @elseif ($existing_image)
-
-                                <div class="group relative size-24 shrink-0 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-700">
-
-                                    <img
-                                        src="{{ Storage::url($existing_image) }}"
-                                        class="size-full object-cover"
-                                    >
-
-                                    <button
-                                        type="button"
-                                        wire:click="removeSingleExistingImage"
-                                        class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
-                                        title="حذف الصورة"
-                                    >
-                                        <flux:icon name="trash" class="size-5" />
-                                    </button>
-
-                                </div>
-
-                            @else
-
-                                <div class="flex size-24 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
-                                    <flux:icon name="photo" class="size-8" />
-                                </div>
-
-                            @endif
-
-
-                            <div class="flex-1">
-
-                                <input
-                                    type="file"
-                                    wire:model="image"
-                                    accept="image/*"
-                                    class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-indigo-50 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-zinc-800 dark:file:text-zinc-200"
-                                >
-
-                                <div class="mt-2 text-xs text-zinc-400">
-                                    JPG / PNG / WEBP — الحد الأقصى 2MB.
-                                </div>
-
-                                <div
-                                    wire:loading
-                                    wire:target="image"
-                                    class="mt-2 text-xs font-medium text-indigo-600"
-                                >
-                                    جاري تجهيز الصورة...
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                        <flux:error name="image" />
-
-                    </div>
-
-
-                    {{-- Gallery --}}
-
-                    <div class="mt-4 rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
-
-                        <div class="mb-3 text-sm font-medium">
-                            معرض الصور الإضافية
-                        </div>
-
-                        <input
-                            type="file"
-                            wire:model="images"
-                            multiple
-                            accept="image/*"
-                            class="block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-200"
-                        >
-
-                        <div
-                            wire:loading
-                            wire:target="images"
-                            class="mt-2 text-xs font-medium text-indigo-600"
-                        >
-                            جاري تجهيز الصور...
-                        </div>
-
-
-                        {{-- Existing Gallery --}}
-
-                        @if (!empty($existing_images))
-
-                            <div class="mt-4">
-
-                                <div class="mb-2 text-xs font-medium text-zinc-500">
-                                    الصور المحفوظة
-                                </div>
-
-                                <div class="flex flex-wrap gap-2">
-
-                                    @foreach ($existing_images as $index => $imgPath)
-
-                                        <div class="group relative size-20 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
-
-                                            <img
-                                                src="{{ Storage::url($imgPath) }}"
-                                                class="size-full object-cover"
-                                            >
-
-                                            <button
-                                                type="button"
-                                                wire:click="removeExistingImage({{ $index }})"
-                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
-                                            >
-                                                <flux:icon name="trash" class="size-4" />
-                                            </button>
-
-                                        </div>
-
-                                    @endforeach
-
-                                </div>
-
-                            </div>
-
-                        @endif
-
-
-                        {{-- New Gallery --}}
-
-                        @if (!empty($images))
-
-                            <div class="mt-4">
-
-                                <div class="mb-2 text-xs font-medium text-indigo-600">
-                                    الصور الجديدة
-                                </div>
-
-                                <div class="flex flex-wrap gap-2">
-
-                                    @foreach ($images as $index => $newImage)
-
-                                        <div class="group relative size-20 overflow-hidden rounded-xl border border-indigo-200 dark:border-indigo-900">
-
-                                            <img
-                                                src="{{ $newImage->temporaryUrl() }}"
-                                                class="size-full object-cover"
-                                            >
-
-                                            <button
-                                                type="button"
-                                                wire:click="removeNewImage({{ $index }})"
-                                                class="absolute inset-0 flex items-center justify-center bg-red-600/75 text-white opacity-0 transition group-hover:opacity-100"
-                                            >
-                                                <flux:icon name="x-mark" class="size-4" />
-                                            </button>
-
-                                        </div>
-
-                                    @endforeach
-
-                                </div>
-
-                            </div>
-
-                        @endif
-
-                        <flux:error name="images.*" />
-
-                    </div>
-
-                </section>
-
-
-                {{-- ====================================================
-                    BARCODES
-                ===================================================== --}}
-
-                <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-
-                    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
-                        <div class="flex items-center gap-3">
-
-                            <div class="flex size-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400">
-                                <flux:icon name="qr-code" class="size-5" />
-                            </div>
-
-                            <div>
-
-                                <div class="font-semibold">
-                                    الباركودات
-                                </div>
-
-                                <div class="text-xs text-zinc-500">
-                                    يمكنك ربط أكثر من باركود بالمنتج نفسه.
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                        <flux:button
-                            type="button"
-                            size="sm"
-                            variant="subtle"
-                            icon="plus"
-                            wire:click="addBarcodeField"
-                        >
-                            إضافة باركود
-                        </flux:button>
-
-                    </div>
-
-
-                    <div class="space-y-2">
-
-                        @foreach ($barcodes as $index => $barcode)
-
-                            <div
-                                wire:key="barcode-row-{{ $index }}"
-                                class="flex items-start gap-2"
-                            >
-
-                                <div class="flex-1">
-
-                                    <flux:input
-                                        wire:model="barcodes.{{ $index }}"
-                                        placeholder="امسح الباركود أو أدخله يدوياً..."
-                                    />
-
-                                    @error('barcodes.' . $index)
-                                        <div class="mt-1 text-xs text-red-600">
-                                            {{ $message }}
-                                        </div>
-                                    @enderror
-
-                                </div>
-
-                                <div x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.{{ $index }}" data-product-barcode-camera>
-                                    <flux:button
-                                        type="button"
-                                        variant="subtle"
-                                        icon="camera"
-                                        x-on:click="start()"
-                                        title="مسح الباركود بكاميرا الموبايل"
-                                        aria-label="مسح الباركود بكاميرا الموبايل"
-                                    />
-                                    <x-barcode-camera-dialog hint="وجّه الكاميرا إلى الباركود؛ سيُكتب في خانة الباركود تلقائيًا." />
-                                </div>
-
-                                <flux:button
-                                    type="button"
-                                    variant="subtle"
-                                    icon="sparkles"
-                                    wire:click="generateBarcode({{ $index }})"
-                                    title="توليد باركود"
-                                />
-
-                                @if (count($barcodes) > 1)
-
-                                    <flux:button
-                                        type="button"
-                                        variant="ghost"
-                                        icon="trash"
-                                        class="text-red-600"
-                                        wire:click="removeBarcodeField({{ $index }})"
-                                        title="حذف الباركود"
-                                    />
-
-                                @endif
-
-                            </div>
-
-                        @endforeach
-
-                    </div>
-
-                    <flux:error name="barcodes" />
-
-                </section>
-
-
-                {{-- ====================================================
-                    PRICING POLICY
-                ===================================================== --}}
-
-                @if (!$isEditing)
-                <section class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-
-                    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                        <div class="flex items-start gap-3">
-
-                            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
-                                <flux:icon name="banknotes" class="size-5" />
-                            </div>
-
-                            <div>
-
-                                <div class="font-semibold text-indigo-950 dark:text-indigo-200">
-                                    سياسة أسعار الفروع
-                                </div>
-
-                                <p class="mt-1 max-w-2xl text-xs leading-5 text-indigo-800/70 dark:text-indigo-300/70">
-
-                                    عند التفعيل يستخدم السعر نفسه في الفروع المرتبط بها المنتج، وعند الإيقاف يمكنك تحديد سعر مستقل لكل فرع.
-
-                                </p>
-
-                            </div>
-
-                        </div>
-
-
-                        <flux:switch
-                            wire:model.live="is_price_unified"
-                        />
-
-                    </div>
-
-                </section>
-                @else
-                    <div class="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/20 dark:text-indigo-200">
-                        يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.
-                    </div>
-                @endif
-
-
-                {{-- ====================================================
-                    UNIFIED PRICES
-                ===================================================== --}}
-
-                @if ($is_price_unified)
-
-                    <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-
-                        <div class="mb-4 flex items-center gap-3">
-
-                            <div class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-                                <flux:icon name="currency-dollar" class="size-5" />
-                            </div>
-
-                            <div>
-
-                                <div class="font-semibold">
-                                    الأسعار الموحدة
-                                </div>
-
-                                <div class="text-xs text-zinc-500">
-                                    {{ $isEditing ? 'سيتم تحديث سعر الفرع الحالي فقط.' : 'سيتم إضافة المنتج إلى الفرع الحالي بهذه الأسعار.' }}
-                                </div>
-
-                            </div>
-
-                        </div>
-
-
-                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-                            <flux:field>
-
-                                <flux:label>
-                                    سعر التكلفة
-                                </flux:label>
-
-                                <flux:input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    wire:model="cost_price"
-                                    placeholder="0.00"
-                                />
-
-                                <flux:error name="cost_price" />
-
-                            </flux:field>
-
-
-                            <flux:field>
-
-                                <flux:label>
-                                    سعر التجزئة
-                                </flux:label>
-
-                                <flux:input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    wire:model="retail_price"
-                                    placeholder="0.00"
-                                />
-
-                                <flux:error name="retail_price" />
-
-                            </flux:field>
-
-
-                            <flux:field>
-
-                                <flux:label>
-                                    سعر الجملة
-                                </flux:label>
-
-                                <flux:input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    wire:model="wholesale_price"
-                                    placeholder="0.00"
-                                />
-
-                                <flux:error name="wholesale_price" />
-
-                            </flux:field>
-
-
-                            <flux:field>
-
-                                <flux:label>
-                                    أقل كمية للجملة
-                                </flux:label>
-
-                                <flux:input
-                                    type="number"
-                                    min="1"
-                                    wire:model.number="min_wholesale_quantity"
-                                    placeholder="1"
-                                />
-
-                                <flux:error name="min_wholesale_quantity" />
-
-                            </flux:field>
-
-                        </div>
-
-
-
-                    </section>
-
-                @else
-
-                    {{-- =================================================
-                        BRANCH SPECIFIC PRICES
-                    ================================================== --}}
-
-                    @php
-                        $priceBranches = $allBranches->where('id', $activeBranchId);
-                    @endphp
-
-                    <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-
-                        <div class="mb-4 flex items-center justify-between gap-3">
-
-                            <div class="flex items-center gap-3">
-
-                                <div class="flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
-                                    <flux:icon name="building-storefront" class="size-5" />
-                                </div>
-
-                                <div>
-
-                                    <div class="font-semibold">
-                                        أسعار الفروع
-                                    </div>
-
-                                    <div class="text-xs text-zinc-500">
-                                        {{ $isEditing ? 'يتم تعديل أسعار الفرع الحالي فقط.' : 'يُضاف المنتج إلى الفرع الحالي بهذه الأسعار.' }}
-                                    </div>
-
-                                </div>
-
-                            </div>
-
-                            <span class="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                                {{ $priceBranches->count() }} فرع
-                            </span>
-
-                        </div>
-
-
-                        {{-- Cost --}}
-
-                        <div class="mb-5 max-w-sm">
-
-                            <flux:field>
-
-                                <flux:label>
-                                    سعر التكلفة الأساسي
-                                </flux:label>
-
-                                <flux:input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    wire:model="cost_price"
-                                    placeholder="0.00"
-                                />
-
-                                <flux:error name="cost_price" />
-
-                            </flux:field>
-
-                        </div>
-
-
-                        <div class="space-y-4">
-
-                            @if ($priceBranches->isNotEmpty())
-
-                            @foreach ($priceBranches as $branch)
-
-                                @php
-                                    $branchInput = $branchPricesInput[$branch->id] ?? [];
-                                @endphp
-
-                                <div
-                                    wire:key="branch-price-{{ $branch->id }}"
-                                    class="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-800/30"
-                                >
-
-                                    <div class="mb-4 flex items-center gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
-
-                                        <div class="flex size-8 items-center justify-center rounded-lg bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400">
-                                            <flux:icon name="building-storefront" class="size-4" />
-                                        </div>
-
-                                        <div class="font-semibold">
-                                            {{ $branch->name }}
-                                        </div>
-
-                                    </div>
-
-
-                                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-
-                                        <flux:field>
-
-                                            <flux:label>
-                                                سعر التجزئة
-                                            </flux:label>
-
-                                            <flux:input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                wire:model="branchPricesInput.{{ $branch->id }}.retail_price"
-                                                placeholder="0.00"
-                                            />
-
-                                            <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
-
-                                        </flux:field>
-
-
-                                        <flux:field>
-
-                                            <flux:label>
-                                                سعر الجملة
-                                            </flux:label>
-
-                                            <flux:input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price"
-                                                placeholder="0.00"
-                                            />
-
-                                            <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
-
-                                        </flux:field>
-
-
-                                        <flux:field>
-
-                                            <flux:label>
-                                                أقل كمية للجملة
-                                            </flux:label>
-
-                                            <flux:input
-                                                type="number"
-                                                min="1"
-                                                wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity"
-                                                placeholder="1"
-                                            />
-
-                                            <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
-
-                                        </flux:field>
-
-                                    </div>
-
-
-
-                                    <p class="mt-1 text-sm text-zinc-500">
-                                        يجب إنشاء فرع قبل تحديد أسعار المنتج.
-                                    </p>
-
-                                </div>
-
-                            @endforeach
-
-                            @endif
-
-                        </div>
-
-                    </section>
-
-                @endif
-
-
-                @can('products.stock.adjust')
-                    <section class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
-                        <div class="mb-4 flex items-center gap-3">
-                            <div class="flex size-9 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm dark:bg-zinc-900 dark:text-amber-400">
-                                <flux:icon name="archive-box" class="size-5" />
-                            </div>
-                            <div>
-                                <div class="font-semibold text-zinc-900 dark:text-white">
-                                    {{ $isEditing ? 'كمية الفرع الحالي' : 'كمية البداية' }}
-                                </div>
-                                <div class="text-xs text-zinc-500">
-                                    {{ $isEditing ? 'تعديل الكمية يسجل حركة مخزون يدوية للفرع الحالي.' : 'تُسجّل الكمية كرصيد افتتاحي للفرع الحالي.' }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <flux:field class="max-w-sm">
-                            <flux:label>{{ $isEditing ? 'الكمية الحالية' : 'الكمية الافتتاحية' }}</flux:label>
-                            <flux:input type="number" min="0" max="9999999999.99" step="0.01" wire:model="stockQuantity" placeholder="0.00" />
-                            <flux:error name="stockQuantity" />
-                        </flux:field>
-                    </section>
-                @endcan
-
-
-                    <section data-product-new-offer data-arrow-nav class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
-                        <div class="font-semibold">{{ $isEditing ? 'إضافة عرض جديد لهذا الصنف' : 'إضافة عرض لهذا الصنف مباشرة' }}</div>
-                        @if ($isEditing)
-                            <div class="mt-1 text-xs text-slate-500">اترك الحقول فارغة إذا لا تريد إضافة عرض. العروض الحالية تُعدّل من صفحة العروض.</div>
-                        @endif
-                        <div class="mt-4 grid gap-4 sm:grid-cols-2">
-                                <flux:field><flux:label>كمية العرض</flux:label><flux:input type="number" min="0.001" step="0.001" wire:model="newOfferQuantity" /><flux:error name="newOfferQuantity" /></flux:field>
-                                <flux:field><flux:label>سعر العرض الإجمالي</flux:label><flux:input type="number" min="0" step="0.01" wire:model="newOfferPrice" /><flux:error name="newOfferPrice" /></flux:field>
-                                <flux:field><flux:label>بداية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferStartAt" /><flux:error name="newOfferStartAt" /></flux:field>
-                                <label class="flex items-center gap-2 self-center text-sm"><input type="checkbox" wire:model.live="newOfferHasEndDate"> تحديد نهاية للعرض</label>
-                                @if ($newOfferHasEndDate)
-                                    <flux:field><flux:label>نهاية العرض</flux:label><flux:input type="datetime-local" wire:model="newOfferEndAt" /><flux:error name="newOfferEndAt" /></flux:field>
-                                @endif
-                        </div>
-                    </section>
-
-                {{-- ====================================================
-                    WEBSITE
-                ===================================================== --}}
-
-                <section class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-
-                    <div class="flex items-center justify-between gap-4">
-
-                        <div class="flex items-start gap-3">
-
-                            <div class="flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-                                <flux:icon name="globe-alt" class="size-5" />
-                            </div>
-
-                            <div>
-
-                                <div class="font-semibold">
-                                    الظهور في الموقع الإلكتروني
-                                </div>
-
-                                <div class="mt-1 text-xs text-zinc-500">
-                                    تحديد ما إذا كان المنتج متاحاً للعرض في الموقع.
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                        <flux:switch
-                            wire:model.live="show_in_website"
-                        />
-
-                    </div>
-
-                    <flux:error name="show_in_website" />
-
-                </section>
-
-
-                {{-- ====================================================
-                    FOOTER
-                ===================================================== --}}
-
-                <div class="sticky bottom-0 z-20 -mx-1 flex flex-col-reverse gap-2 border-t border-zinc-200 bg-white/95 pt-4 backdrop-blur sm:flex-row sm:justify-end dark:border-zinc-800 dark:bg-zinc-900/95">
-
-                    <flux:button
-                        type="button"
-                        variant="ghost"
-                        wire:click="closeModal"
-                    >
-                        إلغاء
-                    </flux:button>
-
-                    <flux:button
-                        type="submit"
-                        variant="primary"
-                        wire:loading.attr="disabled"
-                        wire:target="save"
-                    >
-
-                        <span wire:loading.remove wire:target="save">
-                            {{ $isEditing ? 'حفظ التعديلات' : 'حفظ المنتج' }}
-                        </span>
-
-                        <span
-                            wire:loading
-                            wire:target="save"
-                        >
-                            جاري الحفظ...
-                        </span>
-
-                    </flux:button>
-
-                </div>
-
-            </form>
-
-        </div>
+        </form>
 
     </flux:modal>
 

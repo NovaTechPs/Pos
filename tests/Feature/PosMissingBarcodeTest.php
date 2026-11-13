@@ -189,3 +189,13 @@ test('the product form offers the phone camera next to each barcode field', func
         ->and(strpos($html, 'data-barcode-camera-field="barcodes.0"'))->toBeLessThan(strpos($html, 'data-barcode-camera-field="barcodes.1"'))
         ->and($html)->toContain('مسح الباركود بكاميرا الموبايل', 'سيُكتب في خانة الباركود تلقائيًا');
 });
+
+test('the product form is laid out in two compact columns', function (): void {
+    $html = Livewire::test('pages::tenant.products.index')->call('openCreateModal')->html();
+    $form = substr($html, strpos($html, 'data-product-form'));
+
+    expect($form)->toContain('lg:grid-cols-5', 'lg:col-span-3', 'lg:col-span-2', 'سعر موحد لكل الفروع', 'كمية البداية', 'F3 للحفظ')
+        ->and(strpos($form, 'الباركودات'))->toBeLessThan(strpos($form, 'الأسعار'))
+        ->and(strpos($form, 'الأسعار'))->toBeLessThan(strpos($form, 'الصورة الرئيسية'))
+        ->and($form)->not->toContain('max-h-[85vh]', 'المعلومات الأساسية');
+});
