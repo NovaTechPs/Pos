@@ -114,4 +114,17 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Idle App Sign-ins
+    |--------------------------------------------------------------------------
+    |
+    | App sign-ins stay active until the user signs out (see the migration
+    | keep_existing_app_tokens_signed_in). Set API_TOKEN_IDLE_DAYS above 0
+    | to sign out an app left unused for that many days, e.g. a lost phone.
+    |
+    */
+
+    'api_token_idle_days' => (int) env('API_TOKEN_IDLE_DAYS', 0),
+
 ];

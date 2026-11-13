@@ -25,6 +25,17 @@ class User extends Authenticatable implements PasskeyUser
     /** @use HasFactory<UserFactory> */
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        // A deactivated or deleted account is signed out of the mobile and desktop apps at once.
+        static::updated(function (self $user): void {
+            if ($user->wasChanged('is_active') && ! $user->is_active) {
+                $user->tokens()->delete();
+            }
+        });
+        static::deleted(fn (self $user) => $user->tokens()->delete());
+    }
+
     protected $fillable = [
         'name',
         'email',

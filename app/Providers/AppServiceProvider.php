@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,6 +37,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // App sign-ins unused for the configured number of days are refused (see auth.api_token_idle_days).
+        Sanctum::authenticateAccessTokensUsing(function (PersonalAccessToken $token, bool $isValid): bool {
+            $idleDays = (int) config('auth.api_token_idle_days');
+            $lastActivity = $token->last_used_at ?? $token->created_at;
+
+            return $isValid && ($idleDays <= 0 || $lastActivity === null || $lastActivity->gte(now()->subDays($idleDays)));
+        });
+
         foreach (['created', 'updated', 'deleted', 'restored'] as $event) {
             Event::listen('eloquent.'.$event.': App\\Models\\*', function (string $eventName, array $models) use ($event): void {
                 $model = $models[0] ?? null;

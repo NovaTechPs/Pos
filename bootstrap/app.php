@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureActiveAccount;
 use App\Http\Middleware\EnsureApiTenant;
 use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\OpenDesktopPagesFromCentral;
+use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
 use App\Services\SystemErrorLog;
 use Illuminate\Foundation\Application;
@@ -20,7 +21,14 @@ $application = Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(SecurityHeaders::class);
         $middleware->web(append: [SetLocale::class, EnsureActiveAccount::class, OpenDesktopPagesFromCentral::class]);
+        // Set TRUSTED_HOSTS (comma separated patterns, e.g. ^waslapos\.app$,^(.+\.)?waslapos\.app$) to reject
+        // requests that name another host. Left empty, every host is accepted, as before.
+        $trustedHosts = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_HOSTS', '')))));
+        if ($trustedHosts !== []) {
+            $middleware->trustHosts(at: $trustedHosts, subdomains: false);
+        }
         $middleware->alias([
             'is_admin' => IsAdmin::class,
             'branch.sync' => AuthenticateBranchSyncDevice::class,
