@@ -3446,6 +3446,18 @@ new class extends Component {
 
                                 </div>
 
+                                <div x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.{{ $index }}" data-product-barcode-camera>
+                                    <flux:button
+                                        type="button"
+                                        variant="subtle"
+                                        icon="camera"
+                                        x-on:click="start()"
+                                        title="مسح الباركود بكاميرا الموبايل"
+                                        aria-label="مسح الباركود بكاميرا الموبايل"
+                                    />
+                                    <x-barcode-camera-dialog hint="وجّه الكاميرا إلى الباركود؛ سيُكتب في خانة الباركود تلقائيًا." />
+                                </div>
+
                                 <flux:button
                                     type="button"
                                     variant="subtle"

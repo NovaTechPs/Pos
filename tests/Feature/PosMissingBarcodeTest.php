@@ -181,3 +181,11 @@ test('linking a missing barcode lists each product with its number, branch price
         ->assertDontSee('99.00')
         ->assertDontSee('77.00');
 });
+
+test('the product form offers the phone camera next to each barcode field', function (): void {
+    $html = Livewire::test('pages::tenant.products.index')->call('openCreateModal')->call('addBarcodeField')->html();
+
+    expect(substr_count($html, 'x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.'))->toBe(2)
+        ->and(strpos($html, 'data-barcode-camera-field="barcodes.0"'))->toBeLessThan(strpos($html, 'data-barcode-camera-field="barcodes.1"'))
+        ->and($html)->toContain('مسح الباركود بكاميرا الموبايل', 'سيُكتب في خانة الباركود تلقائيًا');
+});

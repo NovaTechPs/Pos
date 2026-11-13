@@ -10,6 +10,15 @@ export function barcodeCamera(loadReader = () => import('@zxing/browser'), envir
     };
     return {
         open: false, loading: false, error: '',
+        /** Where a read barcode goes: the POS adds the item; a form can write it into a field instead. */
+        detected(barcode) {
+            const field = this.$root?.dataset?.barcodeCameraField;
+            if (field) {
+                this.$wire.set(field, barcode);
+                return;
+            }
+            this.$wire.scanBarcode(barcode);
+        },
         init() {
             this.onHide = () => this.close();
             environment.addEventListener('pagehide', this.onHide);
@@ -52,7 +61,7 @@ export function barcodeCamera(loadReader = () => import('@zxing/browser'), envir
                     const barcode = result.getText().trim();
                     if (!barcode) return;
                     this.close();
-                    this.$wire.scanBarcode(barcode);
+                    this.detected(barcode);
                 });
                 if (attempt !== generation) {
                     started.stop();

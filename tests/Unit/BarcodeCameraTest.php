@@ -38,6 +38,16 @@ test('camera lazily loads stops after one barcode and releases cancelled or fail
     env.isSecureContext = false;
     await camera.start();
     assert.match(camera.error, /HTTPS/);
+    const fields = [];
+    const formCamera = barcodeCamera(load, env);
+    env.isSecureContext = true;
+    env.navigator.mediaDevices.getUserMedia = async () => stream;
+    Object.assign(formCamera, {$nextTick: async () => {}, $refs: {preview: {}}, $root: {dataset: {barcodeCameraField: 'barcodes.1'}},
+        $wire: {scanBarcode: value => scanned.push(value), set: (name, value) => fields.push([name, value])}});
+    await formCamera.start();
+    callback({getText: () => ' 6291041500213 '});
+    assert.deepEqual(fields, [['barcodes.1', '6291041500213']]);
+    assert.deepEqual(scanned, ['001234']);
     console.log('CAMERA_OK');
     JS;
     $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
