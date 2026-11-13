@@ -58,6 +58,8 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:products.view')->name('stock-movements');
         Route::livewire('/stock-vouchers', 'pages::tenant.stock-vouchers.index')
             ->middleware('can:products.stock.adjust')->name('stock-vouchers');
+        Route::livewire('/stock-counts', 'pages::tenant.stock-counts.index')
+            ->middleware('can:products.stock.adjust')->name('stock-counts');
         Route::livewire('/category', 'pages::tenant.categories.index')
             ->middleware('can:categories.view')
             ->name('category');

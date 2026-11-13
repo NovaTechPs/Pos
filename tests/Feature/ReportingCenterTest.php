@@ -20,6 +20,7 @@ use App\Models\Shift;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
+use App\Services\StockMovementContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -476,4 +477,33 @@ test('report pages enable arrow key navigation across their tables', function ()
     $script = file_get_contents(resource_path('js/table-keyboard.js'));
     expect(file_get_contents(resource_path('js/app.js')))->toContain("import './table-keyboard.js';")
         ->and($script)->toContain('ArrowDown', 'ArrowUp', 'Home', 'End', "event.key === 'Enter'", 'event.defaultPrevented', 'data-statement-row');
+});
+
+test('the stagnant items report lists stock that did not sell in the period with its last sale', function (): void {
+    $stock = function (string $name, float $quantity, ?Branch $branch = null): BranchProduct {
+        $product = Product::create(['tenant_id' => $this->tenant->id, 'name' => $name, 'cost_price' => 10]);
+
+        return BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => ($branch ?? $this->branch)->id, 'product_id' => $product->id, 'stock_quantity' => $quantity, 'retail_price' => 15]);
+    };
+    $selling = $stock('صنف يُباع', 10);
+    $order = ($this->makeOrder)();
+    StockMovementContext::forDocument($order, fn () => $selling->decrement('stock_quantity', 2));
+    $neverSold = $stock('صنف لم يُبع أبداً', 5);
+    $oldSale = $stock('صنف بيع قديماً', 3);
+    DB::table('stock_movements')->insert(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $oldSale->product_id,
+        'branch_product_id' => $oldSale->id, 'quantity_before' => 4, 'quantity_after' => 3, 'quantity' => -1, 'source_type' => 'order', 'created_at' => '2026-01-05 10:00:00']);
+    $stock('صنف نافد', 0);
+    $stock('صنف في فرع آخر', 7, $this->otherBranch);
+    // Stock movements are stamped by the database clock, so the period follows the real date.
+    $filters = array_replace($this->filters, ['from' => date('Y-m-d', strtotime('-1 day')), 'to' => date('Y-m-d', strtotime('+1 day'))]);
+
+    $definition = (new ReportingService($this->user, $this->branch->id))->prepare('stagnant', $filters);
+    $rows = $definition['query']->get()->keyBy('name');
+
+    expect($rows->keys()->all())->toBe(['صنف لم يُبع أبداً', 'صنف بيع قديماً'])
+        ->and($rows['صنف لم يُبع أبداً']->last_sale_at)->toBeNull()
+        ->and((string) $rows['صنف بيع قديماً']->last_sale_at)->toStartWith('2026-01-05')
+        ->and($definition['summary']['عدد الأصناف الراكدة'])->toBe(2)
+        ->and($definition['summary']['قيمة المخزون الراكد'])->toBe(80.0)
+        ->and((new ReportingService($this->user))->prepare('stagnant', $filters)['query']->count())->toBe(3);
 });

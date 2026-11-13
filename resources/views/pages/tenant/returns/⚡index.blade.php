@@ -659,6 +659,41 @@ new class extends Component {
         return $changes;
     }
 
+    /**
+     * For the moving average cost, goods returned to the supplier leave at their return price, and the
+     * lines of an edited or deleted return come back in at theirs. Captured before stock moves.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return array{stock: array<int, float>, moves: array<int, list<array{0: float, 1: float}>>}|null
+     */
+    private function purchaseReturnCostPlan(?object $old, array $lines): ?array
+    {
+        $averageCost = app(\App\Services\MovingAverageCost::class);
+        if ($this->kind !== 'purchase' || ! $averageCost->enabled($this->tenantId())) {
+            return null;
+        }
+        $plan = [];
+        foreach ($old ? $this->savedLines((int) $old->id) : [] as $line) {
+            $plan[(int) $line->product_id][] = [abs((float) $line->quantity), (float) $line->unit_cost];
+        }
+        foreach ($lines as $line) {
+            $plan[(int) $line['id']][] = [-(float) $line['quantity'], (float) $line['price']];
+        }
+
+        return ['stock' => $averageCost->stockOnHand($this->tenantId(), array_keys($plan)), 'moves' => $plan];
+    }
+
+    /** @param  array{stock: array<int, float>, moves: array<int, list<array{0: float, 1: float}>>}|null  $plan */
+    private function applyCostPlan(?array $plan): void
+    {
+        foreach ($plan['moves'] ?? [] as $productId => $moves) {
+            $product = Product::query()->where('tenant_id', $this->tenantId())->lockForUpdate()->find($productId);
+            if ($product) {
+                app(\App\Services\MovingAverageCost::class)->apply($product, $plan['stock'][$productId] ?? 0.0, $moves);
+            }
+        }
+    }
+
     private function reverseBalance(object $old): void
     {
         $partyId = $this->kind === 'sale' ? $old->customer_id : $old->supplier_id;
@@ -720,6 +755,7 @@ new class extends Component {
                     $cost += (float) $product->cost_price * (float) $line['quantity'];
                 }
                 $changes = $this->stockChanges($old, $this->lines, $branchId);
+                $costPlan = $this->purchaseReturnCostPlan($old, $this->lines);
                 if ($old) {
                     $this->reverseBalance($old);
                 }
@@ -769,6 +805,7 @@ new class extends Component {
                             fn () => $change['stock']->increment('stock_quantity', $change['delta']), $this->invoiceNumber);
                     }
                 }
+                $this->applyCostPlan($costPlan);
                 $unsettled = $totals['total'] - $totals['paid'];
                 $this->kind === 'sale'
                     ? app(\App\Services\PartyBalance::class)->applySale($party->refresh(), -$unsettled)
@@ -810,11 +847,13 @@ new class extends Component {
                 $old = $this->returnQuery()->where('id', $this->currentReturnId)->lockForUpdate()->first();
                 abort_unless($old, 404);
                 $changes = $this->stockChanges($old, [], (int) $old->branch_id);
+                $costPlan = $this->purchaseReturnCostPlan($old, []);
                 $this->reverseBalance($old);
                 foreach ($changes as $change) {
                     StockMovementContext::reference($this->kind === 'sale' ? 'sales_return' : 'purchase_return', $old->id,
                         fn () => $change['stock']->increment('stock_quantity', $change['delta']), $this->invoiceNumber);
                 }
+                $this->applyCostPlan($costPlan);
                 $foreign = $this->kind === 'sale' ? 'order_id' : 'purchase_return_id';
                 Payment::query()->where('tenant_id', $this->tenantId())->where($foreign, $old->id)->delete();
                 if ($this->kind === 'sale') {

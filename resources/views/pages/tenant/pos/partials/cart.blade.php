@@ -192,6 +192,7 @@
                                 @if (! empty($item['is_gift']))
                                     <span class="rounded bg-fuchsia-100 px-2 py-0.5 text-xs text-fuchsia-700">هدية</span>
                                 @endif
+                                @include('pages.tenant.pos.partials.expiry-badge', ['productId' => (int) $item['id']])
                             </div>
 
                             <div class="mt-0.5 flex gap-1 text-[9px] font-bold">

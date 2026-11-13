@@ -29,6 +29,7 @@
                 ['permission' => 'products.barcode.manage', 'route' => 'tenant.barcode.printer', 'label' => 'Barcode Printer', 'icon' => 'printer'],
                 ['permission' => 'products.view', 'route' => 'tenant.stock-movements', 'label' => 'Stock Movements', 'icon' => 'arrows-right-left'],
                 ['permission' => 'products.stock.adjust', 'route' => 'tenant.stock-vouchers', 'label' => 'Stock In / Out Vouchers', 'icon' => 'document-plus'],
+                ['permission' => 'products.stock.adjust', 'route' => 'tenant.stock-counts', 'label' => 'الجرد بالجوال', 'icon' => 'clipboard-document-check'],
                 ['permission' => 'stock_transfers.view', 'route' => 'tenant.tenant.stock-transfers', 'label' => 'Stock Transfers', 'icon' => 'arrows-right-left'],
             ],
         ],

@@ -19,6 +19,7 @@
     {{-- <livewire:pages::tenant.tenant-switcher />
      --}}
 <livewire:tenant-switcher />
+<livewire:stock-alerts />
 
     {{-- Main Navigation --}}
     <flux:sidebar.nav>

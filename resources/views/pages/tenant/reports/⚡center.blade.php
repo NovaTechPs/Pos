@@ -50,6 +50,9 @@ new class extends Component {
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
+        if ($this->report === 'expiring') {
+            $this->to = today()->addDays(30)->toDateString();
+        }
         if ($this->report === 'statement' && request()->integer('party_id') > 0) {
             $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
                 ->whereKey(request()->integer('party_id'))->value('id');
@@ -166,6 +169,9 @@ new class extends Component {
         $this->productId = null;
         $this->voucherType = '';
         $this->paymentMethod = '';
+        if ($this->report === 'expiring') {
+            $this->to = today()->addDays(30)->toDateString();
+        }
     }
 
     public function setPeriod(string $range): void
@@ -230,7 +236,7 @@ new class extends Component {
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
         }
-        if (in_array($this->report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory'], true) && trim($this->productSearch) !== '') {
+        if (in_array($this->report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'], true) && trim($this->productSearch) !== '') {
             $products = Product::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->tap(function ($query) use ($service): void {
                     app(PosProductSearch::class)->apply($query->getQuery(), trim($this->productSearch), $service->tenantId);
@@ -266,7 +272,7 @@ new class extends Component {
             @endif
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (in_array($report, ['balances', 'aging', 'cashflow', 'expenses', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
+            @if (in_array($report, ['balances', 'aging', 'cashflow', 'expenses', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
         @if (in_array($report, ['statement', 'balances', 'aging', 'cashflow']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -276,7 +282,7 @@ new class extends Component {
                 @if (in_array($report, ['balances', 'aging']))<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
             </div>
         @endif
-        @if (in_array($report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory']))
+        @if (in_array($report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring']))
             <div class="relative" x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
                 <div class="flex items-end gap-2">
                     <flux:input label="الصنف" wire:model.live.debounce.250ms="productSearch" x-on:focus="open = true" x-on:input="open = true; active = 0" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود" />

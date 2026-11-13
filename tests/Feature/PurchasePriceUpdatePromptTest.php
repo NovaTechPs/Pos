@@ -6,7 +6,9 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\User;
+use App\Services\MovingAverageCost;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -32,6 +34,9 @@ beforeEach(function (): void {
         'retail_price' => 10,
         'wholesale_price' => 8,
     ]);
+
+    // These tests cover the manual cost prompt; the moving average has its own tests.
+    TenantSetting::setBool($this->tenant->id, MovingAverageCost::SETTING, false);
 
     $this->actingAs($this->owner)->withSession([
         'active_tenant_id' => $this->tenant->id,

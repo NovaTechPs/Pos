@@ -2,6 +2,7 @@
 
 use App\Models\Tenant;
 use App\Models\TenantSetting;
+use App\Services\MovingAverageCost;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
@@ -30,6 +31,10 @@ new class extends Component
 
     public bool $showTax = true;
 
+    public bool $movingAverageCost = true;
+
+    public bool $trackExpiry = false;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -54,6 +59,8 @@ new class extends Component
         $this->allowNegativeStock = TenantSetting::getBool($tenant->id, 'allow_negative_stock');
         $this->mergeSimilarProducts = TenantSetting::getBool($tenant->id, 'merge_similar_products');
         $this->showTax = TenantSetting::getBool($tenant->id, 'show_tax', true);
+        $this->movingAverageCost = TenantSetting::getBool($tenant->id, MovingAverageCost::SETTING, true);
+        $this->trackExpiry = TenantSetting::getBool($tenant->id, 'track_expiry');
     }
 
     public function save(): void
@@ -69,6 +76,8 @@ new class extends Component
             'allowNegativeStock' => ['boolean'],
             'mergeSimilarProducts' => ['boolean'],
             'showTax' => ['boolean'],
+            'movingAverageCost' => ['boolean'],
+            'trackExpiry' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -85,6 +94,8 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, 'allow_negative_stock', $validated['allowNegativeStock']);
             TenantSetting::setBool($this->tenantId, 'merge_similar_products', $validated['mergeSimilarProducts']);
             TenantSetting::setBool($this->tenantId, 'show_tax', $validated['showTax']);
+            TenantSetting::setBool($this->tenantId, MovingAverageCost::SETTING, $validated['movingAverageCost']);
+            TenantSetting::setBool($this->tenantId, 'track_expiry', $validated['trackExpiry']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -160,6 +171,14 @@ new class extends Component
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">دمج الصنف المكرر في السلة / Merge duplicate items</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">يجمع الصنف نفسه في سطر واحد داخل سلة نقطة البيع.</span></span>
                     <input type="checkbox" wire:model="mergeSimilarProducts" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">التكلفة بالمتوسط المرجّح المتحرك / Moving average cost</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">تُحسب تكلفة الصنف تلقائياً عند كل فاتورة شراء أو سند إدخال: (الكمية الموجودة × تكلفتها + الكمية الجديدة × سعر شرائها) ÷ مجموع الكميات، ومردود المشتريات يخرج بسعر رده. عند الإيقاف تبقى التكلفة كما هي ويُسأل المستخدم بعد الشراء إن كان يريد تحديثها.</span></span>
+                    <input type="checkbox" wire:model="movingAverageCost" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">تتبع تواريخ الصلاحية / Track expiry dates</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">للمتاجر التي تبيع مواد لها صلاحية: تظهر خانة «الصلاحية» لكل سطر في فاتورة المشتريات، وتقرير الأصناف القريبة من الانتهاء، وتنبيه في القائمة.</span></span>
+                    <input type="checkbox" wire:model="trackExpiry" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
                 </label>
             </div>
         </section>

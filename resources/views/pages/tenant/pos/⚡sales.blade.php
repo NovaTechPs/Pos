@@ -4821,9 +4821,13 @@ new class extends Component {
             }
         }
         $stockPreviews = $this->cartStockPreviews();
+        $expiryWarnings = app(\App\Services\ExpiryWarnings::class)->forProducts((int) $tenantId, $this->getActiveBranchId(),
+            array_merge(array_column($this->quickProducts, 'id'), array_column($this->cart, 'id')));
+
         return $this->view(['branches' => $branches, 'missingBarcodeProducts' => $missingBarcodeProducts,
             'remainingStock' => $stockPreviews['shared'],
             'localRemainingStock' => $stockPreviews['local'],
+            'expiryWarnings' => $expiryWarnings,
         ])->layout('layouts::pos');
     }
 };

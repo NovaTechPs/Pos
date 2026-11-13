@@ -57,6 +57,9 @@ new class extends Component {
     #[Locked]
     public string $originalStockQuantity = '0';
 
+    /** Low-stock alert threshold of the current branch. */
+    public string $alertQuantity = '5';
+
     public bool $is_price_unified = false;
 
     public string $newOfferQuantity = '';
@@ -192,6 +195,7 @@ new class extends Component {
             ],
 
             'stockQuantity' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'alertQuantity' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
 
             'is_price_unified' => [
                 'boolean',
@@ -433,6 +437,10 @@ new class extends Component {
 
             return;
         }
+        // The stock alerts menu links here with ?stock=low.
+        if (! $posEmbedded && in_array(request()->query('stock'), ['available', 'empty', 'low', 'unpriced'], true)) {
+            $this->stockFilter = request()->query('stock');
+        }
         $newBarcode ??= request()->query('new_barcode');
         if (is_string($newBarcode) && trim($newBarcode) !== '') {
             $this->authorize('products.create');
@@ -613,15 +621,16 @@ new class extends Component {
                 $current['min_wholesale_quantity'];
         }
 
-        $currentBranchStock = $currentBranchId
+        $currentBranchRow = $currentBranchId
             ? DB::table('branch_products')
                 ->where('tenant_id', $tenantId)
                 ->where('branch_id', $currentBranchId)
                 ->where('product_id', $product->id)
-                ->value('stock_quantity')
+                ->first(['stock_quantity', 'alert_quantity'])
             : null;
 
-        $this->stockQuantity = (string) ($currentBranchStock ?? 0);
+        $this->stockQuantity = (string) ($currentBranchRow?->stock_quantity ?? 0);
+        $this->alertQuantity = (string) (float) ($currentBranchRow?->alert_quantity ?? 5);
         $this->originalStockQuantity = $this->stockQuantity;
 
         /*
@@ -1204,6 +1213,10 @@ new class extends Component {
 
                             'updated_at' => now(),
                         ];
+                    }
+
+                    if ($branchId === $this->activeBranchId()) {
+                        $payload['alert_quantity'] = round((float) $this->alertQuantity, 2);
                     }
 
                     /*
@@ -1844,6 +1857,7 @@ new class extends Component {
         $this->min_wholesale_quantity = 1;
         $this->stockQuantity = '0';
         $this->originalStockQuantity = '0';
+        $this->alertQuantity = '5';
 
         $this->is_price_unified = false;
         $this->newOfferQuantity = '';
@@ -3214,18 +3228,24 @@ new class extends Component {
 
                             @endif
 
-                            @can('products.stock.adjust')
-                                <div class="mt-3 grid grid-cols-2 items-end gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-4 dark:border-zinc-800">
+                            <div class="mt-3 grid grid-cols-2 items-end gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-4 dark:border-zinc-800">
+                                @can('products.stock.adjust')
                                     <div>
                                         <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">{{ $isEditing ? 'كمية الفرع الحالي' : 'كمية البداية' }}</label>
                                         <flux:input size="sm" type="number" min="0" max="9999999999.99" step="0.01" wire:model="stockQuantity" placeholder="0.00" />
                                         <flux:error name="stockQuantity" />
                                     </div>
-                                    <p class="col-span-1 pb-1.5 text-[11px] leading-4 text-zinc-500 sm:col-span-3">
-                                        {{ $isEditing ? 'تعديل الكمية يسجل حركة مخزون يدوية للفرع الحالي.' : 'تُسجّل الكمية كرصيد افتتاحي للفرع الحالي.' }}
-                                    </p>
+                                @endcan
+                                <div>
+                                    <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300" title="يظهر الصنف في تنبيهات المخزون عندما يصل رصيده في الفرع الحالي إلى هذا الحد أو أقل.">حد تنبيه النفاد</label>
+                                    <flux:input size="sm" type="number" min="0" max="9999999999.99" step="0.01" wire:model="alertQuantity" placeholder="5" data-product-alert-quantity />
+                                    <flux:error name="alertQuantity" />
                                 </div>
-                            @endcan
+                                <p class="col-span-2 pb-1.5 text-[11px] leading-4 text-zinc-500">
+                                    @can('products.stock.adjust'){{ $isEditing ? 'تعديل الكمية يسجل حركة مخزون يدوية للفرع الحالي.' : 'تُسجّل الكمية كرصيد افتتاحي للفرع الحالي.' }} @endcan
+                                    حد التنبيه 0 يعني التنبيه عند النفاد فقط.
+                                </p>
+                            </div>
 
                         </section>
 

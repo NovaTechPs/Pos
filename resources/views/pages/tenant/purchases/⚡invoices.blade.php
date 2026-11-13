@@ -84,6 +84,9 @@ new class extends Component {
 
     public bool $showPriceUpdateModal = false;
 
+    /** With the moving average on, the cost is recalculated on save instead of offered in the price prompt. */
+    public bool $movingAverageCost = false;
+
     #[\Livewire\Attributes\Locked]
     public ?int $priceUpdateBranchId = null;
 
@@ -113,8 +116,12 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
+    /** Stores that sell goods that expire record the expiry date of each purchased line. */
+    public bool $trackExpiry = false;
+
     public function mount(): void
     {
+        $this->trackExpiry = TenantSetting::getBool((int) $this->tenantId(), 'track_expiry');
         $this->selectedBranchId = $this->resolveBranchId();
         $this->purchaseBranchFilter = (auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin()) ? null : $this->selectedBranchId;
         $this->startNewInvoice(false);
@@ -562,6 +569,8 @@ new class extends Component {
             'quantity' => round((float) $this->selectedQuantity, 2),
             'discount' => round(min(max(0, (float) $this->selectedDiscount), (float) $this->selectedPurchasePrice * (float) $this->selectedQuantity), 2),
             'stock' => round((float) $this->selectedStock, 2),
+            // Replacing a line keeps the expiry date already entered for it.
+            'expiry_date' => $wasEditingCartItem ? ($this->cart[$cartKey]['expiry_date'] ?? null) : null,
         ];
 
         $productId = $this->selectedProductId;
@@ -694,6 +703,16 @@ new class extends Component {
 
         $this->cart[$cartKey]['quantity'] = $quantity;
         unset($this->cart[$cartKey]['total_override']);
+    }
+
+    public function updateItemExpiry(string $cartKey, ?string $date): void
+    {
+        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+            return;
+        }
+        $date = trim((string) $date);
+        $valid = $date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) && checkdate((int) substr($date, 5, 2), (int) substr($date, 8, 2), (int) substr($date, 0, 4));
+        $this->cart[$cartKey]['expiry_date'] = $valid ? $date : null;
     }
 
     public function updateItemPrice(string $cartKey, $price): void
@@ -1071,6 +1090,8 @@ new class extends Component {
                         ->selectRaw('product_id, SUM(quantity) as quantity')->groupBy('product_id')
                         ->pluck('quantity', 'product_id')->map(fn ($quantity): float => (float) $quantity)->all();
                     $previousBranchId = (int) $purchase->branch_id;
+                    $previousLines = DB::table('purchase_items')->where('purchase_id', $purchase->id)
+                        ->get(['product_id', 'quantity', 'unit_cost', 'subtotal']);
 
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
@@ -1128,6 +1149,28 @@ new class extends Component {
 
                 $purchaseId = $purchase->id;
 
+                // The moving average needs the stock before this invoice moved it: the edited
+                // invoice's old lines leave at their cost and the new lines come in at theirs.
+                $averageCost = app(\App\Services\MovingAverageCost::class);
+                $costLines = [];
+                if ($averageCost->enabled($tenantId)) {
+                    foreach ($previousLines ?? [] as $line) {
+                        $lineQuantity = (float) $line->quantity;
+                        $costLines[(int) $line->product_id][] = [-$lineQuantity, $lineQuantity > 0 ? (float) $line->subtotal / $lineQuantity : (float) $line->unit_cost];
+                    }
+                    foreach ($this->cart as $item) {
+                        $lineQuantity = max(0, (float) ($item['quantity'] ?? 0));
+                        if ($lineQuantity <= 0) {
+                            continue;
+                        }
+                        $lineTotal = isset($item['total_override'])
+                            ? max(0, (float) $item['total_override'])
+                            : max(0, max(0, (float) ($item['price'] ?? 0)) * $lineQuantity - max(0, (float) ($item['discount'] ?? 0)));
+                        $costLines[(int) ($item['id'] ?? 0)][] = [$lineQuantity, $lineTotal / $lineQuantity];
+                    }
+                }
+                $stockBeforeInvoice = $averageCost->stockOnHand($tenantId, array_keys($costLines));
+
                 $this->synchronizePurchaseStock($tenantId, (int) $purchaseId, (int) $this->selectedBranchId, $previousQuantities ?? [], $previousBranchId ?? null);
 
                 foreach ($this->cart as $item) {
@@ -1160,10 +1203,18 @@ new class extends Component {
                         'quantity' => $quantity,
                         'unit_cost' => $unitCost,
                         'subtotal' => $lineTotal,
+                        'expiry_date' => $item['expiry_date'] ?? null,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
 
+                }
+
+                foreach ($costLines as $costProductId => $moves) {
+                    $costProduct = Product::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($costProductId);
+                    if ($costProduct) {
+                        $averageCost->apply($costProduct, $stockBeforeInvoice[$costProductId] ?? 0.0, $moves);
+                    }
                 }
 
                 if (! $wasEditingInvoice && $totals['payment'] > 0) {
@@ -1372,7 +1423,8 @@ new class extends Component {
             'current_cost' => (float) $product->cost_price,
             'retail_price' => $retailPrice,
         ];
-        $this->priceUpdateSelections[$productId] = ['cost' => true, 'retail' => false];
+        $this->movingAverageCost = app(\App\Services\MovingAverageCost::class)->enabled($tenantId);
+        $this->priceUpdateSelections[$productId] = ['cost' => ! $this->movingAverageCost, 'retail' => false];
         $this->priceUpdateRetailPrices[$productId] = $retailPrice;
         $this->priceUpdateBranchId = $branchId;
         $this->showPriceUpdateModal = true;
@@ -1408,7 +1460,7 @@ new class extends Component {
                 }
 
                 $selection = $this->priceUpdateSelections[$productId] ?? [];
-                if (! empty($selection['cost'])) {
+                if (! empty($selection['cost']) && ! app(\App\Services\MovingAverageCost::class)->enabled($tenantId)) {
                     $product->cost_price = max(0, (float) $candidate['purchase_cost']);
                     $product->save();
                 }
@@ -1605,6 +1657,7 @@ new class extends Component {
                 'pi.quantity',
                 'pi.unit_cost',
                 'pi.subtotal',
+                'pi.expiry_date',
                 'p.name as product_name',
             ]);
 
@@ -1621,6 +1674,7 @@ new class extends Component {
                 'quantity' => (float) $item->quantity,
                 'discount' => max(0, ((float) $item->unit_cost * (float) $item->quantity) - (float) $item->subtotal),
                 'stock' => 0,
+                'expiry_date' => $item->expiry_date ? substr((string) $item->expiry_date, 0, 10) : null,
             ];
 
             $calculatedLineTotal = max(
@@ -2302,6 +2356,9 @@ new class extends Component {
                             <th class="w-40 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">التكلفة</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
+                            @if ($trackExpiry)
+                                <th class="w-40 border-l border-slate-700 px-3 py-3 text-center">الصلاحية</th>
+                            @endif
                             <th class="w-24 px-3 py-3 text-center">حذف</th>
                         </tr>
                     </thead>
@@ -2347,6 +2404,13 @@ new class extends Component {
                                 <td class="border-l border-slate-100 bg-slate-50 px-3 py-2 text-center">
                                     <input type="text" inputmode="decimal" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" title="يمكن تعديل المجموع وسيُعاد حساب التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500" aria-label="إجمالي السطر" />
                                 </td>
+                                @if ($trackExpiry)
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center">
+                                        <input type="date" value="{{ $item['expiry_date'] ?? '' }}" wire:change="updateItemExpiry('{{ $key }}', $event.target.value)" @disabled($productSearchLocked)
+                                            aria-label="تاريخ صلاحية {{ $item['name'] }}" data-purchase-expiry
+                                            class="mx-auto block h-9 w-36 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-blue-500 disabled:bg-slate-100" />
+                                    </td>
+                                @endif
                                 <td class="px-3 py-2 text-center">
                                     <button type="button" wire:click="removeItem('{{ $key }}')" title="حذف السطر" aria-label="حذف السطر" class="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"><flux:icon.trash class="size-5" /></button>
                                 </td>
@@ -2632,10 +2696,16 @@ new class extends Component {
                         <div wire:key="purchase-price-update-{{ $productId }}" class="rounded-xl border border-slate-200 p-4">
                             <div class="mb-3 font-black text-slate-800">{{ $candidate['name'] }}</div>
                             <div class="grid gap-3 sm:grid-cols-2">
-                                <label class="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm">
-                                    <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.cost" class="mt-1 rounded border-slate-300 text-indigo-600">
-                                    <span>تحديث سعر التكلفة إلى <strong>{{ number_format($candidate['purchase_cost'], 2) }}</strong> (الحالي {{ number_format($candidate['current_cost'], 2) }})</span>
-                                </label>
+                                @if ($movingAverageCost)
+                                    <div class="rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900" data-moving-average-note>
+                                        التكلفة الحالية {{ number_format($candidate['current_cost'], 2) }} — تُحسب تلقائياً بالمتوسط المرجّح مع تكلفة الشراء {{ number_format($candidate['purchase_cost'], 2) }} عند حفظ الفاتورة.
+                                    </div>
+                                @else
+                                    <label class="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm">
+                                        <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.cost" class="mt-1 rounded border-slate-300 text-indigo-600">
+                                        <span>تحديث سعر التكلفة إلى <strong>{{ number_format($candidate['purchase_cost'], 2) }}</strong> (الحالي {{ number_format($candidate['current_cost'], 2) }})</span>
+                                    </label>
+                                @endif
                                 <div class="rounded-lg bg-slate-50 p-3">
                                     <label class="flex items-center gap-2 text-sm font-bold">
                                         <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.retail" class="rounded border-slate-300 text-indigo-600">

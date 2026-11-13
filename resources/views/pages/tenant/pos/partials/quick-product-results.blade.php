@@ -24,7 +24,7 @@
                     class="{{ $isOutOfStock ? 'bg-rose-50/70' : '' }} {{ $this->invoiceIsLocked() ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500' }}">
                     <td class="px-2 py-2">
                         <div data-pos-product-name-cell class="w-max min-w-[10rem] max-w-[min(24rem,55vw)]">
-                        <div class="whitespace-normal break-words font-black leading-4 {{ $isOutOfStock ? 'text-slate-500' : 'text-slate-800' }}">{{ $product['name'] }}@if ($isOutOfStock)<span class="ms-1.5 inline-block rounded-md bg-rose-100 px-1.5 py-0.5 align-middle text-[9px] font-black text-rose-700">نافد</span>@endif</div>
+                        <div class="whitespace-normal break-words font-black leading-4 {{ $isOutOfStock ? 'text-slate-500' : 'text-slate-800' }}">{{ $product['name'] }}@if ($isOutOfStock)<span class="ms-1.5 inline-block rounded-md bg-rose-100 px-1.5 py-0.5 align-middle text-[9px] font-black text-rose-700">نافد</span>@endif @include('pages.tenant.pos.partials.expiry-badge', ['productId' => (int) $product['id']])</div>
                         <div class="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[9px] leading-3 text-slate-500">
                             <span>رقم: <bdi dir="ltr" class="font-mono">{{ $product['product_number'] ?? $product['id'] }}</bdi></span>
                             <span>باركود: <bdi dir="ltr" class="break-all font-mono">{{ $product['barcode_value'] ?: '—' }}</bdi></span>

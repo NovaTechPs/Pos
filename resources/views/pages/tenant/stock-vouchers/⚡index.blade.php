@@ -213,6 +213,7 @@ new class extends Component
             $direction = $voucher->type === 'in' ? -1 : 1;
             $stocks = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $voucher->branch_id)
                 ->whereIn('product_id', $voucher->items->pluck('product_id'))->lockForUpdate()->get()->keyBy('product_id');
+            $costPlan = $this->costPlan((int) $tenantId, $voucher, []);
 
             foreach ($voucher->items as $item) {
                 $stock = $stocks->get($item->product_id);
@@ -222,6 +223,7 @@ new class extends Component
                 StockMovementContext::voucher('stock_voucher_reversal', $voucher->voucher_number, fn () => $stock->increment('stock_quantity', $delta));
             }
 
+            $this->applyCostPlan((int) $tenantId, $costPlan);
             $voucher->delete();
         });
 
@@ -231,6 +233,43 @@ new class extends Component
             $this->notes = '';
         }
         $this->successMessage = 'تم حذف السند وعكس أثره من رصيد المخزون.';
+    }
+
+    /**
+     * For the moving average cost: an in-voucher receives its lines at their unit cost, and the in-voucher
+     * being edited or deleted gives its old lines back at theirs. Out-vouchers leave at the average.
+     *
+     * @param  list<array{product_id: string|int, quantity: float|int|string, unit_cost: float|int|string}>  $receivedLines
+     * @return array{stock: array<int, float>, moves: array<int, list<array{0: float, 1: float}>>}|null
+     */
+    private function costPlan(int $tenantId, ?StockVoucher $previous, array $receivedLines): ?array
+    {
+        $averageCost = app(\App\Services\MovingAverageCost::class);
+        if (! $averageCost->enabled($tenantId)) {
+            return null;
+        }
+        $moves = [];
+        if ($previous?->type === 'in') {
+            foreach ($previous->items as $item) {
+                $moves[(int) $item->product_id][] = [-(float) $item->quantity, (float) $item->unit_cost];
+            }
+        }
+        foreach ($receivedLines as $line) {
+            $moves[(int) $line['product_id']][] = [(float) $line['quantity'], (float) $line['unit_cost']];
+        }
+
+        return ['stock' => $averageCost->stockOnHand($tenantId, array_keys($moves)), 'moves' => $moves];
+    }
+
+    /** @param  array{stock: array<int, float>, moves: array<int, list<array{0: float, 1: float}>>}|null  $plan */
+    private function applyCostPlan(int $tenantId, ?array $plan): void
+    {
+        foreach ($plan['moves'] ?? [] as $productId => $moves) {
+            $product = Product::withoutGlobalScopes()->where('tenant_id', $tenantId)->lockForUpdate()->find($productId);
+            if ($product) {
+                app(\App\Services\MovingAverageCost::class)->apply($product, $plan['stock'][$productId] ?? 0.0, $moves);
+            }
+        }
     }
 
     public function save(): void
@@ -269,6 +308,7 @@ new class extends Component
             )));
             $stocks = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $this->branchId)
                 ->whereIn('product_id', $productIds)->lockForUpdate()->get()->keyBy('product_id');
+            $costPlan = $this->costPlan((int) $tenantId, $existingVoucher, $this->type === 'in' ? $this->lines : []);
 
             if ($existingVoucher) {
                 $reversalDirection = $existingVoucher->type === 'in' ? -1 : 1;
@@ -317,6 +357,8 @@ new class extends Component
                         : $stock->decrement('stock_quantity', $quantity);
                 }, $existingVoucher?->voucher_number ?? $voucherNumber);
             }
+
+            $this->applyCostPlan((int) $tenantId, $costPlan);
         });
 
         $this->successMessage = $this->editingVoucherId

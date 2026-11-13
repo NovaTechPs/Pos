@@ -39,6 +39,8 @@ class ReportingService
         'movements' => ['حركة صنف / فترة', 'reports.inventory'],
         'movement-summary' => ['ملخص حركة المخزون', 'reports.inventory'],
         'inventory' => ['تقييم المخزون والنواقص', 'reports.inventory'],
+        'stagnant' => ['الأصناف الراكدة (بلا مبيعات خلال الفترة)', 'reports.inventory'],
+        'expiring' => ['الصلاحية: أصناف منتهية أو تنتهي حتى تاريخ النهاية', 'reports.inventory'],
         'cashflow' => ['المقبوضات والمدفوعات', 'accounting.payments.view'],
         'daily-cash' => ['حركة الصندوق اليومية حسب طريقة الدفع', 'accounting.payments.view'],
         'expenses' => ['المصروفات التشغيلية', 'accounting.payments.view'],
@@ -52,7 +54,7 @@ class ReportingService
     public const REPORT_GROUPS = [
         'الحسابات والذمم' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
         'المبيعات والأرباح' => ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'tax'],
-        'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory'],
+        'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments'],
     ];
 
@@ -164,7 +166,7 @@ class ReportingService
             'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
             'movements' => $this->movements(), 'movement-summary' => $this->movementSummary(),
-            'inventory' => $this->inventory(), 'cashflow' => $this->cashflow(),
+            'inventory' => $this->inventory(), 'stagnant' => $this->stagnant(), 'expiring' => $this->expiring(), 'cashflow' => $this->cashflow(),
             'daily-cash' => $this->dailyCash(), 'expenses' => $this->expenses(), 'aging' => $this->aging(),
             'tax' => $this->tax(), 'branches' => $this->branches(), 'settlements' => $this->settlements(),
         };
@@ -193,7 +195,7 @@ class ReportingService
             'approved' => 'معتمد', 'paid' => 'مدفوع', 'draft' => 'مسودة', 'processing' => 'قيد المعالجة',
             'cash' => 'نقدي', 'card' => 'بطاقة', 'bank_transfer' => 'تحويل', 'cheque', 'check' => 'شيك',
             'opening' => 'افتتاحي', 'manual' => 'تصحيح', 'order' => 'بيع', 'purchase' => 'شراء',
-            'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'stock_transfer' => 'تحويل مخزون',
+            'sales_return' => 'مردود بيع', 'purchase_return' => 'مردود شراء', 'stock_in' => 'سند إدخال', 'stock_out' => 'سند إخراج', 'stock_transfer' => 'تحويل مخزون', 'stock_count' => 'جرد',
             'transfer_reversal' => 'عكس تحويل', 'sale_reversal' => 'عكس بيع', 'sync' => 'مزامنة',
             'open' => 'مفتوح', 'closed' => 'مغلق',
             default => (string) $value,
@@ -690,6 +692,63 @@ class ReportingService
 
         return $this->definition($query->select('branch_products.id', 'products.product_number', 'products.name', 'branches.name as branch_name', 'stock_quantity', 'alert_quantity', 'products.cost_price', 'retail_price')->selectRaw('stock_quantity * products.cost_price as valuation')->orderBy('stock_quantity')->orderBy('branch_products.id'),
             ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'branch_name' => 'الفرع', 'stock_quantity' => 'الرصيد الحالي', 'alert_quantity' => 'حد التنبيه', 'cost_price' => 'التكلفة الحالية', 'retail_price' => 'سعر البيع', 'valuation' => 'قيمة المخزون'], ['قيمة المخزون الحالي' => $sum], ['هذا رصيد حالي وتقييم بالتكلفة الحالية، وليس تقييم مخزون تاريخياً في نهاية الفترة. استخدم حركة الصنف للأرصدة التاريخية.']);
+    }
+
+    /**
+     * Stock that did not sell during the period, with the last sale ever recorded for it, so idle
+     * capital can be cleared with offers or returned to the supplier.
+     *
+     * @return ReportDefinition
+     */
+    private function stagnant(): array
+    {
+        $sales = fn (Builder $query): Builder => $query->from('stock_movements as sold')
+            ->whereColumn('sold.branch_product_id', 'branch_products.id')
+            ->where('sold.source_type', 'order')->where('sold.quantity', '<', 0);
+        $query = $this->branch($this->table('branch_products'), 'branch_products.branch_id')
+            ->join('products', 'products.id', '=', 'branch_products.product_id')->where('products.tenant_id', $this->tenantId)->whereNull('products.deleted_at')
+            ->join('branches', 'branches.id', '=', 'branch_products.branch_id')->where('branches.tenant_id', $this->tenantId)
+            ->where('branch_products.stock_quantity', '>', 0)
+            ->whereNotExists(fn (Builder $sold): Builder => $this->period($sales($sold)->selectRaw('1'), 'sold.created_at'));
+        $this->productFilters($query, 'products.id');
+        $totals = (clone $query)->selectRaw('COUNT(*) as items, COALESCE(SUM(branch_products.stock_quantity * products.cost_price), 0) as valuation')->first();
+
+        return $this->definition($query->select('branch_products.id', 'products.product_number', 'products.name', 'branches.name as branch_name', 'branch_products.stock_quantity', 'products.cost_price')
+            ->selectRaw('branch_products.stock_quantity * products.cost_price as valuation')
+            ->selectSub(fn (Builder $last): Builder => $sales($last)->selectRaw('MAX(sold.created_at)'), 'last_sale_at')
+            ->orderByDesc('valuation')->orderBy('branch_products.id'),
+            ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'branch_name' => 'الفرع', 'stock_quantity' => 'الرصيد الحالي', 'cost_price' => 'التكلفة الحالية', 'valuation' => 'قيمة المخزون الراكد', 'last_sale_at' => 'آخر بيع'],
+            ['عدد الأصناف الراكدة' => (int) $totals->items, 'قيمة المخزون الراكد' => (float) $totals->valuation],
+            ['أصناف لها رصيد في الفرع ولم يُبع منها شيء خلال الفترة المختارة، مرتبة من الأعلى قيمة. «آخر بيع» فارغ يعني أن الصنف لم يُبع أبداً في هذا الفرع.']);
+    }
+
+    /**
+     * Purchased batches whose expiry date falls on or before the end of the period while the branch
+     * still holds the product. The stock is the product's whole branch balance, not the batch alone.
+     *
+     * @return ReportDefinition
+     */
+    private function expiring(): array
+    {
+        $today = Carbon::today()->toDateString();
+        $query = $this->branch(DB::table('purchase_items'), 'purchases.branch_id')
+            ->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')->where('purchases.tenant_id', $this->tenantId)->whereNull('purchases.deleted_at')
+            ->join('products', 'products.id', '=', 'purchase_items.product_id')->where('products.tenant_id', $this->tenantId)->whereNull('products.deleted_at')
+            ->join('branches', 'branches.id', '=', 'purchases.branch_id')
+            ->join('branch_products', fn ($join) => $join->on('branch_products.branch_id', '=', 'purchases.branch_id')->on('branch_products.product_id', '=', 'purchase_items.product_id'))
+            ->where('branch_products.tenant_id', $this->tenantId)->where('branch_products.stock_quantity', '>', 0)
+            ->whereNotNull('purchase_items.expiry_date')->whereDate('purchase_items.expiry_date', '<=', $this->filters['to']);
+        $this->productFilters($query, 'products.id');
+        $expired = (clone $query)->whereDate('purchase_items.expiry_date', '<', $today)->count();
+        $total = (clone $query)->count();
+
+        return $this->definition($query->select('purchase_items.id', 'products.product_number', 'products.name', 'branches.name as branch_name', 'purchase_items.expiry_date', 'purchases.reference_number as reference')
+            ->selectRaw("CASE WHEN purchase_items.expiry_date < ? THEN 'منتهية' ELSE 'تنتهي قريباً' END as expiry_status", [$today])
+            ->selectRaw('purchase_items.quantity as quantity, branch_products.stock_quantity as stock_quantity')
+            ->orderBy('purchase_items.expiry_date')->orderBy('purchase_items.id'),
+            ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'branch_name' => 'الفرع', 'expiry_date' => 'تاريخ الصلاحية', 'expiry_status' => 'الحالة', 'quantity' => 'الكمية المشتراة', 'stock_quantity' => 'رصيد الصنف الحالي', 'reference' => 'فاتورة الشراء'],
+            ['دفعات منتهية' => $expired, 'دفعات تنتهي حتى تاريخ النهاية' => $total - $expired],
+            ['يعرض دفعات الشراء التي لها تاريخ صلاحية حتى «تاريخ النهاية»، بما فيها المنتهية، ما دام للصنف رصيد في الفرع. الرصيد هو رصيد الصنف كله في الفرع وليس الدفعة وحدها؛ تأكد على الرف.']);
     }
 
     /** @return ReportDefinition */
