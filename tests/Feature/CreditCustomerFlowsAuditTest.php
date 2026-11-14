@@ -144,10 +144,10 @@ test('sales return for a credit customer: on account, with a refund, and deleted
         ->set('paidAmount', 0)->call('saveReturn')->assertHasNoErrors();
     expectBalanced($this, $this->customer, 300.0, 'return 100 on account');
 
-    $return->call('editLoadedInvoice')->set('paidAmount', 40)->call('saveReturn')->assertHasNoErrors();
+    $return->call('loadReturn', $return->get('lastSavedReturnId'))->call('editLoadedInvoice')->set('paidAmount', 40)->call('saveReturn')->assertHasNoErrors();
     expectBalanced($this, $this->customer, 340.0, 'return edited: 40 refunded in cash');
 
-    $return->call('deleteReturn');
+    $return->call('loadReturn', $return->get('lastSavedReturnId'))->call('deleteReturn');
     expectBalanced($this, $this->customer, 400.0, 'return deleted');
 });
 

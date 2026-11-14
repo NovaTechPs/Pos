@@ -203,15 +203,16 @@ test('return invoices support payment discount tax editing printing and deletion
         ->set('taxPercent', 20)->set('paidAmount', 6)->call('saveReturn', true)->assertHasNoErrors()
         ->assertSet('showPrint', true)->assertSet('printData.total', 36.0)->assertSet('printData.tax', 6.0)
         ->assertSet('printData.paid', 6.0)->assertSet('printData.balance', 170.0);
-    $id = $component->get('currentReturnId');
-    $number = $component->get('invoiceNumber');
+    // Saving opens a new return; the saved one is reopened to work on it again.
+    $id = $component->assertSet('currentReturnId', null)->assertSet('lines', [])->get('lastSavedReturnId');
+    $number = $component->get('lastSavedNumber');
     expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 24.0 : 16.0)
         ->and((float) $party->fresh()->current_balance)->toBe(170.0)
         ->and((float) Payment::query()->sole()->amount)->toBe(6.0);
-    $component->call('saveReturn')->assertSet('currentReturnId', $id);
+    $component->call('loadReturn', $id)->call('saveReturn')->assertSet('currentReturnId', $id);
     expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 24.0 : 16.0);
     $component->call('editLoadedInvoice')->set('lines.0.quantity', 2)->set('paidAmount', 3)->call('saveReturn')
-        ->assertHasNoErrors()->assertSet('currentReturnId', $id)->assertSet('invoiceNumber', $number);
+        ->assertHasNoErrors()->assertSet('lastSavedReturnId', $id)->assertSet('lastSavedNumber', $number);
     expect((float) $stock->fresh()->stock_quantity)->toBe($kind === 'sale' ? 22.0 : 18.0)
         ->and((float) $party->fresh()->current_balance)->toBe(185.0)
         ->and((float) Payment::query()->sole()->amount)->toBe(3.0);
@@ -225,7 +226,8 @@ test('return invoices support payment discount tax editing printing and deletion
 
 test('return validation and failed stock changes leave saved documents and balances intact', function (string $kind): void {
     extract(editableReturnFixture($kind));
-    $component->set('lines.0.quantity', 2)->call('saveReturn')->call('editLoadedInvoice');
+    $component->set('lines.0.quantity', 2)->call('saveReturn');
+    $component->call('loadReturn', $component->get('lastSavedReturnId'))->call('editLoadedInvoice');
     $component->set('lines.0.quantity', 21)->call('saveReturn')->assertSee('كمية المرتجع تتجاوز');
     expect((float) $party->fresh()->current_balance)->toBe(180.0);
     $component->set('lines.0.quantity', 2)->set('paidAmount', 100)->call('saveReturn')->assertSee('الدفعة أو الخصم أكبر');
@@ -242,10 +244,10 @@ test('return validation and failed stock changes leave saved documents and balan
 test('return search navigation is scoped to tenant and saved values are used for printing', function (string $kind): void {
     extract(editableReturnFixture($kind));
     $component->call('saveReturn');
-    $first = $component->get('currentReturnId');
+    $first = $component->get('lastSavedReturnId');
     $component->call('startNewReturn')->call('selectParty', $party->id)->call('addProduct', $product->id)->call('saveReturn');
-    $second = $component->get('currentReturnId');
-    $component->call('previousInvoice')->assertSet('currentReturnId', $first)->call('nextInvoice')->assertSet('currentReturnId', $second)
+    $second = $component->get('lastSavedReturnId');
+    $component->call('loadReturn', $second)->call('previousInvoice')->assertSet('currentReturnId', $first)->call('nextInvoice')->assertSet('currentReturnId', $second)
         ->call('editLoadedInvoice')->set('lines.0.price', 999)->call('printCurrentInvoice')->assertSet('printData.total', 10.0);
     $other = Tenant::create(['name' => 'Other store']);
     test()->withSession(['active_tenant_id' => $other->id]);
@@ -262,7 +264,8 @@ test('return tax follows the store visibility preference', function (string $kin
 test('return PDFs are downloadable and tenant scoped', function (string $kind): void {
     extract(editableReturnFixture($kind));
     $component->set('paidAmount', 3)->call('saveReturn');
-    $id = $component->get('currentReturnId');
+    $id = $component->get('lastSavedReturnId');
+    $component->call('loadReturn', $id);
     $url = route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $id]);
     $filename = 'Return account - '.$component->get('invoiceNumber').'.pdf';
     $response = $this->get($url)->assertOk()->assertDownload($filename);
@@ -284,9 +287,9 @@ test('damaged sales returns change account balances without adding saleable stoc
     $component->set('lines.0.quantity', 3)->set('lines.0.returned_to_stock', false)->call('saveReturn');
     expect((float) $stock->fresh()->stock_quantity)->toBe(20.0)
         ->and((float) $party->fresh()->current_balance)->toBe(170.0);
-    $component->call('editLoadedInvoice')->set('lines.0.returned_to_stock', true)->call('saveReturn');
+    $component->call('loadReturn', $component->get('lastSavedReturnId'))->call('editLoadedInvoice')->set('lines.0.returned_to_stock', true)->call('saveReturn');
     expect((float) $stock->fresh()->stock_quantity)->toBe(23.0);
-    $component->call('deleteReturn');
+    $component->call('loadReturn', $component->get('lastSavedReturnId'))->call('deleteReturn');
     expect((float) $stock->fresh()->stock_quantity)->toBe(20.0)
         ->and((float) $party->fresh()->current_balance)->toBe(200.0);
 });
@@ -327,7 +330,7 @@ test('return invoices use the invoice layout with a search window, party balance
     $component->assertSee('الرصيد الحالي')->assertSee('200.00')->assertSee('اختصارات لوحة المفاتيح')
         ->assertSee('رقم الصنف / الباركود / اسم الصنف ثم Enter...')
         ->call('saveReturn')->assertHasNoErrors();
-    $number = $component->get('invoiceNumber');
+    $number = $component->get('lastSavedNumber');
 
     $component->call('startNewReturn')->assertSet('currentReturnId', null)
         ->call('toggleReturnSearch')->assertSet('showReturnSearch', true)

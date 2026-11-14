@@ -31,6 +31,11 @@ new class extends Component {
     public bool $showPrint = false;
     #[Locked]
     public array $printData = [];
+
+    /** The return saved last on this screen, after which a new one was opened. */
+    public ?int $lastSavedReturnId = null;
+
+    public string $lastSavedNumber = '';
     public string $kind = 'sale';
     public string $invoiceNumber = '';
     public string $invoiceDate = '';
@@ -829,10 +834,15 @@ new class extends Component {
                 return $id;
             });
             $this->loadReturn($id);
-            $this->successMessage = $this->kind === 'sale' ? 'تم تسجيل مردود المبيعات وحفظ المخزون والرصيد.' : 'تم تسجيل مردود المشتريات وحفظ المخزون والرصيد.';
+            $this->lastSavedReturnId = $id;
+            $this->lastSavedNumber = $this->invoiceNumber;
             if ($print) {
                 $this->printCurrentInvoice();
             }
+            // The saved return stays reachable from the search and arrows; the screen is ready for the next one.
+            $this->startNewReturn(false);
+            $this->showPrint = $print;
+            $this->successMessage = $this->kind === 'sale' ? 'تم تسجيل مردود المبيعات وحفظ المخزون والرصيد.' : 'تم تسجيل مردود المشتريات وحفظ المخزون والرصيد.';
         } catch (\DomainException $exception) {
             $this->errorMessage = $exception->getMessage();
         }

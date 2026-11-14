@@ -25,6 +25,9 @@ test('requesting a new invoice requires confirmation and cancellation preserves 
     $component->call('clearCart')->assertSet('showClearInvoiceModal', true)->assertSet('cart', $cart)->assertSet('notes', 'Original note')
         ->assertSee('تأكيد إفراغ الفاتورة')
         ->assertSee('data-pos-dialog-action', false)
+        // The dialog opens with the focus on the clear button, so Enter clears straight away.
+        ->assertSee("querySelector('[data-pos-dialog-default]')?.focus", false)
+        ->assertSee('data-pos-dialog-action data-pos-dialog-default wire:click="confirmClearCart"', false)
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
         ->assertSee('x-on:keydown.arrow-up.prevent', false)
         ->call('cancelInvoiceDialogs')->assertSet('showClearInvoiceModal', false)->assertSet('cart', $cart);
