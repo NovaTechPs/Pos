@@ -55,7 +55,7 @@ test('products default to product number order with blank numbers last and can s
         });
 });
 
-test('a product can be saved without a barcode or wholesale price to the active branch only', function (): void {
+test('a product can be saved without a barcode or wholesale price, with its stock in the active branch only', function (): void {
     Livewire::test('pages::tenant.products.index')
         ->call('openCreateModal')
         ->assertSet('is_price_unified', false)
@@ -73,7 +73,8 @@ test('a product can be saved without a barcode or wholesale price to the active 
         ->where('name', 'Product without barcode')
         ->firstOrFail();
 
-    $branchProduct = BranchProduct::query()->where('product_id', $product->id)->sole();
+    $branchProduct = BranchProduct::query()->where('product_id', $product->id)->where('branch_id', $this->branch->id)->sole();
+    expect(BranchProduct::query()->where('product_id', $product->id)->where('branch_id', '<>', $this->branch->id)->sum('stock_quantity'))->toEqual(0);
     $openingMovement = StockMovement::query()->where('branch_product_id', $branchProduct->id)->sole();
 
     expect($product->barcodes)->toHaveCount(0)

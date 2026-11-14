@@ -137,3 +137,27 @@ test('editing a product can add a new offer for the active branch and leaving it
         ->and((float) $offer->offer_price)->toBe(25.0)
         ->and($offer->end_at)->toBeNull();
 });
+
+test('a new product reaches every branch: same prices when unified, price 0 and no stock otherwise', function (bool $unified, float $otherRetail, float $otherWholesale): void {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'is_owner' => true]);
+    $this->actingAs($owner)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
+
+    $page = Livewire::test('pages::tenant.products.index')->call('openCreateModal')
+        ->set('name', 'New item')->set('barcodes', [''])->set('cost_price', '5')->set('stockQuantity', '6')
+        ->set('is_price_unified', $unified);
+    $unified
+        ? $page->set('retail_price', '12')->set('wholesale_price', '10')
+        : $page->set('branchPricesInput.'.$this->branch->id.'.retail_price', '12')->set('branchPricesInput.'.$this->branch->id.'.wholesale_price', '10');
+    $page->set('min_wholesale_quantity', 1)->call('save')->assertHasNoErrors();
+
+    $rows = BranchProduct::query()->where('product_id', Product::query()->where('name', 'New item')->value('id'))->get()->keyBy('branch_id');
+    expect($rows)->toHaveCount(2)
+        ->and((float) $rows[$this->branch->id]->retail_price)->toBe(12.0)
+        ->and((float) $rows[$this->branch->id]->stock_quantity)->toBe(6.0)
+        ->and((float) $rows[$this->otherBranch->id]->retail_price)->toBe($otherRetail)
+        ->and((float) $rows[$this->otherBranch->id]->wholesale_price)->toBe($otherWholesale)
+        ->and((float) $rows[$this->otherBranch->id]->stock_quantity)->toBe(0.0);
+})->with([
+    'unified price' => [true, 12.0, 10.0],
+    'branch price' => [false, 0.0, 0.0],
+]);

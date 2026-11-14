@@ -1060,7 +1060,11 @@ new class extends Component {
             return;
         }
 
-        $branchIds = collect([(int) $activeBranchId]);
+        // A new product is added to every branch: with the same prices when "unified price" is on,
+        // otherwise at price 0 (and no stock) in the other branches until each sets its own price.
+        $branchIds = $this->isEditing
+            ? collect([(int) $activeBranchId])
+            : DB::table('branches')->where('tenant_id', $tenantId)->orderBy('id')->pluck('id')->map(fn ($id): int => (int) $id);
 
         if ($branchIds->isEmpty()) {
             session()->flash(
@@ -3164,7 +3168,7 @@ new class extends Component {
                                 <span class="text-sm font-semibold">الأسعار</span>
 
                                 @if (!$isEditing)
-                                    <label class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" title="عند التفعيل يستخدم السعر نفسه في الفروع المرتبط بها المنتج، وعند الإيقاف يمكنك تحديد سعر مستقل لكل فرع.">
+                                    <label class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" title="عند التفعيل يُضاف الصنف لكل الفروع بنفس السعر، وعند الإيقاف يُضاف لباقي الفروع بسعر صفر حتى يحدد كل فرع سعره.">
                                         <span>سعر موحد لكل الفروع</span>
                                         <flux:switch wire:model.live="is_price_unified" />
                                     </label>
