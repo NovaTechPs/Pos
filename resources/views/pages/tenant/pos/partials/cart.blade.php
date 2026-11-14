@@ -323,7 +323,7 @@
                                 </button>
                             @endcan
 
-                            <button type="button"
+                            <button type="button" data-pos-remove-line title="حذف الصنف (F7)"
                                 wire:click="removeFromCart('{{ $lineKey }}')"
                                 wire:confirm="هل أنت متأكد من حذف هذا الصنف من الفاتورة؟"
                                 @disabled($invoiceLocked)

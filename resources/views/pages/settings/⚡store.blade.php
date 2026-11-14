@@ -39,6 +39,8 @@ new class extends Component
 
     public bool $showHomeDashboard = false;
 
+    public bool $roundTotalToHalf = false;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -67,6 +69,7 @@ new class extends Component
         $this->trackExpiry = TenantSetting::getBool($tenant->id, 'track_expiry');
         $this->onlineShop = TenantSetting::getBool($tenant->id, 'online_shop_enabled');
         $this->showHomeDashboard = TenantSetting::getBool($tenant->id, 'show_home_dashboard');
+        $this->roundTotalToHalf = TenantSetting::getBool($tenant->id, 'pos_round_total_to_half');
     }
 
     public function save(): void
@@ -86,6 +89,7 @@ new class extends Component
             'trackExpiry' => ['boolean'],
             'onlineShop' => ['boolean'],
             'showHomeDashboard' => ['boolean'],
+            'roundTotalToHalf' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -106,6 +110,7 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, 'track_expiry', $validated['trackExpiry']);
             TenantSetting::setBool($this->tenantId, 'online_shop_enabled', $validated['onlineShop']);
             TenantSetting::setBool($this->tenantId, 'show_home_dashboard', $validated['showHomeDashboard']);
+            TenantSetting::setBool($this->tenantId, 'pos_round_total_to_half', $validated['roundTotalToHalf']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -169,6 +174,10 @@ new class extends Component
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">إظهار لوحة الملخص في الصفحة الرئيسية / Show home dashboard</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">اللوحة مخفية افتراضياً. عند التحديد تظهر أرقام المبيعات والأرباح والرسوم في الصفحة الرئيسية لمن له صلاحية التقارير والأرباح.</span></span>
                     <input type="checkbox" wire:model="showHomeDashboard" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">إجمالي نقطة البيع بدون كسور / No fractions in POS totals</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد يُقرَّب إجمالي فاتورة نقطة البيع لأسفل إلى أقرب نصف (8.58 تصبح 8.50)، ويُسجَّل الفرق في خصم الفاتورة.</span></span>
+                    <input type="checkbox" wire:model="roundTotalToHalf" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
                 </label>
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">إظهار خانة الضريبة / Show tax</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد تظهر خانة الضريبة في فواتير المشتريات والمبيعات والطباعة، وعند إلغاء التحديد تختفي. هذا الخيار لا يغيّر حساب الضريبة.</span></span>

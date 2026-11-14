@@ -293,6 +293,29 @@
         const key = event.key;
         const cartRow = event.target?.closest?.('[data-pos-cart-line]');
 
+        // F7 removes the selected cart line and moves the selection to its neighbour.
+        if (key === 'F7') {
+            const selectedRow = cartRow || document.querySelector('[data-pos-cart-line].pos-cart-row-focused');
+            const removeButton = selectedRow?.querySelector?.('[data-pos-remove-line]');
+            if (!removeButton || removeButton.disabled) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.repeat) return;
+
+            const allCartRows = cartRows();
+            const selectedIndex = allCartRows.indexOf(selectedRow);
+            const neighbour = allCartRows[selectedIndex + 1] || allCartRows[selectedIndex - 1];
+            removeButton.click();
+            if (neighbour) {
+                focusCartRow(neighbour);
+            } else {
+                focusBarcode();
+            }
+
+            return;
+        }
+
         // Leave product search and result navigation to the product panel.
         if (event.target?.closest?.('[data-pos-products-panel], [data-pos-product-panel-search], [data-pos-product]')) {
             return;

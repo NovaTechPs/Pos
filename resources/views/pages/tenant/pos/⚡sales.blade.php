@@ -53,6 +53,7 @@ new class extends Component {
             $this->allowNegativeStock = TenantSetting::getBool((int) $tenantId, 'allow_negative_stock');
             $this->unifiedStock = TenantSetting::getBool((int) $tenantId, 'unified_stock');
             $this->mergeSimilarProducts = TenantSetting::getBool((int) $tenantId, 'merge_similar_products');
+            $this->roundTotalToHalf = TenantSetting::getBool((int) $tenantId, 'pos_round_total_to_half');
             $this->categories = Category::query()->where('tenant_id', $tenantId)->orderBy('name')->get()->toArray();
         }
 
@@ -120,6 +121,8 @@ new class extends Component {
     public string $missingBarcodeSearch = '';
     public array $cart = [];
     public $paid_amount = 0;
+    /** The paid amount keeps matching the total while a fully paid invoice is edited, until the cashier types one. */
+    public bool $paidFollowsTotal = false;
     public string $payment_method = 'cash';
     public string $notes = '';
     public bool $showCustomerModal = false;
@@ -216,6 +219,8 @@ new class extends Component {
     public bool $allowNegativeStock = false;
     public bool $unifiedStock = false;
     public bool $mergeSimilarProducts = false;
+    /** The store drops the fraction of a sale total down to the nearest half, recorded as discount. */
+    public bool $roundTotalToHalf = false;
     #[Locked]
     public int $pendingSyncOperations = 0;
     #[Locked]
@@ -244,6 +249,7 @@ new class extends Component {
             'unified_stock',
             false
         );
+        $this->roundTotalToHalf = TenantSetting::getBool((int) $tenantId, 'pos_round_total_to_half');
         $this->mergeSimilarProducts = TenantSetting::getBool(
             (int) $tenantId,
             'merge_similar_products',
@@ -2207,6 +2213,7 @@ new class extends Component {
         $this->cart = [];
         $this->receipt = [];
         $this->paid_amount = 0;
+        $this->paidFollowsTotal = false;
         $this->payment_method = 'cash';
         $this->discount_amount = 0;
         $this->discount_type = 'fixed';
@@ -2326,6 +2333,7 @@ new class extends Component {
         $held = $this->heldInvoices[$index];
         $this->cart = $held['cart'];
         $this->paid_amount = (float) ($held['paid_amount'] ?? 0);
+        $this->paidFollowsTotal = false;
         $this->payment_method = $held['payment_method'] ?? 'cash';
         $this->discount_amount = (float) ($held['discount_amount'] ?? 0);
         $this->discount_type = $held['discount_type'] ?? 'fixed';
@@ -2461,6 +2469,8 @@ new class extends Component {
         }
 
         $this->paid_amount = (float) $invoice->paid_amount;
+        $this->paidFollowsTotal = $invoice->type === 'pos' && abs((float) $invoice->total) > 0
+            && (float) $invoice->paid_amount >= abs((float) $invoice->total) - 0.005;
         $this->payment_method = $invoice->payment_method ?: Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $invoice->id)->latest('id')->value('payment_method') ?: 'cash';
         $this->discount_amount = (float) ($invoice->discount ?? 0);
         $this->discount_type = $invoice->discount_type ?? 'fixed';
@@ -2616,6 +2626,7 @@ new class extends Component {
         if (!$this->ensureInvoiceEditable()) {
             return;
         }
+        $this->paidFollowsTotal = false;
         if ($value === 'C') {
             $this->paid_amount = 0;
             return;
@@ -3119,18 +3130,51 @@ new class extends Component {
             return -abs($this->subtotal);
         }
 
+        $minTotal = $this->roundMoney(max(0, $this->delivery_fee));
+
         if ($this->custom_final_total !== null) {
             $maxTotal = $this->roundMoney($this->subtotal + max(0, $this->delivery_fee));
-            $minTotal = $this->roundMoney(max(0, $this->delivery_fee));
 
-            return $this->roundMoney(
+            return $this->saleTotalWithoutFractions($this->roundMoney(
                 max($minTotal, min($maxTotal, (float) $this->custom_final_total))
-            );
+            ), $minTotal);
         }
 
-        return $this->roundMoney(
+        return $this->saleTotalWithoutFractions($this->roundMoney(
             max(0, $this->subtotal - $this->calculated_discount + max(0, $this->delivery_fee))
-        );
+        ), $minTotal);
+    }
+
+    /**
+     * Drops the fraction of a sale total down to the nearest half when the store asks for it;
+     * the difference is saved as discount. The total never falls below the delivery fee.
+     */
+    private function saleTotalWithoutFractions(float $total, float $minimumTotal): float
+    {
+        if (! $this->roundTotalToHalf) {
+            return $total;
+        }
+
+        $rounded = floor(round($total * 2, 4)) / 2;
+
+        return $rounded >= $minimumTotal ? $rounded : $total;
+    }
+
+    public function updatedPaidAmount(): void
+    {
+        $this->paidFollowsTotal = false;
+    }
+
+    public function rendering(): void
+    {
+        $this->syncPaidAmountWithTotal();
+    }
+
+    private function syncPaidAmountWithTotal(): void
+    {
+        if ($this->paidFollowsTotal && $this->invoiceEditMode && $this->currentInvoiceId && ! $this->isReturnMode) {
+            $this->paid_amount = $this->roundMoney(abs($this->getTotalProperty()));
+        }
     }
 
     public function getAmountDueProperty(): float
@@ -3168,6 +3212,7 @@ new class extends Component {
 
     private function openCustomerPaymentModal(string $mode): void
     {
+        $this->syncPaidAmountWithTotal();
         $this->pendingCustomerPaymentMode = $mode;
         $this->customerPaymentConfirmed = false;
 
@@ -3205,6 +3250,7 @@ new class extends Component {
         }
 
         $this->paid_amount = $this->roundMoney($paid);
+        $this->paidFollowsTotal = false;
         $this->customerPaymentConfirmed = true;
 
         $mode = $this->pendingCustomerPaymentMode;
@@ -3428,6 +3474,9 @@ new class extends Component {
             $this->errorMessage = 'استخدم صفحة مردودات المبيعات لربط المرتجع بفاتورته الأصلية.';
             return null;
         }
+        if (! $this->customerPaymentConfirmed) {
+            $this->syncPaidAmountWithTotal();
+        }
         $paidInput = max(0, (float) ($this->paid_amount ?: 0));
 
         $customer = null;
@@ -3617,6 +3666,12 @@ new class extends Component {
                     $discount = $this->roundMoney(
                         max(0, min($subtotal, $subtotal + $deliveryFee - $customTotal))
                     );
+                }
+
+                if ($invoiceType === 'pos') {
+                    $roundedTotal = $this->saleTotalWithoutFractions($total, $deliveryFee);
+                    $discount = $this->roundMoney($discount + $total - $roundedTotal);
+                    $total = $roundedTotal;
                 }
 
                 $requiredPayment = abs($total);
@@ -4123,11 +4178,22 @@ new class extends Component {
 
     private function makeInvoiceNumber(string $type, int $tenantId, int $branchId): string
     {
-        $prefix = $type === 'return' ? 'R' : 'A';
+        $prefix = ($type === 'return' ? 'R' : 'A') . $branchId . '-';
+
+        // Short running numbers per branch (A12-1057). Older invoices carry nine random digits,
+        // so only shorter numbers count towards the sequence.
+        $latest = Order::withTrashed()
+            ->where('tenant_id', $tenantId)
+            ->where('invoice_number', 'like', $prefix . '%')
+            ->whereRaw('LENGTH(invoice_number) < ?', [strlen($prefix) + 9])
+            ->orderByRaw('LENGTH(invoice_number) DESC')
+            ->orderByDesc('invoice_number')
+            ->value('invoice_number');
+        $sequence = max(0, (int) substr((string) $latest, strlen($prefix)));
 
         do {
-            $number = $prefix . $branchId . '-' . random_int(100000000, 999999999);
-        } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
+            $number = $prefix . (++$sequence);
+        } while (Order::withTrashed()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
 
         return $number;
     }
@@ -4576,6 +4642,7 @@ new class extends Component {
         $this->selectedCustomerId = $invoice->customer_id ? (int) $invoice->customer_id : null;
         $this->customerSearch = '';
         $this->paid_amount = 0;
+        $this->paidFollowsTotal = false;
         $this->payment_method = 'cash';
         $this->discount_amount = 0;
         $this->discount_type = 'fixed';

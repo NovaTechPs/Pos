@@ -156,3 +156,53 @@ test('a barcode scanned while the cursor is in a number field is added to the in
     expect($process->isSuccessful())->toBeTrue();
     expect($process->getOutput())->toContain('FIELD_SCAN_OK');
 });
+
+test('F7 removes the selected cart line and selects its neighbour', function (): void {
+    $script = <<<'JAVASCRIPT'
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const assert = require('node:assert/strict');
+    assert.ok(fs.readFileSync('resources/views/pages/tenant/pos/partials/cart.blade.php', 'utf8').includes('data-pos-remove-line'));
+    const listeners = new Map();
+    const events = [];
+    const makeRow = name => {
+        const button = {disabled: false, click: () => events.push('remove ' + name)};
+        const row = {name, classList: {toggle() {}}, focus: () => events.push('focus ' + name), scrollIntoView() {},
+            querySelector: selector => selector === '[data-pos-remove-line]' ? button : null, querySelectorAll: () => []};
+        row.closest = selector => selector === '[data-pos-cart-line]' ? row : null;
+        row.button = button;
+        return row;
+    };
+    const rows = [makeRow('first'), makeRow('second')];
+    const barcode = {dataset: {}, disabled: false, value: '', focus: () => events.push('focus barcode'), select() {}, closest: () => null};
+    const document = {
+        addEventListener: (name, callback) => listeners.set(name, [...(listeners.get(name) || []), callback]),
+        querySelector: selector => selector === '[data-pos-barcode-input]' ? barcode : null,
+        querySelectorAll: selector => selector.includes('data-pos-cart-line') ? rows : [], contains: () => true,
+    };
+    const window = {addEventListener() {}, requestAnimationFrame: callback => callback(), setTimeout: callback => callback()};
+    vm.runInNewContext(fs.readFileSync('resources/js/pos-cart-keyboard.js', 'utf8'),
+        {window, document, Date, Map, Number, Array, console, Event: class {}, requestAnimationFrame: callback => callback(), setTimeout: callback => callback()});
+    function press(target) {
+        let prevented = false;
+        const event = {key: 'F7', target, repeat: false, preventDefault: () => { prevented = true; }, stopPropagation() {}};
+        listeners.get('keydown').forEach(listener => listener(event));
+        return prevented;
+    }
+
+    assert.equal(press(rows[0]), true);
+    assert.deepEqual(events.slice(0, 2), ['remove first', 'focus second']);
+
+    events.length = 0;
+    rows[1].button.disabled = true;
+    assert.equal(press(rows[1]), false, 'A locked invoice line was removed');
+    assert.deepEqual(events, []);
+
+    assert.equal(press(barcode), false, 'F7 acted without a selected line');
+    JAVASCRIPT;
+
+    $process = new Process(['node', '-e', $script], dirname(__DIR__, 2));
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
+});
