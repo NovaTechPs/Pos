@@ -18,8 +18,7 @@ class BranchProductLinker
      */
     public function linkMissing(?int $tenantId = null, ?int $branchId = null): int
     {
-        $price = fn (string $column, string $fallback): string => "CASE WHEN p.is_price_unified = 1 THEN COALESCE((SELECT s.{$column} FROM branch_products s WHERE s.product_id = p.id ORDER BY s.id LIMIT 1), {$fallback}) ELSE {$fallback} END";
-        $now = now()->toDateTimeString();
+        $price = fn (string $column, string $fallback): string => "CASE WHEN p.is_price_unified THEN COALESCE((SELECT s.{$column} FROM branch_products s WHERE s.product_id = p.id ORDER BY s.id LIMIT 1), {$fallback}) ELSE {$fallback} END";
 
         $missing = DB::table('products as p')
             ->join('branches as b', 'b.tenant_id', '=', 'p.tenant_id')
@@ -36,7 +35,7 @@ class BranchProductLinker
 
         DB::table('branch_products')->insertUsing(
             ['tenant_id', 'branch_id', 'product_id', 'stock_quantity', 'retail_price', 'wholesale_price', 'min_wholesale_quantity', 'created_at', 'updated_at'],
-            $missing->selectRaw("p.tenant_id, b.id, p.id, 0, {$price('retail_price', '0')}, {$price('wholesale_price', '0')}, {$price('min_wholesale_quantity', '1')}, ?, ?", [$now, $now]),
+            $missing->selectRaw("p.tenant_id, b.id, p.id, 0, {$price('retail_price', '0')}, {$price('wholesale_price', '0')}, {$price('min_wholesale_quantity', '1')}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP"),
         );
 
         return $count;
