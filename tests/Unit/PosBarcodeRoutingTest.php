@@ -93,3 +93,66 @@ test('barcode keyboard listener targets the POS component and ignores other page
     expect($process->isSuccessful())->toBeTrue();
     expect($process->getOutput())->toContain('BARCODE_ROUTING_OK');
 });
+
+test('a barcode scanned while the cursor is in a number field is added to the invoice, not typed into the amount', function (): void {
+    $script = <<<'JAVASCRIPT'
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const assert = require('node:assert/strict');
+    const script = fs.readFileSync('resources/js/pos-cart-keyboard.js', 'utf8');
+    const listeners = new Map();
+    const calls = [];
+    let clock = 1000;
+    const barcodeInput = {dataset: {posComponentId: 'pos-sales'}, disabled: false, value: '', focus() {}, select() {}, closest: () => null};
+    const discount = {value: '5', events: 0, dispatchEvent() {this.events++}};
+    discount.closest = selector => selector.includes('input[type="number"]') ? discount : null;
+    const document = {
+        addEventListener: (name, callback) => listeners.set(name, [...(listeners.get(name) || []), callback]),
+        querySelector: selector => selector === '[data-pos-barcode-input]' ? barcodeInput : null,
+        querySelectorAll: () => [], contains: () => true,
+    };
+    const window = {addEventListener() {}, Livewire: {find: () => ({$call: async (method, code) => calls.push([method, code])})}};
+    vm.runInNewContext(script, {window, document, Date: {now: () => clock}, Map, Number, Array, String, console, Event: class {}});
+    function key(key, gap) {
+        clock += gap;
+        let stopped = false;
+        let prevented = false;
+        const event = {key, target: discount, preventDefault() {prevented = true}, stopImmediatePropagation() {stopped = true}};
+        for (const callback of listeners.get('keydown')) {
+            if (stopped) break;
+            callback(event);
+        }
+        // The browser types the character unless the key was prevented.
+        if (!prevented && key.length === 1) discount.value += key;
+        return prevented;
+    }
+    (async () => {
+        for (const character of '6958766523162') key(character, 8);
+        assert.equal(key('Enter', 8), true, 'The scanner Enter must not reach the amount field');
+        await new Promise(setImmediate);
+        assert.deepEqual(calls, [['scanBarcode', '6958766523162']]);
+        assert.equal(discount.value, '5', 'The amount must return to what it was before the scan');
+        assert.equal(discount.events, 1);
+
+        discount.value = '';
+        for (const character of '125000') key(character, 180);
+        assert.equal(key('Enter', 180), false, 'An amount typed by hand must stay in the field');
+        await new Promise(setImmediate);
+        assert.equal(calls.length, 1);
+        assert.equal(discount.value, '125000');
+
+        discount.value = '';
+        for (const character of '12') key(character, 8);
+        assert.equal(key('Enter', 8), false, 'A short fast entry is not a barcode');
+        assert.equal(discount.value, '12');
+        console.log('FIELD_SCAN_OK');
+    })().catch(error => {console.error(error); process.exitCode = 1});
+    JAVASCRIPT;
+
+    $process = new Process(['node', '-e', $script], dirname(__DIR__, 2));
+    $process->run();
+
+    expect($process->getErrorOutput())->toBe('');
+    expect($process->isSuccessful())->toBeTrue();
+    expect($process->getOutput())->toContain('FIELD_SCAN_OK');
+});

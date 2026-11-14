@@ -13,6 +13,14 @@
     let externalBarcodeCaptured = false;
     let externalBarcodeTarget = null;
     let externalBarcodeOriginalValue = null;
+    // A scanner types a whole barcode far faster than a person can, even into a number field.
+    const NUMERIC_FIELD_SELECTOR = 'input[type="number"], input[data-pos-field]';
+    const FIELD_SCAN_MIN_LENGTH = 6;
+    const FIELD_SCAN_MAX_GAP = 60;
+    let fieldScanBuffer = '';
+    let fieldScanLastKeyAt = 0;
+    let fieldScanTarget = null;
+    let fieldScanOriginalValue = '';
 
     function rows() {
         const grouped = new Map();
@@ -111,6 +119,49 @@
         externalBarcodeOriginalValue = null;
     }
 
+    function resetFieldScan() {
+        fieldScanBuffer = '';
+        fieldScanLastKeyAt = 0;
+        fieldScanTarget = null;
+        fieldScanOriginalValue = '';
+    }
+
+    /**
+     * When the cursor was left in the discount, paid or a cart field, a scanned barcode would be
+     * typed into that amount. Recognise the scan by its speed, put the amount back and add the item.
+     */
+    function captureFieldScan(event, field) {
+        const now = Date.now();
+
+        if (event.key === 'Enter' || event.key === 'Tab') {
+            const isScan = fieldScanTarget === field
+                && fieldScanBuffer.length >= FIELD_SCAN_MIN_LENGTH
+                && now - fieldScanLastKeyAt <= FIELD_SCAN_MAX_GAP;
+            const barcode = fieldScanBuffer;
+            const originalValue = fieldScanOriginalValue;
+            resetFieldScan();
+            if (!isScan) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            field.value = originalValue;
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            enqueueBarcode(barcode);
+            return;
+        }
+
+        if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
+
+        if (fieldScanTarget !== field || now - fieldScanLastKeyAt > FIELD_SCAN_MAX_GAP) {
+            fieldScanTarget = field;
+            fieldScanOriginalValue = String(field.value ?? '');
+            fieldScanBuffer = event.key;
+        } else {
+            fieldScanBuffer += event.key;
+        }
+        fieldScanLastKeyAt = now;
+    }
+
     async function processBarcodeQueue() {
         if (isProcessingBarcodeQueue || barcodeQueue.length === 0) return;
 
@@ -164,6 +215,14 @@
             return;
         }
 
+        const numericField = event.target?.closest?.(NUMERIC_FIELD_SELECTOR);
+        if (numericField) {
+            resetExternalBarcodeCapture();
+            captureFieldScan(event, numericField);
+            return;
+        }
+        resetFieldScan();
+
         if (event.target?.closest?.('[data-pos-field], input:not([data-pos-barcode-input]), textarea, select, [contenteditable="true"]')) {
             resetExternalBarcodeCapture();
             return;
@@ -212,6 +271,7 @@
     document.addEventListener('livewire:navigating', function() {
         barcodeQueue.length = 0;
         resetExternalBarcodeCapture();
+        resetFieldScan();
     });
 
     window.addEventListener('pos-scroll-cart-bottom', function() {
