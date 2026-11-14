@@ -36,3 +36,22 @@ jobs:
 
       - name: Run CI Checks
         run: composer ci:check
+
+  # Render deploys only after every test passes: turn Auto-Deploy off in Render and save the
+  # service's Deploy Hook URL as the RENDER_DEPLOY_HOOK_URL repository secret.
+  deploy:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL is not set; skipping the deploy."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 30 -X POST "$RENDER_DEPLOY_HOOK_URL" > /dev/null
+          echo "Render deploy started."

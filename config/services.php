@@ -40,4 +40,14 @@ return [
         'base_url' => env('OPEN_EXCHANGE_RATES_BASE_URL', 'https://openexchangerates.org/api'),
     ],
 
+    /*
+     * Error and daily backup alerts. Create a bot with @BotFather, send it a message, then read
+     * the chat id from https://api.telegram.org/bot<token>/getUpdates.
+     */
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_CHAT_ID'),
+        'error_quiet_minutes' => (int) env('TELEGRAM_ERROR_QUIET_MINUTES', 30),
+    ],
+
 ];

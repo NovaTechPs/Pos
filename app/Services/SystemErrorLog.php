@@ -81,6 +81,7 @@ class SystemErrorLog
         } catch (Throwable) {
             // Diagnostic logging must never replace the original application error.
         }
+        app(TelegramAlert::class)->error($details);
     }
 
     public function safeDetails(string $text): string

@@ -40,3 +40,10 @@ Schedule::call(fn () => Tenant::query()->pluck('id')
     ->name('recurring-employee-tasks')
     ->withoutOverlapping()
     ->when(fn (): bool => config('branch-sync.mode') !== 'edge');
+
+// Where a scheduler runs, upload and verify the daily backup at night. On Render, a Cron Job
+// service runs `php artisan backup:daily` once a day instead.
+Schedule::command('backup:daily')
+    ->dailyAt('02:30')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge' && (bool) config('backup.daily_schedule'));
