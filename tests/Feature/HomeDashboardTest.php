@@ -9,6 +9,7 @@ use App\Models\Permission;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\Tenant;
+use App\Models\TenantSetting;
 use App\Models\User;
 use App\Services\HomeDashboard;
 use Illuminate\Support\Carbon;
@@ -21,6 +22,7 @@ beforeEach(function (): void {
     $this->other = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'فرع الشمال']);
     $this->owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'type' => 'tenant_user', 'is_owner' => true, 'branch_id' => null, 'name' => 'المدير']);
     $this->actingAs($this->owner)->withSession(['active_tenant_id' => $this->tenant->id]);
+    TenantSetting::setBool($this->tenant->id, 'show_home_dashboard', true);
     $this->product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'قهوة', 'cost_price' => 5]);
     $this->sale = function (array $attributes): Order {
         $order = Order::query()->create($attributes + [
@@ -89,4 +91,20 @@ test('employees without report access keep the simple home page', function (): v
 
     $this->actingAs($employee)->get('/dashboard')->assertOk()->assertDontSee('data-home-dashboard', false);
     Livewire::test('pages::tenant.home-dashboard')->assertForbidden();
+});
+
+test('the home dashboard is hidden until the store settings show it', function (): void {
+    TenantSetting::setBool($this->tenant->id, 'show_home_dashboard', false);
+    Livewire::test('pages::settings.store')->assertSet('showHomeDashboard', false);
+    $this->get('/dashboard')->assertOk()->assertDontSee('data-home-dashboard', false);
+    Livewire::test('pages::tenant.home-dashboard')->assertForbidden();
+
+    Livewire::test('pages::settings.store')->set('showHomeDashboard', true)->call('save')->assertHasNoErrors();
+    $this->get('/dashboard')->assertOk()->assertSee('data-home-dashboard', false);
+});
+
+test('a store that never chose keeps the home dashboard hidden', function (): void {
+    TenantSetting::query()->where('tenant_id', $this->tenant->id)->where('key', 'show_home_dashboard')->delete();
+
+    $this->get('/dashboard')->assertOk()->assertDontSee('data-home-dashboard', false);
 });

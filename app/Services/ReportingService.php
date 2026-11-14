@@ -28,6 +28,7 @@ class ReportingService
         'statement' => ['كشف حساب زبون / مورد', 'customers.view'],
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
         'sales' => ['ملخص مبيعات نقطة البيع اليومي (زبون نقدي)', 'reports.sales'],
+        'pos-invoices' => ['فواتير نقطة البيع فاتورة فاتورة', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
         'product-profit' => ['أرباح الأصناف خلال فترة', 'reports.profit'],
         'product-history' => ['حركة صنف — مبيعات ومشتريات', 'reports.inventory'],
@@ -54,7 +55,7 @@ class ReportingService
     /** @var array<string, list<string>> */
     public const REPORT_GROUPS = [
         'الحسابات والذمم' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
-        'المبيعات والأرباح' => ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'employees', 'tax'],
+        'المبيعات والأرباح' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'employees', 'tax'],
         'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments'],
     ];
@@ -162,7 +163,7 @@ class ReportingService
 
         return match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
-            'sales' => $this->sales(), 'product-sales' => $this->productSales(),
+            'sales' => $this->sales(), 'pos-invoices' => $this->posInvoices(), 'product-sales' => $this->productSales(),
             'product-history' => $this->productHistory(), 'product-profit' => $this->productProfit(),
             'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
@@ -376,6 +377,28 @@ class ReportingService
         $totals = DB::query()->fromSub(clone $query, 'daily_totals')->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(net),0) as net')->first();
 
         return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['فواتير البيع المكتملة غير المرتبطة بعميل أو مورد مسجل فقط؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي. صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
+    }
+
+    /**
+     * Every invoice issued from the POS screen, one row each, so a day can be read invoice by invoice.
+     *
+     * @return ReportDefinition
+     */
+    private function posInvoices(): array
+    {
+        $query = $this->orders()->where('orders.source', 'pos')
+            ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId))
+            ->leftJoin('users', 'users.id', '=', 'orders.created_by')
+            ->leftJoin('branches', 'branches.id', '=', 'orders.branch_id');
+        $totals = (clone $query)->selectRaw("COALESCE(SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END), 0) as invoices, COALESCE(SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END), 0) as sales, COALESCE(SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END), 0) as returns")->first();
+        $query->select('orders.id as invoice_id', 'orders.type as invoice_type', 'orders.created_at', 'orders.invoice_number as reference', 'branches.name as branch_name', 'orders.paid_amount')
+            ->selectRaw("CASE WHEN orders.type = 'return' THEN 'مرتجع' ELSE 'بيع' END as kind, COALESCE(NULLIF(orders.customer_name, ''), parties.name, 'زبون نقدي') as party_name, COALESCE(users.name, '—') as cashier_name, CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END as total")
+            ->orderBy('orders.created_at')->orderBy('orders.id');
+
+        return $this->definition($query,
+            ['created_at' => 'التاريخ والوقت', 'reference' => 'رقم الفاتورة', 'kind' => 'النوع', 'party_name' => 'الزبون', 'cashier_name' => 'الموظف', 'branch_name' => 'الفرع', 'total' => 'الإجمالي', 'paid_amount' => 'المدفوع'],
+            ['عدد فواتير البيع' => (int) $totals->invoices, 'إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => (float) $totals->sales - (float) $totals->returns],
+            ['كل الفواتير المكتملة الصادرة من شاشة نقطة البيع، ومنها فواتير الزبائن المسجلين. اضغط رقم الفاتورة لفتحها.']);
     }
 
     /** @return ReportDefinition */

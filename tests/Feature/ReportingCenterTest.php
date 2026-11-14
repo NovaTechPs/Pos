@@ -547,3 +547,32 @@ test('the analytics cards link to the report behind each number, and the reports
         ->test('pages::tenant.reports.center')
         ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-31')->assertSet('branchId', $this->branch->id);
 });
+
+test('pos invoices report lists each pos invoice of the day and opens it', function (): void {
+    $walkIn = ($this->makeOrder)(['invoice_number' => 'POS-WALKIN', 'source' => 'pos', 'customer_id' => null, 'total' => 120, 'paid_amount' => 120, 'created_by' => $this->user->id, 'created_at' => '2026-10-15 09:00:00']);
+    $registered = ($this->makeOrder)(['invoice_number' => 'POS-CUSTOMER', 'source' => 'pos', 'total' => 80, 'created_at' => '2026-10-15 10:00:00']);
+    ($this->makeOrder)(['invoice_number' => 'POS-RETURN', 'source' => 'pos', 'customer_id' => null, 'type' => 'return', 'total' => -20, 'created_at' => '2026-10-15 11:00:00']);
+    ($this->makeOrder)(['invoice_number' => 'POS-OTHER-DAY', 'source' => 'pos', 'created_at' => '2026-10-16 09:00:00']);
+    ($this->makeOrder)(['invoice_number' => 'NOT-POS', 'source' => 'web', 'created_at' => '2026-10-15 09:30:00']);
+    ($this->makeOrder)(['invoice_number' => 'POS-CANCELLED', 'source' => 'pos', 'status' => 'cancelled', 'created_at' => '2026-10-15 09:40:00']);
+    $filters = array_replace($this->filters, ['from' => '2026-10-15', 'to' => '2026-10-15']);
+
+    $definition = (new ReportingService($this->user, $this->branch->id))->prepare('pos-invoices', $filters);
+    $rows = $definition['query']->get();
+    expect($rows->pluck('reference')->all())->toBe(['POS-WALKIN', 'POS-CUSTOMER', 'POS-RETURN'])
+        ->and($rows->pluck('party_name')->all())->toBe(['زبون نقدي', $this->customer->name, 'زبون نقدي'])
+        ->and($rows->pluck('kind')->all())->toBe(['بيع', 'بيع', 'مرتجع'])
+        ->and($rows->first()->cashier_name)->toBe($this->user->name)
+        ->and((float) $rows->last()->total)->toBe(-20.0)
+        ->and($definition['summary']['عدد فواتير البيع'])->toBe(2)
+        ->and((float) $definition['summary']['صافي المبيعات'])->toBe(180.0);
+
+    Livewire::test('pages::tenant.reports.center')->set('report', 'pos-invoices')
+        ->set('from', '2026-10-15')->set('to', '2026-10-15')->set('branchId', $this->branch->id)->call('applyFilters')
+        ->assertSee('POS-WALKIN')->assertDontSee('POS-OTHER-DAY')->assertDontSee('NOT-POS')
+        ->assertSee(route('tenant.pos', ['invoice' => $walkIn->id]))->assertSee(route('tenant.pos', ['invoice' => $registered->id]));
+
+    Livewire::test('pages::tenant.reports.center')->set('report', 'sales')
+        ->set('from', '2026-10-10')->set('to', '2026-10-20')->set('branchId', $this->branch->id)->call('applyFilters')
+        ->assertSeeHtml(e(route('tenant.reports', ['report' => 'pos-invoices', 'from' => '2026-10-15', 'to' => '2026-10-15', 'branch_id' => $this->branch->id])));
+});

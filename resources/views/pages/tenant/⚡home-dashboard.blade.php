@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\TenantSetting;
 use App\Services\HomeDashboard;
 use App\Services\ReportingService;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +19,8 @@ new class extends Component
     {
         $user = auth()->user();
 
-        return (bool) ($user?->tenant_id && $user->can('reports.analytics') && $user->can('reports.profit'));
+        return (bool) ($user?->tenant_id && $user->can('reports.analytics') && $user->can('reports.profit')
+            && TenantSetting::getBool((int) $user->tenant_id, 'show_home_dashboard'));
     }
 
     public function mount(): void

@@ -37,6 +37,8 @@ new class extends Component
 
     public bool $onlineShop = false;
 
+    public bool $showHomeDashboard = false;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -64,6 +66,7 @@ new class extends Component
         $this->movingAverageCost = TenantSetting::getBool($tenant->id, MovingAverageCost::SETTING, true);
         $this->trackExpiry = TenantSetting::getBool($tenant->id, 'track_expiry');
         $this->onlineShop = TenantSetting::getBool($tenant->id, 'online_shop_enabled');
+        $this->showHomeDashboard = TenantSetting::getBool($tenant->id, 'show_home_dashboard');
     }
 
     public function save(): void
@@ -82,6 +85,7 @@ new class extends Component
             'movingAverageCost' => ['boolean'],
             'trackExpiry' => ['boolean'],
             'onlineShop' => ['boolean'],
+            'showHomeDashboard' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -101,6 +105,7 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, MovingAverageCost::SETTING, $validated['movingAverageCost']);
             TenantSetting::setBool($this->tenantId, 'track_expiry', $validated['trackExpiry']);
             TenantSetting::setBool($this->tenantId, 'online_shop_enabled', $validated['onlineShop']);
+            TenantSetting::setBool($this->tenantId, 'show_home_dashboard', $validated['showHomeDashboard']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -161,6 +166,10 @@ new class extends Component
                 <div><h2 class="font-black text-zinc-900 dark:text-white">البيع والمخزون / Sales & inventory</h2><p class="mt-1 text-sm text-zinc-500">حدد كيف يتعامل النظام مع أرصدة الفروع وأصناف سلة البيع.</p></div>
             </div>
             <div class="space-y-3">
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">إظهار لوحة الملخص في الصفحة الرئيسية / Show home dashboard</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">اللوحة مخفية افتراضياً. عند التحديد تظهر أرقام المبيعات والأرباح والرسوم في الصفحة الرئيسية لمن له صلاحية التقارير والأرباح.</span></span>
+                    <input type="checkbox" wire:model="showHomeDashboard" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">إظهار خانة الضريبة / Show tax</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد تظهر خانة الضريبة في فواتير المشتريات والمبيعات والطباعة، وعند إلغاء التحديد تختفي. هذا الخيار لا يغيّر حساب الضريبة.</span></span>
                     <input type="checkbox" wire:model="showTax" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
