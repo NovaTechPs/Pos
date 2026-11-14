@@ -19,7 +19,7 @@ class TenantInvoicePdfController extends Controller
 {
     public function sales(Request $request, int $orderId): mixed
     {
-        abort_unless($request->user()?->can('sales_invoices.view') || $request->user()?->can('van_sales.view'), 403);
+        abort_unless($request->user()?->can('sales_invoices.view') || $request->user()?->can('van_sales.view') || $request->user()?->can('pos.view'), 403);
 
         $order = Order::query()
             ->where('tenant_id', $request->user()->tenant_id)

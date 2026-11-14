@@ -118,10 +118,10 @@
 
             <button
                 type="button"
-                x-on:click="window.__posWhatsAppWindow = window.open('about:blank', '_blank')"
+                x-on:click="window.__posWhatsAppWindow = window.posSharesInvoiceFile?.() ? null : window.open('about:blank', '_blank')"
                 wire:click="sendInvoiceWhatsApp"
                 wire:loading.attr="disabled"
-                title="حفظ الفاتورة أولاً ثم إرسالها عبر واتساب"
+                title="حفظ الفاتورة أولاً ثم إرسال ملف PDF عبر واتساب"
                 class="rounded-xl border border-green-200 bg-green-50 px-1.5 py-2.5 text-[9px] font-black text-green-700 transition hover:bg-green-100 disabled:opacity-50"
             >
                 <span class="block">🟢 واتساب</span>

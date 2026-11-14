@@ -4707,7 +4707,13 @@ new class extends Component {
         }
 
         $this->successMessage = 'تم حفظ الفاتورة وتجهيزها للإرسال عبر واتساب.';
-        $this->dispatch('whatsapp-invoice', phone: $phone, message: $message);
+        $this->dispatch(
+            'whatsapp-invoice',
+            phone: $phone,
+            message: $message,
+            pdfUrl: route('tenant.sale-invoices.pdf', ['orderId' => $order->id]),
+            filename: \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'),
+        );
     }
 
     public function getInvoiceCreatorProperty(): string
@@ -5627,6 +5633,17 @@ new class extends Component {
 
 <script>
     (function () {
+        window.posSharesInvoiceFile = function () {
+            const isHandheld = navigator.userAgentData?.mobile
+                ?? (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent)));
+
+            try {
+                return Boolean(isHandheld) && Boolean(navigator.canShare?.({ files: [new File([''], 'invoice.pdf', { type: 'application/pdf' })] }));
+            } catch (e) {
+                return false;
+            }
+        };
+
         function registerPosInvoiceActions() {
             if (!window.Livewire || window.__posInvoiceActionsRegistered) {
                 return;
@@ -5634,30 +5651,70 @@ new class extends Component {
 
             window.__posInvoiceActionsRegistered = true;
 
-            Livewire.on('whatsapp-invoice', function (event) {
+            Livewire.on('whatsapp-invoice', async function (event) {
                 const phone = event?.phone ?? event?.detail?.phone ?? null;
                 const message = event?.message ?? event?.detail?.message ?? '';
+                const pdfUrl = event?.pdfUrl ?? event?.detail?.pdfUrl ?? null;
+                const filename = event?.filename ?? event?.detail?.filename ?? 'invoice.pdf';
 
                 if (!message) {
                     return;
                 }
 
-                const target = phone
-                    ? 'https://wa.me/' + String(phone) + '?text=' + encodeURIComponent(message)
-                    : 'https://wa.me/?text=' + encodeURIComponent(message);
-
                 const popup = window.__posWhatsAppWindow;
                 window.__posWhatsAppWindow = null;
 
-                if (popup && !popup.closed) {
-                    popup.location.href = target;
-                    try {
-                        popup.focus();
-                    } catch (e) {}
+                const openChat = function (text) {
+                    const target = phone
+                        ? 'https://wa.me/' + String(phone) + '?text=' + encodeURIComponent(text)
+                        : 'https://wa.me/?text=' + encodeURIComponent(text);
+
+                    if (popup && !popup.closed) {
+                        popup.location.href = target;
+                        try {
+                            popup.focus();
+                        } catch (e) {}
+                        return;
+                    }
+
+                    window.location.href = target;
+                };
+
+                let file = null;
+
+                try {
+                    const response = pdfUrl ? await fetch(pdfUrl, { credentials: 'same-origin' }) : null;
+
+                    if (response?.ok) {
+                        file = new File([await response.blob()], filename, { type: 'application/pdf' });
+                    }
+                } catch (e) {}
+
+                if (!file) {
+                    openChat(message);
                     return;
                 }
 
-                window.location.href = target;
+                // Phones and tablets attach the PDF itself through the device share sheet.
+                if (!popup && window.posSharesInvoiceFile()) {
+                    try {
+                        await navigator.share({ files: [file], text: message, title: filename });
+                    } catch (error) {
+                        if (error?.name !== 'AbortError') {
+                            openChat(message);
+                        }
+                    }
+                    return;
+                }
+
+                // Computers download the PDF and open the customer's chat so it can be attached.
+                const downloadUrl = URL.createObjectURL(file);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(downloadUrl);
+                openChat(message + '\n\nتم تنزيل ملف PDF للفاتورة؛ أرفقه في المحادثة.');
             });
         }
 
