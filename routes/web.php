@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ReportPrintController;
+use App\Http\Controllers\ShopInvoiceController;
 use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\TenantBackupController;
 use App\Http\Controllers\TenantDashboardController;
@@ -130,6 +131,10 @@ Route::middleware(['auth', 'verified'])
             ->middleware('can:store.view')
             ->name('store');
 
+        Route::livewire('/customer-orders', 'pages::tenant.customer-orders.index')
+            ->middleware('can:store.orders.view')
+            ->name('customer-orders');
+
         Route::livewire('/online-orders', 'pages::tenant.stores.online')
             ->middleware('can:store.orders.view')
             ->name('online-orders');
@@ -187,3 +192,19 @@ Route::middleware(['auth', 'verified'])
             ->name('employee-tasks');
     });
 require __DIR__.'/settings.php';
+
+// A store's public online shop, opened through a branch's domain name.
+Route::prefix('shop/{shop}')->name('shop.')->group(function (): void {
+    Route::livewire('/', 'pages::shop.index')->name('home');
+    Route::livewire('/login', 'pages::shop.login')->middleware('guest:customer')->name('login');
+    Route::livewire('/register', 'pages::shop.register')->middleware('guest:customer')->name('register');
+    Route::livewire('/track/{token}', 'pages::shop.track')->name('track');
+    Route::livewire('/account', 'pages::shop.account')->middleware('shop.customer')->name('account');
+    Route::get('/account/invoices/{order}/pdf', ShopInvoiceController::class)->middleware('shop.customer')->name('invoice.pdf');
+    Route::post('/logout', function (string $shop) {
+        auth('customer')->logout();
+        request()->session()->regenerateToken();
+
+        return redirect()->route('shop.home', ['shop' => $shop]);
+    })->name('logout');
+});

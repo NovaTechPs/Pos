@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthenticateBranchSyncDevice;
 use App\Http\Middleware\EnsureActiveAccount;
 use App\Http\Middleware\EnsureApiTenant;
+use App\Http\Middleware\EnsureShopCustomer;
 use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\OpenDesktopPagesFromCentral;
 use App\Http\Middleware\SecurityHeaders;
@@ -22,6 +23,13 @@ $application = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
+        // Shop customers sign in on their store's own page, never the staff login.
+        $middleware->redirectGuestsTo(fn (Request $request): string => $request->is('shop/*') && $request->route('shop')
+            ? route('shop.login', ['shop' => $request->route('shop')])
+            : route('login'));
+        $middleware->redirectUsersTo(fn (Request $request): string => $request->is('shop/*') && $request->route('shop')
+            ? route('shop.home', ['shop' => $request->route('shop')])
+            : route('home'));
         $middleware->web(append: [SetLocale::class, EnsureActiveAccount::class, OpenDesktopPagesFromCentral::class]);
         // Set TRUSTED_HOSTS (comma separated patterns, e.g. ^waslapos\.app$,^(.+\.)?waslapos\.app$) to reject
         // requests that name another host. Left empty, every host is accepted, as before.
@@ -33,6 +41,7 @@ $application = Application::configure(basePath: dirname(__DIR__))
             'is_admin' => IsAdmin::class,
             'branch.sync' => AuthenticateBranchSyncDevice::class,
             'api.tenant' => EnsureApiTenant::class,
+            'shop.customer' => EnsureShopCustomer::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

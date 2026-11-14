@@ -1672,6 +1672,23 @@ new class extends Component {
                                     </button>
 
 
+                                    {{-- Online shop account --}}
+
+                                    @if ($party->type !== 'supplier')
+                                        @can('customers.edit')
+                                            <button
+                                                type="button"
+                                                x-on:click="$dispatch('open-shop-account', { partyId: {{ $party->id }} })"
+                                                class="p-1.5 rounded-md text-gray-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition"
+                                                title="حساب المتجر الإلكتروني"
+                                                data-shop-account-button
+                                            >
+                                                🛒
+                                            </button>
+                                        @endcan
+                                    @endif
+
+
                                     {{-- Edit --}}
 
                                     <button
@@ -2614,6 +2631,9 @@ new class extends Component {
 
     </div>
 
+    @can('customers.edit')
+        <livewire:pages::tenant.customers.shop-account />
+    @endcan
 </flux:main>
 
 

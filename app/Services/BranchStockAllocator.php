@@ -53,6 +53,28 @@ class BranchStockAllocator
         });
     }
 
+    /**
+     * Gives back whatever stock the order's recorded movements actually took, product by product and
+     * branch by branch. Unlike restore(), an order that never moved stock (sales invoices saved before
+     * they deducted stock) is simply left as it is.
+     */
+    public function reverseRecorded(Order $order): void
+    {
+        DB::transaction(function () use ($order): void {
+            $movements = DB::table('stock_movements')->where('tenant_id', $order->tenant_id)->where('source_id', $order->id)
+                ->whereIn('source_type', ['order', 'sale_reversal'])->selectRaw('product_id, branch_id, SUM(quantity) AS effect')
+                ->groupBy('product_id', 'branch_id')->orderBy('product_id')->orderBy('branch_id')->get();
+            foreach ($movements as $movement) {
+                if ((float) $movement->effect > -0.0001) {
+                    continue;
+                }
+                $row = BranchProduct::query()->where('tenant_id', $order->tenant_id)->where('branch_id', $movement->branch_id)
+                    ->where('product_id', $movement->product_id)->lockForUpdate()->firstOrFail();
+                StockMovementContext::forDocument($order, fn () => $row->increment('stock_quantity', -(float) $movement->effect), 'sale_reversal');
+            }
+        });
+    }
+
     public function restore(Order $order): void
     {
         DB::transaction(function () use ($order): void {

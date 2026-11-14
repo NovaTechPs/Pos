@@ -35,6 +35,8 @@ new class extends Component
 
     public bool $trackExpiry = false;
 
+    public bool $onlineShop = false;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -61,6 +63,7 @@ new class extends Component
         $this->showTax = TenantSetting::getBool($tenant->id, 'show_tax', true);
         $this->movingAverageCost = TenantSetting::getBool($tenant->id, MovingAverageCost::SETTING, true);
         $this->trackExpiry = TenantSetting::getBool($tenant->id, 'track_expiry');
+        $this->onlineShop = TenantSetting::getBool($tenant->id, 'online_shop_enabled');
     }
 
     public function save(): void
@@ -78,6 +81,7 @@ new class extends Component
             'showTax' => ['boolean'],
             'movingAverageCost' => ['boolean'],
             'trackExpiry' => ['boolean'],
+            'onlineShop' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -96,6 +100,7 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, 'show_tax', $validated['showTax']);
             TenantSetting::setBool($this->tenantId, MovingAverageCost::SETTING, $validated['movingAverageCost']);
             TenantSetting::setBool($this->tenantId, 'track_expiry', $validated['trackExpiry']);
+            TenantSetting::setBool($this->tenantId, 'online_shop_enabled', $validated['onlineShop']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -180,6 +185,20 @@ new class extends Component
                     <span><strong class="block">تتبع تواريخ الصلاحية / Track expiry dates</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">للمتاجر التي تبيع مواد لها صلاحية: تظهر خانة «الصلاحية» لكل سطر في فاتورة المشتريات، وتقرير الأصناف القريبة من الانتهاء، وتنبيه في القائمة.</span></span>
                     <input type="checkbox" wire:model="trackExpiry" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
                 </label>
+                <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700" data-online-shop-setting>
+                    <label class="flex cursor-pointer items-start justify-between gap-4">
+                        <span><strong class="block">المتجر الإلكتروني وبوابة الزبائن / Online shop</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">يفتح متجراً عاماً لكل فرع له «نطاق» في صفحة الفروع: يتصفح الزبائن الأصناف المعروضة في الموقع ويرسلون طلبات تراجعها في «طلبات المتجر» قبل تحويلها لفاتورة، ويرى زبائن الحسابات فواتيرهم وكشف حسابهم.</span></span>
+                        <input type="checkbox" wire:model="onlineShop" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                    </label>
+                    @php($shopBranches = \App\Models\Branch::query()->where('tenant_id', $tenantId)->whereNotNull('domain')->where('domain', '!=', '')->orderBy('name')->get(['name', 'domain']))
+                    <div class="mt-3 space-y-1 text-sm">
+                        @forelse ($shopBranches as $shopBranch)
+                            <div class="flex flex-wrap items-center gap-2"><span class="text-zinc-500">{{ $shopBranch->name }}:</span><a href="{{ route('shop.home', ['shop' => $shopBranch->domain]) }}" target="_blank" rel="noopener" class="font-mono text-indigo-600 hover:underline" dir="ltr">{{ route('shop.home', ['shop' => $shopBranch->domain]) }}</a></div>
+                        @empty
+                            <p class="text-amber-700">لا يوجد فرع له نطاق بعد. أضف «النطاق» للفرع من صفحة الفروع (مثلاً: fanous) ليصبح رابط متجره.</p>
+                        @endforelse
+                    </div>
+                </div>
             </div>
         </section>
 

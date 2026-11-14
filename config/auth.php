@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CustomerAccount;
 use App\Models\User;
 
 return [
@@ -42,6 +43,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Customers signed in to a store's online shop; kept apart from staff accounts.
+        'customer' => [
+            'driver' => 'session',
+            'provider' => 'customer_accounts',
+        ],
     ],
 
     /*
@@ -65,6 +72,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'customer_accounts' => [
+            'driver' => 'eloquent',
+            'model' => CustomerAccount::class,
         ],
 
         // 'users' => [

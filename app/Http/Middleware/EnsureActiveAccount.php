@@ -15,7 +15,8 @@ class EnsureActiveAccount
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
+        // Staff accounts only; shop customers sign in through their own guard.
+        $user = auth('web')->user();
 
         if ($user && ! $user->canAccessApplication()) {
             auth('web')->logout();

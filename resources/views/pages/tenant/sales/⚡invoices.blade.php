@@ -63,6 +63,10 @@ new class extends Component {
 
     public ?int $selectedCustomerId = null;
 
+    /** The online shop order this invoice is being made from; linked to the invoice once it is saved. */
+    #[\Livewire\Attributes\Locked]
+    public ?int $customerOrderId = null;
+
     public bool $showCustomerStatementModal = false;
 
     public array $customerStatementRows = [];
@@ -157,6 +161,38 @@ new class extends Component {
                 $this->loadOrder($order);
             }
         }
+
+        if (request()->integer('customer_order') > 0) {
+            $this->loadCustomerOrder(request()->integer('customer_order'));
+        }
+    }
+
+    /** Fills a new invoice from an online shop order, at the prices the customer saw. */
+    private function loadCustomerOrder(int $customerOrderId): void
+    {
+        $this->authorize('store.orders.update');
+        $request = \App\Models\CustomerOrder::query()->where('tenant_id', $this->tenantId())
+            ->whereIn('status', ['new', 'processing'])->whereNull('order_id')->with('items')->find($customerOrderId);
+        if (! $request) {
+            $this->errorMessage = 'طلب المتجر غير متاح للفوترة؛ ربما تمت فوترته أو إلغاؤه.';
+
+            return;
+        }
+
+        $this->selectedCustomerId = $request->party_id ? (int) $request->party_id : null;
+        foreach ($request->items as $item) {
+            $this->selectProduct((int) $item->product_id);
+            if ($this->selectedProductId !== (int) $item->product_id) {
+                continue;
+            }
+            $this->selectedQuantity = (float) $item->quantity;
+            $this->selectedPrice = (float) $item->unit_price;
+            $this->commitRowToCart();
+        }
+        $this->notes = trim('طلب المتجر '.$request->reference.' — '.$request->customer_name.' '.$request->customer_phone.' '.($request->customer_address ?? '')
+            .($request->notes ? "\n".$request->notes : ''));
+        $this->customerOrderId = $request->id;
+        $this->dispatch('toast', type: 'success', message: 'تم تعبئة الفاتورة من طلب المتجر '.$request->reference.'. راجعها ثم احفظها.');
     }
 
     /*
@@ -309,6 +345,7 @@ new class extends Component {
 
     public function startNewInvoice(bool $showMessage = true): void
     {
+        $this->customerOrderId = null;
         $this->invoiceEditMode = true;
         $this->savedPaidAmount = 0.0;
         $this->paidAmount = 0.0;
@@ -1117,6 +1154,9 @@ new class extends Component {
                         }
 
                         app(\App\Services\BranchStockAllocator::class)->restore($order);
+                    } else {
+                        // The edited invoice gives back what it took before taking its new quantities.
+                        app(\App\Services\BranchStockAllocator::class)->reverseRecorded($order);
                     }
 
                     $oldCustomerId = $order->customer_id ? (int) $order->customer_id : null;
@@ -1220,23 +1260,22 @@ new class extends Component {
                     ]);
                 }
 
-                if ($isPosOrder) {
-                    $saleQuantities = [];
-                    foreach ($this->cart as $item) {
-                        $productId = (int) ($item['id'] ?? 0);
-                        $quantity = max(0, (float) ($item['quantity'] ?? 0));
-                        if ($productId > 0 && $quantity > 0) {
-                            $saleQuantities[$productId] = ($saleQuantities[$productId] ?? 0) + $quantity;
-                        }
+                // Every sales invoice takes its quantities from the branch stock, like the POS and wholesale screens.
+                $saleQuantities = [];
+                foreach ($this->cart as $item) {
+                    $productId = (int) ($item['id'] ?? 0);
+                    $quantity = max(0, (float) ($item['quantity'] ?? 0));
+                    if ($productId > 0 && $quantity > 0) {
+                        $saleQuantities[$productId] = ($saleQuantities[$productId] ?? 0) + $quantity;
                     }
-
-                    app(\App\Services\BranchStockAllocator::class)->deductMany(
-                        $order,
-                        $saleQuantities,
-                        TenantSetting::getBool((int) $tenantId, 'unified_stock'),
-                        TenantSetting::getBool((int) $tenantId, 'allow_negative_stock'),
-                    );
                 }
+
+                app(\App\Services\BranchStockAllocator::class)->deductMany(
+                    $order,
+                    $saleQuantities,
+                    TenantSetting::getBool((int) $tenantId, 'unified_stock'),
+                    TenantSetting::getBool((int) $tenantId, 'allow_negative_stock'),
+                );
 
                 if (! $this->currentOrderId && $paidAmount > 0) {
                     Payment::query()->create([
@@ -1336,6 +1375,12 @@ new class extends Component {
                 ? 'تم حفظ الفاتورة بنجاح.'
                 : 'تم حفظ الفاتورة بنجاح.';
 
+            if ($this->customerOrderId && ! $wasEditingInvoice) {
+                \App\Models\CustomerOrder::query()->where('tenant_id', $this->tenantId())->whereKey($this->customerOrderId)->whereNull('order_id')
+                    ->update(['status' => 'invoiced', 'order_id' => $order->id, 'updated_at' => now()]);
+                $this->customerOrderId = null;
+            }
+
             if ($shouldPrint) {
                 $this->dispatchPrint($order, $totals);
             }
@@ -1356,7 +1401,10 @@ new class extends Component {
 
         } catch (\Throwable $e) {
             report($e);
-            $this->errorMessage = 'تعذر حفظ الفاتورة. تأكد من البيانات وحاول مرة أخرى.';
+            // Stock and editing rules explain themselves, e.g. «المخزون غير كافٍ لإتمام البيع».
+            $this->errorMessage = $e instanceof \DomainException
+                ? $e->getMessage()
+                : 'تعذر حفظ الفاتورة. تأكد من البيانات وحاول مرة أخرى.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
         }
     }
