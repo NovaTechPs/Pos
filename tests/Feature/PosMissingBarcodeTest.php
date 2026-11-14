@@ -199,7 +199,9 @@ test('the product form is laid out in two compact columns', function (): void {
     $form = substr($html, strpos($html, 'data-product-form'));
 
     expect($form)->toContain('lg:grid-cols-5', 'lg:col-span-3', 'lg:col-span-2', 'سعر موحد لكل الفروع', 'كمية البداية', 'F3 للحفظ')
-        ->and(strpos($form, 'الباركودات'))->toBeLessThan(strpos($form, 'الأسعار'))
-        ->and(strpos($form, 'الأسعار'))->toBeLessThan(strpos($form, 'الصورة الرئيسية'))
+        // Barcodes sit under the prices, in a compact two-column list that scrolls when a product has many.
+        ->and(strpos($form, 'الأسعار'))->toBeLessThan(strpos($form, 'data-product-barcodes'))
+        ->and(strpos($form, 'data-product-barcodes'))->toBeLessThan(strpos($form, 'الصورة الرئيسية'))
+        ->and($form)->toContain('max-h-36', 'sm:grid-cols-2')
         ->and($form)->not->toContain('max-h-[85vh]', 'المعلومات الأساسية');
 });

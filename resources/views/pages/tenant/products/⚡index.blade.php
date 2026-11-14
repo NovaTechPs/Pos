@@ -3100,58 +3100,6 @@ new class extends Component {
                             </div>
 
 
-                            {{-- Barcodes --}}
-
-                            <div class="mt-3">
-
-                                <div class="mb-1 flex items-center justify-between gap-2">
-                                    <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">الباركودات</span>
-                                    <flux:button type="button" size="xs" variant="subtle" icon="plus" wire:click="addBarcodeField">
-                                        إضافة باركود
-                                    </flux:button>
-                                </div>
-
-                                <div class="space-y-2">
-
-                                    @foreach ($barcodes as $index => $barcode)
-
-                                        <div wire:key="barcode-row-{{ $index }}" class="flex items-start gap-1.5">
-
-                                            <div class="flex-1">
-                                                <flux:input size="sm" wire:model="barcodes.{{ $index }}" placeholder="امسح الباركود أو أدخله يدوياً..." />
-                                                @error('barcodes.' . $index)
-                                                    <div class="mt-1 text-xs text-red-600">{{ $message }}</div>
-                                                @enderror
-                                            </div>
-
-                                            <div x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.{{ $index }}" data-product-barcode-camera>
-                                                <flux:button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="subtle"
-                                                    icon="camera"
-                                                    x-on:click="start()"
-                                                    title="مسح الباركود بكاميرا الموبايل"
-                                                    aria-label="مسح الباركود بكاميرا الموبايل"
-                                                />
-                                                <x-barcode-camera-dialog hint="وجّه الكاميرا إلى الباركود؛ سيُكتب في خانة الباركود تلقائيًا." />
-                                            </div>
-
-                                            <flux:button type="button" size="sm" variant="subtle" icon="sparkles" wire:click="generateBarcode({{ $index }})" title="توليد باركود" />
-
-                                            @if (count($barcodes) > 1)
-                                                <flux:button type="button" size="sm" variant="ghost" icon="trash" class="text-red-600" wire:click="removeBarcodeField({{ $index }})" title="حذف الباركود" />
-                                            @endif
-
-                                        </div>
-
-                                    @endforeach
-
-                                </div>
-
-                                <flux:error name="barcodes" />
-
-                            </div>
 
                         </section>
 
@@ -3255,6 +3203,60 @@ new class extends Component {
                             </div>
 
                         </section>
+
+
+                            {{-- Barcodes --}}
+
+                            <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800" data-product-barcodes>
+
+                                <div class="mb-1 flex items-center justify-between gap-2">
+                                    <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">الباركودات</span>
+                                    <flux:button type="button" size="xs" variant="subtle" icon="plus" wire:click="addBarcodeField">
+                                        إضافة باركود
+                                    </flux:button>
+                                </div>
+
+                                <div class="grid max-h-36 gap-1.5 overflow-y-auto sm:grid-cols-2">
+
+                                    @foreach ($barcodes as $index => $barcode)
+
+                                        <div wire:key="barcode-row-{{ $index }}" class="flex items-start gap-1">
+
+                                            <div class="min-w-0 flex-1">
+                                                <flux:input size="xs" wire:model="barcodes.{{ $index }}" placeholder="امسح أو أدخل الباركود" />
+                                                @error('barcodes.' . $index)
+                                                    <div class="mt-1 text-xs text-red-600">{{ $message }}</div>
+                                                @enderror
+                                            </div>
+
+                                            <div x-data="posBarcodeCamera()" data-barcode-camera-field="barcodes.{{ $index }}" data-product-barcode-camera>
+                                                <flux:button
+                                                    type="button"
+                                                    size="xs"
+                                                    variant="subtle"
+                                                    icon="camera"
+                                                    x-on:click="start()"
+                                                    title="مسح الباركود بكاميرا الموبايل"
+                                                    aria-label="مسح الباركود بكاميرا الموبايل"
+                                                />
+                                                <x-barcode-camera-dialog hint="وجّه الكاميرا إلى الباركود؛ سيُكتب في خانة الباركود تلقائيًا." />
+                                            </div>
+
+                                            <flux:button type="button" size="xs" variant="subtle" icon="sparkles" wire:click="generateBarcode({{ $index }})" title="توليد باركود" />
+
+                                            @if (count($barcodes) > 1)
+                                                <flux:button type="button" size="xs" variant="ghost" icon="trash" class="text-red-600" wire:click="removeBarcodeField({{ $index }})" title="حذف الباركود" />
+                                            @endif
+
+                                        </div>
+
+                                    @endforeach
+
+                                </div>
+
+                                <flux:error name="barcodes" />
+
+                            </section>
 
                     </div>
 
