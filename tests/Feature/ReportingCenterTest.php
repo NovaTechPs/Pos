@@ -570,6 +570,8 @@ test('pos invoices report lists each pos invoice of the day and opens it', funct
     Livewire::test('pages::tenant.reports.center')->set('report', 'pos-invoices')
         ->set('from', '2026-10-15')->set('to', '2026-10-15')->set('branchId', $this->branch->id)->call('applyFilters')
         ->assertSee('POS-WALKIN')->assertDontSee('POS-OTHER-DAY')->assertDontSee('NOT-POS')
+        // The invoice opens in the same tab.
+        ->assertDontSeeHtml('target="_blank" rel="noopener"  href="'.route('tenant.pos'))->assertDontSee('POS-WALKIN ↗')
         ->assertSee(route('tenant.pos', ['invoice' => $walkIn->id]))->assertSee(route('tenant.pos', ['invoice' => $registered->id]));
 
     Livewire::test('pages::tenant.reports.center')->set('report', 'sales')
