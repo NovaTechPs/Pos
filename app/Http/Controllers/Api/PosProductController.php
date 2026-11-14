@@ -36,14 +36,16 @@ class PosProductController extends Controller
                 throw ValidationException::withMessages(['barcode' => 'الباركود مسجل بالفعل. حدّث الأصناف وأعد مسحه.']);
             }
             $product = Product::create(['tenant_id' => $tenantId, 'name' => trim($data['name']),
-                'category_id' => $data['category_id'] ?? null, 'cost_price' => $data['cost_price']]);
+                'category_id' => $data['category_id'] ?? null, 'cost_price' => $data['cost_price'], 'is_price_unified' => false]);
             if ($barcode !== '') {
                 ProductBarcode::create(['tenant_id' => $tenantId, 'product_id' => $product->id, 'barcode' => $barcode]);
             }
             foreach (Branch::query()->where('tenant_id', $tenantId)->pluck('id') as $branchId) {
+                $isAddingBranch = (int) $branchId === (int) $data['branch_id'];
                 BranchProduct::create(['tenant_id' => $tenantId, 'branch_id' => $branchId, 'product_id' => $product->id,
-                    'retail_price' => $data['retail_price'], 'wholesale_price' => $data['wholesale_price'],
-                    'stock_quantity' => (int) $branchId === (int) $data['branch_id'] ? $data['stock_quantity'] : 0]);
+                    'retail_price' => $isAddingBranch ? $data['retail_price'] : 0,
+                    'wholesale_price' => $isAddingBranch ? $data['wholesale_price'] : 0,
+                    'stock_quantity' => $isAddingBranch ? $data['stock_quantity'] : 0]);
             }
 
             return $product->load(['barcodes', 'branches']);

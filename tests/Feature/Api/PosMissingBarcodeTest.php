@@ -29,6 +29,10 @@ test('missing barcode creates a priced product with stock only in the selling br
     $id = $result->json('product.id');
     expect((float) BranchProduct::where('product_id', $id)->where('branch_id', $this->branch->id)->first()->stock_quantity)->toBe(4.0)
         ->and((float) BranchProduct::where('product_id', $id)->where('branch_id', $other->id)->first()->stock_quantity)->toBe(0.0)
+        ->and((float) BranchProduct::where('product_id', $id)->where('branch_id', $this->branch->id)->first()->retail_price)->toBe(12.0)
+        ->and((float) BranchProduct::where('product_id', $id)->where('branch_id', $other->id)->first()->retail_price)->toBe(0.0)
+        ->and((float) BranchProduct::where('product_id', $id)->where('branch_id', $other->id)->first()->wholesale_price)->toBe(0.0)
+        ->and(Product::find($id)->is_price_unified)->toBeFalsy()
         ->and(Order::count())->toBe(0);
     $this->postJson('/api/pos/products', $this->payload)->assertUnprocessable();
     expect(Product::count())->toBe(2)->and(ProductBarcode::count())->toBe(1);

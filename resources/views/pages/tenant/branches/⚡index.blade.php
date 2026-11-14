@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\Attributes\On;
 use App\Models\Branch;
+use App\Services\BranchProductLinker;
 use Illuminate\Validation\Rule;
 
 new class extends Component
@@ -461,7 +462,7 @@ new class extends Component
 
         else {
 
-            Branch::create([
+            $branch = Branch::create([
                 'tenant_id' => $tenantId,
 
                 'name' => $validated['name'],
@@ -474,6 +475,9 @@ new class extends Component
 
                 'type' => $validated['type'],
             ]);
+
+            // الأصناف الموجودة في المتجر تصبح متاحة في الموقع الجديد بدون كمية.
+            app(BranchProductLinker::class)->linkMissing($tenantId, (int) $branch->id);
 
             $message =
                 'تم إضافة الموقع بنجاح.';
