@@ -8,28 +8,64 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Sends short alerts to the owner's Telegram chat. Does nothing until TELEGRAM_BOT_TOKEN and
- * TELEGRAM_CHAT_ID are set, and never throws: an alert must not break the work that raised it.
+ * Talks to the shared WaslaPOS Telegram bot. Owner alerts go to TELEGRAM_CHAT_ID; store staff and
+ * customers get messages in their own linked chats. Nothing here ever throws: a message must not
+ * break the work that raised it.
  */
 class TelegramAlert
 {
-    public function enabled(): bool
+    public function botConfigured(): bool
     {
-        return filled(config('services.telegram.bot_token')) && filled(config('services.telegram.chat_id'));
+        return filled(config('services.telegram.bot_token'));
     }
 
+    public function enabled(): bool
+    {
+        return $this->botConfigured() && filled(config('services.telegram.chat_id'));
+    }
+
+    /** Sends an alert to the system owner's chat. */
     public function send(string $text): bool
     {
         if (! $this->enabled()) {
             return false;
         }
+
+        return $this->sendTo((string) config('services.telegram.chat_id'), '['.config('app.name').'] '.$text);
+    }
+
+    public function sendTo(string $chatId, string $text): bool
+    {
+        return $this->call('sendMessage', [
+            'chat_id' => $chatId,
+            'text' => Str::limit($text, 3900),
+            'disable_web_page_preview' => true,
+        ]);
+    }
+
+    public function sendDocument(string $chatId, string $filename, string $contents, string $caption = ''): bool
+    {
+        if (! $this->botConfigured()) {
+            return false;
+        }
         try {
-            return Http::connectTimeout(2)->timeout(4)
-                ->post('https://api.telegram.org/bot'.config('services.telegram.bot_token').'/sendMessage', [
-                    'chat_id' => config('services.telegram.chat_id'),
-                    'text' => Str::limit('['.config('app.name').'] '.$text, 3900),
-                    'disable_web_page_preview' => true,
-                ])->successful();
+            return Http::connectTimeout(3)->timeout(20)
+                ->attach('document', $contents, $filename)
+                ->post($this->endpoint('sendDocument'), ['chat_id' => $chatId, 'caption' => Str::limit($caption, 1000)])
+                ->successful();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function call(string $method, array $payload): bool
+    {
+        if (! $this->botConfigured()) {
+            return false;
+        }
+        try {
+            return Http::connectTimeout(2)->timeout(5)->post($this->endpoint($method), $payload)->successful();
         } catch (Throwable) {
             return false;
         }
@@ -55,5 +91,10 @@ class TelegramAlert
         $where = app()->runningInConsole() ? 'أمر خلفي' : request()->method().' /'.ltrim(request()->path(), '/');
 
         return $this->send("🚨 خطأ في النظام\n{$where}\n".Str::limit($details, 1500));
+    }
+
+    private function endpoint(string $method): string
+    {
+        return 'https://api.telegram.org/bot'.config('services.telegram.bot_token').'/'.$method;
     }
 }

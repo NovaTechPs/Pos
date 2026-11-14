@@ -8,6 +8,11 @@
             <flux:navlist.item :href="route('security.edit')" :current="request()->routeIs('security.edit')" wire:navigate icon="shield-check">
                 الأمان وكلمة المرور / Security
             </flux:navlist.item>
+            @if (Auth::user()?->tenant_id)
+                <flux:navlist.item :href="route('telegram.edit')" :current="request()->routeIs('telegram.edit')" wire:navigate icon="paper-airplane">
+                    تيليجرام / Telegram
+                </flux:navlist.item>
+            @endif
         </flux:navlist>
 
         <p class="px-3 pb-2 pt-5 text-xs font-black uppercase tracking-wide text-zinc-400">النظام / System</p>

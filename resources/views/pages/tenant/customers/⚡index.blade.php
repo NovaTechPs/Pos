@@ -1685,6 +1685,15 @@ new class extends Component {
                                             >
                                                 🛒
                                             </button>
+                                            <button
+                                                type="button"
+                                                x-on:click="$dispatch('open-telegram-link', { partyId: {{ $party->id }} })"
+                                                class="p-1.5 rounded-md text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"
+                                                title="إرسال الفواتير عبر تيليجرام"
+                                                data-telegram-link-button
+                                            >
+                                                ✈️
+                                            </button>
                                         @endcan
                                     @endif
 
@@ -2633,6 +2642,7 @@ new class extends Component {
 
     @can('customers.edit')
         <livewire:pages::tenant.customers.shop-account />
+        <livewire:pages::tenant.customers.telegram-link />
     @endcan
 </flux:main>
 

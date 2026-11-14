@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\TenantSetting;
 use App\Models\User;
 use App\Observers\AuditObserver;
+use App\Services\TelegramNotifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
@@ -37,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        TelegramNotifier::listen();
+
         // App sign-ins unused for the configured number of days are refused (see auth.api_token_idle_days).
         Sanctum::authenticateAccessTokensUsing(function (PersonalAccessToken $token, bool $isValid): bool {
             $idleDays = (int) config('auth.api_token_idle_days');

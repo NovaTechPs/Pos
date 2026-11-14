@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\ThemeController;
 use App\Http\Controllers\Api\VoucherController;
 use App\Http\Controllers\Api\WholesaleWorkspaceController;
+use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Middleware\EnsureSaleIdempotency;
 use Illuminate\Support\Facades\Route;
 
@@ -108,3 +109,6 @@ Route::middleware(['branch.sync', 'throttle:240,1'])
 Route::middleware(['branch.sync', 'throttle:120,1'])
     ->post('/branch-sync/operations', [BranchSyncOperationController::class, 'store'])
     ->name('api.branch-sync.operations.store');
+
+// Messages for the shared WaslaPOS Telegram bot (checked by its secret header).
+Route::post('/telegram/webhook', TelegramWebhookController::class)->middleware('throttle:120,1')->name('telegram.webhook');

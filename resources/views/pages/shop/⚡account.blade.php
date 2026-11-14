@@ -3,6 +3,7 @@
 use App\Models\CustomerOrder;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\TelegramLink;
 use App\Services\OnlineShop;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -23,6 +24,16 @@ new class extends Component
         $this->tab = in_array($this->tab, ['orders', 'invoices', 'statement'], true) ? $this->tab : 'orders';
     }
 
+    /** Opens the store's Telegram bot with a one-time link for this customer's invoices and balance. */
+    public function linkTelegram(): void
+    {
+        $account = app(OnlineShop::class)->customer(app(OnlineShop::class)->branch($this->shop));
+        abort_unless($account, 403);
+        $url = TelegramLink::issueFor($account->tenant_id, partyId: $account->party_id)->startUrl();
+        abort_unless($url, 404);
+        $this->redirect($url);
+    }
+
     public function render(): mixed
     {
         $service = app(OnlineShop::class);
@@ -30,7 +41,9 @@ new class extends Component
         $account = $service->customer($branch);
         abort_unless($account, 403);
 
-        $data = ['account' => $account, 'balance' => (float) Party::withoutGlobalScopes()->whereKey($account->party_id)->value('current_balance')];
+        $data = ['account' => $account, 'balance' => (float) Party::withoutGlobalScopes()->whereKey($account->party_id)->value('current_balance'),
+            'telegramAvailable' => filled(config('services.telegram.bot_token')) && filled(config('services.telegram.bot_username')),
+            'telegramLinked' => TelegramLink::query()->linked()->where('tenant_id', $account->tenant_id)->where('party_id', $account->party_id)->exists()];
         $data += match ($this->tab) {
             'invoices' => ['invoices' => Order::withoutGlobalScopes()->where('tenant_id', $account->tenant_id)->where('customer_id', $account->party_id)
                 ->whereNull('deleted_at')->where('status', 'completed')->latest('created_at')->limit(100)
@@ -51,6 +64,13 @@ new class extends Component
         <div>
             <h1 class="text-xl font-black">{{ $account->party?->name }}</h1>
             <p class="text-sm text-slate-500" dir="ltr">{{ $account->phone }}</p>
+            @if ($telegramAvailable)
+                @if ($telegramLinked)
+                    <p class="mt-1 text-xs font-bold text-sky-700">✈️ فواتيرك تصلك على تيليجرام</p>
+                @else
+                    <button type="button" wire:click="linkTelegram" class="mt-2 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700" data-shop-telegram-button>✈️ استلم فواتيرك على تيليجرام</button>
+                @endif
+            @endif
         </div>
         <div class="text-left">
             <div class="text-xs text-slate-500">رصيدك لدى المتجر</div>
