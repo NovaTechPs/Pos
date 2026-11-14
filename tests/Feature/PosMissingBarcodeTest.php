@@ -205,3 +205,12 @@ test('the product form is laid out in two compact columns', function (): void {
         ->and($form)->toContain('max-h-36', 'sm:grid-cols-2')
         ->and($form)->not->toContain('max-h-[85vh]', 'المعلومات الأساسية');
 });
+
+test('adding a barcode field focuses it and a scanned barcode moves on to the next field', function (): void {
+    $component = Livewire::test('pages::tenant.products.index')->call('openCreateModal')->call('addBarcodeField');
+
+    $component->assertDispatched('product-barcode-focus', index: 1);
+    expect($component->html())
+        ->toContain('x-on:product-barcode-focus.window="focusBarcode($event.detail.index)"', 'x-on:keydown.enter="nextBarcode($event)"', '$wire.addBarcodeField()')
+        ->and(substr_count($component->html(), 'data-product-barcode-cell'))->toBe(3);
+});

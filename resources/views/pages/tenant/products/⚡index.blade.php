@@ -394,6 +394,7 @@ new class extends Component {
     public function addBarcodeField(): void
     {
         $this->barcodes[] = '';
+        $this->dispatch('product-barcode-focus', index: count($this->barcodes) - 1);
     }
 
     public function removeBarcodeField(int $index): void
@@ -3207,7 +3208,27 @@ new class extends Component {
 
                             {{-- Barcodes --}}
 
-                            <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800" data-product-barcodes>
+                            <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800" data-product-barcodes
+                                x-data="{
+                                    inputs() { return [...this.$el.querySelectorAll('[data-product-barcode-cell] input')]; },
+                                    focusBarcode(index, attempt = 0) {
+                                        const input = this.inputs()[index];
+                                        if (!input) { if (attempt < 20) { setTimeout(() => this.focusBarcode(index, attempt + 1), 50); } return; }
+                                        input.scrollIntoView({ block: 'nearest' });
+                                        input.focus();
+                                    },
+                                    nextBarcode(event) {
+                                        const inputs = this.inputs();
+                                        const current = inputs.indexOf(event.target);
+                                        if (current < 0) { return; }
+                                        event.preventDefault();
+                                        if (event.target.value.trim() === '') { return; }
+                                        const empty = inputs.findIndex((input, index) => index !== current && input.value.trim() === '');
+                                        empty >= 0 ? this.focusBarcode(empty) : $wire.addBarcodeField();
+                                    },
+                                }"
+                                x-on:product-barcode-focus.window="focusBarcode($event.detail.index)"
+                                x-on:keydown.enter="nextBarcode($event)">
 
                                 <div class="mb-1 flex items-center justify-between gap-2">
                                     <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">الباركودات</span>
@@ -3222,7 +3243,7 @@ new class extends Component {
 
                                         <div wire:key="barcode-row-{{ $index }}" class="flex items-start gap-1">
 
-                                            <div class="min-w-0 flex-1">
+                                            <div class="min-w-0 flex-1" data-product-barcode-cell>
                                                 <flux:input size="xs" wire:model="barcodes.{{ $index }}" placeholder="امسح أو أدخل الباركود" />
                                                 @error('barcodes.' . $index)
                                                     <div class="mt-1 text-xs text-red-600">{{ $message }}</div>
