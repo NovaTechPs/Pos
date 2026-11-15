@@ -110,6 +110,10 @@ new class extends Component {
 
     #[Locked]
     public ?string $draftContextKey = null;
+
+    /** Identifies the browser tab or workspace tab, so each POS tab keeps its own unfinished invoice. */
+    #[\Livewire\Attributes\Locked]
+    public ?string $draftTabId = null;
     public array $receipt = [];
     public string $barcode = '';
     #[Locked]
@@ -526,11 +530,68 @@ new class extends Component {
             'editingInvoiceId', 'invoiceEditMode', 'mergeSimilarProducts', 'cashReturnNumber', 'cashReturnOrderId'];
     }
 
-    private function currentDraftKey(): ?string
+    /** Draft shared by every tab before drafts were kept per tab; moved into the first tab that opens. */
+    private function legacyDraftKey(): ?string
     {
         $key = $this->heldSessionKey();
 
         return $key ? str_replace('pos.held.', 'pos.draft.', $key) : null;
+    }
+
+    private function tabDraftsKey(): ?string
+    {
+        $key = $this->heldSessionKey();
+
+        return $key ? str_replace('pos.held.', 'pos.tab-drafts.', $key) : null;
+    }
+
+    private function currentDraftKey(): ?string
+    {
+        $tabs = $this->tabDraftsKey();
+
+        return $tabs && $this->draftTabId ? $tabs.'.'.$this->draftTabId : null;
+    }
+
+    /**
+     * Called by the page once it knows which tab it runs in, then restores that tab's own invoice.
+     * A cart started before the tab was known stays and is saved for this tab.
+     */
+    public function attachDraftTab(string $tabId): void
+    {
+        if (! preg_match('/^(ws|pos)-[A-Za-z0-9-]{6,40}$/', $tabId) || $this->draftTabId === $tabId) {
+            return;
+        }
+        $this->draftTabId = $tabId;
+        $tabs = $this->tabDraftsKey();
+        if (! $tabs) {
+            return;
+        }
+        $legacy = $this->legacyDraftKey();
+        if ($legacy && session()->has($legacy) && ! session()->has($tabs.'.'.$tabId)) {
+            session()->put($tabs.'.'.$tabId, session()->pull($legacy));
+        }
+        $this->pruneTabDrafts($tabs, $tabId);
+
+        if ($this->cart === [] && ! $this->currentInvoiceId) {
+            $this->restoreCurrentDraft();
+        } else {
+            $this->draftContextKey = $this->currentDraftKey();
+        }
+    }
+
+    /** Keeps the session small: only the most recently used tab drafts are kept. */
+    private function pruneTabDrafts(string $tabs, string $currentTabId): void
+    {
+        $drafts = session($tabs, []);
+        if (! is_array($drafts) || count($drafts) <= 10) {
+            return;
+        }
+        uasort($drafts, fn ($first, $second): int => ($second['saved_at'] ?? 0) <=> ($first['saved_at'] ?? 0));
+        $kept = array_slice($drafts, 0, 10, true);
+        if (isset($drafts[$currentTabId])) {
+            $kept[$currentTabId] = $drafts[$currentTabId];
+        }
+        session()->put($tabs, $kept);
     }
 
     public function dehydrate(): void
@@ -543,7 +604,7 @@ new class extends Component {
             session()->forget($key);
             return;
         }
-        $draft = [];
+        $draft = ['saved_at' => now()->timestamp];
         foreach ($this->draftFields() as $field) {
             $draft[$field] = $this->{$field};
         }
@@ -4956,7 +5017,7 @@ new class extends Component {
                         this.printInProgress = false;
                     }
                 }
-            }" x-cloak x-init="$nextTick(() => { if (window.matchMedia('(pointer: coarse)').matches) return; const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); })"
+            }" x-cloak x-init="$nextTick(() => { if (window.matchMedia('(pointer: coarse)').matches) return; const input = $el.querySelector('[data-pos-barcode-input]'); input?.focus({ preventScroll: true }); input?.select(); }); window.posDraftTabId && $wire.attachDraftTab(window.posDraftTabId())"
             x-on:keydown.window.escape="$wire.set('showProductsModal', false); $wire.set('showHeldModal', false); $wire.set('showCostModal', false); $wire.cancelInvoiceDialogs();"
             x-on:keydown.window.f1.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.set('showHeldModal', !$wire.showHeldModal)"
             x-on:keydown.window.f2.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) $wire.holdInvoice()"

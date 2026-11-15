@@ -107,11 +107,11 @@ test('cashier without price permission cannot edit the POS selling price', funct
         'active_branch_id' => $this->secondBranch->id,
     ]);
 
-    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-cashiertab1')->call('selectInlineProduct', $this->product->id);
     $lineKey = array_key_first($component->get('cart'));
     $component->call('updateUnitPrice', $lineKey, 1)->assertForbidden();
 
-    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-cashiertab1')->call('selectInlineProduct', $this->product->id);
     $lineKey = array_key_first($component->get('cart'));
     $component->set("cart.{$lineKey}.price", 8)
         ->set("cart.{$lineKey}.price_manual", true)

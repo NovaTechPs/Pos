@@ -95,6 +95,17 @@ export function syncWorkspaceNavigation(page, activeUrl) {
     }
 }
 
+/** Saved frame names let a page (for example the POS) recognise its own tab after a reload. */
+const WORKSPACE_FRAME_NAME = /^(ws|pos)-[A-Za-z0-9]{6,32}$/;
+
+export function newWorkspaceFrameName() {
+    const value = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+    return 'ws-' + value.replaceAll('-', '').slice(0, 20);
+}
+
 export function readWorkspaceSnapshot(raw, base) {
     try {
         const data = JSON.parse(raw);
@@ -104,7 +115,10 @@ export function readWorkspaceSnapshot(raw, base) {
             if (typeof item?.url !== 'string' || typeof item.title !== 'string') continue;
             let url;
             try { url = workspaceUrl(item.url, base); } catch { continue; }
-            if (url) tabs.push({url, title: item.title.slice(0, 160)});
+            if (!url) continue;
+            const tab = {url, title: item.title.slice(0, 160)};
+            if (typeof item.frameName === 'string' && WORKSPACE_FRAME_NAME.test(item.frameName)) tab.frameName = item.frameName;
+            tabs.push(tab);
         }
         let activeUrl = null;
         try { if (typeof data.activeUrl === 'string') activeUrl = workspaceUrl(data.activeUrl, base); } catch {}
@@ -252,6 +266,9 @@ function mountWorkspace(root) {
     const initialUrl = workspaceUrl(window.location.href, window.location.href);
     if (!initialUrl) return;
     const state = new WorkspaceTabState(initialUrl, document.title.replace(/ - [^-]+$/, ''));
+    // The first tab is this window itself: keep its name so its page (for example the POS cart) is found again after a reload.
+    if (!WORKSPACE_FRAME_NAME.test(window.name || '')) window.name = newWorkspaceFrameName();
+    state.tabs[0].frameName = window.name;
     const list = root.querySelector('[data-workspace-tab-list]');
     const panels = root.querySelector('[data-workspace-panels]');
     const initial = root.querySelector('[data-workspace-initial]');
@@ -265,7 +282,7 @@ function mountWorkspace(root) {
         if (restoring || !storageKey) return;
         try {
             sessionStorage.setItem(storageKey, JSON.stringify({
-                tabs: state.tabs.map(({url, title}) => ({url, title})),
+                tabs: state.tabs.map(({url, title, frameName}) => (frameName ? {url, title, frameName} : {url, title})),
                 activeUrl: state.tabs.find(tab => tab.id === state.active)?.url,
                 activeTabIndex: state.tabs.findIndex(tab => tab.id === state.active),
             }));
@@ -357,12 +374,14 @@ function mountWorkspace(root) {
         if (!state.tabs.length) openPage(root.dataset.homeUrl || '/dashboard', 'لوحة التحكم');
         else { draw(); focusPage(state.active); }
     }
-    function openPage(raw, title, forceNew = false) {
+    function openPage(raw, title, forceNew = false, frameName = null) {
         const url = workspaceUrl(raw, window.location.href);
         if (!url) return false;
         const tab = state.open(url, title || 'صفحة', forceNew);
         if (!views.has(tab.id)) {
+            tab.frameName ??= frameName || newWorkspaceFrameName();
             const frame = document.createElement('iframe');
+            frame.name = tab.frameName;
             frame.className = 'workspace-frame';
             frame.id = `workspace-panel-${tab.id}`;
             frame.title = tab.title;
@@ -480,7 +499,7 @@ function mountWorkspace(root) {
         state.close('initial');
         views.delete('initial');
         initial.remove();
-        for (const tab of saved.tabs) openPage(tab.url, tab.title, true);
+        for (const tab of saved.tabs) openPage(tab.url, tab.title, true, tab.frameName);
         const active = state.tabs[saved.activeIndex];
         if (active) state.select(active.id);
     }

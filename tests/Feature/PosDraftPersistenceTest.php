@@ -23,11 +23,11 @@ beforeEach(function (): void {
 });
 
 test('refresh restores separate cart rows and checkout fields without creating a sale', function (): void {
-    $component = Livewire::test('pages::tenant.pos.sales')->set('mergeSimilarProducts', false)
+    $component = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->set('mergeSimilarProducts', false)
         ->call('selectInlineProduct', $this->product->id)->call('selectInlineProduct', $this->product->id)
         ->set('notes', 'ملاحظة محفوظة')->set('paid_amount', 8)->set('payment_method', 'card')->set('discount_amount', 1);
     $cart = $component->get('cart');
-    $restored = Livewire::test('pages::tenant.pos.sales')->assertSet('cart', $cart)
+    $restored = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->assertSet('cart', $cart)
         ->assertSet('notes', 'ملاحظة محفوظة')->assertSet('paid_amount', 8)
         ->assertSet('payment_method', 'card')->assertSet('discount_amount', 1);
     expect(array_sum(array_column($restored->get('cart'), 'subtotal')))->toBe(10.0)
@@ -35,17 +35,17 @@ test('refresh restores separate cart rows and checkout fields without creating a
 });
 
 test('clearing or saving an invoice prevents its draft from returning on refresh', function (string $action): void {
-    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id)->set('paid_amount', 12);
+    $component = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->call('selectInlineProduct', $this->product->id)->set('paid_amount', 12);
     $component->call($action);
     if ($action === 'clearCart') {
         $component->assertSet('showClearInvoiceModal', true)->call('confirmClearCart');
     }
-    Livewire::test('pages::tenant.pos.sales')->assertSet('cart', [])->assertSet('notes', '');
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->assertSet('cart', [])->assertSet('notes', '');
     expect(Order::query()->count())->toBe($action === 'checkoutAndPrint' ? 1 : 0);
 })->with(['clearCart', 'checkoutAndPrint']);
 
 test('starting a new invoice uses the toolbar status without a duplicate notice', function (): void {
-    Livewire::test('pages::tenant.pos.sales')
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')
         ->call('selectInlineProduct', $this->product->id)
         ->call('startNewInvoice')
         ->assertSet('cart', [])
@@ -56,16 +56,36 @@ test('starting a new invoice uses the toolbar status without a duplicate notice'
 });
 
 test('drafts are isolated between users and branches', function (): void {
-    Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->call('selectInlineProduct', $this->product->id);
     $other = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'is_owner' => true]);
     $this->actingAs($other);
-    Livewire::test('pages::tenant.pos.sales')->assertSet('cart', []);
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->assertSet('cart', []);
     $this->actingAs($this->user);
     $otherBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'الثاني']);
     // Owners work in the branch selected in the session, not their default branch.
     session(['active_branch_id' => $otherBranch->id]);
-    Livewire::test('pages::tenant.pos.sales')->assertSet('cart', []);
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123')->assertSet('cart', []);
     session(['active_branch_id' => $this->branch->id]);
-    $restored = Livewire::test('pages::tenant.pos.sales');
+    $restored = Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-tabone123');
     expect($restored->get('cart'))->toHaveCount(1);
+});
+
+test('each POS tab keeps its own unfinished invoice while a refresh keeps the same tab cart', function (): void {
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-firsttab1')->call('selectInlineProduct', $this->product->id);
+
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-secondtab2')->assertSet('cart', []);
+    expect(Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-firsttab1')->get('cart'))->toHaveCount(1);
+
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'bad id!')->assertSet('draftTabId', null)->assertSet('cart', []);
+    Livewire::test('pages::tenant.pos.sales')->assertSet('cart', []);
+});
+
+test('a cart saved before drafts were kept per tab opens once in the first tab', function (): void {
+    $heldKey = (fn () => $this->heldSessionKey())->call(Livewire::test('pages::tenant.pos.sales')->instance());
+    $legacyKey = str_replace('pos.held.', 'pos.draft.', $heldKey);
+    session()->put($legacyKey, ['cart' => [['id' => $this->product->id, 'name' => 'صنف قديم', 'quantity' => 1, 'price' => 12, 'subtotal' => 12, 'cost' => 2]], 'notes' => 'مسودة قديمة']);
+
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-firsttab1')->assertSet('notes', 'مسودة قديمة');
+    Livewire::test('pages::tenant.pos.sales')->call('attachDraftTab', 'ws-secondtab2')->assertSet('notes', '');
+    expect(session()->has($legacyKey))->toBeFalse();
 });
