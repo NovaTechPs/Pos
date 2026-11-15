@@ -15,7 +15,7 @@ class CustomerOrder extends Model
     /** @var array<string, string> */
     public const STATUSES = ['new' => 'جديد', 'processing' => 'قيد التجهيز', 'invoiced' => 'تمت الفوترة', 'cancelled' => 'ملغى'];
 
-    protected $fillable = ['tenant_id', 'branch_id', 'party_id', 'customer_account_id', 'reference', 'tracking_token', 'customer_name',
+    protected $fillable = ['tenant_id', 'branch_id', 'party_id', 'customer_account_id', 'store_customer_id', 'reference', 'tracking_token', 'customer_name',
         'customer_phone', 'customer_address', 'notes', 'price_list', 'status', 'total', 'order_id'];
 
     protected $casts = ['total' => 'decimal:2'];

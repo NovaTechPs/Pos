@@ -6,6 +6,8 @@ use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\TenantBackupController;
 use App\Http\Controllers\TenantDashboardController;
 use App\Http\Controllers\TenantInvoicePdfController;
+use App\Http\Middleware\EnsureStoreCustomer;
+use App\Services\OnlineShop;
 use Illuminate\Support\Facades\Route;
 
 // الصفحة الرئيسية
@@ -196,8 +198,20 @@ require __DIR__.'/settings.php';
 // A store's public online shop, opened through a branch's domain name.
 Route::prefix('shop/{shop}')->name('shop.')->group(function (): void {
     Route::livewire('/', 'pages::shop.index')->name('home');
-    Route::livewire('/login', 'pages::shop.login')->middleware('guest:customer')->name('login');
-    Route::livewire('/register', 'pages::shop.register')->middleware('guest:customer')->name('register');
+    Route::livewire('/login', 'pages::shop.retail-login')->name('login');
+    Route::livewire('/wholesale/login', 'pages::shop.login')->name('wholesale.login');
+    Route::livewire('/my-account', 'pages::shop.retail-account')->middleware(EnsureStoreCustomer::class)->name('retail.account');
+    Route::post('/retail/logout', function (string $shop) {
+        $branch = app(OnlineShop::class)->branch($shop);
+        if (app(OnlineShop::class)->storeCustomer($branch)) {
+            auth('store_customer')->logout();
+            request()->session()->forget('shop_cart.'.$branch->id);
+            request()->session()->regenerate();
+        }
+
+        return redirect()->route('shop.home', ['shop' => $shop]);
+    })->name('retail.logout');
+    Route::livewire('/register', 'pages::shop.register')->name('register');
     Route::livewire('/track/{token}', 'pages::shop.track')->name('track');
     Route::livewire('/account', 'pages::shop.account')->middleware('shop.customer')->name('account');
     Route::get('/account/invoices/{order}/pdf', ShopInvoiceController::class)->middleware('shop.customer')->name('invoice.pdf');

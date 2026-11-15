@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CustomerAccount;
+use App\Models\StoreCustomer;
 use App\Models\User;
 
 return [
@@ -39,6 +40,7 @@ return [
     */
 
     'guards' => [
+        'store_customer' => ['driver' => 'session', 'provider' => 'store_customers'],
         'web' => [
             'driver' => 'session',
             'provider' => 'users',
@@ -69,6 +71,7 @@ return [
     */
 
     'providers' => [
+        'store_customers' => ['driver' => 'eloquent', 'model' => StoreCustomer::class],
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),

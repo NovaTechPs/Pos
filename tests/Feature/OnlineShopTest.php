@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Party;
 use App\Models\Product;
 use App\Models\Shift;
+use App\Models\StoreCustomer;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
@@ -42,11 +43,12 @@ test('the shop stays closed until the store opens it', function (): void {
     $this->get('/shop/unknown')->assertNotFound();
 });
 
-test('a guest browses retail prices, sees availability only, and orders by name and phone', function (): void {
+test('a guest browses retail prices and a registered buyer submits an order', function (): void {
     $this->get('/shop/fanous')->assertOk()
         ->assertSee('غلاية كهرباء')->assertSee('25.00')->assertSee('متوفر')->assertSee('غير متوفر')
         ->assertDontSee('صنف داخلي')->assertDontSee('20.00');
 
+    Auth::guard('store_customer')->login(StoreCustomer::factory()->create(['tenant_id' => $this->tenant->id]));
     $page = Livewire::test('pages::shop.index', ['shop' => 'fanous'])
         ->call('add', $this->kettle->id)->call('add', $this->kettle->id)
         ->call('$set', 'checkingOut', true)
@@ -81,21 +83,17 @@ test('customers register with phone and password, sign in, and wholesale account
         ->set('name', 'سامي')->set('phone', '٠٥٩٩١١١٢٢٢')->set('password', 'Secret-1234')->set('password_confirmation', 'Secret-1234')
         ->call('register')->assertHasNoErrors()->assertRedirect(route('shop.home', ['shop' => 'fanous']));
 
-    $account = CustomerAccount::query()->sole();
-    expect($account->phone)->toBe('0599111222')
-        ->and($account->party->type)->toBe('customer')
-        ->and($account->party->tenant_id)->toBe($this->tenant->id)
-        ->and(Auth::guard('customer')->id())->toBe($account->id);
-
-    Auth::guard('customer')->logout();
-    Livewire::test('pages::shop.login', ['shop' => 'fanous'])->set('phone', '0599111222')->set('password', 'wrong-password')
-        ->call('login')->assertHasErrors('phone');
-    Livewire::test('pages::shop.login', ['shop' => 'fanous'])->set('phone', '0599 111 222')->set('password', 'Secret-1234')
-        ->call('login')->assertHasNoErrors();
-    expect(Auth::guard('customer')->id())->toBe($account->id);
-
-    $account->update(['price_list' => 'wholesale']);
-    Auth::guard('customer')->setUser($account->fresh());
+    $retail = StoreCustomer::query()->sole();
+    expect($retail->phone)->toBe('0599111222')->and(CustomerAccount::query()->count())->toBe(0)
+        ->and(Party::withoutGlobalScopes()->count())->toBe(0)->and(Auth::guard('store_customer')->id())->toBe($retail->id);
+    Auth::guard('store_customer')->logout();
+    Livewire::test('pages::shop.retail-login', ['shop' => 'fanous'])->set('phone', '0599111222')->set('password', 'wrong-password')->call('login')->assertHasErrors('phone');
+    Livewire::test('pages::shop.retail-login', ['shop' => 'fanous'])->set('phone', '0599 111 222')->set('password', 'Secret-1234')->call('login')->assertHasNoErrors();
+    expect(Auth::guard('store_customer')->id())->toBe($retail->id);
+    $party = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'سامي جملة', 'type' => 'customer']);
+    $account = CustomerAccount::query()->create(['tenant_id' => $this->tenant->id, 'party_id' => $party->id, 'phone' => '0599111222', 'password' => 'Secret-1234', 'price_list' => 'wholesale']);
+    Livewire::test('pages::shop.login', ['shop' => 'fanous'])->set('phone', '0599111222')->set('password', 'Secret-1234')->call('login')->assertHasNoErrors();
+    expect(Auth::guard('store_customer')->check())->toBeFalse();
     $this->get('/shop/fanous')->assertSee('20.00')->assertSee('أسعار الجملة');
     $order = app(OnlineShop::class)->placeOrder($this->branch, [$this->kettle->id => 1], ['name' => 'سامي', 'phone' => '0599111222'], $account->fresh());
     expect((float) $order->total)->toBe(20.0)->and($order->party_id)->toBe($account->party_id);
@@ -110,7 +108,7 @@ test('a customer sees only their own orders, invoices and statement, and downloa
     $theirs = Order::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'customer_id' => $other->id, 'invoice_number' => 'INV-THEIRS',
         'type' => 'wholesale', 'status' => 'completed', 'subtotal' => 99, 'total' => 99, 'paid_amount' => 0]);
 
-    $this->get('/shop/fanous/account')->assertRedirect(route('shop.login', ['shop' => 'fanous']));
+    $this->get('/shop/fanous/account')->assertRedirect(route('shop.wholesale.login', ['shop' => 'fanous']));
 
     Auth::guard('customer')->login($account);
     Livewire::test('pages::shop.account', ['shop' => 'fanous'])->set('tab', 'invoices')

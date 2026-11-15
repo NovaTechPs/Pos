@@ -40,13 +40,14 @@ final class InvoicePaymentCalculator
         if ($mode === 'partial' && ($result['payment_status'] !== 'partial')) {
             throw new DomainException('Partial payment must be greater than zero and less than the invoice total.');
         }
+
         return $result;
     }
 
     private static function cents(string $value): int
     {
         $value = trim($value);
-        if (!preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
             throw new InvalidArgumentException('Invalid monetary amount (use at most two decimals).');
         }
         [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
@@ -54,11 +55,12 @@ final class InvoicePaymentCalculator
         if (strlen($whole) > 12) {
             throw new InvalidArgumentException('Amount too large.');
         }
+
         return ((int) $whole * 100) + (int) $fraction;
     }
 
     private static function money(int $cents): string
     {
-        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
+        return intdiv($cents, 100).'.'.str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 }

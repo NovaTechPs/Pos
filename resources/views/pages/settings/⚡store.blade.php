@@ -283,5 +283,7 @@ new class extends Component
             </button>
         </div>
     </form>
+    <livewire:pages::settings.shop-appearance />
+    <livewire:pages::settings.web-categories />
 </div>
 

@@ -25,8 +25,10 @@ new class extends Component
     {
         $branch = app(OnlineShop::class)->branch($this->shop);
 
-        return CustomerOrder::query()->where('tenant_id', $branch->tenant_id)->where('tracking_token', $this->token)
+        $order = CustomerOrder::query()->where('tenant_id', $branch->tenant_id)->where('tracking_token', $this->token)
             ->with(['items.product:id,name', 'order:id,invoice_number'])->firstOrFail();
+        abort_if($order->store_customer_id && (int) app(OnlineShop::class)->storeCustomer($branch)?->id !== (int) $order->store_customer_id, 404);
+        return $order;
     }
 
     public function render(): mixed
@@ -62,7 +64,7 @@ new class extends Component
             <thead class="bg-slate-50 text-xs text-slate-500"><tr><th class="p-3">الصنف</th><th class="p-3">الكمية</th><th class="p-3">السعر</th><th class="p-3">المجموع</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
                 @foreach ($order->items as $item)
-                    <tr><td class="p-3">{{ $item->product?->name }}</td><td class="p-3 font-mono">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ''), '0'), '.') }}</td>
+                    <tr><td class="p-3">{{ $item->product_name ?? $item->product?->name }}</td><td class="p-3 font-mono">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ''), '0'), '.') }}</td>
                         <td class="p-3 font-mono">{{ number_format((float) $item->unit_price, 2) }}</td><td class="p-3 font-mono">{{ number_format((float) $item->total, 2) }}</td></tr>
                 @endforeach
             </tbody>

@@ -1,46 +1,58 @@
 @props(['branch' => null, 'title' => null])
 @php
     $shopBranch = $branch ?? request()->attributes->get('shop_branch');
-    $shopCustomer = $shopBranch ? app(\App\Services\OnlineShop::class)->customer($shopBranch) : null;
-    $storeName = $shopBranch?->name ?: config('app.name');
+    $shopService = app(\App\Services\OnlineShop::class);
+    $branding = $shopBranch ? $shopService->branding($shopBranch) : null;
+    $shopCustomer = $shopBranch ? $shopService->customer($shopBranch) : null;
+    $retailCustomer = $shopBranch ? $shopService->storeCustomer($shopBranch) : null;
+    $storeName = $branding['name'] ?? config('app.name');
+    $shopHome = $shopBranch ? route('shop.home', ['shop' => $shopBranch->domain]) : '#';
+    $accountUrl = $shopBranch ? route($retailCustomer ? 'shop.retail.account' : ($shopCustomer ? 'shop.account' : 'shop.login'), ['shop' => $shopBranch->domain]) : '#';
 @endphp
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="robots" content="noindex" />
-        <title>{{ $title ? $title.' - '.$storeName : $storeName }}</title>
-        <link rel="icon" href="{{ asset('favicon.ico') }}" sizes="any">
-        @fonts
-        @vite(['resources/css/app.css', 'resources/js/app.js'])
-        @livewireStyles
-    </head>
-    <body class="min-h-screen bg-slate-50 text-slate-900 antialiased" data-shop>
-        @if ($shopBranch)
-            <header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-                <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-                    <a href="{{ route('shop.home', ['shop' => $shopBranch->domain]) }}" wire:navigate class="truncate text-lg font-black text-teal-700">{{ $storeName }}</a>
-                    <nav class="flex items-center gap-2 text-sm font-bold">
-                        <a href="{{ route('shop.home', ['shop' => $shopBranch->domain]) }}" wire:navigate class="rounded-lg px-3 py-2 hover:bg-slate-100">المتجر</a>
-                        @if ($shopCustomer)
-                            <a href="{{ route('shop.account', ['shop' => $shopBranch->domain]) }}" wire:navigate class="rounded-lg px-3 py-2 hover:bg-slate-100" data-shop-account-link>حسابي</a>
-                            <form method="POST" action="{{ route('shop.logout', ['shop' => $shopBranch->domain]) }}">
-                                @csrf
-                                <button type="submit" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100">خروج</button>
-                            </form>
-                        @else
-                            <a href="{{ route('shop.login', ['shop' => $shopBranch->domain]) }}" wire:navigate class="rounded-lg bg-teal-600 px-3 py-2 text-white hover:bg-teal-500">دخول</a>
-                        @endif
-                    </nav>
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="robots" content="noindex">
+    <title>{{ $title ? $title.' - '.$storeName : $storeName }}</title>
+    <link rel="icon" href="{{ $branding['logo'] ?? asset('favicon.ico') }}">
+    @fonts
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @livewireStyles
+</head>
+<body class="storefront" data-shop>
+    @if($shopBranch)
+        <div class="shop-topbar"><div class="shop-width shop-topbar-inner">
+            <span><x-shop-icon name="store" /> أهلاً بك في {{ $storeName }}</span>
+            @if($branding['phone'])<a href="tel:{{ preg_replace('/[^+0-9]/', '', $branding['phone']) }}"><x-shop-icon name="phone" /> <b dir="ltr">{{ $branding['phone'] }}</b><span class="shop-desktop-text"> · تواصل مع المتجر</span></a>@else<span><x-shop-icon name="box" /> طلبك يصل مباشرة إلى المحل</span>@endif
+        </div></div>
+        <header class="shop-header">
+            <div class="shop-width shop-header-main">
+                <a class="shop-brand" href="{{ $shopHome }}" wire:navigate>
+                    @if($branding['logo'])<img class="shop-logo" src="{{ $branding['logo'] }}" alt="شعار {{ $storeName }}">@else<span class="shop-brand-mark"><x-shop-icon name="store" /></span>@endif
+                    <span><strong>{{ $storeName }}</strong><small>{{ $branding['tagline'] }}</small></span>
+                </a>
+                <form action="{{ $shopHome }}" method="GET" class="shop-header-search" role="search">
+                    <input name="search" type="search" value="{{ request('search') }}" aria-label="ابحث في المتجر" placeholder="ابحث عن منتج يناسبك…">
+                    <button type="submit" aria-label="بحث"><x-shop-icon name="search" /></button>
+                </form>
+                <div class="shop-header-actions">
+                    <a href="{{ $accountUrl }}" wire:navigate data-shop-account-link><x-shop-icon name="user" /><span>{{ $shopCustomer ? 'حساب الجملة' : 'حسابي' }}</span></a>
+                    <a href="{{ $shopHome }}#shop-cart" wire:navigate><x-shop-icon name="cart" /><span>السلة</span></a>
+                    @if($retailCustomer || $shopCustomer)
+                        <form method="POST" action="{{ route($retailCustomer ? 'shop.retail.logout' : 'shop.logout', ['shop' => $shopBranch->domain]) }}">@csrf<button type="submit" class="shop-logout">خروج</button></form>
+                    @endif
                 </div>
-            </header>
-        @endif
-
-        <main class="mx-auto max-w-6xl px-4 py-5">
-            {{ $slot }}
-        </main>
-
-        @livewireScripts
-    </body>
+            </div>
+            <nav class="shop-width shop-nav" aria-label="تنقل المتجر">
+                <a href="{{ $shopHome }}" wire:navigate class="shop-nav-home"><x-shop-icon name="store" /> الرئيسية</a>
+                <a href="{{ $shopHome }}#shop-products" wire:navigate>تسوّق المنتجات</a>
+                <a href="{{ $accountUrl }}" wire:navigate>طلباتي</a>
+                <a href="{{ $shopHome }}#shop-categories" wire:navigate class="shop-nav-categories"><x-shop-icon name="grid" /> جميع الأقسام</a>
+            </nav>
+        </header>
+    @endif
+    <main class="shop-width shop-main">{{ $slot }}</main>
+    <footer class="shop-footer"><div class="shop-width"><strong>{{ $storeName }}</strong><span>{{ $branding['tagline'] ?? '' }}</span><a href="{{ $accountUrl }}" wire:navigate>حسابي وطلباتي</a></div></footer>
+    @livewireScripts
+</body>
 </html>

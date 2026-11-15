@@ -18,7 +18,7 @@ class EnsureShopCustomer
     public function handle(Request $request, Closure $next): Response
     {
         if (! auth('customer')->check()) {
-            return redirect()->guest(route('shop.login', ['shop' => $request->route('shop')]));
+            return redirect()->guest(route('shop.wholesale.login', ['shop' => $request->route('shop')]));
         }
 
         return $next($request);

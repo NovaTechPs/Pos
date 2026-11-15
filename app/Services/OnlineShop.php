@@ -8,9 +8,11 @@ use App\Models\CustomerAccount;
 use App\Models\CustomerOrder;
 use App\Models\Party;
 use App\Models\Product;
+use App\Models\StoreCustomer;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
+use App\Models\WebCategory;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -26,6 +28,33 @@ class OnlineShop
 {
     public const SETTING = 'online_shop_enabled';
 
+    /** @return array{name: string, tagline: string, phone: string, logo: ?string, banner: ?string, hero_title: string, hero_text: string, currency: string} */
+    public function branding(Branch $branch): array
+    {
+        $tenant = Tenant::query()->findOrFail($branch->tenant_id);
+        $setting = fn (string $key, mixed $default = ''): mixed => TenantSetting::get((int) $branch->tenant_id, $key, $default);
+        $logo = $setting('shop_logo');
+        $banner = $setting('shop_banner');
+
+        return [
+            'name' => $tenant->name, 'phone' => (string) $tenant->phone,
+            'tagline' => (string) $setting('shop_tagline', 'كل ما تحتاجه، في مكان واحد'),
+            'logo' => $logo ? Storage::disk('public')->url($logo) : null,
+            'banner' => $banner ? Storage::disk('public')->url($banner) : null,
+            'hero_title' => (string) $setting('shop_hero_title', 'اختيارات تحبّها، أقرب إليك'),
+            'hero_text' => (string) $setting('shop_hero_text', 'تصفّح أقسام متجرنا، اختر ما يناسبك وأرسل طلبك بكل سهولة.'),
+            'currency' => match ($setting('currency', 'ILS')) {
+                'USD' => '$', 'JOD' => 'د.أ', default => '₪'
+            },
+        ];
+    }
+
+    /** @return Collection<int, WebCategory> */
+    public function webCategories(Branch $branch): Collection
+    {
+        return WebCategory::query()->where('tenant_id', $branch->tenant_id)->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get();
+    }
+
     /** The branch whose shop the link opens, or 404 when the store has not opened its shop. */
     public function branch(string $slug): Branch
     {
@@ -39,6 +68,9 @@ class OnlineShop
     /** The signed-in customer when the account belongs to this store, otherwise null. */
     public function customer(Branch $branch): ?CustomerAccount
     {
+        if ($this->storeCustomer($branch)) {
+            return null;
+        }
         $account = auth('customer')->user();
 
         return $account instanceof CustomerAccount && (int) $account->tenant_id === (int) $branch->tenant_id && $account->is_active
@@ -48,6 +80,13 @@ class OnlineShop
     public function priceList(?CustomerAccount $account): string
     {
         return $account?->isWholesale() ? 'wholesale' : 'retail';
+    }
+
+    public function storeCustomer(Branch $branch): ?StoreCustomer
+    {
+        $account = auth('store_customer')->user();
+
+        return $account instanceof StoreCustomer && $account->is_active && (int) $account->tenant_id === (int) $branch->tenant_id ? $account : null;
     }
 
     /** @param  object  $stock  a branch product, or a product row joined with its branch prices */
@@ -72,7 +111,8 @@ class OnlineShop
             ->where('products.show_in_website', true)
             ->join('branch_products', fn ($join) => $join->on('branch_products.product_id', '=', 'products.id')->where('branch_products.branch_id', $branch->id))
             ->where('branch_products.retail_price', '>', 0)
-            ->when($categoryId, fn ($query) => $query->where('products.category_id', $categoryId))
+            ->where(fn ($query) => $query->whereNull('products.web_category_id')->orWhereIn('products.web_category_id', WebCategory::query()->where('tenant_id', $branch->tenant_id)->where('is_active', true)->select('id')))
+            ->when($categoryId, fn ($query) => $query->where('products.web_category_id', $categoryId))
             ->when($search !== '', fn ($query) => $query->where(function ($match) use ($search, $branch): void {
                 foreach (array_slice(array_filter(explode(' ', $search)), 0, 6) as $word) {
                     $match->where(fn ($wordQuery) => $wordQuery->where('products.search_name', 'like', '%'.$word.'%')->orWhere('products.name', 'like', '%'.$word.'%'));
@@ -83,13 +123,13 @@ class OnlineShop
             }))
             ->orderByRaw('CASE WHEN branch_products.stock_quantity > 0 THEN 0 ELSE 1 END')->orderBy('products.name')
             ->limit($limit)
-            ->get(['products.id', 'products.name', 'products.product_number', 'products.image', 'products.category_id',
+            ->get(['products.id', 'products.name', 'products.product_number', 'products.image', 'products.web_category_id',
                 'branch_products.retail_price', 'branch_products.wholesale_price', 'branch_products.stock_quantity'])
             ->map(fn (Product $product): array => [
                 'id' => (int) $product->id, 'name' => $product->name, 'product_number' => $product->product_number,
                 'price' => self::price($product, $priceList), 'available' => (float) $product->stock_quantity > 0,
                 'image' => $product->image ? (Str::startsWith($product->image, ['http://', 'https://']) ? $product->image : Storage::url($product->image)) : null,
-                'category_id' => $product->category_id ? (int) $product->category_id : null,
+                'category_id' => $product->web_category_id ? (int) $product->web_category_id : null,
             ]);
     }
 
@@ -108,6 +148,7 @@ class OnlineShop
 
         return Product::withoutGlobalScopes()->where('products.tenant_id', $branch->tenant_id)->whereNull('products.deleted_at')
             ->where('products.show_in_website', true)->whereIn('products.id', $quantities->keys())
+            ->where(fn ($query) => $query->whereNull('products.web_category_id')->orWhereIn('products.web_category_id', WebCategory::query()->where('tenant_id', $branch->tenant_id)->where('is_active', true)->select('id')))
             ->join('branch_products', fn ($join) => $join->on('branch_products.product_id', '=', 'products.id')->where('branch_products.branch_id', $branch->id))
             ->where('branch_products.retail_price', '>', 0)
             ->get(['products.id', 'products.name', 'branch_products.retail_price', 'branch_products.wholesale_price', 'branch_products.stock_quantity'])
@@ -126,8 +167,10 @@ class OnlineShop
      * @param  array<int|string, float|int|string>  $cart  product id => quantity
      * @param  array{name: string, phone: string, address?: ?string, notes?: ?string}  $contact
      */
-    public function placeOrder(Branch $branch, array $cart, array $contact, ?CustomerAccount $account = null): CustomerOrder
+    public function placeOrder(Branch $branch, array $cart, array $contact, ?CustomerAccount $account = null, ?StoreCustomer $storeCustomer = null): CustomerOrder
     {
+        abort_if($account && ($storeCustomer || ! $account->is_active || (int) $account->tenant_id !== (int) $branch->tenant_id), 403);
+        abort_if($storeCustomer && (! $storeCustomer->is_active || (int) $storeCustomer->tenant_id !== (int) $branch->tenant_id), 403);
         $quantities = collect($cart)->mapWithKeys(fn ($quantity, $productId): array => [(int) $productId => round((float) $quantity, 3)])
             ->filter(fn (float $quantity, int $productId): bool => $productId > 0 && $quantity > 0);
         if ($quantities->isEmpty() || $quantities->count() > 200 || $quantities->contains(fn (float $quantity): bool => $quantity > 100000)) {
@@ -136,16 +179,18 @@ class OnlineShop
         $priceList = $this->priceList($account);
         $stock = BranchProduct::withoutGlobalScopes()->where('tenant_id', $branch->tenant_id)->where('branch_id', $branch->id)
             ->whereIn('product_id', $quantities->keys())->where('retail_price', '>', 0)
-            ->whereHas('product', fn ($product) => $product->withoutGlobalScopes()->whereNull('deleted_at')->where('show_in_website', true))
-            ->get()->keyBy('product_id');
+            ->whereHas('product', fn ($product) => $product->withoutGlobalScopes()->whereNull('deleted_at')->where('show_in_website', true)
+                ->where(fn ($query) => $query->whereNull('web_category_id')->orWhereIn('web_category_id', WebCategory::query()->where('tenant_id', $branch->tenant_id)->where('is_active', true)->select('id'))))
+            ->with(['product' => fn ($query) => $query->withoutGlobalScopes()->select('id', 'name')])->get()->keyBy('product_id');
         if ($stock->count() !== $quantities->count()) {
             throw ValidationException::withMessages(['cart' => 'بعض الأصناف لم تعد متاحة في المتجر. حدّث السلة.']);
         }
 
-        return DB::transaction(function () use ($branch, $quantities, $stock, $priceList, $contact, $account): CustomerOrder {
+        return DB::transaction(function () use ($branch, $quantities, $stock, $priceList, $contact, $account, $storeCustomer): CustomerOrder {
             $order = CustomerOrder::query()->create([
                 'tenant_id' => $branch->tenant_id, 'branch_id' => $branch->id,
                 'party_id' => $account?->party_id, 'customer_account_id' => $account?->id,
+                'store_customer_id' => $storeCustomer?->id,
                 'reference' => 'WEB-'.now()->format('ymd').'-'.Str::upper(Str::random(5)),
                 'tracking_token' => Str::random(48),
                 'customer_name' => trim($contact['name']), 'customer_phone' => trim($contact['phone']),
@@ -158,7 +203,7 @@ class OnlineShop
                 $price = self::price($stock[$productId], $priceList);
                 $lineTotal = round($price * $quantity, 2);
                 $total += $lineTotal;
-                $order->items()->create(['tenant_id' => $branch->tenant_id, 'product_id' => $productId, 'quantity' => $quantity, 'unit_price' => $price, 'total' => $lineTotal]);
+                $order->items()->create(['tenant_id' => $branch->tenant_id, 'product_id' => $productId, 'product_name' => $stock[$productId]->product?->name, 'quantity' => $quantity, 'unit_price' => $price, 'total' => $lineTotal]);
             }
             $order->update(['total' => round($total, 2)]);
 

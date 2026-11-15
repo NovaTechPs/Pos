@@ -1,6 +1,7 @@
 @import './workspace-tabs.css';
 @import './responsive.css';
 @import './pos.css';
+@import './shop.css';
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 

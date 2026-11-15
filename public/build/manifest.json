@@ -33,8 +33,14 @@
     "src": "node_modules/@zxing/browser/esm/index.js",
     "isDynamicEntry": true
   },
+  "node_modules/chart.js/dist/chart.js": {
+    "file": "assets/chart-B7Hg1wuA.js",
+    "name": "chart",
+    "src": "node_modules/chart.js/dist/chart.js",
+    "isDynamicEntry": true
+  },
   "resources/css/app.css": {
-    "file": "assets/app-B2naXQP6.css",
+    "file": "assets/app-BDnt7D0d.css",
     "name": "app",
     "names": [
       "app.css"
@@ -43,12 +49,13 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-VjsbgqPK.js",
+    "file": "assets/app-DGHbj74b.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "dynamicImports": [
-      "node_modules/@zxing/browser/esm/index.js"
+      "node_modules/@zxing/browser/esm/index.js",
+      "node_modules/chart.js/dist/chart.js"
     ]
   },
   "resources/js/passkeys.js": {

@@ -45,6 +45,7 @@ new class extends Component
         }
 
         RateLimiter::clear($key);
+        Auth::guard('store_customer')->logout();
         session()->regenerate();
         Auth::guard('customer')->user()->forceFill(['last_login_at' => now()])->save();
         $this->redirectRoute('shop.home', ['shop' => $this->shop], navigate: true);
@@ -58,7 +59,7 @@ new class extends Component
 ?>
 
 <div class="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-6" data-shop-login>
-    <h1 class="mb-4 text-xl font-black">تسجيل الدخول</h1>
+    <h1 class="mb-4 text-xl font-black">دخول الحساب التجاري</h1>
     <form wire:submit="login" class="space-y-3">
         <input type="tel" wire:model="phone" placeholder="رقم الهاتف" aria-label="رقم الهاتف" autocomplete="tel" dir="ltr" class="w-full rounded-lg border border-slate-200 px-3 py-2.5">
         @error('phone')<p class="text-xs text-rose-600">{{ $message }}</p>@enderror
@@ -67,6 +68,6 @@ new class extends Component
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="remember"> تذكرني</label>
         <button type="submit" wire:loading.attr="disabled" class="w-full rounded-xl bg-teal-600 py-2.5 font-bold text-white hover:bg-teal-500">دخول</button>
     </form>
-    <p class="mt-4 text-center text-sm text-slate-600">ليس لديك حساب؟ <a href="{{ route('shop.register', ['shop' => $shop]) }}" wire:navigate class="font-bold text-teal-700">أنشئ حساباً</a></p>
+    <p class="mt-4 text-center text-sm text-slate-600">للتسوق كفرد: <a href="{{ route('shop.register', ['shop' => $shop]) }}" wire:navigate class="font-bold text-teal-700">أنشئ حساب مشتري</a></p>
     <p class="mt-2 text-center text-xs text-slate-500">نسيت كلمة المرور؟ تواصل مع المتجر لإعادة تعيينها.</p>
 </div>

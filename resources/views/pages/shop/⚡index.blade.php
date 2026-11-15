@@ -1,10 +1,10 @@
 <?php
 
 use App\Models\Branch;
-use App\Models\Category;
 use App\Services\OnlineShop;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new class extends Component
@@ -12,6 +12,7 @@ new class extends Component
     #[Locked]
     public string $shop = '';
 
+    #[Url]
     public string $search = '';
 
     public ?int $categoryId = null;
@@ -29,12 +30,31 @@ new class extends Component
 
     public string $notes = '';
 
+    public ?int $addressId = null;
+
+    public function chooseAddress(int $id): void
+    {
+        $customer = $this->service()->storeCustomer($this->branch());
+        abort_unless($customer, 403);
+        $address = $customer->addresses()->findOrFail($id);
+        $this->addressId = $address->id;
+        $this->name = $address->recipient_name;
+        $this->phone = $address->phone;
+        $this->address = $address->deliveryAddress();
+    }
+
     public function mount(string $shop): void
     {
         $this->shop = $shop;
         $branch = $this->branch();
         $this->cart = array_map('floatval', (array) session('shop_cart.'.$branch->id, []));
-        if ($account = $this->service()->customer($branch)) {
+        if ($customer = $this->service()->storeCustomer($branch)) {
+            $this->name = $customer->name;
+            $this->phone = $customer->phone;
+            if ($address = $customer->addresses()->where('is_default', true)->first()) {
+                $this->chooseAddress($address->id);
+            }
+        } elseif ($account = $this->service()->customer($branch)) {
             $this->name = (string) $account->party?->name;
             $this->phone = (string) $account->phone;
             $this->address = (string) $account->party?->address;
@@ -81,6 +101,15 @@ new class extends Component
     public function placeOrder(): void
     {
         $branch = $this->branch();
+        $retailCustomer = $this->service()->storeCustomer($branch);
+        if (! $retailCustomer && ! $this->service()->customer($branch)) {
+            $this->saveCart();
+            $this->redirectRoute('shop.login', ['shop' => $this->shop], navigate: true);
+            return;
+        }
+        if ($this->addressId) {
+            $this->chooseAddress($this->addressId);
+        }
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:30', 'regex:/^[\d\s+\-()٠-٩]{7,30}$/u'],
@@ -88,7 +117,6 @@ new class extends Component
             'notes' => ['nullable', 'string', 'max:1000'],
         ], [], ['name' => 'الاسم', 'phone' => 'رقم الهاتف', 'address' => 'العنوان', 'notes' => 'ملاحظات']);
 
-        // Guests can order without an account, so each network is limited to a few orders at a time.
         $key = 'shop-order:'.request()->ip();
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $this->addError('cart', 'طلبات كثيرة خلال وقت قصير. حاول بعد قليل.');
@@ -97,7 +125,7 @@ new class extends Component
         }
         RateLimiter::hit($key, 600);
 
-        $order = $this->service()->placeOrder($branch, $this->cart, $validated, $this->service()->customer($branch));
+        $order = $this->service()->placeOrder($branch, $this->cart, $validated, $this->service()->customer($branch), $retailCustomer);
         $this->cart = [];
         $this->saveCart();
         $this->redirectRoute('shop.track', ['shop' => $this->shop, 'token' => $order->tracking_token], navigate: true);
@@ -109,13 +137,14 @@ new class extends Component
         $account = $this->service()->customer($branch);
         $priceList = $this->service()->priceList($account);
         $lines = $this->service()->cartLines($branch, $priceList, $this->cart);
-        $categories = Category::withoutGlobalScopes()->where('tenant_id', $branch->tenant_id)
-            ->whereIn('id', fn ($query) => $query->select('category_id')->from('products')->where('tenant_id', $branch->tenant_id)->where('show_in_website', true)->whereNull('deleted_at'))
-            ->orderBy('name')->get(['id', 'name']);
+        $categories = $this->service()->webCategories($branch);
 
         return $this->view([
             'branch' => $branch,
+            'branding' => $this->service()->branding($branch),
             'account' => $account,
+            'retailCustomer' => $this->service()->storeCustomer($branch),
+            'addresses' => $this->service()->storeCustomer($branch)?->addresses()->orderByDesc('is_default')->get() ?? collect(),
             'products' => $this->service()->catalog($branch, $priceList, $this->search, $this->categoryId),
             'categories' => $categories,
             'lines' => $lines,
@@ -125,56 +154,67 @@ new class extends Component
 };
 ?>
 
-<div class="grid gap-5 lg:grid-cols-[1fr_22rem]" data-shop-home>
-
-    <section>
-        @if ($account?->isWholesale())
-            <div class="mb-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800">الأسعار المعروضة هي أسعار الجملة الخاصة بحسابك.</div>
-        @endif
-
-        <div class="mb-4 flex flex-col gap-2 sm:flex-row">
-            <input type="search" wire:model.live.debounce.300ms="search" placeholder="ابحث عن صنف بالاسم أو الباركود..." aria-label="بحث"
-                class="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-teal-500">
-            @if ($categories->isNotEmpty())
-                <select wire:model.live="categoryId" aria-label="التصنيف" class="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">
-                    <option value="">كل التصنيفات</option>
-                    @foreach ($categories as $category)
-                        <option value="{{ $category->id }}">{{ $category->name }}</option>
-                    @endforeach
-                </select>
-            @endif
-        </div>
-
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            @forelse ($products as $product)
-                <article wire:key="product-{{ $product['id'] }}" class="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white" data-shop-product>
-                    <div class="flex aspect-square items-center justify-center bg-slate-100">
-                        @if ($product['image'])
-                            <img src="{{ $product['image'] }}" alt="{{ $product['name'] }}" loading="lazy" class="size-full object-cover">
-                        @else
-                            <span class="text-3xl text-slate-300">📦</span>
-                        @endif
-                    </div>
-                    <div class="flex flex-1 flex-col gap-1 p-3">
-                        <h2 class="line-clamp-2 text-sm font-bold">{{ $product['name'] }}</h2>
-                        <div class="mt-auto flex items-center justify-between gap-2">
-                            <span class="font-mono text-base font-black text-teal-700">{{ number_format($product['price'], 2) }}</span>
-                            <span @class(['text-[11px] font-bold', 'text-emerald-600' => $product['available'], 'text-rose-500' => ! $product['available']])>{{ $product['available'] ? 'متوفر' : 'غير متوفر' }}</span>
-                        </div>
-                        <button type="button" wire:click="add({{ $product['id'] }})" @disabled(! $product['available'])
-                            class="mt-2 rounded-xl bg-teal-600 py-2 text-sm font-bold text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-slate-300">
-                            {{ isset($cart[$product['id']]) ? 'أضف واحداً آخر ('.rtrim(rtrim(number_format($cart[$product['id']], 3, '.', ''), '0'), '.').')' : 'أضف للسلة' }}
-                        </button>
-                    </div>
-                </article>
-            @empty
-                <p class="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center text-slate-500">لا توجد أصناف مطابقة.</p>
-            @endforelse
+<div class="shop-home" data-shop-home>
+    @if ($account?->isWholesale())<p class="shop-notice">الأسعار المعروضة هي أسعار الجملة الخاصة بحسابك.</p>@endif
+    @if($search === '' && ! $categoryId)
+        <section class="shop-hero">
+            @if($branding['banner'])<img class="shop-hero-image" src="{{ $branding['banner'] }}" alt="{{ $branding['hero_title'] }}">@endif
+            <div class="shop-hero-copy"><span class="shop-eyebrow">أهلاً بك في {{ $branding['name'] }}</span><h1>{{ $branding['hero_title'] }}</h1><p>{{ $branding['hero_text'] }}</p><a href="#shop-products" class="shop-button shop-button-yellow">تسوّق الآن <x-shop-icon name="cart" /></a></div>
+            @unless($branding['banner'])
+                <div class="shop-hero-art" aria-hidden="true">
+                    @forelse($products->whereNotNull('image')->take(3) as $heroProduct)<div><img src="{{ $heroProduct['image'] }}" alt=""></div>@empty<div class="shop-hero-symbol"><x-shop-icon name="store" /><span>{{ $branding['name'] }}</span></div>@endforelse
+                </div>
+            @endunless
+        </section>
+    @endif
+    <div class="shop-benefits">
+        <div><x-shop-icon name="store" /><span><strong>من المحل مباشرة</strong><small>تواصل مع متجرك المفضل</small></span></div>
+        <div><x-shop-icon name="box" /><span><strong>طلب بخطوات سهلة</strong><small>اختر منتجاتك وأرسل طلبك</small></span></div>
+        <div><x-shop-icon name="clock" /><span><strong>تابع طلباتك</strong><small>تفاصيل وحالة كل طلب</small></span></div>
+        <div><x-shop-icon name="user" /><span><strong>حساب خاص بك</strong><small>طلباتك وعناوينك في مكان واحد</small></span></div>
+    </div>
+    <section id="shop-categories" class="shop-categories-section">
+        <div class="shop-section-heading"><h2>تصفّح الأقسام</h2><button type="button" wire:click="$set('categoryId', null)" class="shop-text-link">عرض الكل <x-shop-icon name="arrow" /></button></div>
+        <div class="shop-categories">
+            <button type="button" wire:click="$set('categoryId', null)" @class(['shop-category', 'is-active' => ! $categoryId])><span class="shop-category-image"><x-shop-icon name="grid" /></span><strong>كل الأقسام</strong></button>
+            @foreach($categories as $category)
+                <button type="button" wire:key="category-{{ $category->id }}" wire:click="$set('categoryId', {{ $category->id }})" @class(['shop-category', 'is-active' => $categoryId === $category->id])>
+                    <span class="shop-category-image">@if($category->image)<img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($category->image) }}" alt="" loading="lazy">@else<x-shop-icon name="box" />@endif</span><strong>{{ $category->name }}</strong>
+                </button>
+            @endforeach
         </div>
     </section>
-
-    <aside class="h-fit rounded-2xl border border-slate-200 bg-white p-4 lg:sticky lg:top-20" data-shop-cart>
-        <h2 class="mb-3 font-black">السلة</h2>
+    @if($categories->count() > 1 && $search === '' && ! $categoryId)
+        <div class="shop-promos">
+            @foreach($categories->take(3) as $category)
+                <button type="button" wire:key="promo-{{ $category->id }}" wire:click="$set('categoryId', {{ $category->id }})" class="shop-promo">
+                    <span><small>اكتشف مجموعتنا</small><strong>{{ $category->name }}</strong><em>تسوّق الآن <x-shop-icon name="arrow" /></em></span>
+                    @if($category->image)<img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($category->image) }}" alt="" loading="lazy">@else<x-shop-icon name="box" />@endif
+                </button>
+            @endforeach
+        </div>
+    @endif
+    <div class="shop-catalog-layout">
+        <section id="shop-products">
+            <div class="shop-section-heading"><h2>{{ $categoryId ? ($categories->firstWhere('id', $categoryId)?->name ?? 'المنتجات') : 'منتجات متجرنا' }}</h2><span class="shop-muted">{{ $products->count() }} منتج معروض</span></div>
+            <div class="shop-catalog-search"><x-shop-icon name="search" /><input type="search" wire:model.live.debounce.300ms="search" aria-label="بحث" placeholder="ابحث بالاسم أو رقم الصنف…"></div>
+            <div class="shop-products">
+                @forelse($products as $product)
+                    <article wire:key="product-{{ $product['id'] }}" class="shop-product" data-shop-product>
+                        <div class="shop-product-image">
+                            @if($product['image'])<img src="{{ $product['image'] }}" alt="{{ $product['name'] }}" loading="lazy">@else<x-shop-icon name="box" />@endif
+                            <span @class(['shop-availability', 'is-unavailable' => ! $product['available']])>{{ $product['available'] ? 'متوفر' : 'غير متوفر' }}</span>
+                        </div>
+                        <div class="shop-product-info"><h3>{{ $product['name'] }}</h3>
+                            <div class="shop-product-bottom"><strong>{{ number_format($product['price'], 2) }} <small>{{ $branding['currency'] }}</small></strong><button type="button" wire:click="add({{ $product['id'] }})" wire:loading.attr="disabled" @disabled(! $product['available']) aria-label="إضافة {{ $product['name'] }} للسلة"><x-shop-icon name="cart" /></button></div>
+                            @if(isset($cart[$product['id']]))<span class="shop-in-cart">في السلة: {{ $cart[$product['id']] }}</span>@endif
+                        </div>
+                    </article>
+                @empty<div class="shop-empty"><x-shop-icon name="search" /><h3>لا توجد منتجات مطابقة</h3><p>جرّب كلمة بحث أخرى أو اختر قسمًا مختلفًا.</p></div>@endforelse
+            </div>
+        </section>
+    <aside id="shop-cart" class="shop-cart" data-shop-cart>
+        <h2 class="shop-section-title"><x-shop-icon name="cart" /> سلة التسوق <span>{{ $lines->count() }}</span></h2>
         @forelse ($lines as $line)
             <div wire:key="line-{{ $line['id'] }}" class="flex items-center gap-2 border-b border-slate-100 py-2 text-sm">
                 <div class="min-w-0 flex-1">
@@ -197,10 +237,22 @@ new class extends Component
             </div>
             <p class="mt-1 text-[11px] text-slate-500">يؤكد المتجر الطلب والسعر النهائي قبل التجهيز.</p>
 
-            @if (! $checkingOut)
-                <button type="button" wire:click="$set('checkingOut', true)" class="mt-3 w-full rounded-xl bg-teal-600 py-2.5 font-bold text-white hover:bg-teal-500">إتمام الطلب</button>
+            @if (! $account && ! $retailCustomer)
+                <a href="{{ route('shop.login', ['shop' => $shop]) }}" wire:navigate class="mt-3 block rounded-xl bg-blue-600 py-2.5 text-center font-bold text-white">سجّل الدخول لإتمام الطلب</a>
+                <p class="mt-2 text-center text-xs text-slate-500">سلتك محفوظة حتى تسجيل الدخول.</p>
+            @elseif (! $checkingOut)
+                <button type="button" wire:click="$set('checkingOut', true)" class="mt-3 w-full rounded-xl bg-blue-600 py-2.5 font-bold text-white hover:bg-blue-500">إتمام الطلب</button>
             @else
                 <form wire:submit="placeOrder" class="mt-3 space-y-2" data-shop-checkout>
+                    @if ($addresses->isNotEmpty())
+                        <select wire:model="addressId" wire:change="chooseAddress($event.target.value)" aria-label="العنوان المحفوظ" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                            <option value="" disabled>اختر عنواناً محفوظاً</option>
+                            @foreach ($addresses as $savedAddress)
+                                <option value="{{ $savedAddress->id }}">{{ $savedAddress->label }} — {{ $savedAddress->city }}</option>
+                            @endforeach
+                        </select>
+                        <button type="button" wire:click="$set('addressId', null)" class="text-xs text-blue-700">استخدام عنوان آخر لهذا الطلب</button>
+                    @endif
                     <input type="text" wire:model="name" placeholder="الاسم" aria-label="الاسم" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                     @error('name')<p class="text-xs text-rose-600">{{ $message }}</p>@enderror
                     <input type="tel" wire:model="phone" placeholder="رقم الهاتف" aria-label="رقم الهاتف" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" dir="ltr">
@@ -208,13 +260,11 @@ new class extends Component
                     <input type="text" wire:model="address" placeholder="العنوان (اختياري)" aria-label="العنوان" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                     <textarea wire:model="notes" rows="2" placeholder="ملاحظات (اختياري)" aria-label="ملاحظات" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"></textarea>
                     @error('cart')<p class="text-xs text-rose-600">{{ $message }}</p>@enderror
-                    <button type="submit" wire:loading.attr="disabled" class="w-full rounded-xl bg-teal-600 py-2.5 font-bold text-white hover:bg-teal-500 disabled:opacity-60">إرسال الطلب</button>
-                    @guest('customer')
-                        <p class="text-center text-[11px] text-slate-500">لديك حساب؟ <a href="{{ route('shop.login', ['shop' => $shop]) }}" wire:navigate class="font-bold text-teal-700">سجّل الدخول</a> لمتابعة طلباتك وفواتيرك.</p>
-                    @endguest
+                    <button type="submit" wire:loading.attr="disabled" class="w-full rounded-xl bg-blue-600 py-2.5 font-bold text-white hover:bg-blue-500 disabled:opacity-60">إرسال الطلب</button>
                 </form>
             @endif
         @endif
     </aside>
 
+    </div>
 </div>

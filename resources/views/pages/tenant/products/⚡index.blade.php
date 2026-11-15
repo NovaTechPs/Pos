@@ -32,6 +32,7 @@ new class extends Component {
 
     public ?int $product_id = null;
     public ?int $category_id = null;
+    public ?int $web_category_id = null;
     public string $name = '';
 
     /*
@@ -168,6 +169,7 @@ new class extends Component {
         $tenantId = $this->tenantId();
 
         $rules = [
+            'web_category_id' => ['nullable', Rule::exists('web_categories', 'id')->where('tenant_id', $tenantId)],
             'category_id' => [
                 'nullable',
                 Rule::exists('categories', 'id')
@@ -559,6 +561,7 @@ new class extends Component {
 
         $this->product_id = $product->id;
         $this->category_id = $product->category_id;
+        $this->web_category_id = $product->web_category_id;
         $this->name = $product->name;
         $this->cost_price = $product->cost_price;
 
@@ -1125,6 +1128,7 @@ new class extends Component {
         $productData = [
             'tenant_id' => $tenantId,
             'category_id' => $this->category_id ?: null,
+            'web_category_id' => $this->web_category_id ?: null,
             'name' => trim($this->name),
             'cost_price' => $this->cost_price,
             'is_price_unified' => $this->is_price_unified,
@@ -1853,6 +1857,7 @@ new class extends Component {
     {
         $this->product_id = null;
         $this->category_id = null;
+        $this->web_category_id = null;
 
         $this->name = '';
 
@@ -2063,6 +2068,7 @@ new class extends Component {
         return $this->view([
             'products' => $products,
             'categories' => $categories,
+            'webCategories' => \App\Models\WebCategory::query()->where('tenant_id', $tenantId)->orderBy('sort_order')->orderBy('name')->get(),
             'branchPrices' => $branchPrices,
             'currentOffers' => $currentOffers,
             'allBranches' => $allBranches,
@@ -3383,6 +3389,15 @@ new class extends Component {
                             <flux:switch wire:model.live="show_in_website" />
                         </section>
                         <flux:error name="show_in_website" />
+                        <div class="mt-3">
+                            <flux:select wire:model="web_category_id" label="قسم الويب" description="مستقل عن التصنيف الداخلي؛ يُدار من إعدادات المتجر.">
+                                <flux:select.option value="">دون قسم ويب</flux:select.option>
+                                @foreach($webCategories as $webCategory)
+                                    <flux:select.option value="{{ $webCategory->id }}">{{ $webCategory->name }}{{ $webCategory->is_active ? '' : ' (مخفي)' }}</flux:select.option>
+                                @endforeach
+                            </flux:select>
+                            <flux:error name="web_category_id" />
+                        </div>
 
                     </div>
 
