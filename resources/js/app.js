@@ -9,4 +9,5 @@ import './print-pdf.js';
 import './table-keyboard.js';
 
 import './pos-cart-keyboard.js';
+import './product-barcode-fields.js';
 import './dashboard-charts.js';

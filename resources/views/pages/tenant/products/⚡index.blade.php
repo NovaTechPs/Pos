@@ -3209,26 +3209,9 @@ new class extends Component {
                             {{-- Barcodes --}}
 
                             <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800" data-product-barcodes
-                                x-data="{
-                                    inputs() { return [...this.$el.querySelectorAll('[data-product-barcode-cell] input')]; },
-                                    focusBarcode(index, attempt = 0) {
-                                        const input = this.inputs()[index];
-                                        if (!input) { if (attempt < 20) { setTimeout(() => this.focusBarcode(index, attempt + 1), 50); } return; }
-                                        input.scrollIntoView({ block: 'nearest' });
-                                        input.focus();
-                                    },
-                                    nextBarcode(event) {
-                                        const inputs = this.inputs();
-                                        const current = inputs.indexOf(event.target);
-                                        if (current < 0) { return; }
-                                        event.preventDefault();
-                                        if (event.target.value.trim() === '') { return; }
-                                        const empty = inputs.findIndex((input, index) => index !== current && input.value.trim() === '');
-                                        empty >= 0 ? this.focusBarcode(empty) : $wire.addBarcodeField();
-                                    },
-                                }"
+                                x-data="productBarcodeFields($wire)"
                                 x-on:product-barcode-focus.window="focusBarcode($event.detail.index)"
-                                x-on:keydown.enter="nextBarcode($event)">
+                                x-on:keydown="onKey($event)">
 
                                 <div class="mb-1 flex items-center justify-between gap-2">
                                     <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">الباركودات</span>

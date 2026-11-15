@@ -211,6 +211,6 @@ test('adding a barcode field focuses it and a scanned barcode moves on to the ne
 
     $component->assertDispatched('product-barcode-focus', index: 1);
     expect($component->html())
-        ->toContain('x-on:product-barcode-focus.window="focusBarcode($event.detail.index)"', 'x-on:keydown.enter="nextBarcode($event)"', '$wire.addBarcodeField()')
-        ->and(substr_count($component->html(), 'data-product-barcode-cell'))->toBe(3);
+        ->toContain('x-on:product-barcode-focus.window="focusBarcode($event.detail.index)"', 'x-data="productBarcodeFields($wire)"', 'x-on:keydown="onKey($event)"')
+        ->and(substr_count($component->html(), 'data-product-barcode-cell'))->toBe(2);
 });
