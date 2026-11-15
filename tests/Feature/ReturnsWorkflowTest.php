@@ -339,3 +339,41 @@ test('return invoices use the invoice layout with a search window, party balance
         ->assertSet('showReturnSearch', false)->assertSet('invoiceNumber', $number)
         ->assertSet('editing', false)->assertSee('محفوظ');
 })->with(['sale', 'purchase']);
+
+test('returns accept products the party never bought here once the store allows returns without history', function (string $kind, string $partyType, float $price, float $stockAfter): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر منتقل من برنامج قديم']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = returnsTestUser($tenant);
+    $party = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'طرف قديم', 'type' => $partyType]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف قديم', 'cost_price' => 8]);
+    $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
+        'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 15]);
+    $this->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    Livewire::actingAs($user)->test('pages::tenant.returns.index')
+        ->set('kind', $kind)->call('selectParty', $party->id)->call('addProduct', $product->id)
+        ->assertSet('lines', [])->assertSee('لا توجد كمية متاحة للإرجاع لهذا الصنف مع هذا الطرف.');
+
+    TenantSetting::setBool($tenant->id, 'returns_without_history', true);
+
+    Livewire::actingAs($user)->test('pages::tenant.returns.index')
+        ->set('kind', $kind)->call('selectParty', $party->id)
+        ->set('productSearch', 'صنف قديم')->assertCount('productResults', 1)
+        ->call('addProduct', $product->id)->assertSet('lines.0.price', $price)
+        ->set('lines.0.quantity', 2)->call('saveReturn')->assertHasNoErrors()->assertSet('errorMessage', null);
+
+    expect((float) $stock->fresh()->stock_quantity)->toBe($stockAfter)
+        ->and($kind === 'sale' ? Order::query()->where('type', 'return')->count() : DB::table('purchase_returns')->count())->toBe(1);
+})->with([['sale', 'customer', 15.0, 7.0], ['purchase', 'supplier', 8.0, 3.0]]);
+
+test('the store settings page turns returns without history on', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر الإعدادات']);
+    Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'is_owner' => true]);
+    $this->actingAs($owner)->withSession(['active_tenant_id' => $tenant->id]);
+
+    Livewire::test('pages::settings.store')->assertSet('returnsWithoutHistory', false)
+        ->set('returnsWithoutHistory', true)->call('save')->assertHasNoErrors();
+
+    expect(TenantSetting::getBool($tenant->id, 'returns_without_history'))->toBeTrue();
+});

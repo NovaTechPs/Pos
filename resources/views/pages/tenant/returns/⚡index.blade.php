@@ -4,31 +4,48 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Order;
 use App\Models\Party;
-use App\Models\Product;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\TenantSetting;
+use App\Services\MovingAverageCost;
+use App\Services\PartyBalance;
+use App\Services\PdfFilename;
 use App\Services\StockMovementContext;
-use Livewire\Attributes\Locked;
-use Illuminate\Support\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     #[Locked]
     public ?int $currentReturnId = null;
+
     #[Locked]
     public bool $editing = false;
+
     public string $returnSearch = '';
+
     public bool $showReturnSearch = false;
+
     public string $discountType = 'fixed';
+
     public $discountRate = 0;
+
     public $taxPercent = 16;
+
     public $paidAmount = 0;
+
     public string $paymentMethod = 'cash';
+
     public bool $showPrint = false;
+
     #[Locked]
     public array $printData = [];
 
@@ -36,25 +53,45 @@ new class extends Component {
     public ?int $lastSavedReturnId = null;
 
     public string $lastSavedNumber = '';
+
     public string $kind = 'sale';
+
     public string $invoiceNumber = '';
+
     public string $invoiceDate = '';
+
     public ?int $selectedBranchId = null;
+
     public array $branches = [];
+
     public string $partySearch = '';
+
     public array $partyResults = [];
+
     public ?int $selectedPartyId = null;
+
     public string $selectedPartyName = '';
+
     public string $productSearch = '';
+
     public array $productResults = [];
+
     public ?int $selectedProductId = null;
+
     public string $selectedProductName = '';
+
     public float $selectedProductAvailable = 0;
+
     public float $selectedQuantity = 1;
+
     public float $selectedPrice = 0;
+
     public array $lines = [];
+
     public string $notes = '';
+
     public ?string $errorMessage = null;
+
     public ?string $successMessage = null;
 
     public function mount(): void
@@ -103,7 +140,7 @@ new class extends Component {
     private function generateInvoiceNumber(): string
     {
         return ($this->kind === 'sale' ? 'RET-' : 'PR-')
-            . now()->format('YmdHis') . '-' . Str::upper(Str::random(4));
+            .now()->format('YmdHis').'-'.Str::upper(Str::random(4));
     }
 
     private function tenantId(): int
@@ -167,6 +204,7 @@ new class extends Component {
         $search = trim($this->partySearch);
         if ($search === '') {
             $this->partyResults = [];
+
             return;
         }
 
@@ -183,8 +221,9 @@ new class extends Component {
         $party = Party::query()->where('tenant_id', $this->tenantId())->whereIn('type', $types)
             ->where('is_active', true)->find($partyId);
 
-        if (!$party) {
+        if (! $party) {
             $this->errorMessage = 'العميل أو المورد المحدد غير صالح.';
+
             return;
         }
 
@@ -233,8 +272,9 @@ new class extends Component {
     public function searchProducts(): void
     {
         $this->productResults = [];
-        if (!$this->selectedPartyId || trim($this->productSearch) === '' || $this->selectedProductId) {
+        if (! $this->selectedPartyId || trim($this->productSearch) === '' || $this->selectedProductId) {
             $this->productResults = [];
+
             return;
         }
 
@@ -297,16 +337,18 @@ new class extends Component {
     public function selectProduct(int $productId): void
     {
         $this->errorMessage = null;
-        if (!$this->selectedPartyId) {
+        if (! $this->selectedPartyId) {
             $this->errorMessage = 'اختر العميل أو المورد أولاً.';
+
             return;
         }
 
         $product = Product::query()->where('tenant_id', $this->tenantId())->whereKey($productId)->first();
         $branchProduct = BranchProduct::query()->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->branchId())->where('product_id', $productId)->first();
-        if (!$product || !$branchProduct) {
+        if (! $product || ! $branchProduct) {
             $this->errorMessage = 'الصنف غير مرتبط بالفرع الحالي.';
+
             return;
         }
 
@@ -316,6 +358,7 @@ new class extends Component {
         }
         if ($available <= 0) {
             $this->errorMessage = 'لا توجد كمية متاحة للإرجاع لهذا الصنف مع هذا الطرف.';
+
             return;
         }
 
@@ -331,16 +374,25 @@ new class extends Component {
 
     public function addSelectedProduct(): void
     {
-        if (!$this->selectedProductId) {
+        if (! $this->selectedProductId) {
             $this->errorMessage = 'اختر صنفاً من نتائج البحث أولاً.';
+
             return;
         }
 
         $this->addProduct($this->selectedProductId, $this->selectedQuantity, $this->selectedPrice);
     }
 
+    /**
+     * Stores moving over from another program return goods whose invoices were never entered here,
+     * so the limit of what the party bought or sold before is lifted while the setting is on.
+     */
     private function remainingQuantity(int $productId, int $partyId): float
     {
+        if (TenantSetting::getBool($this->tenantId(), 'returns_without_history')) {
+            return 99999999.0;
+        }
+
         if ($this->kind === 'sale') {
             $sold = (float) DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
                 ->where('orders.tenant_id', $this->tenantId())->where('orders.customer_id', $partyId)
@@ -380,6 +432,7 @@ new class extends Component {
                 $discountFactor = (float) $last->subtotal > 0
                     ? max(0, (float) $last->subtotal - (float) $last->discount) / (float) $last->subtotal
                     : 1;
+
                 return round(abs((float) $last->total_price / (float) $last->quantity) * $discountFactor, 2);
             }
 
@@ -403,16 +456,18 @@ new class extends Component {
         $tenantId = $this->tenantId();
         $branchId = $this->branchId();
 
-        if (!$this->selectedPartyId || !$branchId) {
+        if (! $this->selectedPartyId || ! $branchId) {
             $this->errorMessage = 'اختر العميل أو المورد وحدد الفرع أولاً.';
+
             return;
         }
 
         $product = Product::query()->where('tenant_id', $tenantId)->whereKey($productId)->first();
         $branchProduct = BranchProduct::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
             ->where('product_id', $productId)->first();
-        if (!$product || !$branchProduct) {
+        if (! $product || ! $branchProduct) {
             $this->errorMessage = 'الصنف غير مرتبط بالفرع الحالي.';
+
             return;
         }
 
@@ -422,13 +477,15 @@ new class extends Component {
         }
         if ($available <= 0) {
             $this->errorMessage = 'لا توجد كمية متاحة للإرجاع لهذا الصنف مع هذا الطرف.';
+
             return;
         }
 
         $quantity ??= 1;
         $price ??= $this->latestPrice($productId, $this->selectedPartyId, $product);
-        if (!is_finite($quantity) || $quantity <= 0 || !is_finite($price) || $price < 0) {
+        if (! is_finite($quantity) || $quantity <= 0 || ! is_finite($price) || $price < 0) {
             $this->errorMessage = 'أدخل كمية وسعراً صالحين للصنف.';
+
             return;
         }
 
@@ -436,6 +493,7 @@ new class extends Component {
         if ($lineIndex !== false) {
             if ((float) $this->lines[$lineIndex]['quantity'] + $quantity > $available) {
                 $this->errorMessage = 'الكمية المطلوب إرجاعها أكبر من الكمية المتاحة.';
+
                 return;
             }
             $this->lines[$lineIndex]['quantity'] = (float) $this->lines[$lineIndex]['quantity'] + $quantity;
@@ -476,7 +534,7 @@ new class extends Component {
     {
         Gate::authorize('returns.view');
         abort_unless($this->currentReturnId && $this->returnQuery()->where('id', $this->currentReturnId)->exists(), 404);
-        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: \App\Services\PdfFilename::forDocument($this->selectedPartyName, $this->invoiceNumber, $this->kind === 'sale' ? 'زبون' : 'مورد'));
+        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: PdfFilename::forDocument($this->selectedPartyName, $this->invoiceNumber, $this->kind === 'sale' ? 'زبون' : 'مورد'));
     }
 
     public function copyReturn(): void
@@ -497,18 +555,18 @@ new class extends Component {
 
     private function savedPurchaseQuantity(int $productId): float
     {
-        if (!$this->currentReturnId || $this->kind !== 'purchase') {
+        if (! $this->currentReturnId || $this->kind !== 'purchase') {
             return 0;
         }
         $old = $this->returnQuery()->where('id', $this->currentReturnId)->first();
-        if (!$old || (int) $old->branch_id !== $this->branchId()) {
+        if (! $old || (int) $old->branch_id !== $this->branchId()) {
             return 0;
         }
 
         return (float) $this->savedLines($this->currentReturnId)->where('product_id', $productId)->sum('quantity');
     }
 
-    private function returnQuery(): \Illuminate\Database\Query\Builder
+    private function returnQuery(): Builder
     {
         $query = DB::table($this->kind === 'sale' ? 'orders' : 'purchase_returns')
             ->where('tenant_id', $this->tenantId())
@@ -530,7 +588,7 @@ new class extends Component {
         return $query;
     }
 
-    private function savedLines(int $id): \Illuminate\Support\Collection
+    private function savedLines(int $id): Collection
     {
         return DB::table($this->kind === 'sale' ? 'order_items' : 'purchase_return_items')
             ->where('tenant_id', $this->tenantId())
@@ -636,7 +694,7 @@ new class extends Component {
         $changes = [];
         $add = function (int $branch, int $product, float $delta) use (&$changes): void {
             $key = $branch.':'.$product;
-            if (!isset($changes[$key])) {
+            if (! isset($changes[$key])) {
                 $stock = BranchProduct::query()->where('tenant_id', $this->tenantId())->where('branch_id', $branch)->where('product_id', $product)->lockForUpdate()->firstOrFail();
                 $changes[$key] = ['stock' => $stock, 'delta' => 0.0];
             }
@@ -657,7 +715,7 @@ new class extends Component {
         }
         foreach ($changes as $change) {
             if ((float) $change['stock']->stock_quantity + $change['delta'] < -0.00001) {
-                throw new \DomainException('المخزون غير كافٍ لتنفيذ تعديل أو حذف هذا المردود.');
+                throw new DomainException('المخزون غير كافٍ لتنفيذ تعديل أو حذف هذا المردود.');
             }
         }
 
@@ -673,7 +731,7 @@ new class extends Component {
      */
     private function purchaseReturnCostPlan(?object $old, array $lines): ?array
     {
-        $averageCost = app(\App\Services\MovingAverageCost::class);
+        $averageCost = app(MovingAverageCost::class);
         if ($this->kind !== 'purchase' || ! $averageCost->enabled($this->tenantId())) {
             return null;
         }
@@ -694,7 +752,7 @@ new class extends Component {
         foreach ($plan['moves'] ?? [] as $productId => $moves) {
             $product = Product::query()->where('tenant_id', $this->tenantId())->lockForUpdate()->find($productId);
             if ($product) {
-                app(\App\Services\MovingAverageCost::class)->apply($product, $plan['stock'][$productId] ?? 0.0, $moves);
+                app(MovingAverageCost::class)->apply($product, $plan['stock'][$productId] ?? 0.0, $moves);
             }
         }
     }
@@ -705,26 +763,27 @@ new class extends Component {
         $party = Party::query()->where('tenant_id', $this->tenantId())->lockForUpdate()->findOrFail($partyId);
         $unsettled = abs((float) $old->total) - abs((float) $old->paid_amount);
         $this->kind === 'sale'
-            ? app(\App\Services\PartyBalance::class)->applySale($party, $unsettled)
-            : app(\App\Services\PartyBalance::class)->applyPurchase($party, $unsettled);
+            ? app(PartyBalance::class)->applySale($party, $unsettled)
+            : app(PartyBalance::class)->applyPurchase($party, $unsettled);
     }
 
     public function saveReturn(bool $print = false): void
     {
-        if ($this->currentReturnId && !$this->editing && $print) {
+        if ($this->currentReturnId && ! $this->editing && $print) {
             $this->printCurrentInvoice();
 
             return;
         }
         Gate::authorize('returns.create');
-        if ($this->currentReturnId && !$this->editing) {
+        if ($this->currentReturnId && ! $this->editing) {
             $this->errorMessage = 'اضغط تعديل أولاً لتعديل الفاتورة المحفوظة.';
+
             return;
         }
         $this->validate([
             'kind' => ['required', 'in:sale,purchase'],
             'selectedPartyId' => ['required', 'integer'], 'invoiceDate' => ['required', 'date'],
-            'invoiceNumber' => ['required', 'string', 'max:100', \Illuminate\Validation\Rule::unique($this->kind === 'sale' ? 'orders' : 'purchase_returns', $this->kind === 'sale' ? 'invoice_number' : 'reference_number')->where('tenant_id', $this->tenantId())->ignore($this->currentReturnId)], 'notes' => ['nullable', 'string', 'max:5000'],
+            'invoiceNumber' => ['required', 'string', 'max:100', Rule::unique($this->kind === 'sale' ? 'orders' : 'purchase_returns', $this->kind === 'sale' ? 'invoice_number' : 'reference_number')->where('tenant_id', $this->tenantId())->ignore($this->currentReturnId)], 'notes' => ['nullable', 'string', 'max:5000'],
             'lines' => ['required', 'array', 'min:1'], 'lines.*.id' => ['required', 'integer', 'distinct'],
             'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.price' => ['required', 'numeric', 'min:0'],
             'lines.*.returned_to_stock' => ['sometimes', 'boolean'],
@@ -740,6 +799,7 @@ new class extends Component {
         $totals = $this->totals();
         if ((float) $this->paidAmount > $totals['total'] || ($this->discountType === 'percentage' && (float) $this->discountRate > 100) || ($this->discountType === 'fixed' && (float) $this->discountRate > $totals['subtotal'])) {
             $this->errorMessage = 'الدفعة أو الخصم أكبر من قيمة الفاتورة.';
+
             return;
         }
         $this->errorMessage = null;
@@ -749,13 +809,13 @@ new class extends Component {
                 $branchId = $this->branchId();
                 abort_unless($branchId, 422);
                 $old = $this->currentReturnId ? $this->returnQuery()->where('id', $this->currentReturnId)->lockForUpdate()->first() : null;
-                abort_if($this->currentReturnId && !$old, 404);
+                abort_if($this->currentReturnId && ! $old, 404);
                 $party = Party::query()->where('tenant_id', $tenantId)->where('is_active', true)->lockForUpdate()->findOrFail($this->selectedPartyId);
                 $cost = 0;
                 foreach ($this->lines as $line) {
                     $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($line['id']);
                     if ((float) $line['quantity'] > $this->remainingQuantity($product->id, $party->id) + 0.00001) {
-                        throw new \DomainException('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل أو المورد سابقاً.');
+                        throw new DomainException('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل أو المورد سابقاً.');
                     }
                     $cost += (float) $product->cost_price * (float) $line['quantity'];
                 }
@@ -813,8 +873,8 @@ new class extends Component {
                 $this->applyCostPlan($costPlan);
                 $unsettled = $totals['total'] - $totals['paid'];
                 $this->kind === 'sale'
-                    ? app(\App\Services\PartyBalance::class)->applySale($party->refresh(), -$unsettled)
-                    : app(\App\Services\PartyBalance::class)->applyPurchase($party->refresh(), -$unsettled);
+                    ? app(PartyBalance::class)->applySale($party->refresh(), -$unsettled)
+                    : app(PartyBalance::class)->applyPurchase($party->refresh(), -$unsettled);
                 $payments = Payment::query()->where('tenant_id', $tenantId)->where($foreign, $id);
                 $payment = $payments->first();
                 if ($totals['paid'] > 0) {
@@ -843,7 +903,7 @@ new class extends Component {
             $this->startNewReturn(false);
             $this->showPrint = $print;
             $this->successMessage = $this->kind === 'sale' ? 'تم تسجيل مردود المبيعات وحفظ المخزون والرصيد.' : 'تم تسجيل مردود المشتريات وحفظ المخزون والرصيد.';
-        } catch (\DomainException $exception) {
+        } catch (DomainException $exception) {
             $this->errorMessage = $exception->getMessage();
         }
     }
@@ -876,7 +936,7 @@ new class extends Component {
             });
             $this->startNewReturn(false);
             $this->successMessage = 'تم حذف المردود وعكس أثره على المخزون والرصيد.';
-        } catch (\DomainException $exception) {
+        } catch (DomainException $exception) {
             $this->errorMessage = $exception->getMessage();
         }
     }
@@ -884,8 +944,9 @@ new class extends Component {
     public function printCurrentInvoice(): void
     {
         Gate::authorize('returns.view');
-        if (!$this->currentReturnId) {
+        if (! $this->currentReturnId) {
             $this->errorMessage = 'احفظ المردود أولاً قبل الطباعة.';
+
             return;
         }
         $return = $this->returnQuery()->where('id', $this->currentReturnId)->first();
@@ -907,7 +968,7 @@ new class extends Component {
         ];
         $this->showPrint = true;
         $this->dispatch('print-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $return->id]),
-            title: \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($party?->name, $this->printData['number'], $this->kind === 'sale' ? 'زبون' : 'مورد'), '.pdf'));
+            title: Str::beforeLast(PdfFilename::forDocument($party?->name, $this->printData['number'], $this->kind === 'sale' ? 'زبون' : 'مورد'), '.pdf'));
     }
 
     public function render(): View
@@ -1224,8 +1285,8 @@ new class extends Component {
                                             </select>
                                         @endif
                                     </td>
-                                    <td class="border-l border-slate-100 px-3 py-2 text-center"><span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-black text-slate-600">{{ number_format($line['available'], 2) }}</span></td>
-                                    <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0.01" max="{{ $line['available'] }}" step="0.01" aria-label="الكمية" wire:model.live.debounce.400ms="lines.{{ $index }}.quantity" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
+                                    <td class="border-l border-slate-100 px-3 py-2 text-center"><span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-black text-slate-600">{{ $line['available'] >= 99999999 ? 'مفتوح' : number_format($line['available'], 2) }}</span></td>
+                                    <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0.01" max="{{ $line['available'] >= 99999999 ? '' : $line['available'] }}" step="0.01" aria-label="الكمية" wire:model.live.debounce.400ms="lines.{{ $index }}.quantity" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
                                     <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0" step="0.01" aria-label="السعر" wire:model.live.debounce.400ms="lines.{{ $index }}.price" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
                                     <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-black text-slate-900">{{ number_format((float) $line['quantity'] * (float) $line['price'], 2) }}</td>
                                     <td class="px-3 py-2 text-center"><button type="button" wire:click="removeLine({{ $index }})" aria-label="حذف السطر" class="inline-flex size-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"><flux:icon.trash class="size-4" /></button></td>
@@ -1249,9 +1310,9 @@ new class extends Component {
                                             class="h-9 w-full rounded-md border border-blue-300 bg-white pl-24 pr-10 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100" />
                                     </div>
                                 </td>
-                                <td class="px-2 py-2 text-center font-mono text-sm font-semibold text-slate-600">{{ $selectedProductId ? number_format($selectedProductAvailable, 2) : '—' }}</td>
+                                <td class="px-2 py-2 text-center font-mono text-sm font-semibold text-slate-600">{{ $selectedProductId ? ($selectedProductAvailable >= 99999999 ? 'مفتوح' : number_format($selectedProductAvailable, 2)) : '—' }}</td>
                                 <td class="px-2 py-2">
-                                    <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable ?: '' }}" step="0.01" wire:model="selectedQuantity" aria-label="كمية الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                    <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable >= 99999999 ? '' : ($selectedProductAvailable ?: '') }}" step="0.01" wire:model="selectedQuantity" aria-label="كمية الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                                 </td>
                                 <td class="px-2 py-2">
                                     <input x-ref="returnPrice" type="number" min="0" step="0.01" wire:model="selectedPrice" aria-label="سعر الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnTotal?.focus(); $refs.returnTotal?.select()" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
@@ -1282,7 +1343,7 @@ new class extends Component {
                                     <tr data-product-result data-return-product wire:key="return-search-{{ $product['id'] }}" x-on:mouseenter="active = {{ $loop->index }}" x-bind:class="active === {{ $loop->index }} ? 'search-result-active' : ''" x-on:mousedown.prevent wire:click="selectProduct({{ $product['id'] }})" class="cursor-pointer border-t hover:bg-indigo-50">
                                         <td class="p-2 font-mono">{{ $product['product_number'] ?: $product['id'] }}</td>
                                         <td class="p-2 font-bold">{{ $product['name'] }}</td>
-                                        <td class="p-2 text-center tabular-nums">{{ number_format($product['available'] ?? $product['stock'], 2) }}</td>
+                                        <td class="p-2 text-center tabular-nums">{{ ($product['available'] ?? 0) >= 99999999 ? 'مفتوح' : number_format($product['available'] ?? $product['stock'], 2) }}</td>
                                     </tr>
                                 @empty
                                     <tr><td colspan="3" class="p-4 text-center text-xs font-bold text-slate-400">لا توجد أصناف مطابقة أو لا توجد كمية متاحة لهذا الطرف.</td></tr>

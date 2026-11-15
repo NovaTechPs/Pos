@@ -41,6 +41,8 @@ new class extends Component
 
     public bool $roundTotalToHalf = false;
 
+    public bool $returnsWithoutHistory = false;
+
     public function mount(): void
     {
         $user = Auth::user();
@@ -70,6 +72,7 @@ new class extends Component
         $this->onlineShop = TenantSetting::getBool($tenant->id, 'online_shop_enabled');
         $this->showHomeDashboard = TenantSetting::getBool($tenant->id, 'show_home_dashboard');
         $this->roundTotalToHalf = TenantSetting::getBool($tenant->id, 'pos_round_total_to_half');
+        $this->returnsWithoutHistory = TenantSetting::getBool($tenant->id, 'returns_without_history');
     }
 
     public function save(): void
@@ -90,6 +93,7 @@ new class extends Component
             'onlineShop' => ['boolean'],
             'showHomeDashboard' => ['boolean'],
             'roundTotalToHalf' => ['boolean'],
+            'returnsWithoutHistory' => ['boolean'],
         ]);
 
         DB::transaction(function () use ($validated): void {
@@ -111,6 +115,7 @@ new class extends Component
             TenantSetting::setBool($this->tenantId, 'online_shop_enabled', $validated['onlineShop']);
             TenantSetting::setBool($this->tenantId, 'show_home_dashboard', $validated['showHomeDashboard']);
             TenantSetting::setBool($this->tenantId, 'pos_round_total_to_half', $validated['roundTotalToHalf']);
+            TenantSetting::setBool($this->tenantId, 'returns_without_history', $validated['returnsWithoutHistory']);
         });
 
         $this->dispatch('store-theme-updated', theme: $this->uiTheme);
@@ -178,6 +183,10 @@ new class extends Component
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">إجمالي نقطة البيع بدون كسور / No fractions in POS totals</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد يُقرَّب إجمالي فاتورة نقطة البيع لأسفل إلى أقرب نصف (8.58 تصبح 8.50)، ويُسجَّل الفرق في خصم الفاتورة.</span></span>
                     <input type="checkbox" wire:model="roundTotalToHalf" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
+                </label>
+                <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <span><strong class="block">مردودات بدون فاتورة سابقة / Returns without earlier invoices</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد تقبل مردودات المبيعات والمشتريات أي صنف لأي زبون أو مورد، حتى لو لم تُسجَّل فاتورته في البرنامج. مفيد عند الانتقال من برنامج قديم؛ أطفئه بعد الانتهاء.</span></span>
+                    <input type="checkbox" wire:model="returnsWithoutHistory" class="mt-1 size-5 rounded border-zinc-300 text-indigo-600">
                 </label>
                 <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                     <span><strong class="block">إظهار خانة الضريبة / Show tax</strong><span class="mt-1 block text-sm leading-6 text-zinc-500">عند التحديد تظهر خانة الضريبة في فواتير المشتريات والمبيعات والطباعة، وعند إلغاء التحديد تختفي. هذا الخيار لا يغيّر حساب الضريبة.</span></span>
@@ -275,3 +284,4 @@ new class extends Component
         </div>
     </form>
 </div>
+
