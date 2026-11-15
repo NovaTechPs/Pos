@@ -138,6 +138,7 @@ new class extends Component {
     public array $inlineSearchResults = [];
     public string $searchInvoiceQuery = '';
     public string $productSearchQuery = '';
+    public string $productPriceSearch = '';
     /** @var array<int, int|float|string> */
     public array $quickProductQuantities = [];
     public ?int $selectedBranchId = null;
@@ -1148,6 +1149,12 @@ new class extends Component {
         $this->loadQuickProducts();
     }
 
+    public function updatedProductPriceSearch(): void
+    {
+        $this->quickProductQuantities = [];
+        $this->loadQuickProducts();
+    }
+
     public function submitProductSearch(string $search): void
     {
         if ($this->invoiceIsLocked() || mb_strlen($search) > 120) {
@@ -1648,7 +1655,16 @@ new class extends Component {
             return;
         }
 
-        $requestKey = json_encode([$tenantId, $branchId, $this->selectedCustomerId, $this->selectedCategoryId,
+        $price = str_replace('٫', '.', app(PosProductSearch::class)->normalize($this->productPriceSearch));
+        $this->resetValidation('productPriceSearch');
+        if ($price !== '' && !preg_match('/^\d{1,9}(?:\.\d{1,2})?$/D', $price)) {
+            $this->quickProducts = [];
+            $this->quickProductsRequestKey = null;
+            $this->addError('productPriceSearch', 'أدخل سعرًا صحيحًا، مثل 75 أو 75.50.');
+            return;
+        }
+
+        $requestKey = json_encode([$tenantId, $branchId, $this->selectedCustomerId, $this->selectedCategoryId, $price,
             app(PosProductSearch::class)->normalize($this->productSearchQuery)], JSON_THROW_ON_ERROR);
         if (!$force && $this->quickProductsRequestKey === $requestKey) {
             return;
@@ -1656,14 +1672,15 @@ new class extends Component {
 
         $remoteIds = $refreshRemoteCatalog
             ? $this->refreshRemoteCatalog(filters: array_filter([
-                'search' => trim($this->productSearchQuery), 'category_id' => $this->selectedCategoryId,
+                'search' => trim($this->productSearchQuery), 'category_id' => $this->selectedCategoryId, 'retail_price' => $price,
             ], fn ($value) => $value !== null && $value !== ''))
             : null;
         $query = Product::query()
             ->select(['id', 'tenant_id', 'name', 'category_id', 'product_number'])
             ->where('tenant_id', $tenantId)
             ->when($remoteIds !== null, fn ($query) => $query->whereIn('id', $remoteIds))
-            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branchId))
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branchId)
+                ->where('tenant_id', $tenantId)->when($price !== '', fn ($query) => $query->where('retail_price', $price)))
             ->with([
                 'barcodes' => fn ($q) => $q->select(['id', 'product_id', 'tenant_id', 'barcode'])->where('tenant_id', $tenantId),
                 'branchProducts' => fn ($q) => $q->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity', 'offer_quantity', 'offer_price'])->where('branch_id', $branchId),
@@ -5104,11 +5121,25 @@ new class extends Component {
                                         type="search" maxlength="120" aria-describedby="pos-search-help" aria-label="البحث عن صنف بالاسم أو الرقم أو الباركود" autocomplete="off" placeholder="اسم الصنف، أي كلمات منه، رقمه أو باركوده…"
                                         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
                                     </label>
+                                    <div data-pos-price-filter class="w-full min-w-0">
+                                        <label for="pos-price-search" class="mb-1 block text-[10px] font-bold text-slate-600">سعر البيع — اختياري</label>
+                                        <div class="flex min-w-0 items-center gap-2">
+                                            <input id="pos-price-search" data-pos-product-price-search type="text" inputmode="decimal" maxlength="12" autocomplete="off" dir="ltr"
+                                                wire:model.live.debounce.300ms="productPriceSearch" @disabled($this->invoiceIsLocked())
+                                                x-on:keydown.escape.prevent="$wire.set('productPriceSearch', '')"
+                                                x-on:keydown.enter.prevent="$wire.submitProductSearch($wire.productSearchQuery)"
+                                                aria-label="البحث بسعر البيع" aria-describedby="pos-price-help" placeholder="75.00"
+                                                class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                                            @if($productPriceSearch !== '')<button type="button" wire:click="$set('productPriceSearch', '')" @disabled($this->invoiceIsLocked()) class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600">مسح السعر</button>@endif
+                                        </div>
+                                        <p id="pos-price-help" class="mt-1 text-[9px] text-slate-500">يطابق سعر البيع في الفرع الحالي، ويمكن دمجه مع بحث الصنف.</p>
+                                        @error('productPriceSearch')<p role="alert" class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                                    </div>
                                     <div id="pos-search-help" class="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[9px] font-semibold text-slate-500">
                                         <span>الكلمات بأي ترتيب · يدعم اختلافات الألف والياء والتشكيل</span>
                                         <span dir="ltr">F2 بحث · ↓ اختيار · Enter إضافة · Esc مسح</span>
                                     </div>
-                                    <div wire:loading.delay wire:target="productSearchQuery,loadQuickProducts" role="status" class="mt-1 text-[10px] font-bold text-indigo-600">جارٍ البحث عن الأصناف…</div>
+                                    <div wire:loading.delay wire:target="productSearchQuery,productPriceSearch,loadQuickProducts" role="status" class="mt-1 text-[10px] font-bold text-indigo-600">جارٍ البحث عن الأصناف…</div>
                                 </div>
 
                                 <div class="shrink-0 border-b border-slate-200 bg-white p-2">

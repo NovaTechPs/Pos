@@ -19,7 +19,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="storefront" data-shop>
+<body class="storefront" data-shop style="--shop-blue: {{ $branding['primary_color'] ?? '#064b9b' }}; --shop-yellow: {{ $branding['accent_color'] ?? '#ffd336' }}">
     @if($shopBranch)
         <div class="shop-topbar"><div class="shop-width shop-topbar-inner">
             <span><x-shop-icon name="store" /> أهلاً بك في {{ $storeName }}</span>

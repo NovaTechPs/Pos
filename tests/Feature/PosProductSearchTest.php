@@ -408,3 +408,48 @@ test('out of stock items are highlighted in the product list', function (): void
         ->and($html)->toMatch('/data-pos-out-of-stock[\s\S]*?Finished tea[\s\S]*?نافد/u')
         ->and($html)->not->toMatch('/data-pos-out-of-stock[\s\S]*?Available tea/u');
 });
+
+test('POS price filter matches branch retail price and combines with text search', function (): void {
+    $first = searchablePosProduct($this, 'كوب أزرق');
+    $second = searchablePosProduct($this, 'طبق أبيض');
+    $differentPrice = searchablePosProduct($this, 'كوب أحمر');
+    BranchProduct::query()->where('product_id', $differentPrice->id)->update(['retail_price' => 75.50]);
+    $otherBranch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'فرع آخر']);
+    BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $otherBranch->id, 'product_id' => $differentPrice->id, 'retail_price' => 15]);
+    $page = Livewire::test('pages::tenant.pos.sales')->set('productPriceSearch', '15')->assertHasNoErrors()
+        ->assertSee('data-pos-product-price-search', false);
+    expect(array_column($page->get('quickProducts'), 'id'))->toContain($first->id, $second->id)->not->toContain($differentPrice->id);
+    $page->set('productSearchQuery', 'كوب');
+    expect(array_column($page->get('quickProducts'), 'id'))->toBe([$first->id]);
+    $page->set('productPriceSearch', '٧٥٫٥٠')->assertHasNoErrors();
+    expect(array_column($page->get('quickProducts'), 'id'))->toBe([$differentPrice->id]);
+    $page->set('productPriceSearch', '');
+    expect(array_column($page->get('quickProducts'), 'id'))->toHaveCount(2);
+});
+
+test('POS price filter accepts zero and rejects malformed amounts without stale results', function (): void {
+    $free = searchablePosProduct($this, 'صنف مجاني');
+    BranchProduct::query()->where('product_id', $free->id)->update(['retail_price' => 0]);
+    searchablePosProduct($this, 'صنف بسعر');
+    $page = Livewire::test('pages::tenant.pos.sales')->set('productPriceSearch', '0');
+    expect(array_column($page->get('quickProducts'), 'id'))->toBe([$free->id]);
+    foreach (['-1', 'abc', '15.555', '1e2', '1 OR 1=1'] as $invalid) {
+        $page->set('productPriceSearch', $invalid)->assertHasErrors('productPriceSearch');
+        expect($page->get('quickProducts'))->toBe([]);
+    }
+    $page->set('productPriceSearch', '0')->assertHasNoErrors();
+    expect(array_column($page->get('quickProducts'), 'id'))->toBe([$free->id]);
+});
+
+test('remote POS catalog applies price before limiting results and scopes to device branch', function (): void {
+    config(['branch-sync.mode' => 'central']);
+    BranchSyncDevice::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'name' => 'Price device', 'device_uuid' => (string) Str::uuid(), 'token_hash' => hash('sha256', 'price-device'), 'is_active' => true]);
+    $match = searchablePosProduct($this, 'Price match');
+    $other = searchablePosProduct($this, 'Price different');
+    BranchProduct::query()->where('product_id', $other->id)->update(['retail_price' => 75]);
+    $response = $this->withToken('price-device')->getJson('/api/branch-sync/pos-catalog?'.http_build_query(['entity' => 'products', 'retail_price' => '15']));
+    $response->assertOk();
+    expect(array_column($response->json('rows'), 'id'))->toBe([$match->id]);
+    $this->withToken('price-device')->getJson('/api/branch-sync/pos-catalog?entity=products&retail_price=-1')->assertUnprocessable();
+});

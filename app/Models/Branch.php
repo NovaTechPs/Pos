@@ -21,7 +21,13 @@ class Branch extends Model
         'address',
         'type',
         'created_by',
+        'shop_branding',
     ];
+
+    protected function casts(): array
+    {
+        return ['shop_branding' => 'array'];
+    }
 
     /** @return HasMany<BranchProduct, $this> */
     public function stocks(): HasMany

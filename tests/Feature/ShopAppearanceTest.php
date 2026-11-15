@@ -33,15 +33,15 @@ test('store branding uploads are local scoped and shared by home login and regis
     Storage::fake('public');
     Livewire::test('pages::settings.shop-appearance')->set('logo', UploadedFile::fake()->image('logo.png', 160, 160))
         ->set('banner', UploadedFile::fake()->image('banner.jpg', 1200, 400))->set('tagline', 'للأدوات المنزلية والمستلزمات')->set('heroTitle', 'كل ما تحتاجه لمنزلك في مكان واحد')->call('saveAppearance')->assertHasNoErrors();
-    $logo = TenantSetting::get($this->tenant->id, 'shop_logo');
-    $banner = TenantSetting::get($this->tenant->id, 'shop_banner');
-    expect($logo)->toStartWith('tenants/'.$this->tenant->id.'/shop/');
+    $logo = $this->branch->fresh()->shop_branding['shop_logo'];
+    $banner = $this->branch->fresh()->shop_branding['shop_banner'];
+    expect($logo)->toStartWith('tenants/'.$this->tenant->id.'/branches/'.$this->branch->id.'/shop/');
     Storage::disk('public')->assertExists([$logo, $banner]);
     foreach (['shop.home', 'shop.login', 'shop.register'] as $route) {
         $this->get(route($route, ['shop' => 'home-store']))->assertOk()->assertSee('متجر البيت العصري')->assertSee(Storage::disk('public')->url($logo), false);
     }
     Livewire::test('pages::settings.shop-appearance')->call('removeImage', 'logo')->assertHasNoErrors();
-    expect(TenantSetting::get($this->tenant->id, 'shop_logo'))->toBeNull();
+    expect($this->branch->fresh()->shop_branding['shop_logo'])->toBeNull();
 });
 
 test('shop identity rejects non image uploads and unauthorized staff', function (): void {

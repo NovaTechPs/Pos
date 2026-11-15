@@ -23,6 +23,7 @@ class BranchSyncCatalogController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'barcode' => ['nullable', 'string', 'max:100'],
             'category_id' => ['nullable', 'integer', 'min:1'],
+            'retail_price' => ['nullable', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D'],
             'ids' => ['sometimes', 'array', 'max:100'],
             'ids.*' => ['integer', 'min:1'],
         ]);
@@ -31,7 +32,9 @@ class BranchSyncCatalogController extends Controller
             ->where('tenant_id', $device->tenant_id)->whereNull('deleted_at');
         if ($products) {
             $query->whereIn('id', DB::table('branch_products')->where('tenant_id', $device->tenant_id)
-                ->where('branch_id', $device->branch_id)->select('product_id'));
+                ->where('branch_id', $device->branch_id)
+                ->when(isset($validated['retail_price']), fn ($prices) => $prices->where('retail_price', $validated['retail_price']))
+                ->select('product_id'));
             if (! empty($validated['category_id'])) {
                 $query->where('category_id', $validated['category_id']);
             }

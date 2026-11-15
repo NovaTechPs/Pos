@@ -28,25 +28,35 @@ class OnlineShop
 {
     public const SETTING = 'online_shop_enabled';
 
-    /** @return array{name: string, tagline: string, phone: string, logo: ?string, banner: ?string, hero_title: string, hero_text: string, currency: string} */
+    /** @return array{name: string, tagline: string, phone: string, logo: ?string, banner: ?string, hero_title: string, hero_text: string, currency: string, primary_color: string, accent_color: string} */
     public function branding(Branch $branch): array
     {
         $tenant = Tenant::query()->findOrFail($branch->tenant_id);
-        $setting = fn (string $key, mixed $default = ''): mixed => TenantSetting::get((int) $branch->tenant_id, $key, $default);
+        $overrides = $branch->shop_branding ?? [];
+        $setting = fn (string $key, mixed $default = ''): mixed => array_key_exists($key, $overrides)
+            ? $overrides[$key] : TenantSetting::get((int) $branch->tenant_id, $key, $default);
         $logo = $setting('shop_logo');
         $banner = $setting('shop_banner');
 
         return [
-            'name' => $tenant->name, 'phone' => (string) $tenant->phone,
+            'name' => (string) $setting('shop_name', $tenant->name),
+            'phone' => (string) $setting('shop_phone', $branch->phone ?: $tenant->phone),
             'tagline' => (string) $setting('shop_tagline', 'كل ما تحتاجه، في مكان واحد'),
             'logo' => $logo ? Storage::disk('public')->url($logo) : null,
             'banner' => $banner ? Storage::disk('public')->url($banner) : null,
             'hero_title' => (string) $setting('shop_hero_title', 'اختيارات تحبّها، أقرب إليك'),
             'hero_text' => (string) $setting('shop_hero_text', 'تصفّح أقسام متجرنا، اختر ما يناسبك وأرسل طلبك بكل سهولة.'),
+            'primary_color' => self::brandColor($setting('shop_primary_color'), '#064b9b'),
+            'accent_color' => self::brandColor($setting('shop_accent_color'), '#ffd336'),
             'currency' => match ($setting('currency', 'ILS')) {
                 'USD' => '$', 'JOD' => 'د.أ', default => '₪'
             },
         ];
+    }
+
+    public static function brandColor(mixed $color, string $default): string
+    {
+        return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/D', $color) ? $color : $default;
     }
 
     /** @return Collection<int, WebCategory> */
