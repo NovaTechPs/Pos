@@ -170,16 +170,16 @@ new class extends Component {
     {
         $tenantId = $this->service()->tenantId;
         $document = match ($sourceOrder) {
-            1, 2 => Order::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
-            3 => Purchase::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
+            1, 2, 6 => Order::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
+            3, 7 => Purchase::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
             4 => PurchaseReturn::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
             5 => Payment::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
             default => abort(404),
         };
 
         $this->statementDocument = match ($sourceOrder) {
-            1, 2 => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
-            3 => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
+            1, 2, 6 => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
+            3, 7 => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
             4 => ['title' => 'مردود مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => '', 'notes' => (string) ($document->notes ?? '')],
             5 => ['title' => $document->type === 'receipt' ? 'سند قبض' : 'سند صرف', 'reference' => (string) $document->voucher_number, 'date' => (string) $document->payment_date, 'party' => (string) ($document->party?->name ?? 'بدون طرف'), 'amount' => (float) $document->amount, 'status' => (string) $document->payment_method, 'notes' => (string) ($document->notes ?? '')],
         };

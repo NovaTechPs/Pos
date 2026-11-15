@@ -532,12 +532,13 @@ new class extends Component {
             ->where('tenant_id', $tenantId)
             ->with([
                 'orders' => function ($query) use ($tenantId) {
-                    $query->withoutGlobalScope('tenant_id')->where('tenant_id', $tenantId);
+                    $query->withoutGlobalScope('tenant_id')->where('tenant_id', $tenantId)->where('status', 'completed');
                     $query->select(
                         'id',
                         'customer_id',
                         'type',
                         'total',
+                        'paid_amount',
                         'delivery_fee',
                         'invoice_date',
                         'invoice_number',
@@ -571,6 +572,7 @@ new class extends Component {
                         'reference_number',
                         'total',
                         'paid_amount',
+                        'invoice_date',
                         'notes',
                         'created_at'
                     );
@@ -603,11 +605,34 @@ new class extends Component {
     private function buildStatementTransactions(
         Party $party
     ): Collection {
+        /*
+        | Every document is first signed as "owed to us" (positive) or "owed by us" (negative),
+        | the same way as the statement report. It is then shown in the party's own direction:
+        | a customer's debit is what they owe us; a supplier's debit is what we owe them, which is
+        | also how their recorded balance is kept.
+        */
+        $supplierView = $party->type === 'supplier';
         $transactions = collect();
+        $push = function (string $id, string $sourceType, int $sourceId, mixed $date, string $description, ?string $notes, float $owedToUs) use ($transactions, $supplierView): void {
+            if (abs($owedToUs) < 0.005) {
+                return;
+            }
+            $amount = $supplierView ? -$owedToUs : $owedToUs;
+            $transactions->push([
+                'id' => $id,
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+                'date' => $date,
+                'description' => $description,
+                'notes' => $notes,
+                'debit' => $amount > 0 ? round($amount, 2) : 0.00,
+                'credit' => $amount < 0 ? round(-$amount, 2) : 0.00,
+            ]);
+        };
 
         /*
         |--------------------------------------------------------------------------
-        | Sales Orders
+        | Sales invoices and returns
         |--------------------------------------------------------------------------
         */
 
@@ -617,36 +642,21 @@ new class extends Component {
 
         foreach ($party->orders as $order) {
             $isReturn = $order->type === 'return';
+            $number = $order->invoice_number ?: $order->id;
+            $date = $order->invoice_date ?? $order->created_at;
             $amount = max(0, abs((float) $order->total) - (float) $order->delivery_fee);
+
+            $push('order-'.$order->id, 'order', $order->id, $date,
+                ($isReturn ? 'مردود مبيعات #' : 'فاتورة مبيعات #').$number, $order->notes, $isReturn ? -$amount : $amount);
+
             if (! $isReturn) {
-                // Paid on the invoice itself without a receipt voucher (older invoices): settled by that payment,
-                // matching the statement report. Linked receipt vouchers are listed on their own.
-                $amount = max(0, $amount - max(0, (float) $order->paid_amount - (float) $order->delivery_fee - (float) ($linkedReceipts[$order->id] ?? 0)));
+                // Paid on the invoice itself without a receipt voucher: shown as its own line. Linked vouchers are listed on their own.
+                $paidOnInvoice = max(0, (float) $order->paid_amount - (float) $order->delivery_fee - (float) ($linkedReceipts[$order->id] ?? 0));
+                $push('order-paid-'.$order->id, 'order', $order->id, $date, 'دفعة على فاتورة المبيعات #'.$number, null, -min($amount, $paidOnInvoice));
             }
-
-            $transactions->push([
-                'id' => 'order-' . $order->id,
-
-                'source_type' => 'order',
-
-                'source_id' => $order->id,
-
-                'date' => $order->invoice_date ?? $order->created_at,
-
-                'description' => $isReturn
-                    ? 'مردود مبيعات #' . ($order->invoice_number ?: $order->id)
-                    : 'فاتورة مبيعات #' . ($order->invoice_number ?: $order->id),
-
-                'notes' => $order->notes,
-
-                // فاتورة البيع تزيد مديونية العميل.
-                'debit' => $isReturn ? 0.00 : $amount,
-
-                // مردود المبيعات يخفض مديونية العميل.
-                'credit' => $isReturn ? $amount : 0.00,
-            ]);
         }
 
+        // Delivery fees the store owes a delivery company.
         if (in_array($party->type, ['supplier', 'both'], true)) {
             Order::query()
                 ->where('tenant_id', $party->tenant_id)
@@ -654,108 +664,49 @@ new class extends Component {
                 ->where('status', 'completed')
                 ->where('delivery_fee', '>', 0)
                 ->get()
-                ->each(function (Order $order) use ($transactions): void {
-                    $transactions->push([
-                        'id' => 'delivery-' . $order->id,
-                        'source_type' => 'delivery',
-                        'source_id' => $order->id,
-                        'date' => $order->invoice_date ?? $order->created_at,
-                        'description' => 'رسوم توصيل فاتورة #' . ($order->invoice_number ?: $order->id),
-                        'notes' => $order->notes,
-                        'debit' => (float) $order->delivery_fee,
-                        'credit' => 0.00,
-                    ]);
-                });
+                ->each(fn (Order $order) => $push('delivery-'.$order->id, 'delivery', $order->id, $order->invoice_date ?? $order->created_at,
+                    'رسوم توصيل فاتورة #'.($order->invoice_number ?: $order->id), $order->notes, -(float) $order->delivery_fee));
         }
-
-        foreach ($party->purchases as $purchase) {
-            $transactions->push([
-                'id' => 'purchase-' . $purchase->id,
-                'source_type' => 'purchase',
-                'source_id' => $purchase->id,
-                'date' => $purchase->created_at,
-                'description' => 'فاتورة مشتريات #' . ($purchase->reference_number ?: $purchase->id),
-                'notes' => $purchase->notes,
-                'debit' => abs((float) $purchase->total),
-                'credit' => abs((float) $purchase->paid_amount),
-            ]);
-        }
-
-        foreach ($party->purchaseReturns as $purchaseReturn) {
-            $transactions->push([
-                'id' => 'purchase-return-' . $purchaseReturn->id,
-                'source_type' => 'purchase_return',
-                'source_id' => $purchaseReturn->id,
-                'date' => $purchaseReturn->created_at,
-                'description' => 'مردود مشتريات #' . ($purchaseReturn->reference_number ?: $purchaseReturn->id),
-                'notes' => $purchaseReturn->notes,
-                'debit' => 0.00,
-                'credit' => abs((float) $purchaseReturn->total),
-            ]);
-        }
-
 
         /*
         |--------------------------------------------------------------------------
-        | Payments
+        | Purchases and purchase returns
+        |--------------------------------------------------------------------------
+        */
+
+        $linkedPurchasePayments = \App\Models\Payment::query()->where('tenant_id', $party->tenant_id)
+            ->whereIn('purchase_id', $party->purchases->modelKeys())
+            ->selectRaw("purchase_id, SUM(CASE WHEN type = 'payment' THEN amount ELSE -amount END) as paid")
+            ->groupBy('purchase_id')->pluck('paid', 'purchase_id');
+
+        foreach ($party->purchases as $purchase) {
+            $number = $purchase->reference_number ?: $purchase->id;
+            $date = $purchase->invoice_date ?? $purchase->created_at;
+            $total = abs((float) $purchase->total);
+            $push('purchase-'.$purchase->id, 'purchase', $purchase->id, $date, 'فاتورة مشتريات #'.$number, $purchase->notes, -$total);
+            $paidOnInvoice = max(0, (float) $purchase->paid_amount - (float) ($linkedPurchasePayments[$purchase->id] ?? 0));
+            $push('purchase-paid-'.$purchase->id, 'purchase', $purchase->id, $date, 'دفعة على فاتورة المشتريات #'.$number, null, min($total, $paidOnInvoice));
+        }
+
+        foreach ($party->purchaseReturns as $purchaseReturn) {
+            $push('purchase-return-'.$purchaseReturn->id, 'purchase_return', $purchaseReturn->id, $purchaseReturn->created_at,
+                'مردود مشتريات #'.($purchaseReturn->reference_number ?: $purchaseReturn->id), $purchaseReturn->notes, abs((float) $purchaseReturn->total));
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Vouchers: a receipt lowers what the party owes us, a payment raises it.
         |--------------------------------------------------------------------------
         */
 
         foreach ($party->payments as $payment) {
-            if ($payment->purchase_return_id) {
-                $transactions->push([
-                    'id' => 'payment-'.$payment->id, 'source_type' => 'payment', 'source_id' => $payment->id,
-                    'date' => $payment->payment_date ?: $payment->created_at,
-                    'description' => 'دفعة مستردة من مردود مشتريات',
-                    'notes' => $payment->notes,
-                    'debit' => abs((float) $payment->amount), 'credit' => 0.00,
-                ]);
-
-                continue;
-            }
-            $isRefund = $payment->type === 'payment';
             $amount = abs((float) $payment->amount);
-            $isSupplierPayment = $payment->purchase_id !== null
-                || ($payment->order_id === null
-                    && in_array($party->type, ['supplier', 'both'], true)
-                    && $payment->type === 'payment');
-
-            if ($isSupplierPayment) {
-                $transactions->push([
-                    'id' => 'payment-' . $payment->id,
-                    'source_type' => 'payment',
-                    'source_id' => $payment->id,
-                    'date' => $payment->payment_date ?: $payment->created_at,
-                    'description' => $this->paymentDescription($payment, true),
-                    'notes' => $payment->notes,
-                    'debit' => 0.00,
-                    'credit' => $amount,
-                ]);
-
-                continue;
-            }
-
-            $transactions->push([
-                'id' => 'payment-' . $payment->id,
-
-                'source_type' => 'payment',
-
-                'source_id' => $payment->id,
-
-                'date' => $payment->payment_date ?: $payment->created_at,
-
-                'description' => $this->paymentDescription($payment),
-
-                'notes' => $payment->notes,
-
-                // قبض من العميل يقلل مديونيته.
-                'debit' => $isRefund ? $amount : 0.00,
-
-                // رد مبلغ للعميل يزيد مديونيته مرة أخرى.
-                'credit' => $isRefund ? 0.00 : $amount,
-            ]);
+            $description = $payment->purchase_return_id
+                ? 'دفعة مستردة من مردود مشتريات'
+                : $this->paymentDescription($payment, $payment->type === 'payment' && ($payment->purchase_id !== null || ($payment->order_id === null && in_array($party->type, ['supplier', 'both'], true))));
+            $push('payment-'.$payment->id, 'payment', $payment->id, $payment->payment_date ?: $payment->created_at,
+                $description, $payment->notes, $payment->type === 'receipt' ? -$amount : $amount);
         }
-
 
         /*
         |--------------------------------------------------------------------------

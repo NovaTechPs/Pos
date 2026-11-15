@@ -578,3 +578,65 @@ test('pos invoices report lists each pos invoice of the day and opens it', funct
         ->set('from', '2026-10-10')->set('to', '2026-10-20')->set('branchId', $this->branch->id)->call('applyFilters')
         ->assertSeeHtml(e(route('tenant.reports', ['report' => 'pos-invoices', 'from' => '2026-10-15', 'to' => '2026-10-15', 'branch_id' => $this->branch->id])));
 });
+
+test('report center navigation groups preserve report selection dates and permissions', function (): void {
+    $page = Livewire::test('pages::tenant.reports.center')->assertSee('reports-tabs', false)->assertSee('reports-menu', false)
+        ->assertSee('reports-metrics', false)->set('from', '2026-10-10')->call('selectReportGroup', 'المشتريات')->assertSet('report', 'purchases')->assertSet('from', '2026-10-10');
+    $page->call('selectReportGroup', 'المخزون')->assertSet('report', 'product-history')->call('selectReport', 'inventory')->assertSet('report', 'inventory');
+    $page->call('setPeriod', 'last-30')->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');
+    $page->set('search', 'قهوة')->set('stockFilter', 'low')->call('resetFilters')->assertSet('search', '')->assertSet('stockFilter', 'all');
+    Livewire::test('pages::tenant.reports.center')->call('selectReport', 'unknown')->assertForbidden();
+    Livewire::test('pages::tenant.reports.center')->call('selectReportGroup', 'unknown')->assertForbidden();
+});
+
+test('report navigation only exposes permitted groups and rejects unauthorized actions', function (): void {
+    $role = Role::create(['tenant_id' => $this->tenant->id, 'name' => 'Report navigation sales only']);
+    foreach (['reports.analytics', 'reports.sales'] as $name) {
+        $role->permissions()->attach(Permission::firstOrCreate(['name' => $name], ['display_name' => $name, 'group' => 'reports'])->id);
+    }
+    $staff = User::factory()->create(['tenant_id' => $this->tenant->id, 'role_id' => $role->id, 'branch_id' => $this->branch->id, 'is_owner' => false, 'type' => 'tenant_user']);
+    Livewire::actingAs($staff)->test('pages::tenant.reports.center')->assertDontSee('report-menu-payroll', false)
+        ->assertDontSee('report-menu-profit', false)->call('selectReportGroup', 'الموظفون')->assertForbidden();
+    Livewire::actingAs($staff)->test('pages::tenant.reports.center')->call('selectReport', 'profit')->assertForbidden();
+});
+
+test('report center shows the actual selected account statement in the redesigned layout', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'REPORT-DESIGN-01']);
+    ($this->makePayment)();
+    $page = Livewire::test('pages::tenant.reports.center')->set('partyId', $this->customer->id)
+        ->assertSee('REPORT-DESIGN-01')->assertSee('reports-result-heading', false)->assertSee('طباعة التقرير')->assertSee('تصدير Excel')->assertSee('تصدير PDF');
+    if ($previewPath = getenv('CODEX_REPORT_PREVIEW')) {
+        $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
+        $css = file_get_contents(public_path('build/'.$manifest['resources/css/app.css']['file']));
+        $markup = preg_replace('/<script\b[^>]*>[\s\S]*?<\/script>/i', '', $page->html());
+        file_put_contents($previewPath, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'.$css.'</style><body>'.$markup.'</body></html>');
+    }
+});
+
+test('statements of a supplier who also buys from the store match the recorded balance and show invoice payments as their own lines', function (): void {
+    // Opening 100 owed to the supplier; a 600 sale paid at the till without a voucher; an unpaid 1800 sale; an unpaid 112 purchase.
+    ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-SALE-PAID', 'total' => 600, 'paid_amount' => 600, 'type' => 'wholesale']);
+    ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-SALE-OPEN', 'total' => 1800, 'type' => 'wholesale']);
+    Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'SUP-PUR', 'total' => 112, 'paid_amount' => 0, 'created_at' => '2026-10-16']);
+    ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-DRAFT', 'total' => 999, 'status' => 'pending']);
+    // As the app records it for a supplier: positive means we owe them.
+    $this->supplier->update(['current_balance' => 100 + 112 - 1800]);
+
+    $component = Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $this->supplier->id)
+        ->assertDontSee('يوجد اختلاف في الرصيد')->assertSee('دفعة على فاتورة المبيعات #SUP-SALE-PAID');
+    $statement = (fn () => $this->buildStatementData($this->selectedPartyForStatement))->call($component->instance());
+    expect($statement['final_balance'])->toBe(-1588.0)->and($statement['difference'])->toBe(0.0)
+        ->and($statement['transactions']->pluck('description')->implode('|'))->not->toContain('SUP-DRAFT');
+
+    $report = (new ReportingService($this->user))->prepare('statement', array_replace($this->filters, ['party_id' => $this->supplier->id]));
+    $rows = $report['query']->get();
+    $paidSale = $rows->where('reference', 'SUP-SALE-PAID');
+    expect($paidSale->pluck('debit')->map(fn ($value): float => (float) $value)->max())->toBe(600.0)
+        ->and($paidSale->pluck('credit')->map(fn ($value): float => (float) $value)->max())->toBe(600.0)
+        ->and($paidSale->pluck('description')->all())->toBe(['فاتورة مبيعات', 'دفعة على فاتورة المبيعات'])
+        ->and((float) $report['summary']['رصيد آخر الفترة'])->toBe(1588.0)
+        ->and((float) $report['summary']['فرق المطابقة الحالي'])->toBe(0.0);
+
+    Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id)
+        ->assertSet('statementDocument.reference', 'SUP-SALE-PAID');
+});
