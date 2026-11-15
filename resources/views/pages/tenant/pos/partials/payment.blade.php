@@ -241,11 +241,27 @@
 
 <div
     class="pos-payment min-w-0 shrink-0 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm"
-    x-data
+    x-data="{ paymentSheetOpen: false }"
+    x-on:keydown.escape.window="paymentSheetOpen = false"
     dir="rtl"
 >
+    <div x-cloak x-show="paymentSheetOpen" x-transition.opacity x-on:click="paymentSheetOpen = false" class="pos-payment-sheet-backdrop" aria-hidden="true"></div>
 
     <div class="pos-payment-grid grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-[repeat(13,minmax(0,1fr))]">
+        {{-- على الجوال: نافذة سفلية لتفاصيل الدفع؛ على الشاشات الكبيرة تذوب داخل الشبكة (display: contents) --}}
+        <div data-pos-payment-sheet id="pos-payment-sheet-{{ $this->getId() }}" class="pos-payment-sheet" x-bind:data-open="paymentSheetOpen ? 'true' : 'false'" aria-label="تفاصيل الدفع">
+        <div class="pos-payment-sheet-head">
+            <span class="pos-payment-sheet-handle" aria-hidden="true"></span>
+            <div class="flex items-center justify-between">
+                <h3 class="flex items-center gap-2 text-base font-black text-slate-900">
+                    <flux:icon.credit-card class="size-5 text-blue-700" />
+                    <span>تفاصيل الدفع</span>
+                </h3>
+                <button type="button" x-on:click="paymentSheetOpen = false" aria-label="إغلاق تفاصيل الدفع" class="flex size-9 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100">
+                    <flux:icon.x-mark class="size-5" />
+                </button>
+            </div>
+        </div>
 
 
         {{-- =========================================================
@@ -257,9 +273,9 @@
 
             {{-- الإجمالي --}}
 
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+            <div data-pos-total-tile="subtotal" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
 
-                <div class="text-[9px] font-black text-slate-500">
+                <div class="pos-tile-label text-[9px] font-black text-slate-500">
                     الإجمالي
                 </div>
 
@@ -276,11 +292,12 @@
 
             {{-- الخصم --}}
 
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+            <div data-pos-total-tile="discount" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
 
                 <div class="flex items-center justify-between">
 
-                    <span class="text-[9px] font-black text-slate-500">
+                    <span class="pos-tile-label text-[9px] font-black text-slate-500">
+                        <flux:icon.tag class="pos-tile-icon size-4" />
                         الخصم
                     </span>
 
@@ -310,9 +327,10 @@
 
             {{-- التوصيل --}}
 
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2">
+            <div data-pos-total-tile="delivery" class="rounded-xl border border-slate-200 bg-slate-50 p-2">
 
-                <div class="text-[9px] font-black text-slate-500">
+                <div class="pos-tile-label text-[9px] font-black text-slate-500">
+                    <flux:icon.truck class="pos-tile-icon size-4" />
                     التوصيل
                 </div>
 
@@ -342,9 +360,9 @@
 
             {{-- المطلوب --}}
 
-            <div class="rounded-xl border border-amber-200 bg-amber-50 p-2">
+            <div data-pos-total-tile="net" class="rounded-xl border border-amber-200 bg-amber-50 p-2">
 
-                <div class="text-[9px] font-black text-amber-700">
+                <div class="pos-tile-label text-[9px] font-black text-amber-700">
 
                     {{ $this->total < 0 ? 'المسترد' : 'الصافي للدفع' }}
 
@@ -370,9 +388,10 @@
 
             {{-- المدفوع --}}
 
-            <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2">
+            <div data-pos-total-tile="paid" class="rounded-xl border border-indigo-200 bg-indigo-50 p-2">
 
-                <div class="text-[9px] font-black text-indigo-700">
+                <div class="pos-tile-label text-[9px] font-black text-indigo-700">
+                    <flux:icon.banknotes class="pos-tile-icon size-4" />
 
                     {{ $isReturnMode ? 'المصروف' : 'المدفوع' }}
 
@@ -395,15 +414,15 @@
 
             {{-- الباقي --}}
 
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2">
+            <div data-pos-total-tile="change" class="rounded-xl border border-emerald-200 bg-emerald-50 p-2">
 
                 <div
-                    class="text-[9px] font-black
+                    class="pos-tile-label text-[9px] font-black
                     {{ $this->remaining > 0
                         ? 'text-rose-700'
                         : 'text-emerald-700' }}"
                 >
-
+                    <flux:icon.wallet class="pos-tile-icon size-4" />
                     {{ $this->remaining > 0 ? 'المتبقي' : 'الباقي' }}
 
                 </div>
@@ -440,13 +459,6 @@
         {{-- =========================================================
              طرق الدفع
         ========================================================== --}}
-
-        <div data-pos-mobile-save class="pos-mobile-save">
-            <button type="button" wire:click="saveOrEditInvoice" wire:loading.attr="disabled" wire:target="saveOrEditInvoice,checkoutAndPrint" @disabled(empty($cart) && !$invoiceLocked)
-                class="min-h-12 rounded-xl bg-slate-900 px-3 py-3 text-sm font-bold text-white disabled:opacity-40">{{ $invoiceLocked ? 'تعديل الفاتورة' : 'حفظ الفاتورة' }}</button>
-            <button type="button" x-on:click="saveAndPrint()" x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
-                class="min-h-12 rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:opacity-40">{{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}</button>
-        </div>
 
         <div data-pos-payment-methods class="md:order-3 lg:order-2 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
 
@@ -490,11 +502,11 @@
             <div class="grid grid-cols-2 gap-1.5">
 
                 @foreach ([
-                    ['cash', 'نقدي', '💵'],
-                    ['card', 'بطاقة', '💳'],
-                    ['bank_transfer', 'تحويل', '🏦'],
-                    ['cheque', 'شيك', '🧾']
-                ] as [$value, $label, $icon])
+                    ['cash', 'نقدي', '💵', 'banknotes'],
+                    ['card', 'بطاقة', '💳', 'credit-card'],
+                    ['bank_transfer', 'تحويل', '🏦', 'building-library'],
+                    ['cheque', 'شيك', '🧾', 'pencil-square']
+                ] as [$value, $label, $icon, $methodIcon])
 
                     <button
                         type="button"
@@ -505,9 +517,10 @@
                                     ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
                                     : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
                             }}"
-                    >
+                    aria-pressed="{{ $payment_method === $value ? 'true' : 'false' }}">
 
-                        {{ $icon }}
+                        <span class="pos-method-emoji">{{ $icon }}</span>
+                        <flux:icon :name="$methodIcon" class="pos-method-icon size-4" />
                         {{ $label }}
 
                     </button>
@@ -516,6 +529,20 @@
 
             </div>
 
+        </div>
+
+        <div data-pos-mobile-save class="pos-mobile-save">
+            <button type="button" x-on:click="saveAndPrint()" x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
+                class="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-bold text-emerald-800 disabled:opacity-40">
+                <flux:icon.printer class="size-5" />
+                <span>{{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}</span>
+            </button>
+            <button type="button" data-pos-payment-apply x-on:click="paymentSheetOpen = false"
+                class="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-700 px-3 py-3 text-sm font-bold text-white">
+                <flux:icon.check class="size-5" />
+                <span>تطبيق</span>
+            </button>
+        </div>
         </div>
 
 
@@ -533,9 +560,10 @@
             @endif
 
 
-            <div class="mb-1.5 flex items-center justify-between">
+            <div class="pos-customer-head mb-1.5 flex items-center justify-between">
 
-                <span class="text-[10px] font-black text-slate-800">
+                <span class="pos-customer-label text-[10px] font-black text-slate-800">
+                    <flux:icon.user class="pos-tile-icon size-5" />
                     العميل
                 </span>
 
@@ -581,7 +609,7 @@
                 <button
                     type="button"
                     wire:click="openCustomerModal" @disabled($invoiceLocked)
-                    class="w-full rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-right hover:bg-indigo-100"
+                    class="pos-customer-pick pos-customer-selected w-full rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-right hover:bg-indigo-100"
                 >
 
                     <div class="truncate text-xs font-black text-indigo-800">
@@ -616,14 +644,23 @@
                 <button
                     type="button"
                     wire:click="openCustomerModal" @disabled($invoiceLocked)
-                    class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50"
+                    class="pos-customer-pick w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-black text-indigo-700 hover:bg-indigo-50"
                 >
 
-                    👤 إضافة زبون للفاتورة
+                    <span class="pos-customer-desktop-label">👤 إضافة زبون للفاتورة</span>
+                    <span class="pos-customer-placeholder">اختر عميلاً…</span>
+                    <flux:icon.chevron-down class="pos-customer-chevron size-4" />
 
                 </button>
 
             @endif
+
+            @can('customers.create')
+                <a href="{{ route('tenant.customer') }}" target="_blank" rel="noopener" data-pos-add-customer aria-label="إضافة عميل جديد" title="إضافة عميل جديد"
+                    class="pos-add-customer">
+                    <flux:icon.user-plus class="size-5" />
+                </a>
+            @endcan
 
 
 
@@ -645,6 +682,25 @@
 
 
 
+    </div>
+
+    {{-- شريط الجوال الثابت: حفظ، تفاصيل الدفع، الصافي --}}
+    <div data-pos-mobile-bar class="pos-mobile-bar">
+        <button type="button" data-pos-mobile-bar-save wire:click="saveOrEditInvoice" wire:loading.attr="disabled" wire:target="saveOrEditInvoice,checkoutAndPrint" @disabled(empty($cart) && !$invoiceLocked)
+            class="pos-mobile-bar-save {{ $isReturnMode ? 'bg-rose-600' : 'bg-blue-700' }}">
+            <flux:icon.check class="size-5 shrink-0" />
+            <span>{{ $invoiceLocked ? 'تعديل الفاتورة' : 'حفظ الفاتورة' }}</span>
+        </button>
+        <button type="button" data-pos-payment-details x-on:click="paymentSheetOpen = !paymentSheetOpen" x-bind:aria-expanded="paymentSheetOpen" aria-controls="pos-payment-sheet-{{ $this->getId() }}"
+            class="pos-mobile-bar-details">
+            <flux:icon.credit-card class="size-5 shrink-0" />
+            <span>تفاصيل الدفع</span>
+            <flux:icon.chevron-up class="size-4 shrink-0 transition" x-bind:class="paymentSheetOpen && 'rotate-180'" />
+        </button>
+        <div data-pos-mobile-net class="pos-mobile-bar-net {{ $this->total < 0 ? 'pos-mobile-bar-net-refund' : '' }}" role="status" aria-live="polite">
+            <span class="pos-mobile-bar-net-label">{{ $this->total < 0 ? 'المسترد' : 'الصافي للدفع' }}</span>
+            <strong dir="ltr"><span class="pos-mobile-bar-currency">{{ $this->currencySymbol() }}</span> {{ number_format($this->amountDue, 2) }}</strong>
+        </div>
     </div>
 
 

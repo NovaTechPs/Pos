@@ -1,7 +1,23 @@
 <div x-data="{ mobileToolsOpen: false }" x-bind:data-expanded="mobileToolsOpen" class="pos-toolbar min-w-0 shrink-0 overflow-visible rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.06)]">
 
-    <div class="pos-mobile-tools flex items-center gap-2" dir="rtl">
-        <button type="button" x-on:click="mobileToolsOpen = !mobileToolsOpen" x-bind:aria-expanded="mobileToolsOpen" aria-controls="pos-toolbar-tools-{{ $this->getId() }}" class="min-h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700">أدوات الفاتورة ▾</button>
+    <div class="pos-mobile-tools flex items-center justify-between gap-2" dir="rtl">
+        <h2 data-pos-mobile-invoice-title class="flex min-w-0 items-center gap-2 text-base font-black {{ $isReturnMode ? 'text-rose-700' : 'text-slate-900' }}">
+            <flux:icon.document-text class="size-6 shrink-0 {{ $isReturnMode ? 'text-rose-600' : 'text-blue-700' }}" />
+            <span class="truncate">
+                @if ($currentInvoiceId)
+                    فاتورة #{{ $this->receipt['invoice_no'] ?? $currentInvoiceId }}
+                @elseif ($isReturnMode)
+                    فاتورة مرتجع جديدة
+                @else
+                    فاتورة بيع جديدة
+                @endif
+            </span>
+        </h2>
+        <button type="button" x-on:click="mobileToolsOpen = !mobileToolsOpen" x-bind:aria-expanded="mobileToolsOpen" aria-controls="pos-toolbar-tools-{{ $this->getId() }}" class="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm">
+            <flux:icon.cog-6-tooth class="size-4" />
+            <span>أدوات الفاتورة</span>
+            <flux:icon.chevron-down class="size-4 transition" x-bind:class="mobileToolsOpen && 'rotate-180'" />
+        </button>
     </div>
     <div data-pos-toolbar-content id="pos-toolbar-tools-{{ $this->getId() }}">
     {{-- =========================================================

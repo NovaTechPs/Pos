@@ -3294,6 +3294,16 @@ new class extends Component {
         return abs($this->total);
     }
 
+    /**
+     * Symbol of the tenant currency shown beside the amount due.
+     */
+    public function currencySymbol(): string
+    {
+        $currency = (string) TenantSetting::get((int) $this->tenantId(), 'currency', 'ILS');
+
+        return ['ILS' => '₪', 'USD' => '$', 'JOD' => 'د.أ'][$currency] ?? '₪';
+    }
+
     public function getChangeProperty(): float
     {
         if ($this->amountDue <= 0) {
@@ -5086,6 +5096,7 @@ new class extends Component {
             x-on:keydown.window.f6.prevent="if (!$event.repeat) saveAndPrint()"
             x-on:keydown.window.f10.prevent="if (!$wire.showNewProductModal && !$wire.showHoldNotesModal && !$wire.showClearInvoiceModal) { const panel = $el.querySelector('[data-pos-products-panel]'); if (panel) panel.dataset.selectedProductIndex = '0'; $nextTick(() => $el.querySelector('[data-pos-product-panel-search]')?.focus()) }"
             class="pos-layout flex min-w-0 flex-col gap-2">
+            @include('pages.tenant.pos.partials.mobile-header')
             @include('pages.tenant.pos.partials.toolbar')
 
             @if ($errorMessage || $successMessage || $this->has_below_cost_item)

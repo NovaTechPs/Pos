@@ -76,3 +76,49 @@ test('responsive POS keeps one cart with mobile search and save below totals', f
     expect((float) Order::query()->sole()->total)->toBe(30.0)
         ->and((float) BranchProduct::query()->where('product_id', $product->id)->sole()->stock_quantity)->toBe(17.0);
 });
+
+test('phone POS shows the app bar, invoice card, item stepper, sticky save bar and payment sheet', function (): void {
+    $tenant = Tenant::query()->create(['name' => 'متجر الجوال']);
+    $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الرئيسي']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+    Shift::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'status' => 'open', 'opened_at' => now(), 'opened_by' => $user->id, 'opening_cash' => 0]);
+    $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'كوب زجاجي', 'cost_price' => 4]);
+    BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'retail_price' => 7.5, 'stock_quantity' => 20]);
+
+    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $product->id);
+    $lineKey = (string) array_key_first($component->get('cart'));
+    $dom = new DOMDocument;
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$component->html(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($dom);
+    $text = fn (string $query): string => trim(preg_replace('/\s+/u', ' ', $xpath->query($query)->item(0)?->textContent ?? ''));
+
+    expect($xpath->query('//*[@data-pos-mobile-header]//*[@data-pos-mobile-section-pills]/*')->length)->toBe(3)
+        ->and($text('//*[@data-pos-mobile-section-pills]/*[@aria-current="page"]'))->toBe('نقطة البيع')
+        ->and($xpath->query('//*[@data-pos-mobile-header]//*[@data-pos-mobile-held]')->length)->toBe(1)
+        ->and($text('//*[@data-pos-mobile-invoice-title]'))->toBe('فاتورة بيع جديدة')
+        ->and($xpath->query('//*[@data-pos-barcode-entry]/*[@data-pos-add-button]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-barcode-entry]/*[@data-pos-scanner-button]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-price-dropdown]//input[@aria-label="البحث بسعر البيع على الجوال"]')->length)->toBe(1)
+        ->and($text('//*[@data-pos-quantity-chip]'))->toBe('الكمية: 1')
+        ->and($text('//*[@data-pos-mobile-cart-head]//h3'))->toBe('الأصناف (1)')
+        ->and($xpath->query('//*[@data-pos-quantity-step="up"]')->item(0)->getAttribute('wire:click'))->toBe("updateCartField('{$lineKey}', 'quantity', '2')")
+        ->and($xpath->query('//*[@data-pos-quantity-step="down"]')->item(0)->hasAttribute('disabled'))->toBeTrue();
+
+    $sheet = '//*[@data-pos-payment-sheet]';
+    expect($xpath->query($sheet.'/*[@data-pos-payment-methods]//button')->length)->toBe(4)
+        ->and($xpath->query($sheet.'/*[contains(@class, "pos-payment-totals")]/*[@data-pos-total-tile]')->length)->toBe(6)
+        ->and($xpath->query($sheet.'//*[@data-pos-payment-apply]')->length)->toBe(1)
+        ->and($xpath->query($sheet.'//*[@data-pos-customer-notes]')->length)->toBe(0)
+        ->and($xpath->query('//*[@data-pos-customer-notes]//*[@data-pos-add-customer]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-mobile-bar]/*[@data-pos-mobile-bar-save][@*[name()="wire:click"]="saveOrEditInvoice"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@data-pos-mobile-bar]/*[@data-pos-payment-details]')->length)->toBe(1)
+        ->and($text('//*[@data-pos-mobile-net]'))->toBe('الصافي للدفع ₪ 7.50');
+
+    $styles = file_get_contents(resource_path('css/pos.css'));
+    expect($styles)->toContain("@media screen and (min-width: 1024px) {\n    .pos-payment-sheet { display: contents; }\n}")
+        ->and($styles)->toContain('.pos-payment-sheet[data-open="true"]');
+
+    $component->call('updateCartField', $lineKey, 'quantity', '2');
+    expect((float) $component->get('cart')[$lineKey]['quantity'])->toBe(2.0);
+});
