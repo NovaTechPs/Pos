@@ -211,7 +211,7 @@ test('daily settlements report lists approved days of the tenant within the peri
 
 test('new accounting reports render in the reports center print and export with grouped choices', function (): void {
     ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'amount' => 15, 'voucher_number' => 'EXP-CENTER']);
-    $component = Livewire::test('pages::tenant.reports.center')->assertSee('الحسابات والذمم')->assertSee('أعمار الذمم المدينة والدائنة');
+    $component = Livewire::test('pages::tenant.reports.center')->assertSee('تقارير الحسابات')->assertSee('أعمار الذمم المدينة والدائنة');
     foreach (['aging', 'cashflow', 'daily-cash', 'tax', 'branches', 'settlements'] as $report) {
         $component->set('report', $report)->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')->assertOk()->assertHasNoErrors();
     }

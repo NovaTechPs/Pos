@@ -295,7 +295,7 @@ test('statement rows open their linked sales invoice or payment document', funct
         ->call('openStatementDocument', 1, $order->id)
         ->assertSet('showStatementDocument', true)
         ->assertSet('statementDocument.reference', 'OPEN-ORDER')
-        ->call('openStatementDocument', 4, $payment->id)
+        ->call('openStatementDocument', 5, $payment->id)
         ->assertSet('statementDocument.reference', 'OPEN-PAYMENT')
         ->call('closeStatementDocument')
         ->assertSet('showStatementDocument', false);

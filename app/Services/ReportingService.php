@@ -544,17 +544,8 @@ class ReportingService
     /** @return ReportDefinition */
     private function profit(): array
     {
-        $orders = $this->orders();
-        $sales = (clone $orders)->selectRaw('COALESCE(SUM('.self::ORDER_REVENUE_SQL.'),0) as revenue')
-            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END),0) as gross_sales, COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END),0) as returns")
-            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(tax_amount) ELSE tax_amount END),0) as tax, COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(delivery_fee) ELSE delivery_fee END),0) as delivery")
-            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN discount ELSE 0 END),0) as discount, COALESCE(SUM(CASE WHEN type != 'return' THEN total_cost ELSE 0 END),0) as cost")->first();
-        $returnCost = (clone $orders)->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)->sum(DB::raw('ABS(order_items.total_cost)'));
+        ['sales' => $sales, 'cost' => $cost, 'gross' => $gross] = $this->profitFigures();
         $expenses = $this->expenseVouchers()->sum('payments.amount');
-        $cost = ($this->filters['cost_method'] ?? 'recorded') === 'recorded'
-            ? (float) $sales->cost - (float) $returnCost
-            : (float) DB::query()->fromSub($this->itemCosts(), 'cost_lines')->sum('signed_cost');
-        $gross = (float) $sales->revenue - $cost;
         $rows = [
             ['label' => 'إجمالي فواتير البيع (شامل الضريبة والتوصيل)', 'amount' => $sales->gross_sales],
             ['label' => 'مردودات المبيعات', 'amount' => $sales->returns],
@@ -587,6 +578,52 @@ class ReportingService
             'الرواتب هنا على أساس الصرف، وليست تسوية استحقاق محاسبية. السلف وسداد الموردين ليست مصروفات تشغيلية. لا تسجّل الراتب نفسه مرة ثانية كمصروف عام.',
             'التكاليف التاريخية الناقصة أو المصروفات غير المسجلة تؤثر على الدقة. لا يُحسب هذا التقرير من المقبوضات بدلاً من المبيعات.',
         ]);
+    }
+
+    /**
+     * Headline figures of the report center for the chosen period and branch. A figure the user
+     * may not see is null.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{sales: ?float, purchases: ?float, profit: ?float}
+     */
+    public function overview(array $filters): array
+    {
+        Gate::forUser($this->user)->authorize('reports.analytics');
+        $this->filters = Validator::make($filters, [
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ])->validate() + ['source' => '', 'sale_kind' => '', 'cost_method' => 'recorded'];
+
+        return [
+            'sales' => $this->user->can('reports.sales')
+                ? (float) $this->orders()->sum(DB::raw("CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END"))
+                : null,
+            'purchases' => $this->user->can('reports.purchases')
+                ? (float) $this->purchases()['summary']['صافي المشتريات']
+                : null,
+            'profit' => $this->user->can('reports.profit') ? $this->profitFigures()['gross'] : null,
+        ];
+    }
+
+    /**
+     * Sales totals, cost of goods sold and gross profit shared by the profit report and the overview.
+     *
+     * @return array{sales: object, cost: float, gross: float}
+     */
+    private function profitFigures(): array
+    {
+        $orders = $this->orders();
+        $sales = (clone $orders)->selectRaw('COALESCE(SUM('.self::ORDER_REVENUE_SQL.'),0) as revenue')
+            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END),0) as gross_sales, COALESCE(SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END),0) as returns")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(tax_amount) ELSE tax_amount END),0) as tax, COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(delivery_fee) ELSE delivery_fee END),0) as delivery")
+            ->selectRaw("COALESCE(SUM(CASE WHEN type != 'return' THEN discount ELSE 0 END),0) as discount, COALESCE(SUM(CASE WHEN type != 'return' THEN total_cost ELSE 0 END),0) as cost")->first();
+        $returnCost = (clone $orders)->where('orders.type', 'return')->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)->sum(DB::raw('ABS(order_items.total_cost)'));
+        $cost = ($this->filters['cost_method'] ?? 'recorded') === 'recorded'
+            ? (float) $sales->cost - (float) $returnCost
+            : (float) DB::query()->fromSub($this->itemCosts(), 'cost_lines')->sum('signed_cost');
+
+        return ['sales' => $sales, 'cost' => $cost, 'gross' => (float) $sales->revenue - $cost];
     }
 
     /** @return ReportDefinition */

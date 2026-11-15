@@ -2,6 +2,7 @@
 @import './responsive.css';
 @import './pos.css';
 @import './shop.css';
+@import './reports.css';
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 

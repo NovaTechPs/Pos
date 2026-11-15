@@ -1,6 +1,44 @@
-@if ($definition['summary'])
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">@foreach ($definition['summary'] as $label => $value)<div wire:key="statement-summary-{{ $loop->index }}" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><p class="text-sm text-slate-500">{{ $label }}</p><p class="mt-2 text-2xl font-bold tabular-nums" dir="ltr">{{ number_format((float) $value, 2) }}</p></div>@endforeach</div>
+@php
+    $summary = $definition['summary'];
+    $hasParty = array_key_exists('رصيد أول الفترة', $summary);
+    $money = fn ($value): string => number_format((float) $value, 2);
+@endphp
+@if ($definition['notes'])
+    <details class="reports-notes"><summary>ملاحظات حول طريقة احتساب الكشف</summary><div>@foreach ($definition['notes'] as $note)<p wire:key="statement-note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div></details>
 @endif
-@if ($definition['notes'])<div class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">@foreach ($definition['notes'] as $note)<p wire:key="statement-note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div>@endif
-<div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700"><table class="w-full whitespace-nowrap text-right text-sm"><thead class="bg-slate-100 dark:bg-slate-800"><tr>@foreach ($definition['columns'] as $label)<th class="p-3">{{ $label }}</th>@endforeach</tr></thead><tbody>@forelse ($rows as $row)<tr wire:key="statement-row-{{ $rows->currentPage() }}-{{ $loop->index }}" data-statement-row tabindex="0" @if(isset($row->source_order, $row->source_id)) wire:click="openStatementDocument({{ $row->source_order }}, {{ $row->source_id }})" x-on:keydown.enter.prevent="$el.click()" @endif class="border-t border-slate-100 transition hover:bg-indigo-50 focus:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 dark:border-slate-800 dark:hover:bg-slate-800 dark:focus:bg-slate-700 {{ isset($row->source_order, $row->source_id) ? 'cursor-pointer' : '' }}">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">{{ \App\Services\ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">اختر زبوناً أو مورداً من القائمة لعرض كشف الحساب.</td></tr>@endforelse</tbody></table></div>
+<div class="reports-table-wrap">
+    <table class="reports-statement-table">
+        <thead><tr>@foreach ($definition['columns'] as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
+        <tbody>
+            @if ($hasParty && $rows->onFirstPage())
+                <tr data-statement-opening><td><span class="reports-date"><flux:icon.calendar variant="outline" />{{ $from }}</span></td><td>—</td><td>رصيد افتتاحي</td><td>—</td><td>{{ $money(0) }}</td><td>{{ $money(0) }}</td><td class="reports-balance">{{ $money($summary['رصيد أول الفترة']) }}</td></tr>
+            @endif
+            @forelse ($rows as $row)
+                <tr wire:key="statement-row-{{ $rows->currentPage() }}-{{ $loop->index }}" data-statement-row tabindex="0" @if(isset($row->source_order, $row->source_id)) wire:click="openStatementDocument({{ $row->source_order }}, {{ $row->source_id }})" x-on:keydown.enter.prevent="$el.click()" @endif class="{{ isset($row->source_order, $row->source_id) ? 'cursor-pointer' : '' }}">
+                    @foreach ($definition['columns'] as $key => $label)
+                        @if ($key === 'event_date')
+                            <td><span class="reports-date"><flux:icon.calendar variant="outline" />{{ substr((string) $row->event_date, 0, 10) }}</span></td>
+                        @elseif ($key === 'reference')
+                            <td><span class="reports-document-link"><flux:icon.arrow-top-right-on-square variant="outline" />{{ $row->reference ?: '—' }}</span></td>
+                        @elseif ($key === 'balance')
+                            <td class="reports-balance">{{ \App\Services\ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>
+                        @else
+                            <td>{{ \App\Services\ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>
+                        @endif
+                    @endforeach
+                </tr>
+            @empty
+                @unless ($hasParty)
+                    <tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="reports-empty">اختر زبوناً أو مورداً من القائمة لعرض كشف الحساب.</td></tr>
+                @endunless
+            @endforelse
+        </tbody>
+        @if ($hasParty)
+            <tfoot><tr data-statement-total><th colspan="{{ count($definition['columns']) - 3 }}">الإجمالي</th><td>{{ $money($summary['إجمالي المدين']) }}</td><td>{{ $money($summary['إجمالي الدائن']) }}</td><td class="reports-balance">{{ $money($summary['رصيد آخر الفترة']) }}</td></tr></tfoot>
+        @endif
+    </table>
+</div>
+@if (array_key_exists('فرق المطابقة الحالي', $summary))
+    <dl class="reports-summary-chips"><div><dt>الرصيد المسجل حالياً</dt><dd dir="ltr">{{ $money($summary['الرصيد المسجل حالياً']) }}</dd></div><div><dt>فرق المطابقة الحالي</dt><dd dir="ltr">{{ $money($summary['فرق المطابقة الحالي']) }}</dd></div></dl>
+@endif
 <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد الحركات: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
