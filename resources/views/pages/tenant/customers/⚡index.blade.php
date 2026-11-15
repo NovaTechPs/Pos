@@ -2124,18 +2124,20 @@ new class extends Component {
 
 
             <div
+                data-customer-statement x-data x-on:keydown.escape.window.stop="$wire.closeStatementModal()"
                 class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
                 wire:key="statement-modal-{{ $selectedPartyForStatement->id }}"
             >
 
                 <div
-                    class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-3xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col"
+                    role="dialog" aria-modal="true" aria-labelledby="customer-statement-title"
+                    class="customer-statement-dialog bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-6xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col"
                 >
 
                     {{-- Header --}}
 
                     <div
-                        class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700"
+                        class="customer-statement-header flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700"
                     >
 
                         <div>
@@ -2143,7 +2145,7 @@ new class extends Component {
                             <div class="flex items-center gap-2">
 
                                 <h3
-                                    class="text-base sm:text-lg font-bold text-gray-800 dark:text-white"
+                                    id="customer-statement-title" class="text-base sm:text-lg font-bold text-gray-800 dark:text-white"
                                 >
                                     كشف حساب
                                 </h3>
@@ -2200,13 +2202,13 @@ new class extends Component {
                     {{-- Body --}}
 
                     <div
-                        class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1"
+                        class="customer-statement-body p-4 sm:p-6 space-y-4 overflow-y-auto flex-1"
                     >
 
                         {{-- Summary --}}
 
                         <div
-                            class="grid grid-cols-1 sm:grid-cols-3 gap-3"
+                            class="customer-statement-summary grid grid-cols-1 sm:grid-cols-3 gap-3"
                         >
 
                             <div
@@ -2220,7 +2222,7 @@ new class extends Component {
                                 </div>
 
                                 <div
-                                    class="font-bold mt-1 text-gray-800 dark:text-white"
+                                    dir="ltr" class="font-bold mt-1 text-gray-800 dark:text-white"
                                 >
                                     {{ number_format(
                                         $statementData['opening_balance'],
@@ -2242,7 +2244,7 @@ new class extends Component {
                                 </div>
 
                                 <div
-                                    class="font-bold mt-1 text-blue-700 dark:text-blue-300"
+                                    dir="ltr" class="font-bold mt-1 text-blue-700 dark:text-blue-300"
                                 >
                                     {{ number_format(
                                         $statementData['current_balance'],
@@ -2264,7 +2266,7 @@ new class extends Component {
                                 </div>
 
                                 <div
-                                    class="font-bold mt-1 text-emerald-700 dark:text-emerald-300"
+                                    dir="ltr" class="font-bold mt-1 text-emerald-700 dark:text-emerald-300"
                                 >
                                     {{ number_format(
                                         $statementData['final_balance'],
@@ -2313,7 +2315,7 @@ new class extends Component {
                         @endif
 
 
-                        {{-- Statement Table --}}
+                        <div class="customer-statement-table-heading"><h4>حركات الحساب</h4><span>{{ $statementTransactions->count() }} حركة · اضغط على الحركة لفتح المستند</span></div>
 
                         <div
                             class="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-700"
@@ -2322,7 +2324,7 @@ new class extends Component {
                             <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
 
                             <table
-                            class="w-full text-right text-xs min-w-[800px] dark:text-gray-300"
+                            class="customer-statement-table w-full text-right text-xs dark:text-gray-300"
                             >
 
                                 <thead>
@@ -2370,21 +2372,21 @@ new class extends Component {
                                         class="bg-gray-50/70 dark:bg-gray-700/30"
                                     >
 
-                                        <td
+                                        <td data-label="التاريخ"
                                             class="p-3 whitespace-nowrap"
                                         >
                                             {{ $selectedPartyForStatement->created_at?->format('Y-m-d') ?? '-' }}
                                         </td>
 
-                                        <td
+                                        <td data-label="البيان"
                                             class="p-3 font-medium"
                                         >
                                             رصيد افتتاحي
                                         </td>
 
-                                        <td class="p-3 text-gray-500">—</td>
+                                        <td data-label="ملاحظات" class="p-3 text-gray-500">—</td>
 
-                                        <td
+                                        <td data-label="مدين" dir="ltr"
                                             class="p-3 whitespace-nowrap"
                                         >
 
@@ -2396,7 +2398,7 @@ new class extends Component {
 
                                         </td>
 
-                                        <td
+                                        <td data-label="دائن" dir="ltr"
                                             class="p-3 whitespace-nowrap"
                                         >
 
@@ -2408,7 +2410,7 @@ new class extends Component {
 
                                         </td>
 
-                                        <td
+                                        <td data-label="الرصيد" dir="ltr"
                                             class="p-3 whitespace-nowrap font-bold"
                                         >
                                             {{ number_format(
@@ -2434,29 +2436,30 @@ new class extends Component {
                                         @endphp
 
                                         <tr
+                                            wire:key="customer-statement-{{ $item['source_type'] }}-{{ $item['source_id'] }}-{{ $loop->index }}" tabindex="0" x-on:keydown.enter.prevent="$el.click()"
                                             wire:click="openStatementDocument('{{ $item['source_type'] }}', {{ $item['source_id'] }})"
                                             class="cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
                                         >
 
-                                            <td
+                                            <td data-label="التاريخ"
                                                 class="p-3 whitespace-nowrap"
                                             >
                                                 {{ $item['date']
-                                                    ? \Carbon\Carbon::parse($item['date'])->format('Y-m-d H:i')
+                                                    ? \Carbon\Carbon::parse($item['date'])->format('Y-m-d · H:i')
                                                     : '-' }}
                                             </td>
 
 
-                                            <td class="p-3">
+                                            <td data-label="البيان" class="p-3">
                                                 {{ $item['description'] }}
                                             </td>
 
-                                            <td class="p-3 min-w-48 whitespace-pre-line text-gray-600 dark:text-gray-300">
+                                            <td data-label="ملاحظات" class="p-3 min-w-48 whitespace-pre-line text-gray-600 dark:text-gray-300">
                                                 {{ $item['notes'] ?: '—' }}
                                             </td>
 
 
-                                            <td
+                                            <td data-label="مدين" dir="ltr"
                                                 class="p-3 whitespace-nowrap text-red-600 dark:text-red-400"
                                             >
 
@@ -2476,7 +2479,7 @@ new class extends Component {
                                             </td>
 
 
-                                            <td
+                                            <td data-label="دائن" dir="ltr"
                                                 class="p-3 whitespace-nowrap text-emerald-600 dark:text-emerald-400"
                                             >
 
@@ -2496,7 +2499,7 @@ new class extends Component {
                                             </td>
 
 
-                                            <td
+                                            <td data-label="الرصيد" dir="ltr"
                                                 class="p-3 whitespace-nowrap font-semibold"
                                             >
                                                 {{ number_format(
@@ -2526,6 +2529,7 @@ new class extends Component {
                                     @endif
 
                                 </tbody>
+                                <tfoot><tr><th colspan="3">إجمالي الحركات</th><td dir="ltr">{{ number_format($statementTransactions->sum('debit'), 2) }}</td><td dir="ltr">{{ number_format($statementTransactions->sum('credit'), 2) }}</td><td dir="ltr">{{ number_format($statementData['final_balance'], 2) }}</td></tr></tfoot>
 
                             </table>
                             </div>
@@ -2538,7 +2542,7 @@ new class extends Component {
                     {{-- Footer --}}
 
                     <div
-                        class="flex flex-col sm:flex-row justify-end gap-2 p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+                        class="customer-statement-footer flex flex-col sm:flex-row justify-end gap-2 p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
                     >
 
                         {{-- WhatsApp --}}

@@ -11,6 +11,7 @@ use App\Services\PosProductSearch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -43,7 +44,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'productSearch');
+        $this->reset('partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -67,6 +68,9 @@ new class extends Component {
     public string $paymentMethod = '';
     public string $partySearch = '';
     public string $statementPartyType = 'all';
+    public string $statementBalanceFilter = 'all';
+    #[Locked]
+    public ?string $appliedStatementSignature = null;
     public string $productSearch = '';
     /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
     public ?array $statementDocument = null;
@@ -140,6 +144,22 @@ new class extends Component {
     {
         $this->resetErrorBag();
         $this->resetPage();
+        if ($this->report === 'statement') {
+            $this->appliedStatementSignature = null;
+            $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
+            $this->service()->prepare($this->report, $this->filters());
+            $this->appliedStatementSignature = $this->statementSignature();
+        }
+    }
+
+    private function statementSignature(): string
+    {
+        return hash('sha256', json_encode([$this->branchId, $this->filters()], JSON_THROW_ON_ERROR));
+    }
+
+    private function statementIsReady(): bool
+    {
+        return $this->partyId !== null && $this->appliedStatementSignature === $this->statementSignature();
     }
 
     public function updatedProductSearch(): void
@@ -162,8 +182,20 @@ new class extends Component {
 
     public function selectStatementParty(int $partyId): void
     {
-        $this->partyId = $partyId;
+        $service = $this->service();
+        $party = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
+            ->when($service->branchId, fn ($query) => $query->where(fn ($query) => $query->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
+            ->findOrFail($partyId);
+        $this->partyId = $party->id;
+        $this->appliedStatementSignature = null;
+        $this->resetErrorBag();
         $this->resetPage();
+    }
+
+    public function showStatementParty(int $partyId): void
+    {
+        $this->selectStatementParty($partyId);
+        $this->applyFilters();
     }
 
     public function openStatementDocument(int $sourceOrder, int $sourceId): void
@@ -192,7 +224,12 @@ new class extends Component {
         $this->statementDocument = null;
     }
 
-    public function updatedStatementPartySearch(): void
+    public function updatedPartySearch(): void
+    {
+        $this->resetPage('statementPartiesPage');
+    }
+
+    public function updatedStatementBalanceFilter(): void
     {
         $this->resetPage('statementPartiesPage');
     }
@@ -210,6 +247,8 @@ new class extends Component {
         $this->partyType = 'all';
         $this->balanceSide = 'all';
         $this->statementPartyType = 'all';
+        $this->statementBalanceFilter = 'all';
+        $this->appliedStatementSignature = null;
         $this->partyId = null;
         $this->productId = null;
         $this->voucherType = '';
@@ -243,6 +282,7 @@ new class extends Component {
 
     public function exportCsv(): mixed
     {
+        abort_if($this->report === 'statement' && ! $this->statementIsReady(), 422, 'اعرض التقرير أولاً.');
         $service = $this->service();
         $definition = $service->prepare($this->report, $this->filters());
         $title = ReportingService::REPORTS[$this->report][0];
@@ -267,8 +307,10 @@ new class extends Component {
         $service = $this->service();
         $allowed = $service->availableReports();
         abort_unless(isset($allowed[$this->report]), 403);
-        $valid = true;
-        try { $definition = $service->prepare($this->report, $this->filters()); }
+        $statementReady = $this->report === 'statement' && $this->statementIsReady();
+        $valid = $this->report !== 'statement' || $statementReady;
+        $definition = ['query' => DB::table('orders')->whereRaw('1 = 0'), 'columns' => [], 'summary' => [], 'notes' => []];
+        try { if ($valid) { $definition = $service->prepare($this->report, $this->filters()); } }
         catch (ValidationException $error) {
             $this->setErrorBag($error->validator->errors());
             $valid = false;
@@ -288,6 +330,7 @@ new class extends Component {
             $statementParties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when($service->branchId, fn ($q) => $q->where(fn ($q) => $q->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
                 ->whereIn('type', $statementPartyTypes)
+                ->when($this->statementBalanceFilter === 'nonzero', fn ($query) => $query->where('current_balance', '<>', 0))
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->orderBy('name')->orderBy('id')->simplePaginate(40, ['id', 'name', 'code', 'phone', 'type', 'current_balance'], 'statementPartiesPage');
         }
@@ -300,6 +343,7 @@ new class extends Component {
                 ->orderBy('name')->limit(30)->get(['id', 'name', 'product_number']);
         }
         $branches = \App\Models\Branch::query()->where('tenant_id', $service->tenantId)->orderBy('name')->get(['id', 'name']);
+        $statementParty = $statementReady ? Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->find($this->partyId) : null;
         $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId ?? 0] + $this->filters()) : null;
         $navigationGroups = [];
         $activeGroup = '';
@@ -314,7 +358,7 @@ new class extends Component {
         catch (ValidationException) { $overview = ['sales' => null, 'purchases' => null, 'profit' => null]; }
         $periodRanges = $this->periodRanges();
         $activeRange = collect($periodRanges)->search(fn (array $range): bool => $range[0] === $this->from && $range[1] === $this->to);
-        return $this->view(['overview' => $overview, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        return $this->view(['statementReady' => $statementReady, 'statementParty' => $statementParty, 'overview' => $overview, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -340,7 +384,19 @@ new class extends Component {
             <button type="button" wire:key="report-tab-{{ $loop->index }}" wire:click="selectReportGroup('{{ $group }}')" x-on:click="reportMenuQuery = ''" aria-current="{{ $activeGroup === $group ? 'page' : 'false' }}" class="{{ $activeGroup === $group ? 'is-active' : '' }}"><flux:icon :name="$groupIcons[$group]" variant="outline" />{{ $group }}</button>
         @endforeach
     </nav>
-    <div class="reports-workspace">
+    <div class="reports-workspace {{ $report === 'statement' ? 'is-statement' : '' }}" x-data="{
+                parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
+                rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
+                move(items, step) {
+                    if (!items.length) return;
+                    const index = items.indexOf(document.activeElement);
+                    const next = items[index < 0 ? 0 : Math.max(0, Math.min(items.length - 1, index + step))];
+                    next.focus();
+                    next.scrollIntoView({ block: 'nearest' });
+                },
+                toStatement() { this.rows()[0]?.focus() },
+                toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; if (party) { party.focus() } },
+            }">
     <aside class="reports-menu" aria-label="اختيار التقرير">
         <h2><flux:icon :name="$groupIcons[$activeGroup] ?? 'squares-2x2'" variant="outline" />تقارير {{ $activeGroup }}</h2>
         <label class="reports-menu-search"><x-shop-icon name="search" /><input type="search" x-model="reportMenuQuery" placeholder="ابحث في التقارير…" aria-label="ابحث في التقارير"></label>
@@ -352,7 +408,32 @@ new class extends Component {
             </div>
         @endforeach
     </aside>
+    @if ($report === 'statement')
+    <aside class="reports-account-directory" data-statement-directory>
+        <h2><flux:icon.user-group variant="outline" />قائمة العملاء</h2>
+        <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" wire:model.live.debounce.300ms="partySearch" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
+        <div class="reports-account-types" role="group" aria-label="نوع الحساب">
+            @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
+                <button type="button" wire:key="statement-party-type-{{ $type }}" wire:click="$set('statementPartyType', '{{ $type }}')" aria-pressed="{{ $statementPartyType === $type ? 'true' : 'false' }}" class="{{ $statementPartyType === $type ? 'is-active' : '' }}">{{ $label }}</button>
+            @endforeach
+        </div>
+        <flux:select aria-label="فلتر رصيد الحساب" wire:model.live="statementBalanceFilter"><option value="all">كل الأرصدة</option><option value="nonzero">رصيد غير صفري</option></flux:select>
+        <p class="reports-directory-hint">دليل الحسابات · ↑ ↓ للتنقل · Enter لعرض الكشف</p>
+        <div class="reports-account-labels"><span>الاسم / رقم الحساب</span><span>الرصيد الحالي</span></div>
+        <div class="reports-account-list" x-on:keydown.arrow-down.prevent="move(parties(), 1)" x-on:keydown.arrow-up.prevent="move(parties(), -1)" x-on:keydown.arrow-left.prevent="toStatement()">
+            @forelse ($statementParties as $party)
+                <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" aria-pressed="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:key="statement-party-{{ $party->id }}" wire:click="selectStatementParty({{ $party->id }})" wire:keydown.enter.prevent.stop="showStatementParty({{ $party->id }})" class="reports-account-row {{ (int) $partyId === (int) $party->id ? 'is-selected' : '' }}">
+                    <span><strong>{{ $party->name }}</strong><small>{{ $party->code ?: 'بدون رمز' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? $party->type }}</small></span><b dir="ltr">{{ number_format((float) $party->current_balance, 2) }}</b>
+                </button>
+            @empty
+                <p class="reports-empty">لا توجد حسابات مطابقة.</p>
+            @endforelse
+        </div>
+        @if ($statementParties->hasPages())<div class="reports-account-pagination">{{ $statementParties->links() }}</div>@endif
+    </aside>
+    @endif
     <div class="reports-content">
+    @if ($report !== 'statement')
     <section class="reports-metrics" aria-label="ملخص الفترة">
         <article data-metric="movements"><span class="reports-metric-icon"><flux:icon.arrows-right-left variant="outline" /></span><div><p>عدد الحركات</p><strong>{{ number_format($rows->total()) }}</strong></div></article>
         @foreach (['sales' => ['إجمالي المبيعات', 'shopping-bag'], 'purchases' => ['إجمالي المشتريات', 'shopping-cart'], 'profit' => ['إجمالي الأرباح', 'trophy']] as $metric => [$label, $icon])
@@ -361,6 +442,7 @@ new class extends Component {
             @endif
         @endforeach
     </section>
+    @endif
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
         <h2 class="reports-section-title"><flux:icon.document-text variant="outline" />{{ $allowed[$report][0] }}</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -373,7 +455,7 @@ new class extends Component {
             @endif
             @if (in_array($report, ['balances', 'aging', 'cashflow', 'expenses', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
-        @if (in_array($report, ['statement', 'balances', 'aging', 'cashflow']))
+        @if (in_array($report, ['balances', 'aging', 'cashflow']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الزبون / المورد' : 'كل الأطراف' }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
                 <flux:input label="ابحث عن الطرف" icon="magnifying-glass" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الهاتف أو الرمز …" />
@@ -432,61 +514,21 @@ new class extends Component {
     <div wire:loading role="status" class="text-sm text-blue-700 dark:text-blue-300">جارٍ تجهيز التقرير…</div>
     <section class="reports-result">
     <header class="reports-result-heading">
-        <h2><flux:icon.document-text variant="outline" />{{ $allowed[$report][0] }}</h2>
+        <h2><flux:icon.document-text variant="outline" />{{ $statementParty ? 'كشف حساب: '.$statementParty->name : $allowed[$report][0] }}</h2>
+        @if ($statementParty)<p>رقم الحساب: {{ $statementParty->code ?: '—' }} · النوع: {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</p>@endif
         <p>الفترة: من {{ $from }} إلى {{ $to }} <span aria-hidden="true">|</span> الفرع: {{ $branches->firstWhere('id', $branchId)?->name ?? 'كل الفروع' }}</p>
         @if ($definition['summary'] && $report !== 'statement')
             <dl class="reports-summary-chips">@foreach ($definition['summary'] as $label => $value)<div wire:key="summary-chip-{{ $loop->index }}"><dt>{{ $label }}</dt><dd dir="ltr">{{ number_format((float) $value, 2) }}</dd></div>@endforeach</dl>
         @endif
     </header>
-    @if ($report === 'statement' && $statementParties)
-        <div class="report-statement-workspace space-y-4" wire:loading.class="opacity-60" wire:target="selectStatementParty,partySearch,statementPartyType,applyFilters,setPeriod"
-            x-data="{
-                parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
-                rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
-                move(items, step) {
-                    if (!items.length) return;
-                    const index = items.indexOf(document.activeElement);
-                    const next = items[index < 0 ? 0 : Math.max(0, Math.min(items.length - 1, index + step))];
-                    next.focus();
-                    next.scrollIntoView({ block: 'nearest' });
-                },
-                toStatement() { this.rows()[0]?.focus() },
-                toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; if (party) { party.closest('details').open = true; party.focus() } },
-            }">
-            <details class="reports-directory"><summary>دليل الحسابات · اختيار زبون أو مورد</summary>
-            <aside data-statement-directory class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-                x-on:keydown.arrow-down.prevent="move(parties(), 1)"
-                x-on:keydown.arrow-up.prevent="move(parties(), -1)"
-                x-on:keydown.arrow-left.prevent="toStatement()">
-                <div class="border-b border-slate-200 p-4 dark:border-slate-700">
-                    <div class="flex items-center justify-between gap-2"><div><h2 class="font-bold">دليل الحسابات</h2><p class="text-xs text-slate-500">اختر طرفاً لعرض كشفه بالتاريخ المحدد.</p></div><span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{{ $statementParties->count() }}</span></div>
-                    <div class="mt-3 grid grid-cols-3 gap-1">
-                        @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
-                            <button type="button" wire:key="statement-party-type-{{ $type }}" wire:click="$set('statementPartyType', '{{ $type }}')" class="rounded-lg px-2 py-2 text-xs font-bold {{ $statementPartyType === $type ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }}">{{ $label }}</button>
-                        @endforeach
-                    </div>
-                    <p class="mt-2 text-[11px] text-slate-400">↑ ↓ للتنقل · Enter لعرض الكشف · ← للانتقال إلى الكشف</p>
-                </div>
-                <div class="max-h-[580px] overflow-y-auto p-2">
-                    @forelse ($statementParties as $party)
-                        <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:click="selectStatementParty({{ $party->id }})" wire:key="statement-party-{{ $party->id }}" class="mb-1 w-full rounded-lg p-3 text-right transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 {{ (int) $partyId === (int) $party->id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-slate-50 focus:bg-indigo-50 dark:hover:bg-slate-800' }}">
-                            <div class="flex items-center justify-between gap-3"><span class="truncate font-bold">{{ $party->name }}</span><span class="shrink-0 text-xs tabular-nums {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}">{{ number_format((float) $party->current_balance, 2) }}</span></div>
-                            <div class="mt-1 flex gap-2 text-xs {{ (int) $partyId === (int) $party->id ? 'text-indigo-100' : 'text-slate-500' }}"><span>{{ $party->code ?: 'بدون رمز' }}</span><span>{{ $party->phone ?: '' }}</span></div>
-                        </button>
-                    @empty
-                        <p class="p-6 text-center text-sm text-slate-500">لا توجد حسابات مطابقة.</p>
-                    @endforelse
-                </div>
-                @if ($statementParties->hasPages())<div class="border-t border-slate-200 px-3 py-2 dark:border-slate-700">{{ $statementParties->links() }}</div>@endif
-            </aside>
-            </details>
-            <section data-statement-ledger class="min-w-0 space-y-4"
-                x-on:keydown.arrow-down.prevent="move(rows(), 1)"
-                x-on:keydown.arrow-up.prevent="move(rows(), -1)"
-                x-on:keydown.arrow-right.prevent="toParties()">
-                @include('pages.tenant.reports.partials.statement-result', ['definition' => $definition, 'rows' => $rows, 'from' => $from, 'to' => $to])
+    @if ($report === 'statement')
+        @if ($statementReady)
+            <section data-statement-ledger class="min-w-0 space-y-4" x-on:keydown.arrow-down.prevent="move(rows(), 1)" x-on:keydown.arrow-up.prevent="move(rows(), -1)" x-on:keydown.arrow-right.prevent="toParties()">
+                @include('pages.tenant.reports.partials.statement-result')
             </section>
-        </div>
+        @else
+            <div class="reports-statement-placeholder" data-statement-pending><flux:icon.document-text variant="outline" /><h3>اختر الحساب ثم اعرض الكشف</h3><p>النقر يحدد السطر فقط. اضغط Enter على الحساب أو «عرض التقرير» لعرض حركاته.</p></div>
+        @endif
     @else
     @if ($definition['notes'])<div class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div>@endif
     <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">

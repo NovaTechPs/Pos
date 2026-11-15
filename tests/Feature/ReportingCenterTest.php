@@ -264,7 +264,7 @@ test('every report renders and exports its columns without changing financial da
 })->with(array_keys(ReportingService::REPORTS));
 
 test('report dates reject invalid and reversed ranges and recover after correction', function (): void {
-    Livewire::test('pages::tenant.reports.center')->set('from', '2026-10-30')->set('to', '2026-10-01')->call('applyFilters')
+    Livewire::test('pages::tenant.reports.center')->set('partyId', $this->customer->id)->set('from', '2026-10-30')->set('to', '2026-10-01')->call('applyFilters')
         ->assertHasErrors(['to'])->set('to', '2026-10-31')->call('applyFilters')->assertHasNoErrors();
 });
 
@@ -282,6 +282,7 @@ test('statement directory lists customers and selecting one uses the selected da
         ->assertSee($this->customer->name)
         ->call('selectStatementParty', $this->customer->id)
         ->assertSet('partyId', $this->customer->id)
+        ->assertDontSee('LEDGER-CUSTOMER')->call('applyFilters')
         ->assertSee('LEDGER-CUSTOMER')
         ->set('statementPartyType', 'supplier')
         ->assertSee($supplier->name);
@@ -360,7 +361,7 @@ test('foreign tenant branches and parties cannot be selected or exported', funct
     $party = Party::create(['tenant_id' => $foreign->id, 'name' => 'طرف محجوب', 'type' => 'customer']);
     $this->get(route('tenant.reports.print', ['report' => 'sales', 'branch_id' => $branch->id] + $this->filters))->assertNotFound();
     $this->get(route('tenant.reports.print', ['report' => 'statement'] + array_replace($this->filters, ['party_id' => $party->id])))->assertNotFound();
-    Livewire::test('pages::tenant.reports.center')->set('partyId', $party->id)->assertNotFound();
+    Livewire::test('pages::tenant.reports.center')->call('selectStatementParty', $party->id)->assertNotFound();
     $this->get(route('tenant.reports'))->assertOk()->assertDontSee('طرف محجوب');
 });
 
@@ -455,9 +456,10 @@ test('statement directory starts with all parties and supports keyboard navigati
         ->assertSee($this->customer->name)->assertSee($this->supplier->name)
         ->assertSeeHtml('data-statement-party')
         ->assertSeeHtml('x-on:keydown.arrow-left.prevent="toStatement()"')
-        ->assertSeeHtml('x-on:keydown.arrow-right.prevent="toParties()"')
         ->call('selectStatementParty', $this->customer->id)
-        ->assertSeeHtml('data-selected="true"')
+        ->assertSeeHtml('data-selected="true"')->assertDontSee('KEYBOARD-ROW')
+        ->call('showStatementParty', $this->customer->id)
+        ->assertSeeHtml('x-on:keydown.arrow-right.prevent="toParties()"')
         ->assertSeeHtml('data-statement-row tabindex="0"')
         ->assertSee('KEYBOARD-ROW');
 
@@ -581,7 +583,7 @@ test('pos invoices report lists each pos invoice of the day and opens it', funct
 
 test('report center navigation groups preserve report selection dates and permissions', function (): void {
     $page = Livewire::test('pages::tenant.reports.center')->assertSee('reports-tabs', false)->assertSee('reports-menu', false)
-        ->assertSee('reports-metrics', false)->set('from', '2026-10-10')->call('selectReportGroup', 'المشتريات')->assertSet('report', 'purchases')->assertSet('from', '2026-10-10');
+        ->assertSee('reports-account-directory', false)->set('from', '2026-10-10')->call('selectReportGroup', 'المشتريات')->assertSet('report', 'purchases')->assertSet('from', '2026-10-10');
     $page->call('selectReportGroup', 'المخزون')->assertSet('report', 'product-history')->call('selectReport', 'inventory')->assertSet('report', 'inventory');
     $page->call('setPeriod', 'last-30')->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');
     $page->set('search', 'قهوة')->set('stockFilter', 'low')->call('resetFilters')->assertSet('search', '')->assertSet('stockFilter', 'all');
@@ -603,7 +605,7 @@ test('report navigation only exposes permitted groups and rejects unauthorized a
 test('report center shows the actual selected account statement in the redesigned layout', function (): void {
     ($this->makeOrder)(['invoice_number' => 'REPORT-DESIGN-01']);
     ($this->makePayment)();
-    $page = Livewire::test('pages::tenant.reports.center')->set('partyId', $this->customer->id)
+    $page = Livewire::test('pages::tenant.reports.center')->call('showStatementParty', $this->customer->id)
         ->assertSee('REPORT-DESIGN-01')->assertSee('reports-result-heading', false)->assertSee('طباعة التقرير')->assertSee('تصدير Excel')->assertSee('تصدير PDF');
     if ($previewPath = getenv('CODEX_REPORT_PREVIEW')) {
         $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
@@ -639,4 +641,60 @@ test('statements of a supplier who also buys from the store match the recorded b
 
     Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id)
         ->assertSet('statementDocument.reference', 'SUP-SALE-PAID');
+});
+
+test('customer statement dialog keeps all balance columns and responsive transaction cards', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'CUSTOMER-STMT-01']);
+    ($this->makePayment)();
+    $page = Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $this->customer->id)
+        ->assertSee('CUSTOMER-STMT-01')->assertSee('customer-statement-dialog', false)->assertSee('data-label="الرصيد"', false)
+        ->assertSee('إجمالي الحركات')->assertSee('طباعة حرارية')->assertSee('إرسال واتساب');
+    $html = $page->html();
+    expect($html)->toContain('aria-labelledby="customer-statement-title"')->toContain('data-label="مدين" dir="ltr"')
+        ->toContain('data-label="دائن" dir="ltr"');
+    if ($previewPath = getenv('CODEX_CUSTOMER_STATEMENT_PREVIEW')) {
+        $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
+        $css = file_get_contents(public_path('build/'.$manifest['resources/css/app.css']['file']));
+        $markup = preg_replace('/<script\b[^>]*>[\s\S]*?<\/script>/i', '', $html);
+        file_put_contents($previewPath, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'.$css.'</style><body>'.$markup.'</body></html>');
+    }
+    $page->call('closeStatementModal')->assertSet('showStatementModal', false)->assertDontSee('customer-statement-dialog', false);
+});
+
+test('statement stays empty until explicitly displayed and clears when selecting another account or period', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'EXPLICIT-STATEMENT']);
+    $page = Livewire::test('pages::tenant.reports.center')
+        ->assertSeeHtml('data-statement-pending')->assertDontSee('EXPLICIT-STATEMENT')
+        ->assertViewHas('printUrl', null)
+        ->call('applyFilters')->assertHasErrors('partyId')
+        ->call('selectStatementParty', $this->customer->id)->assertHasNoErrors()
+        ->assertSeeHtml('data-selected="true"')->assertDontSee('EXPLICIT-STATEMENT')
+        ->assertSeeHtml('wire:keydown.enter.prevent.stop="showStatementParty('.$this->customer->id.')"')
+        ->call('applyFilters')->assertSee('EXPLICIT-STATEMENT')->assertViewHas('statementReady', true)
+        ->call('selectStatementParty', $this->supplier->id)->assertDontSee('EXPLICIT-STATEMENT')
+        ->assertViewHas('statementReady', false)->assertViewHas('printUrl', null)
+        ->call('showStatementParty', $this->customer->id)->assertSee('EXPLICIT-STATEMENT')
+        ->call('setPeriod', 'today')->assertDontSee('EXPLICIT-STATEMENT')->assertViewHas('statementReady', false)
+        ->call('resetFilters')->assertSet('partyId', null)->assertSet('appliedStatementSignature', null);
+});
+
+test('statement directory filters nonzero customer and supplier balances without loading a statement', function (): void {
+    $this->customer->update(['current_balance' => 45]);
+    $this->supplier->update(['current_balance' => -12]);
+    $zero = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'حساب مسدد', 'type' => 'both', 'current_balance' => 0]);
+    $other = Party::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->otherBranch->id, 'name' => 'حساب فرع آخر', 'type' => 'customer', 'current_balance' => 50]);
+    Livewire::test('pages::tenant.reports.center')->set('branchId', $this->branch->id)
+        ->assertSee($zero->name)->set('statementBalanceFilter', 'nonzero')
+        ->assertSee($this->customer->name)->assertSee($this->supplier->name)->assertDontSee($zero->name)->assertDontSee($other->name)
+        ->set('statementPartyType', 'customer')->assertSee($this->customer->name)->assertDontSee($this->supplier->name)
+        ->set('statementPartyType', 'supplier')->assertSee($this->supplier->name)->assertDontSee($this->customer->name)
+        ->set('partySearch', 'غير موجود')->assertDontSee($this->supplier->name)
+        ->assertViewHas('statementReady', false)->assertViewHas('rows', fn ($rows): bool => $rows->isEmpty());
+});
+
+test('statement cannot be exported or loaded through a query string before explicit display', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'UNREQUESTED-STATEMENT']);
+    Livewire::withQueryParams(['party_id' => $this->customer->id])->test('pages::tenant.reports.center')
+        ->assertSet('partyId', $this->customer->id)->assertDontSee('UNREQUESTED-STATEMENT')
+        ->assertViewHas('printUrl', null)->call('exportCsv')->assertStatus(422);
 });

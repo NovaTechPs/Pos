@@ -3,6 +3,7 @@
 @import './pos.css';
 @import './shop.css';
 @import './reports.css';
+@import './customer-statement.css';
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 
