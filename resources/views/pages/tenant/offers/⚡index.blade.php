@@ -34,6 +34,21 @@ new class extends Component {
         return $tenantId ? (int) $tenantId : null;
     }
 
+    /**
+     * @return list<int>
+     */
+    private function priceEditableBranchIds(): array
+    {
+        $tenantId = $this->tenantId();
+
+        return $tenantId ? (auth()->user()?->priceEditableBranchIds($tenantId) ?? []) : [];
+    }
+
+    private function ensureCanEditBranchPrice(?int $branchId): void
+    {
+        abort_unless($branchId && in_array($branchId, $this->priceEditableBranchIds(), true), 403, 'لا تملك صلاحية تعديل أسعار هذا الفرع.');
+    }
+
     public function updatedSearch(): void
     {
         $this->resetPage();
@@ -59,10 +74,11 @@ new class extends Component {
 
     public function openCreateModal(): void
     {
-        $this->authorize('products.price.edit');
+        $editableBranchIds = $this->priceEditableBranchIds();
+        abort_if($editableBranchIds === [], 403, 'لا تملك صلاحية تعديل أسعار الفروع.');
         $this->resetForm();
-        $this->branchId = auth()->user()?->activeBranchId()
-            ?: (int) Branch::query()->where('tenant_id', $this->tenantId())->value('id');
+        $activeBranchId = auth()->user()?->activeBranchId();
+        $this->branchId = in_array($activeBranchId, $editableBranchIds, true) ? $activeBranchId : $editableBranchIds[0];
         $this->loadOfferRetailPrice();
         $this->showModal = true;
     }
@@ -81,11 +97,11 @@ new class extends Component {
 
     public function edit(int $offerId): void
     {
-        $this->authorize('products.price.edit');
         $offer = ProductOffer::query()
             ->where('tenant_id', $this->tenantId())
             ->with('product:id,name')
             ->findOrFail($offerId);
+        $this->ensureCanEditBranchPrice((int) $offer->branch_id);
 
         $this->offerId = $offer->id;
         $this->productId = $offer->product_id;
@@ -121,8 +137,14 @@ new class extends Component {
 
     public function save(): void
     {
-        $this->authorize('products.price.edit');
         $tenantId = $this->tenantId();
+        abort_if($this->priceEditableBranchIds() === [], 403, 'لا تملك صلاحية تعديل أسعار الفروع.');
+        if ($this->branchId) {
+            $this->ensureCanEditBranchPrice($this->branchId);
+        }
+        if ($this->offerId) {
+            $this->ensureCanEditBranchPrice((int) ProductOffer::query()->where('tenant_id', $tenantId)->whereKey($this->offerId)->value('branch_id'));
+        }
 
         $this->validate([
             'productId' => ['required', 'integer', Rule::exists('products', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId))],
@@ -190,8 +212,9 @@ new class extends Component {
 
     public function delete(int $offerId): void
     {
-        $this->authorize('products.price.edit');
-        ProductOffer::query()->where('tenant_id', $this->tenantId())->findOrFail($offerId)->delete();
+        $offer = ProductOffer::query()->where('tenant_id', $this->tenantId())->findOrFail($offerId);
+        $this->ensureCanEditBranchPrice((int) $offer->branch_id);
+        $offer->delete();
         session()->flash('message', 'تم حذف العرض.');
     }
 
@@ -234,7 +257,10 @@ new class extends Component {
             })->orderBy('name')->limit(12)->get(['id', 'name', 'product_number'])
             : collect();
 
-        return $this->view(compact('offers', 'branches', 'productResults'))->layout('layouts::tenant');
+        $priceEditableBranchIds = $this->priceEditableBranchIds();
+        $offerBranches = $branches->whereIn('id', $priceEditableBranchIds)->values();
+
+        return $this->view(compact('offers', 'branches', 'productResults', 'priceEditableBranchIds', 'offerBranches'))->layout('layouts::tenant');
     }
 };
 ?>
@@ -251,9 +277,9 @@ new class extends Component {
                     <h1 class="text-xl font-black">العروض الترويجية</h1>
                     <p class="mt-1 text-sm text-slate-300">عرض وإدارة عروض الكمية حسب الصنف والفرع.</p>
                 </div>
-                @can('products.price.edit')
+                @if ($priceEditableBranchIds !== [])
                     <button type="button" wire:click="openCreateModal" class="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-400">+ إضافة عرض</button>
-                @endcan
+                @endif
             </div>
 
             <div class="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-3">
@@ -274,7 +300,7 @@ new class extends Component {
                                 <td class="p-3 font-black text-amber-700">{{ number_format((float) $offer->offer_price, 2) }}</td>
                                 <td class="p-3 text-xs text-slate-600">{{ $offer->start_at?->format('Y-m-d H:i') ?? '—' }}<br>إلى {{ $offer->end_at?->format('Y-m-d H:i') ?? 'مفتوح' }}</td>
                                 <td class="p-3"><span class="rounded-full px-2.5 py-1 text-xs font-bold {{ $offer->is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">{{ $offer->is_active ? 'مفعّل' : 'معطّل' }}</span></td>
-                                <td class="p-3"><div class="flex items-center gap-2">@can('products.price.edit')<button type="button" wire:click="edit({{ $offer->id }})" class="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">تعديل</button><button type="button" wire:click="delete({{ $offer->id }})" wire:confirm="هل تريد حذف هذا العرض؟" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">حذف</button>@endcan</div></td>
+                                <td class="p-3"><div class="flex items-center gap-2">@if (in_array((int) $offer->branch_id, $priceEditableBranchIds, true))<button type="button" wire:click="edit({{ $offer->id }})" class="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">تعديل</button><button type="button" wire:click="delete({{ $offer->id }})" wire:confirm="هل تريد حذف هذا العرض؟" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">حذف</button>@endif</div></td>
                             </tr>
                         @empty
                             <tr><td colspan="7" class="p-12 text-center font-semibold text-slate-400">لا توجد عروض مطابقة.</td></tr>
@@ -304,7 +330,7 @@ new class extends Component {
                         </div>
                     @endif
                 </div>
-                <div><label class="mb-1 block text-sm font-bold">الفرع</label><select wire:model.live="branchId" class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">اختر الفرع</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select>@error('branchId')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div>
+                <div><label class="mb-1 block text-sm font-bold">الفرع</label><select wire:model.live="branchId" class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">اختر الفرع</option>@foreach ($offerBranches as $branch)<option value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</select>@error('branchId')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div>
                 <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">كمية العرض</label><input type="number" min="0.01" step="0.001" wire:model="quantity" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('quantity')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div><div><label class="mb-1 block text-sm font-bold">سعر العرض</label><input type="number" min="0" step="0.01" wire:model="price" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('price')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div></div>
                 <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">بداية العرض</label><input type="datetime-local" wire:model="startAt" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('startAt')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror</div><div><label class="mb-1 block text-sm font-bold">نهاية العرض</label><label class="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" wire:model.live="hasEndDate" />له تاريخ انتهاء</label>@if ($hasEndDate)<input type="datetime-local" wire:model="endAt" class="w-full rounded-xl border border-slate-200 px-3 py-2.5" />@error('endAt')<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror@else<div class="rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">العرض بدون تاريخ انتهاء</div>@endif</div></div>
                 <label class="flex items-center gap-2 text-sm font-bold"><input type="checkbox" wire:model="isActive" />العرض مفعّل</label>

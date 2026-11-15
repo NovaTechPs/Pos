@@ -83,6 +83,11 @@ class AppServiceProvider extends ServiceProvider
             return $user->hasPermission($ability) ? true : null;
         });
 
+        // تعديل أسعار البيع في فرع معيّن: فرع الموظف أو الفروع التي حددها له المالك
+        Gate::define('edit-branch-price', function (User $user, ?int $branchId = null): bool {
+            return $branchId === null ? $user->canEditAnyBranchPrice() : $user->canEditBranchPrice($branchId);
+        });
+
         // مدير المهام: يفتحه من يدير المهام، أو الموظف المرتبط بحسابه ليرى مهامه
         Gate::define('tasks.access', function (User $user): bool {
             return $user->hasPermission('tasks.manage') || $user->employee()->exists();

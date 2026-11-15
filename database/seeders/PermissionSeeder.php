@@ -162,6 +162,11 @@ class PermissionSeeder extends Seeder
                 'group' => 'المنتجات',
             ],
             [
+                'name' => 'products.branch_prices.edit',
+                'display_name' => 'تعديل أسعار البيع للفروع (فرع الموظف أو الفروع المحددة له)',
+                'group' => 'المنتجات',
+            ],
+            [
                 'name' => 'products.cost.view',
                 'display_name' => 'عرض تكلفة المنتجات',
                 'group' => 'المنتجات',

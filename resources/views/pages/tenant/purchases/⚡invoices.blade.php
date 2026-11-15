@@ -1446,6 +1446,13 @@ new class extends Component {
             return;
         }
 
+        $retailSelected = collect($this->priceUpdateSelections)->contains(fn ($selection): bool => ! empty($selection['retail']));
+        abort_if(
+            $retailSelected && ! auth()->user()?->canEditBranchPrice((int) $this->priceUpdateBranchId, $tenantId),
+            403,
+            'لا تملك صلاحية تعديل أسعار هذا الفرع.'
+        );
+
         DB::transaction(function () use ($tenantId): void {
             foreach ($this->priceUpdateCandidates as $productId => $candidate) {
                 $productId = (int) $productId;
@@ -2706,6 +2713,9 @@ new class extends Component {
                                         <span>تحديث سعر التكلفة إلى <strong>{{ number_format($candidate['purchase_cost'], 2) }}</strong> (الحالي {{ number_format($candidate['current_cost'], 2) }})</span>
                                     </label>
                                 @endif
+                                @if (! auth()->user()?->canEditBranchPrice($priceUpdateBranchId ? (int) $priceUpdateBranchId : null))
+                                    <div class="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">سعر البيع الحالي {{ number_format($candidate['retail_price'], 2) }} — لا تملك صلاحية تعديل أسعار هذا الفرع.</div>
+                                @else
                                 <div class="rounded-lg bg-slate-50 p-3">
                                     <label class="flex items-center gap-2 text-sm font-bold">
                                         <input type="checkbox" wire:model="priceUpdateSelections.{{ $productId }}.retail" class="rounded border-slate-300 text-indigo-600">
@@ -2714,6 +2724,7 @@ new class extends Component {
                                     <input type="number" min="0" step="0.01" wire:model="priceUpdateRetailPrices.{{ $productId }}" @disabled(empty($priceUpdateSelections[$productId]['retail'])) class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100" aria-label="سعر البيع الجديد للصنف {{ $candidate['name'] }}">
                                     @error('priceUpdateRetailPrices.'.$productId)<div class="mt-1 text-xs text-rose-600">{{ $message }}</div>@enderror
                                 </div>
+                                @endif
                             </div>
                         </div>
                     @endforeach

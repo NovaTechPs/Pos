@@ -5,11 +5,13 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
@@ -174,6 +176,80 @@ class User extends Authenticatable implements PasskeyUser
         return $role->permissions()
             ->where('name', $permissionName)
             ->exists();
+    }
+
+    /**
+     * Extra branches (beyond their own) whose selling prices the owner let this employee edit.
+     *
+     * @return BelongsToMany<Branch, $this>
+     */
+    public function priceBranches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'user_price_branches')
+            ->withPivot('tenant_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * Branches of the store whose selling prices this user may change.
+     * Owners: every branch. Employees: their own branch (with `products.price.edit` or
+     * `products.branch_prices.edit`), plus the branches the owner granted them (with `products.branch_prices.edit`).
+     *
+     * @return list<int>
+     */
+    public function priceEditableBranchIds(?int $tenantId = null): array
+    {
+        $tenantId ??= (int) (session('active_tenant_id') ?: $this->tenant_id);
+
+        if (! $tenantId) {
+            return [];
+        }
+
+        $branches = DB::table('branches')->where('tenant_id', $tenantId);
+
+        if ($this->isSaaSAdmin() || $this->isTenantOwner()) {
+            return $branches->orderBy('id')->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        }
+
+        if ((int) $this->tenant_id !== $tenantId) {
+            return [];
+        }
+
+        $canEditOtherBranches = $this->hasPermission('products.branch_prices.edit');
+        $branchIds = [];
+
+        if ($canEditOtherBranches || $this->hasPermission('products.price.edit')) {
+            $ownBranchId = $this->branch_id ?: $this->activeBranchId();
+            if ($ownBranchId) {
+                $branchIds[] = (int) $ownBranchId;
+            }
+        }
+
+        if ($canEditOtherBranches) {
+            $grantedBranchIds = DB::table('user_price_branches')
+                ->where('tenant_id', $tenantId)
+                ->where('user_id', $this->id)
+                ->pluck('branch_id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            $branchIds = [...$branchIds, ...$grantedBranchIds];
+        }
+
+        if ($branchIds === []) {
+            return [];
+        }
+
+        return $branches->whereIn('id', array_unique($branchIds))->orderBy('id')->pluck('id')->map(fn ($id): int => (int) $id)->all();
+    }
+
+    public function canEditBranchPrice(?int $branchId, ?int $tenantId = null): bool
+    {
+        return $branchId !== null && in_array($branchId, $this->priceEditableBranchIds($tenantId), true);
+    }
+
+    public function canEditAnyBranchPrice(?int $tenantId = null): bool
+    {
+        return $this->priceEditableBranchIds($tenantId) !== [];
     }
 
     public function loadRolePermissions(): void

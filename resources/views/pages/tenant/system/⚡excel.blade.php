@@ -13,7 +13,6 @@ new class extends Component
     use WithFileUploads;
 
     public $file;
-    public $tenantId = 1;
 
     public function import()
     {
@@ -25,10 +24,23 @@ new class extends Component
             'file.max'      => 'حجم الملف يجب ألا يتجاوز 10MB.',
         ]);
 
-        $tenantId = (int) $this->tenantId;
+        $this->authorize('excel.manage');
+
+        // المتجر النشط من الجلسة فقط، وليس من قيمة يرسلها المتصفح.
+        $tenantId = (int) session('active_tenant_id');
+        abort_unless($tenantId > 0, 403);
 
         // جميع فروع هذا الـ Tenant فقط.
         $branches = Branch::where('tenant_id', $tenantId)->get();
+
+        // الاستيراد يحدّث الأسعار فقط في الفروع المسموح للمستخدم بتعديل أسعارها.
+        $editableBranchIds = auth()->user()->priceEditableBranchIds($tenantId);
+
+        if ($editableBranchIds === []) {
+            session()->flash('error', 'لا تملك صلاحية تعديل أسعار أي فرع، لذلك لا يمكنك استيراد الأصناف.');
+
+            return;
+        }
 
         if ($branches->isEmpty()) {
             session()->flash(
@@ -216,11 +228,28 @@ new class extends Component
                         ->where('product_id', $product->id)
                         ->first();
 
+                    $canEditBranch = in_array((int) $branch->id, $editableBranchIds, true);
+
+                    // Branches outside the user's price scope keep their prices and stock;
+                    // a new product still gets an empty row there (price 0, no stock).
+                    if ($branchProduct && ! $canEditBranch) {
+                        continue;
+                    }
+
                     if (!$branchProduct) {
                         $branchProduct = new BranchProduct();
                         $branchProduct->tenant_id = $tenantId;
                         $branchProduct->branch_id = $branch->id;
                         $branchProduct->product_id = $product->id;
+                    }
+
+                    if (! $canEditBranch) {
+                        $branchProduct->stock_quantity = 0;
+                        $branchProduct->retail_price = 0;
+                        $branchProduct->wholesale_price = 0;
+                        $branchProduct->save();
+
+                        continue;
                     }
 
                     $branchProduct->stock_quantity = $stockQty;

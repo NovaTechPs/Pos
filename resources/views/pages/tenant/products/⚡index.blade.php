@@ -121,7 +121,11 @@ new class extends Component {
     public bool $showOfferModal = false;
     public bool $showBranchPriceModal = false;
     public ?int $branchPriceProductId = null;
+    public ?int $branchPriceBranchId = null;
     public string $branchPriceProductName = '';
+
+    /** @var list<array{branch_id: int, name: string, retail_price: string, wholesale_price: string, editable: bool}> */
+    public array $branchPriceOverview = [];
     public string $branchRetailPrice = '';
     public string $branchWholesalePrice = '';
     public int $branchMinWholesaleQuantity = 1;
@@ -317,6 +321,23 @@ new class extends Component {
         $firstBranchId = DB::table('branches')->where('tenant_id', $tenantId)->orderBy('id')->value('id');
 
         return $firstBranchId ? (int) $firstBranchId : null;
+    }
+
+    /**
+     * Branches whose selling prices the signed-in user may change (owner: all; employee: own + granted).
+     *
+     * @return list<int>
+     */
+    private function priceEditableBranchIds(): array
+    {
+        $tenantId = $this->tenantId();
+
+        return $tenantId ? (auth()->user()?->priceEditableBranchIds($tenantId) ?? []) : [];
+    }
+
+    private function ensureCanEditBranchPrice(?int $branchId): void
+    {
+        abort_unless($branchId && in_array($branchId, $this->priceEditableBranchIds(), true), 403, 'لا تملك صلاحية تعديل أسعار هذا الفرع.');
     }
 
     private function tenantHasBranches(): bool
@@ -675,45 +696,82 @@ new class extends Component {
         $this->showModal = true;
     }
 
-    public function editBranchPrice(int $productId): void
+    public function editBranchPrice(int $productId, ?int $branchId = null): void
     {
-        $this->authorize('products.price.edit');
+        $editableBranchIds = $this->priceEditableBranchIds();
+        abort_if($editableBranchIds === [], 403, 'لا تملك صلاحية تعديل أسعار الفروع.');
 
         $tenantId = $this->tenantId();
-        $branchId = $this->activeBranchId();
 
-        if (!$tenantId || !$branchId || !DB::table('branches')->where('tenant_id', $tenantId)->where('id', $branchId)->exists()) {
-            session()->flash('error', 'اختر الفرع الذي تريد تعديل سعر الصنف فيه.');
-
-            return;
+        if ($branchId !== null) {
+            $this->ensureCanEditBranchPrice($branchId);
+        } else {
+            $branchId = $this->activeBranchId();
+            if (!in_array($branchId, $editableBranchIds, true)) {
+                $branchId = $editableBranchIds[0];
+            }
         }
 
         $product = Product::query()
             ->where('tenant_id', $tenantId)
             ->findOrFail($productId);
-        $price = DB::table('branch_products')
-            ->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->where('product_id', $product->id)
-            ->first();
 
         $this->branchPriceProductId = $product->id;
         $this->branchPriceProductName = $product->name;
+        $this->branchPriceBranchId = $branchId;
+        $this->loadBranchPriceInputs();
+        $this->resetValidation();
+        $this->showBranchPriceModal = true;
+    }
+
+    public function updatedBranchPriceBranchId(mixed $branchId): void
+    {
+        $this->branchPriceBranchId = filled($branchId) ? (int) $branchId : null;
+        $this->ensureCanEditBranchPrice($this->branchPriceBranchId);
+        $this->loadBranchPriceInputs();
+        $this->resetValidation();
+    }
+
+    /**
+     * Fill the inputs with the chosen branch's prices and list every branch's prices,
+     * marking the ones outside the user's scope as read-only.
+     */
+    private function loadBranchPriceInputs(): void
+    {
+        $tenantId = $this->tenantId();
+        $prices = DB::table('branch_products')
+            ->where('tenant_id', $tenantId)
+            ->where('product_id', $this->branchPriceProductId)
+            ->get(['branch_id', 'retail_price', 'wholesale_price', 'min_wholesale_quantity'])
+            ->keyBy('branch_id');
+        $price = $prices->get($this->branchPriceBranchId);
+
         $this->branchRetailPrice = number_format((float) ($price->retail_price ?? 0), 2, '.', '');
         $this->branchWholesalePrice = (float) ($price->wholesale_price ?? 0) > 0
             ? number_format((float) $price->wholesale_price, 2, '.', '')
             : '';
         $this->branchMinWholesaleQuantity = (int) ($price->min_wholesale_quantity ?? 1);
-        $this->resetValidation();
-        $this->showBranchPriceModal = true;
+
+        $editableBranchIds = $this->priceEditableBranchIds();
+        $this->branchPriceOverview = DB::table('branches')
+            ->where('tenant_id', $tenantId)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($branch): array => [
+                'branch_id' => (int) $branch->id,
+                'name' => (string) $branch->name,
+                'retail_price' => number_format((float) ($prices->get($branch->id)->retail_price ?? 0), 2, '.', ''),
+                'wholesale_price' => number_format((float) ($prices->get($branch->id)->wholesale_price ?? 0), 2, '.', ''),
+                'editable' => in_array((int) $branch->id, $editableBranchIds, true),
+            ])
+            ->all();
     }
 
     public function saveBranchPrice(): void
     {
-        $this->authorize('products.price.edit');
-
         $tenantId = $this->tenantId();
-        $branchId = $this->activeBranchId();
+        $branchId = $this->branchPriceBranchId ?? $this->activeBranchId();
+        $this->ensureCanEditBranchPrice($branchId);
 
         if (!$tenantId || !$branchId || !$this->branchPriceProductId) {
             session()->flash('error', 'تعذر تحديد الصنف أو الفرع الحالي.');
@@ -769,6 +827,8 @@ new class extends Component {
 
         $this->showBranchPriceModal = false;
         $this->branchPriceProductId = null;
+        $this->branchPriceBranchId = null;
+        $this->branchPriceOverview = [];
         session()->flash('message', 'تم تحديث سعر الصنف لهذا الفرع فقط.');
     }
 
@@ -1077,6 +1137,20 @@ new class extends Component {
             );
 
             return;
+        }
+
+        if ($this->isEditing && ! in_array((int) $activeBranchId, $this->priceEditableBranchIds(), true)) {
+            $currentPrices = DB::table('branch_products')
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $activeBranchId)
+                ->where('product_id', $this->product_id)
+                ->first(['retail_price', 'wholesale_price', 'min_wholesale_quantity']);
+            $submittedPrices = $this->branchPricesInput[$activeBranchId] ?? [];
+            $pricesChanged = abs((float) ($submittedPrices['retail_price'] ?? 0) - (float) ($currentPrices->retail_price ?? 0)) >= 0.005
+                || abs((float) ($submittedPrices['wholesale_price'] ?? 0) - (float) ($currentPrices->wholesale_price ?? 0)) >= 0.005
+                || (int) ($submittedPrices['min_wholesale_quantity'] ?? 1) !== (int) ($currentPrices->min_wholesale_quantity ?? 1);
+
+            abort_if($pricesChanged || filled($this->newOfferQuantity) || filled($this->newOfferPrice), 403, 'لا تملك صلاحية تعديل أسعار هذا الفرع.');
         }
 
         /*
@@ -1397,12 +1471,16 @@ new class extends Component {
             return;
         }
 
+        $editableBranchIds = $this->priceEditableBranchIds();
+        abort_if($editableBranchIds === [], 403, 'لا تملك صلاحية تعديل أسعار الفروع.');
+
         $product = Product::query()
             ->where('tenant_id', $tenantId)
             ->findOrFail($productId);
 
         $branches = DB::table('branches')
             ->where('tenant_id', $tenantId)
+            ->whereIn('id', $editableBranchIds)
             ->orderBy('name')
             ->get();
 
@@ -1441,12 +1519,12 @@ new class extends Component {
 
     public function editOffer(int $offerId): void
     {
-        $this->authorize('products.price.edit');
         $tenantId = $this->tenantId();
         $offer = ProductOffer::query()
             ->where('tenant_id', $tenantId)
             ->with('product:id,name')
             ->findOrFail($offerId);
+        $this->ensureCanEditBranchPrice((int) $offer->branch_id);
 
         $this->offerId = $offer->id;
         $this->offerProductId = $offer->product_id;
@@ -1464,10 +1542,10 @@ new class extends Component {
 
     public function deleteOffer(int $offerId): void
     {
-        $this->authorize('products.price.edit');
         $offer = ProductOffer::query()
             ->where('tenant_id', $this->tenantId())
             ->findOrFail($offerId);
+        $this->ensureCanEditBranchPrice((int) $offer->branch_id);
 
         $offer->delete();
         session()->flash('message', 'تم حذف العرض.');
@@ -1525,8 +1603,15 @@ new class extends Component {
 
     public function saveOffer(): void
     {
-        $this->authorize('products.price.edit');
         $tenantId = $this->tenantId();
+        abort_if($this->priceEditableBranchIds() === [], 403, 'لا تملك صلاحية تعديل أسعار الفروع.');
+        if ($this->offerBranchId) {
+            $this->ensureCanEditBranchPrice((int) $this->offerBranchId);
+        }
+
+        if ($this->offerId) {
+            $this->ensureCanEditBranchPrice((int) ProductOffer::query()->where('tenant_id', $tenantId)->whereKey($this->offerId)->value('branch_id'));
+        }
 
         if (!$tenantId || !$this->offerProductId) {
             session()->flash('error', 'تعذر تحديد المنتج أو المتجر.');
@@ -1929,6 +2014,7 @@ new class extends Component {
         */
 
         $allBranches = collect();
+        $priceEditableBranchIds = $this->priceEditableBranchIds();
 
         if ($tenantId) {
             $allBranches = DB::table('branches')
@@ -2079,6 +2165,9 @@ new class extends Component {
             'totalCategories' => $totalCategories,
 
             'activeBranchId' => $branchId,
+            'priceEditableBranchIds' => $priceEditableBranchIds,
+            'offerBranches' => $allBranches->whereIn('id', $priceEditableBranchIds)->values(),
+            'branchPriceButtonLabel' => count($priceEditableBranchIds) > 1 ? 'تعديل أسعار الفروع' : 'تعديل سعر هذا الفرع',
         ])->layout('layouts::tenant');
     }
 };
@@ -2560,11 +2649,11 @@ new class extends Component {
                                 <span class="font-bold text-zinc-900 dark:text-white">
                                     {{ $priceData ? number_format($priceData->retail_price, 2) : '0.00' }}
                                 </span>
-                                @can('products.price.edit')
+                                @if ($priceEditableBranchIds !== [])
                                     <button type="button" wire:click.stop="editBranchPrice({{ $product->id }})" class="mt-1 block text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
-                                        تعديل سعر هذا الفرع
+                                        {{ $branchPriceButtonLabel }}
                                     </button>
-                                @endcan
+                                @endif
 
                             </td>
 
@@ -2673,7 +2762,8 @@ new class extends Component {
                             <td class="px-5 py-4">
 
                                 <div class="flex items-center justify-center gap-1">
-                                    @if ($currentOffer)
+                                    @if ($priceEditableBranchIds === [])
+                                    @elseif ($currentOffer)
                                         <flux:button variant="ghost" icon="pencil-square" class="text-amber-600 hover:text-amber-700" wire:click.stop="editOffer({{ $currentOffer->id }})" title="تعديل العرض" />
                                         <flux:button variant="ghost" icon="trash" class="text-red-600 hover:text-red-700" wire:click.stop="deleteOffer({{ $currentOffer->id }})" wire:confirm="هل تريد حذف عرض هذا الصنف؟" title="حذف العرض" />
                                     @else
@@ -2866,11 +2956,11 @@ new class extends Component {
                                 <div class="mt-1 text-sm font-bold text-indigo-600 dark:text-indigo-400">
                                     {{ $priceData ? number_format($priceData->retail_price, 2) : '0.00' }}
                                 </div>
-                                @can('products.price.edit')
+                                @if ($priceEditableBranchIds !== [])
                                     <button type="button" wire:click.stop="editBranchPrice({{ $product->id }})" class="mt-1 text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
-                                        تعديل سعر هذا الفرع
+                                        {{ $branchPriceButtonLabel }}
                                     </button>
-                                @endcan
+                                @endif
 
                             </div>
 
@@ -2953,7 +3043,8 @@ new class extends Component {
                     </div>
 
                     <div class="flex items-center gap-1">
-                        @if ($currentOffer)
+                        @if ($priceEditableBranchIds === [])
+                        @elseif ($currentOffer)
                             <flux:button size="sm" variant="subtle" icon="pencil-square" class="text-amber-600" wire:click.stop="editOffer({{ $currentOffer->id }})">تعديل العرض</flux:button>
                             <flux:button size="sm" variant="ghost" icon="trash" class="text-red-600" wire:click.stop="deleteOffer({{ $currentOffer->id }})" wire:confirm="هل تريد حذف عرض هذا الصنف؟" />
                         @else
@@ -3115,6 +3206,7 @@ new class extends Component {
 
                         @php
                             $priceBranches = $allBranches->where('id', $activeBranchId);
+                            $pricesLocked = $isEditing && ! in_array((int) $activeBranchId, $priceEditableBranchIds, true);
                         @endphp
 
                         <section class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
@@ -3127,6 +3219,8 @@ new class extends Component {
                                         <span>سعر موحد لكل الفروع</span>
                                         <flux:switch wire:model.live="is_price_unified" />
                                     </label>
+                                @elseif ($pricesLocked)
+                                    <span class="text-xs text-amber-700 dark:text-amber-300">أسعار هذا الفرع للعرض فقط؛ لا تملك صلاحية تعديلها.</span>
                                 @else
                                     <span class="text-xs text-indigo-700 dark:text-indigo-300">يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.</span>
                                 @endif
@@ -3172,17 +3266,17 @@ new class extends Component {
                                         </div>
                                         <div>
                                             <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التجزئة · {{ $branch->name }}</label>
-                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" />
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" :readonly="$pricesLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
                                         </div>
                                         <div>
                                             <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة</label>
-                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" />
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" :readonly="$pricesLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
                                         </div>
                                         <div>
                                             <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة</label>
-                                            <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" />
+                                            <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" :readonly="$pricesLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
                                         </div>
                                     </div>
@@ -3346,6 +3440,7 @@ new class extends Component {
                         </section>
 
 
+                        @if (! $pricesLocked)
                         <section data-product-new-offer data-arrow-nav class="rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
 
                             <div class="text-sm font-semibold">{{ $isEditing ? 'إضافة عرض جديد لهذا الصنف' : 'إضافة عرض لهذا الصنف مباشرة' }}</div>
@@ -3379,6 +3474,7 @@ new class extends Component {
                             </div>
 
                         </section>
+                        @endif
 
 
                         <section class="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
@@ -3434,10 +3530,22 @@ new class extends Component {
 
     <flux:modal wire:model="showBranchPriceModal" class="w-full max-w-md">
         <div>
-            <flux:heading size="lg">تعديل سعر الفرع الحالي</flux:heading>
+            <flux:heading size="lg">{{ count($priceEditableBranchIds) > 1 ? 'تعديل أسعار الفروع' : 'تعديل سعر الفرع الحالي' }}</flux:heading>
             <flux:subheading class="mt-1">{{ $branchPriceProductName }}</flux:subheading>
 
             <form wire:submit.prevent="saveBranchPrice" class="mt-6 space-y-4">
+                @if (count($priceEditableBranchIds) > 1)
+                    <flux:field>
+                        <flux:label>الفرع</flux:label>
+                        <flux:select wire:model.live="branchPriceBranchId">
+                            @foreach ($offerBranches as $branch)
+                                <flux:select.option value="{{ $branch->id }}">{{ $branch->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="branchPriceBranchId" />
+                    </flux:field>
+                @endif
+
                 <flux:field>
                     <flux:label>سعر البيع</flux:label>
                     <flux:input type="number" min="0" max="999999999" step="0.01" wire:model="branchRetailPrice" placeholder="0.00" />
@@ -3459,6 +3567,37 @@ new class extends Component {
                 <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-900/50 dark:bg-indigo-950/20 dark:text-indigo-300">
                     سيُحفظ السعر للفرع المحدد حاليًا فقط.
                 </div>
+
+                @if (count($branchPriceOverview) > 1)
+                    <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+                        <table class="w-full text-xs">
+                            <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                                <tr>
+                                    <th class="px-3 py-2 text-start font-semibold">الفرع</th>
+                                    <th class="px-3 py-2 text-start font-semibold">سعر البيع</th>
+                                    <th class="px-3 py-2 text-start font-semibold">سعر الجملة</th>
+                                    <th class="px-3 py-2 text-start font-semibold">الصلاحية</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                @foreach ($branchPriceOverview as $row)
+                                    <tr wire:key="branch-price-overview-{{ $row['branch_id'] }}" @class(['bg-indigo-50/60 dark:bg-indigo-950/20' => $row['branch_id'] === $branchPriceBranchId])>
+                                        <td class="px-3 py-2 font-medium">{{ $row['name'] }}</td>
+                                        <td class="px-3 py-2">{{ $row['retail_price'] }}</td>
+                                        <td class="px-3 py-2">{{ $row['wholesale_price'] }}</td>
+                                        <td class="px-3 py-2">
+                                            @if ($row['editable'])
+                                                <span class="text-emerald-600 dark:text-emerald-400">قابل للتعديل</span>
+                                            @else
+                                                <span class="text-zinc-400">للعرض فقط</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
 
                 <div class="flex justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
                     <flux:button type="button" variant="ghost" wire:click="$set('showBranchPriceModal', false)">إلغاء</flux:button>
@@ -3502,7 +3641,7 @@ new class extends Component {
                         wire:model.live="offerBranchId"
                         class="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                     >
-                        @foreach ($allBranches as $branch)
+                        @foreach ($offerBranches as $branch)
                             <option value="{{ $branch->id }}">{{ $branch->name }}</option>
                         @endforeach
                     </select>
