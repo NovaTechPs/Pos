@@ -441,6 +441,13 @@
              طرق الدفع
         ========================================================== --}}
 
+        <div data-pos-mobile-save class="pos-mobile-save">
+            <button type="button" wire:click="saveOrEditInvoice" wire:loading.attr="disabled" wire:target="saveOrEditInvoice,checkoutAndPrint" @disabled(empty($cart) && !$invoiceLocked)
+                class="min-h-12 rounded-xl bg-slate-900 px-3 py-3 text-sm font-bold text-white disabled:opacity-40">{{ $invoiceLocked ? 'تعديل الفاتورة' : 'حفظ الفاتورة' }}</button>
+            <button type="button" x-on:click="saveAndPrint()" x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}"
+                class="min-h-12 rounded-xl bg-emerald-600 px-3 py-3 text-sm font-bold text-white disabled:opacity-40">{{ $invoiceLocked ? 'طباعة' : 'حفظ وطباعة' }}</button>
+        </div>
+
         <div data-pos-payment-methods class="md:order-3 lg:order-2 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-3">
 
             <div class="mb-1.5 flex items-center justify-between">

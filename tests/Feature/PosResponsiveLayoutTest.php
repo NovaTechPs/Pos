@@ -12,7 +12,7 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-test('responsive POS keeps a single editable cart and checkout with products before the cart on narrow screens', function (): void {
+test('responsive POS keeps one cart with mobile search and save below totals', function (): void {
     $tenant = Tenant::query()->create(['name' => 'متجر التجربة']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الرئيسي']);
     $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
@@ -50,6 +50,10 @@ test('responsive POS keeps a single editable cart and checkout with products bef
         ->and(strpos($html, 'id="pos-products-panel"'))->toBeLessThan(strpos($html, 'id="pos-cart-panel"'));
 
     $methods = $xpath->query('//*[@data-pos-payment-methods]');
+    expect($xpath->query('//*[@data-pos-mobile-save]//button')->length)->toBe(2)
+        ->and($xpath->query('//*[@data-pos-mobile-search-results]')->length)->toBe(1)
+        ->and($styles)->toContain('.pos-content-grid > .pos-products { display: none; }')
+        ->and(strpos($html, 'pos-payment-totals'))->toBeLessThan(strpos($html, 'data-pos-mobile-save'));
     $customerNotes = $xpath->query('//*[@data-pos-customer-notes]');
     expect($methods->length)->toBe(1)
         ->and($customerNotes->length)->toBe(1)

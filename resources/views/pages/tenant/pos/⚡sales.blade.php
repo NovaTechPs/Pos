@@ -1155,6 +1155,39 @@ new class extends Component {
         $this->loadQuickProducts();
     }
 
+    public function submitMobileProductSearch(string $value): void
+    {
+        $value = trim($value);
+        if ($this->invoiceIsLocked() || $value === '' || mb_strlen($value) > 120) {
+            return;
+        }
+        [, $barcode] = $this->splitScanQuantity($value);
+        $isBarcode = ProductBarcode::query()->where('tenant_id', $this->tenantId())->where('barcode', $barcode)->exists();
+        if (!$isBarcode && preg_match('/^[A-Za-z0-9_-]+$/D', $barcode)) {
+            $this->refreshRemoteCatalog(filters: ['barcode' => $barcode]);
+            $isBarcode = ProductBarcode::query()->where('tenant_id', $this->tenantId())->where('barcode', $barcode)->exists();
+        }
+        if ($isBarcode || preg_match('/^[0-9]+$/D', $barcode) || str_contains($value, '*')) {
+            $this->productSearchQuery = '';
+            $this->productPriceSearch = '';
+            $this->scanBarcode($value);
+            return;
+        }
+        $this->productSearchQuery = $value;
+        $this->selectedCategoryId = null;
+        $this->loadQuickProducts(force: true, refreshRemoteCatalog: true);
+        $this->dispatch('pos-mobile-search-ready', componentId: $this->getId(), query: $value);
+    }
+
+    public function clearMobileProductSearch(): void
+    {
+        $this->productPriceSearch = '';
+        $this->productSearchQuery = '';
+        $this->resetValidation('productPriceSearch');
+        $this->loadQuickProducts();
+        $this->dispatch('pos-search-cleared', componentId: $this->getId());
+    }
+
     public function submitProductSearch(string $search): void
     {
         if ($this->invoiceIsLocked() || mb_strlen($search) > 120) {
@@ -1333,6 +1366,7 @@ new class extends Component {
 
     private function finishInlineProductSelection(): void
     {
+        $this->productPriceSearch = '';
         $this->inlineSearchQuery = '';
         $this->productSearchQuery = '';
         $this->quickProductQuantities = [];

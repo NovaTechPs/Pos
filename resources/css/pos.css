@@ -338,3 +338,12 @@
     .dark .pos-cart-product-row:hover { background-color: hsl(var(--pos-cart-hue) 30% 20%); }
     .dark .pos-cart-occurrence { background: hsl(var(--pos-cart-hue) 35% 24%); color: hsl(var(--pos-cart-hue) 75% 88%); }
 }
+@media screen {
+    .pos-mobile-search, .pos-mobile-save { display: none; }
+}
+@media screen and (max-width: 1023px) {
+    .pos-content-grid > .pos-products { display: none; }
+    .pos-mobile-search { display: block; }
+    .pos-mobile-save { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; grid-column: 1 / -1; order: 2; }
+    .pos-payment-totals { order: 1; }
+}

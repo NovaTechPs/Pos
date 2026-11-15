@@ -453,3 +453,24 @@ test('remote POS catalog applies price before limiting results and scopes to dev
     expect(array_column($response->json('rows'), 'id'))->toBe([$match->id]);
     $this->withToken('price-device')->getJson('/api/branch-sync/pos-catalog?entity=products&retail_price=-1')->assertUnprocessable();
 });
+
+test('mobile unified input searches names without adding and adds exact barcodes once', function (): void {
+    $product = searchablePosProduct($this, 'كوب أزرق', barcode: 'CUP-123456');
+    Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id,
+        'opened_by' => $this->user->id, 'opening_cash' => 0, 'opened_at' => now(), 'status' => 'open']);
+    $page = Livewire::test('pages::tenant.pos.sales')->call('submitMobileProductSearch', 'كوب');
+    expect($page->get('cart'))->toBe([])->and(array_column($page->get('quickProducts'), 'id'))->toBe([$product->id]);
+    $page->call('submitMobileProductSearch', 'CUP-123456');
+    expect($page->get('cart'))->toHaveCount(1)->and(array_values($page->get('cart'))[0]['quantity'])->toEqual(1);
+    $page->assertSet('productSearchQuery', '')->assertSet('productPriceSearch', '');
+    $page->call('submitMobileProductSearch', '2*CUP-123456');
+    expect(collect($page->get('cart'))->sum('quantity'))->toEqual(3);
+});
+
+test('mobile search has no default results and clearing removes price and name filters', function (): void {
+    searchablePosProduct($this, 'كوب أخضر');
+    $page = Livewire::test('pages::tenant.pos.sales')->assertDontSee('wire:key="mobile-result-', false);
+    $page->set('productSearchQuery', 'كوب')->set('productPriceSearch', '15')->assertSee('wire:key="mobile-result-', false);
+    $page->call('clearMobileProductSearch')->assertSet('productPriceSearch', '')->assertSet('productSearchQuery', '')
+        ->assertDontSee('wire:key="mobile-result-', false)->assertDispatched('pos-search-cleared');
+});

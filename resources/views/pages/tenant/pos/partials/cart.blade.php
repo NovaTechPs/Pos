@@ -23,6 +23,16 @@
             <x-barcode-camera-dialog />
 
             <input x-ref="barcode" wire:keydown.enter.prevent.stop="scanBarcode($event.target.value)"
+                x-data="{ mobileSearch: window.matchMedia('(max-width: 1023px)').matches, searchTimer: null }"
+                x-on:resize.window="mobileSearch = window.matchMedia('(max-width: 1023px)').matches"
+                x-bind:data-pos-mobile-search="mobileSearch ? 'true' : 'false'"
+                x-bind:inputmode="mobileSearch ? 'search' : 'none'"
+                x-bind:placeholder="mobileSearch ? 'ابحث عن صنف أو امسح الباركود…' : '{{ $isReturnMode ? 'امسح باركود المرتجع هنا...' : 'امسح الباركود · للكمية اكتب 3* ثم امسح' }}'"
+                x-on:input="if (mobileSearch) { clearTimeout(searchTimer); searchTimer = setTimeout(() => $wire.set('productSearchQuery', $el.value), 300) }"
+                x-on:pos-unified-submitted="clearTimeout(searchTimer)"
+                x-on:pos-mobile-search-ready.window="if (mobileSearch &amp;&amp; $event.detail.componentId === $wire.$id &amp;&amp; !$el.value) $el.value = $event.detail.query"
+                x-on:pos-search-cleared.window="if (mobileSearch &amp;&amp; $event.detail.componentId === $wire.$id) { clearTimeout(searchTimer); $el.value = '' }"
+                aria-label="البحث عن صنف أو قراءة الباركود"
                 x-on:pos-barcode-handled.window="if ($event.detail.componentId === $wire.$id &amp;&amp; $el.value.trim() === $event.detail.barcode) $el.value = ''"
                 data-pos-barcode-input data-pos-component-id="{{ $this->getId() }}" @disabled($invoiceLocked) type="text"
                 autocomplete="off" inputmode="none"
@@ -32,7 +42,7 @@
                     bg-white px-4 py-2.5 text-sm font-black text-slate-900
                     outline-none placeholder:text-slate-400">
 
-            <button type="button" @disabled($invoiceLocked) x-on:click="$wire.scanBarcode($refs.barcode.value)"
+            <button type="button" @disabled($invoiceLocked) x-on:click="if (window.matchMedia('(max-width: 1023px)').matches) { $refs.barcode.dispatchEvent(new Event('pos-unified-submitted')); const value = $refs.barcode.value; $refs.barcode.value = ''; $wire.submitMobileProductSearch(value) } else { $wire.scanBarcode($refs.barcode.value) }"
                 wire:loading.attr="disabled" wire:target="scanBarcode" class="h-11 shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white disabled:opacity-50">إضافة</button>
 
             @if ($barcode)
@@ -44,6 +54,26 @@
 
         </div>
         <div wire:loading.delay wire:target="scanBarcode" role="status" class="mt-1 text-xs text-indigo-600">جارٍ قراءة الباركود…</div>
+
+        <div data-pos-mobile-search-results class="pos-mobile-search mt-2">
+            <label class="block text-[10px] font-bold text-slate-600">سعر البيع — اختياري
+                <input type="text" inputmode="decimal" maxlength="12" dir="ltr" wire:model.live.debounce.300ms="productPriceSearch" @disabled($invoiceLocked)
+                    aria-label="البحث بسعر البيع على الجوال" placeholder="75.00" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
+            </label>
+            @error('productPriceSearch')<p role="alert" class="text-xs text-rose-600">{{ $message }}</p>@enderror
+            @if(trim($productSearchQuery) !== '' || trim($productPriceSearch) !== '')
+                <div class="mt-2 flex items-center justify-between text-xs"><strong>نتائج البحث</strong><button type="button" wire:click="clearMobileProductSearch" class="p-2 text-indigo-600">مسح البحث</button></div>
+                <div class="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white" aria-label="نتائج بحث الأصناف">
+                    @forelse($quickProducts as $product)
+                        <button type="button" wire:key="mobile-result-{{ $product['id'] }}" wire:click="selectInlineProduct({{ $product['id'] }})" @disabled($invoiceLocked)
+                            class="flex min-h-14 w-full items-center justify-between gap-3 border-b border-slate-100 p-3 text-right hover:bg-indigo-50">
+                            <span class="min-w-0"><strong class="block break-words text-xs">{{ $product['name'] }}</strong><small class="text-slate-500">{{ $product['barcode_value'] ?: $product['product_number'] }} · المتوفر {{ $product['stock_quantity'] + 0 }}</small></span>
+                            <b class="shrink-0 text-sm text-indigo-700">{{ number_format($product['retail_price'], 2) }}</b>
+                        </button>
+                    @empty<p class="p-4 text-center text-xs text-slate-500">لم نجد صنفاً مطابقاً</p>@endforelse
+                </div>
+            @endif
+        </div>
 
     </div>
 

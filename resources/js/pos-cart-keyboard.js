@@ -96,13 +96,13 @@
         if (typeof input.select === 'function') input.select();
     }
 
-    function enqueueBarcode(barcode) {
+    function enqueueBarcode(barcode, mobileSearch = false) {
         const barcodeInput = document.querySelector(BARCODE_SELECTOR);
         const componentId = barcodeInput?.dataset.posComponentId;
         if (!barcodeInput || barcodeInput.disabled) return;
         if (!componentId || !barcode) return;
 
-        barcodeQueue.push({ barcode, componentId });
+        barcodeQueue.push({ barcode, componentId, mobileSearch });
         processBarcodeQueue();
     }
 
@@ -169,14 +169,14 @@
 
         try {
             while (barcodeQueue.length > 0) {
-                const { barcode, componentId } = barcodeQueue.shift();
+                const { barcode, componentId, mobileSearch } = barcodeQueue.shift();
                 const barcodeInput = document.querySelector(BARCODE_SELECTOR);
                 if (!barcodeInput || barcodeInput.disabled || barcodeInput.dataset.posComponentId !== componentId) continue;
                 const component = window.Livewire?.find(componentId);
 
                 if (!component || !barcode) continue;
 
-                await component.$call('scanBarcode', barcode);
+                await component.$call(mobileSearch ? 'submitMobileProductSearch' : 'scanBarcode', barcode);
             }
         } catch (error) {
             console.error('تعذر تسجيل أحد الباركودات في نقطة البيع.', error);
@@ -205,8 +205,10 @@
             event.stopImmediatePropagation();
 
             const barcode = input.value.trim();
+            const mobileSearch = input.dataset.posMobileSearch === 'true';
+            if (mobileSearch) input.dispatchEvent(new Event('pos-unified-submitted'));
             input.value = '';
-            enqueueBarcode(barcode);
+            enqueueBarcode(barcode, mobileSearch);
             return;
         }
 

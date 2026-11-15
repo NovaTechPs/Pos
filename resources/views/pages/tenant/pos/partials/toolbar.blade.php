@@ -2,8 +2,6 @@
 
     <div class="pos-mobile-tools flex items-center gap-2" dir="rtl">
         <button type="button" x-on:click="mobileToolsOpen = !mobileToolsOpen" x-bind:aria-expanded="mobileToolsOpen" aria-controls="pos-toolbar-tools-{{ $this->getId() }}" class="min-h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700">أدوات الفاتورة ▾</button>
-        <button type="button" wire:click="saveOrEditInvoice" @disabled(empty($cart) && !$this->invoiceIsLocked()) class="min-h-11 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40">{{ $this->invoiceIsLocked() ? 'تعديل' : 'حفظ' }}</button>
-        <button type="button" x-on:click="saveAndPrint()" x-bind:disabled="printInProgress || {{ empty($cart) ? 'true' : 'false' }}" class="min-h-11 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-40">حفظ وطباعة</button>
     </div>
     <div data-pos-toolbar-content id="pos-toolbar-tools-{{ $this->getId() }}">
     {{-- =========================================================
