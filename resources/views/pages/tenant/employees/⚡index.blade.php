@@ -1431,13 +1431,13 @@ new class extends Component
                         بشكل افتراضي يعدّل الموظف أسعار فرعه فقط. اختر فروعاً أخرى ليعدّل أسعارها أيضاً؛ يتطلب ذلك أن يتضمن دوره صلاحية «تعديل أسعار البيع للفروع».
                     </p>
 
-                    <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <flux:checkbox.group wire:model="price_branch_ids" class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         @foreach ($branches as $branch)
                             @if ((int) $branch->id !== (int) $branch_id)
-                                <flux:checkbox wire:key="price-branch-{{ $branch->id }}" wire:model="price_branch_ids" value="{{ $branch->id }}" label="{{ $branch->name }}" />
+                                <flux:checkbox wire:key="price-branch-{{ $branch->id }}" value="{{ $branch->id }}" label="{{ $branch->name }}" />
                             @endif
                         @endforeach
-                    </div>
+                    </flux:checkbox.group>
 
                     <flux:error name="price_branch_ids" />
                     <flux:error name="price_branch_ids.*" />

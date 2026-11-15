@@ -208,6 +208,7 @@ test('the owner grants extra price branches from the employees screen', function
         ->call('edit', $this->employee->id)
         ->assertSet('employee_profile_id', $profile->id)
         ->assertSee('فروع إضافية لتعديل أسعار البيع')
+        ->assertSeeHtml('wire:model.self="price_branch_ids" data-flux-checkbox-group')
         ->set('price_branch_ids', [(string) $this->otherBranch->id])
         ->call('save')
         ->assertHasNoErrors();
@@ -215,6 +216,31 @@ test('the owner grants extra price branches from the employees screen', function
     expect(DB::table('user_price_branches')->where('user_id', $this->employee->id)->pluck('branch_id')->map(fn ($id) => (int) $id)->all())
         ->toBe([$this->otherBranch->id])
         ->and($this->employee->fresh()->priceEditableBranchIds($this->tenant->id))->toBe([$this->ownBranch->id, $this->otherBranch->id]);
+
+    Livewire::test('pages::tenant.employees.index')
+        ->call('edit', $this->employee->id)
+        ->assertSet('price_branch_ids', [(string) $this->otherBranch->id]);
+
+    // The employee can now change the granted branch's price, but still not the third branch.
+    $this->actingAs($this->employee->fresh());
+
+    Livewire::test('pages::tenant.products.index')
+        ->assertSee('تعديل أسعار الفروع')
+        ->call('editBranchPrice', $this->product->id)
+        ->set('branchPriceBranchId', $this->otherBranch->id)
+        ->assertSet('branchRetailPrice', '20.00')
+        ->set('branchRetailPrice', '22')
+        ->call('saveBranchPrice')
+        ->assertHasNoErrors();
+
+    expect(branchRetailPrice($this->otherBranch, $this->product))->toBe(22.0)
+        ->and(branchRetailPrice($this->ownBranch, $this->product))->toBe(10.0);
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('editBranchPrice', $this->product->id, $this->thirdBranch->id)
+        ->assertForbidden();
+
+    $this->actingAs($owner);
 
     $foreignBranch = Branch::query()->create([
         'tenant_id' => Tenant::query()->create(['name' => 'Other store', 'is_active' => true])->id,
