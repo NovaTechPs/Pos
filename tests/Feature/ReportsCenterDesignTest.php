@@ -107,6 +107,8 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
         ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total')
         ->assertSeeHtml('data-statement-scroll')
+        ->assertSeeHtml('data-statement-closing')
+        ->assertSee('الرصيد في نهاية الفترة')
         ->assertDontSeeHtml('data-statement-result-end')
         ->assertDontSee('نهاية كشف حساب')
         ->assertSeeHtml('data-statement-filter-panel')
