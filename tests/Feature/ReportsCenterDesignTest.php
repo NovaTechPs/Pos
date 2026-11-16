@@ -106,6 +106,7 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->call('showStatementParty', $this->customer->id)
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
         ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total')
+        ->assertSeeHtml('data-statement-scroll')
         ->assertDontSeeHtml('data-statement-result-end')
         ->assertDontSee('نهاية كشف حساب')
         ->assertSeeHtml('data-statement-filter-panel')

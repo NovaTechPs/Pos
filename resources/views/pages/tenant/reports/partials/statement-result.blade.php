@@ -3,7 +3,7 @@
     $hasParty = array_key_exists('رصيد أول الفترة', $summary);
     $money = fn ($value): string => number_format((float) $value, 2);
 @endphp
-<div class="reports-table-wrap" x-data="{ selectedRow: null }">
+<div class="reports-table-wrap" data-statement-scroll x-data="{ selectedRow: null }">
     <table class="reports-statement-table">
         <thead><tr>@foreach ($definition['columns'] as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
         <tbody>
