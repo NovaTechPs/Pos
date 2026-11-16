@@ -102,3 +102,37 @@ test('does not duplicate a legacy sales payment that already has a linked receip
 
     expect(Payment::query()->sole()->id)->toBe($receipt->id);
 });
+
+test('an explicit all-tenants apply processes legacy receipts across stores', function (): void {
+    $otherTenant = Tenant::query()->create(['name' => 'Other legacy receipt tenant']);
+    $otherBranch = Branch::query()->create(['tenant_id' => $otherTenant->id, 'name' => 'Other legacy receipt branch']);
+    $otherCustomer = Party::query()->create([
+        'tenant_id' => $otherTenant->id,
+        'name' => 'Other legacy receipt customer',
+        'type' => 'customer',
+        'is_active' => true,
+    ]);
+    Order::query()->create([
+        'tenant_id' => $otherTenant->id,
+        'branch_id' => $otherBranch->id,
+        'customer_id' => $otherCustomer->id,
+        'invoice_number' => 'SAL-OTHER-LEGACY',
+        'invoice_date' => '2026-11-04',
+        'type' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 60,
+        'payment_status' => 'partial',
+    ]);
+
+    $this->artisan('sales:backfill-legacy-receipts', ['--all-tenants' => true, '--apply' => true])
+        ->assertExitCode(0);
+
+    expect(Payment::query()->where('tenant_id', $otherTenant->id)->where('type', 'receipt')->count())->toBe(1);
+});
+
+test('applying legacy receipts requires an explicit store scope', function (): void {
+    $this->artisan('sales:backfill-legacy-receipts', ['--apply' => true])
+        ->assertExitCode(1);
+});

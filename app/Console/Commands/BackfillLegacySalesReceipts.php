@@ -8,7 +8,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('sales:backfill-legacy-receipts
-    {--tenant= : Store ID to process; required with --apply}
+    {--tenant= : Store ID to process; required with --apply unless --all-tenants is used}
+    {--all-tenants : Explicitly process every store when applying}
     {--order=* : Restrict the preview or repair to specific sales invoice IDs}
     {--apply : Create the receipt vouchers after previewing them}')]
 #[Description('Preview or safely create linked receipt vouchers for legacy paid sales invoices.')]
@@ -20,9 +21,16 @@ class BackfillLegacySalesReceipts extends Command
         /** @var list<int> $orderIds */
         $orderIds = array_map('intval', (array) $this->option('order'));
         $apply = (bool) $this->option('apply');
+        $allTenants = (bool) $this->option('all-tenants');
 
-        if ($apply && ! $tenantId) {
-            $this->error('حدد المتجر عبر --tenant عند استخدام --apply.');
+        if ($tenantId && $allTenants) {
+            $this->error('استخدم --tenant أو --all-tenants، وليس كليهما.');
+
+            return self::FAILURE;
+        }
+
+        if ($apply && ! $tenantId && ! $allTenants) {
+            $this->error('حدد المتجر عبر --tenant أو استخدم --all-tenants عند استخدام --apply.');
 
             return self::FAILURE;
         }

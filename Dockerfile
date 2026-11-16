@@ -34,6 +34,7 @@ CMD php artisan package:discover --ansi --no-interaction \
     && php artisan backup:before-deploy --no-interaction \
     && php artisan migrate --force --no-interaction \
     && php artisan db:seed --class=MainDataSeeder --force --no-interaction \
+    && php artisan sales:backfill-legacy-receipts --all-tenants --apply --no-interaction \
     && php artisan storage:link --force --no-interaction \
     && php artisan view:clear --no-interaction \
     && php artisan optimize:clear --no-interaction \
