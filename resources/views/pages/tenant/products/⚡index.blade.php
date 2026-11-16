@@ -598,23 +598,37 @@ new class extends Component {
         |--------------------------------------------------------------------------
         */
 
+        // The current branch first, then every other branch whose prices this user may edit.
+        $formBranchIds = collect([(int) $currentBranchId])
+            ->merge($this->priceEditableBranchIds())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $existingPrices = DB::table('branch_products')
             ->where('tenant_id', $tenantId)
-            ->where('branch_id', $currentBranchId)
+            ->whereIn('branch_id', $formBranchIds)
             ->where('product_id', $product->id)
             ->get()
             ->keyBy('branch_id');
 
         $branches = DB::table('branches')
             ->where('tenant_id', $tenantId)
-            ->where('id', $currentBranchId)
-            ->orderBy('name')
-            ->get();
+            ->whereIn('id', $formBranchIds)
+            ->get()
+            ->sortBy(fn ($branch): int => array_search((int) $branch->id, $formBranchIds, true))
+            ->values();
 
         $this->branchPricesInput = [];
 
         foreach ($branches as $branch) {
             $price = $existingPrices->get($branch->id);
+
+            // Other branches appear only where the product is already stocked, so nothing new is added there.
+            if (! $price && (int) $branch->id !== (int) $currentBranchId) {
+                continue;
+            }
 
             $this->branchPricesInput[$branch->id] = [
                 'retail_price' => $price?->retail_price ?? '',
@@ -1127,7 +1141,10 @@ new class extends Component {
         // A new product is added to every branch: with the same prices when "unified price" is on,
         // otherwise at price 0 (and no stock) in the other branches until each sets its own price.
         $branchIds = $this->isEditing
-            ? collect([(int) $activeBranchId])
+            ? collect([(int) $activeBranchId])->merge(
+                collect($this->priceEditableBranchIds())
+                    ->filter(fn (int $branchId): bool => $branchId !== (int) $activeBranchId && array_key_exists($branchId, $this->branchPricesInput))
+            )->values()
             : DB::table('branches')->where('tenant_id', $tenantId)->orderBy('id')->pluck('id')->map(fn ($id): int => (int) $id);
 
         if ($branchIds->isEmpty()) {
@@ -3205,7 +3222,11 @@ new class extends Component {
                         {{-- Prices and stock --}}
 
                         @php
-                            $priceBranches = $allBranches->where('id', $activeBranchId);
+                            // Editing shows the current branch first, then the other branches this user may price.
+                            $formPriceBranchIds = $isEditing
+                                ? collect([(int) $activeBranchId])->merge(collect($priceEditableBranchIds)->filter(fn ($id) => array_key_exists((int) $id, $branchPricesInput)))->unique()->values()->all()
+                                : [(int) $activeBranchId];
+                            $priceBranches = $allBranches->whereIn('id', $formPriceBranchIds)->sortBy(fn ($branch) => array_search((int) $branch->id, $formPriceBranchIds, true))->values();
                             $pricesLocked = $isEditing && ! in_array((int) $activeBranchId, $priceEditableBranchIds, true);
                         @endphp
 
@@ -3222,7 +3243,7 @@ new class extends Component {
                                 @elseif ($pricesLocked)
                                     <span class="text-xs text-amber-700 dark:text-amber-300">أسعار هذا الفرع للعرض فقط؛ لا تملك صلاحية تعديلها.</span>
                                 @else
-                                    <span class="text-xs text-indigo-700 dark:text-indigo-300">يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.</span>
+                                    <span class="text-xs text-indigo-700 dark:text-indigo-300">{{ $priceBranches->count() > 1 ? 'تعديل أسعار الفروع المسموح لك بها؛ باقي الفروع تبقى كما هي.' : 'يتم تعديل السعر للفرع الحالي فقط، وتبقى أسعار الفروع الأخرى كما هي.' }}</span>
                                 @endif
                             </div>
 
@@ -3258,25 +3279,32 @@ new class extends Component {
                             @else
 
                                 @foreach ($priceBranches as $branch)
-                                    <div wire:key="branch-price-{{ $branch->id }}" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                        <div>
-                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التكلفة</label>
-                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="cost_price" placeholder="0.00" />
-                                            <flux:error name="cost_price" />
-                                        </div>
+                                    @php
+                                        $rowLocked = $pricesLocked && (int) $branch->id === (int) $activeBranchId;
+                                    @endphp
+                                    <div wire:key="branch-price-{{ $branch->id }}" data-branch-price-row="{{ $branch->id }}" class="grid grid-cols-2 gap-3 sm:grid-cols-4 {{ $loop->first ? '' : 'mt-3 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-700' }}">
+                                        @if ($loop->first)
+                                            <div>
+                                                <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التكلفة</label>
+                                                <flux:input size="sm" type="number" step="0.01" min="0" wire:model="cost_price" placeholder="0.00" />
+                                                <flux:error name="cost_price" />
+                                            </div>
+                                        @else
+                                            <div class="flex items-end pb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{{ $branch->name }}</div>
+                                        @endif
                                         <div>
                                             <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر التجزئة · {{ $branch->name }}</label>
-                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" :readonly="$pricesLocked" />
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
                                         </div>
                                         <div>
-                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة</label>
-                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" :readonly="$pricesLocked" />
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة · {{ $branch->name }}</label>
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
                                         </div>
                                         <div>
-                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة</label>
-                                            <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" :readonly="$pricesLocked" />
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة · {{ $branch->name }}</label>
+                                            <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
                                         </div>
                                     </div>

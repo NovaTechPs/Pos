@@ -292,3 +292,39 @@ test('excel import updates prices only in branches in scope', function (): void 
         ->and(branchRetailPrice($this->otherBranch, $this->product))->toBe(20.0)
         ->and(branchRetailPrice($this->thirdBranch, $this->product))->toBe(30.0);
 });
+
+test('the product form shows and saves a price row for each branch the role may price', function (): void {
+    grantPriceBranch($this->employee, $this->otherBranch);
+    $productEdit = Permission::query()->create(['name' => 'products.edit', 'display_name' => 'Edit products', 'group' => 'Products']);
+    $this->role->permissions()->attach($productEdit);
+    $this->employee->unsetRelation('role');
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('edit', $this->product->id)
+        ->assertSeeHtml('data-branch-price-row="'.$this->ownBranch->id.'"')
+        ->assertSeeHtml('data-branch-price-row="'.$this->otherBranch->id.'"')
+        ->assertDontSeeHtml('data-branch-price-row="'.$this->thirdBranch->id.'"')
+        ->assertSee('سعر التجزئة · Other branch')
+        ->set('branchPricesInput.'.$this->ownBranch->id.'.retail_price', '12')
+        ->set('branchPricesInput.'.$this->otherBranch->id.'.retail_price', '24')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(branchRetailPrice($this->ownBranch, $this->product))->toBe(12.0)
+        ->and(branchRetailPrice($this->otherBranch, $this->product))->toBe(24.0)
+        ->and(branchRetailPrice($this->thirdBranch, $this->product))->toBe(30.0);
+});
+
+test('the owner sees every branch price row in the product form', function (): void {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->ownBranch->id, 'is_owner' => true]);
+    $this->actingAs($owner);
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('edit', $this->product->id)
+        ->assertSeeHtml('data-branch-price-row="'.$this->thirdBranch->id.'"')
+        ->set('branchPricesInput.'.$this->thirdBranch->id.'.retail_price', '35')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(branchRetailPrice($this->thirdBranch, $this->product))->toBe(35.0);
+});
