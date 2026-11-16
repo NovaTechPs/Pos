@@ -79,8 +79,6 @@ new class extends Component {
     public array $cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
     public string $productSearch = '';
     /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
-    public ?array $statementDocument = null;
-    public bool $showStatementDocument = false;
 
     public function mount(): void
     {
@@ -207,30 +205,36 @@ new class extends Component {
         $this->applyFilters();
     }
 
+    /**
+     * Opens the invoice, return or voucher behind a statement row in its own workspace tab, loaded and ready to view, edit or delete.
+     */
     public function openStatementDocument(int $sourceOrder, int $sourceId): void
     {
         $tenantId = $this->service()->tenantId;
-        $document = match ($sourceOrder) {
-            1, 2, 6 => Order::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
-            3, 7 => Purchase::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
-            4 => PurchaseReturn::query()->where('tenant_id', $tenantId)->with('supplier')->findOrFail($sourceId),
-            5 => Payment::query()->where('tenant_id', $tenantId)->with('party')->findOrFail($sourceId),
-            default => abort(404),
-        };
 
-        $this->statementDocument = match ($sourceOrder) {
-            1, 2, 6 => ['title' => $document->type === 'return' ? 'فاتورة مردود مبيعات' : 'فاتورة مبيعات', 'reference' => (string) $document->invoice_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->party?->name ?? $document->customer_name ?? 'زبون عام'), 'amount' => (float) $document->total, 'status' => (string) $document->status, 'notes' => (string) ($document->notes ?? '')],
-            3, 7 => ['title' => 'فاتورة مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => (string) ($document->payment_status ?? ''), 'notes' => (string) ($document->notes ?? '')],
-            4 => ['title' => 'مردود مشتريات', 'reference' => (string) $document->reference_number, 'date' => (string) $document->created_at, 'party' => (string) ($document->supplier?->name ?? 'مورد'), 'amount' => (float) $document->total, 'status' => '', 'notes' => (string) ($document->notes ?? '')],
-            5 => ['title' => $document->type === 'receipt' ? 'سند قبض' : 'سند صرف', 'reference' => (string) $document->voucher_number, 'date' => (string) $document->payment_date, 'party' => (string) ($document->party?->name ?? 'بدون طرف'), 'amount' => (float) $document->amount, 'status' => (string) $document->payment_method, 'notes' => (string) ($document->notes ?? '')],
-        };
-        $this->showStatementDocument = true;
-    }
+        if (in_array($sourceOrder, [1, 2, 6], true)) {
+            $order = Order::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
+            $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
+            $url = route($route, ['invoice' => $order->id]);
+            $title = ($order->type === 'return' ? 'مردود مبيعات ' : 'فاتورة مبيعات ').$order->invoice_number;
+        } elseif (in_array($sourceOrder, [3, 7], true)) {
+            $purchase = Purchase::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
+            $url = route('tenant.purchase-invoices', ['purchase' => $purchase->id]);
+            $title = 'فاتورة مشتريات '.$purchase->reference_number;
+        } elseif ($sourceOrder === 4) {
+            $return = PurchaseReturn::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
+            $url = route('tenant.purchase-returns', ['return' => $return->id]);
+            $title = 'مردود مشتريات '.$return->reference_number;
+        } elseif ($sourceOrder === 5) {
+            $payment = Payment::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
+            $isReceipt = $payment->type === 'receipt';
+            $url = route($isReceipt ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]);
+            $title = ($isReceipt ? 'سند قبض ' : 'سند صرف ').$payment->voucher_number;
+        } else {
+            abort(404);
+        }
 
-    public function closeStatementDocument(): void
-    {
-        $this->showStatementDocument = false;
-        $this->statementDocument = null;
+        $this->dispatch('open-statement-document', url: $url, title: trim($title));
     }
 
     public function updatedPartySearch(): void
@@ -610,13 +614,21 @@ new class extends Component {
     </section>
     </div>
     </div>
-    @if ($showStatementDocument && $statementDocument)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" wire:click.self="closeStatementDocument" x-data x-on:keydown.escape.window="$wire.closeStatementDocument()">
-            <section role="dialog" aria-modal="true" aria-label="تفاصيل المستند" class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-                <div class="flex items-start justify-between gap-4"><div><h2 class="text-lg font-black">{{ $statementDocument['title'] }}</h2><p class="mt-1 font-mono text-sm text-indigo-700" dir="ltr">{{ $statementDocument['reference'] }}</p></div><button type="button" wire:click="closeStatementDocument" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">إغلاق</button></div>
-                <dl class="mt-5 grid gap-3 sm:grid-cols-2"><div><dt class="text-xs text-slate-500">التاريخ</dt><dd class="mt-1 font-bold">{{ $statementDocument['date'] }}</dd></div><div><dt class="text-xs text-slate-500">الطرف</dt><dd class="mt-1 font-bold">{{ $statementDocument['party'] }}</dd></div><div><dt class="text-xs text-slate-500">المبلغ</dt><dd class="mt-1 text-lg font-black tabular-nums" dir="ltr">{{ number_format($statementDocument['amount'], 2) }}</dd></div><div><dt class="text-xs text-slate-500">الحالة / الطريقة</dt><dd class="mt-1 font-bold">{{ $statementDocument['status'] ?: '—' }}</dd></div></dl>
-                @if ($statementDocument['notes'])<div class="mt-4 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><p class="mb-1 text-xs text-slate-500">ملاحظات</p><p>{{ $statementDocument['notes'] }}</p></div>@endif
-            </section>
-        </div>
-    @endif
 </flux:main>
+
+@script
+<script>
+    $wire.on('open-statement-document', ({ url, title }) => {
+        if (!url) return;
+        let shell = window;
+        try {
+            if (window.top !== window && window.top.document.querySelector('[data-workspace-tabs]')) shell = window.top;
+        } catch (_) {}
+        if (!shell.document.querySelector('[data-workspace-tabs]')) {
+            window.location.assign(url);
+            return;
+        }
+        shell.dispatchEvent(new CustomEvent('workspace:open-page', { detail: { url, title: title || 'المستند' } }));
+    });
+</script>
+@endscript

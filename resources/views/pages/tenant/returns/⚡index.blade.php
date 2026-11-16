@@ -109,6 +109,11 @@ new class extends Component
             ->toArray();
         $this->selectedBranchId = $this->branchId();
         $this->startNewReturn(false);
+
+        $returnId = request()->integer('return');
+        if ($returnId > 0) {
+            $this->loadReturn($returnId);
+        }
     }
 
     public function startNewReturn(bool $showMessage = true): void

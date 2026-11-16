@@ -134,10 +134,11 @@ test('statement document links open the matching purchase, return and voucher', 
     $rows = (new ReportingService($this->user))->prepare('statement', $this->filters + ['party_id' => $this->supplier->id, 'party_type' => 'all', 'balance_side' => 'all', 'stock_filter' => 'all'])['query']->get()->keyBy('reference');
 
     $component = Livewire::test('pages::tenant.reports.center');
+    $urls = ['CTR-PURCHASE' => route('tenant.purchase-invoices', ['purchase' => $purchase->id]), 'CTR-VOUCHER' => route('tenant.payment', ['voucher' => $payment->id])];
     foreach (['CTR-PURCHASE' => $purchase->id, 'CTR-VOUCHER' => $payment->id] as $reference => $id) {
         expect((int) $rows[$reference]->source_id)->toBe($id);
         $component->call('openStatementDocument', (int) $rows[$reference]->source_order, (int) $rows[$reference]->source_id)
-            ->assertSet('statementDocument.reference', $reference);
+            ->assertDispatched('open-statement-document', url: $urls[$reference]);
     }
 });
 

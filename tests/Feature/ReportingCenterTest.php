@@ -294,12 +294,9 @@ test('statement rows open their linked sales invoice or payment document', funct
 
     Livewire::test('pages::tenant.reports.center')
         ->call('openStatementDocument', 1, $order->id)
-        ->assertSet('showStatementDocument', true)
-        ->assertSet('statementDocument.reference', 'OPEN-ORDER')
+        ->assertDispatched('open-statement-document', url: route('tenant.pos', ['invoice' => $order->id]), title: 'فاتورة مبيعات OPEN-ORDER')
         ->call('openStatementDocument', 5, $payment->id)
-        ->assertSet('statementDocument.reference', 'OPEN-PAYMENT')
-        ->call('closeStatementDocument')
-        ->assertSet('showStatementDocument', false);
+        ->assertDispatched('open-statement-document', url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]));
 });
 
 test('print streams the complete report rather than just the visible page and safely escapes names', function (): void {
@@ -650,7 +647,7 @@ test('statements of a supplier who also buys from the store match the recorded b
         ->and((float) $report['summary']['فرق المطابقة الحالي'])->toBe(0.0);
 
     Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id)
-        ->assertSet('statementDocument.reference', 'SUP-SALE-PAID');
+        ->assertDispatched('open-statement-document', url: route('tenant.wholesale-sales', ['invoice' => $paidSale->last()->source_id]), title: 'فاتورة مبيعات SUP-SALE-PAID');
 });
 
 test('customer statement dialog keeps all balance columns and responsive transaction cards', function (): void {
@@ -709,4 +706,13 @@ test('statement cannot be exported or loaded through a query string before expli
     Livewire::withQueryParams(['party_id' => $this->customer->id])->test('pages::tenant.reports.center')
         ->assertSet('partyId', $this->customer->id)->assertDontSee('UNREQUESTED-STATEMENT')
         ->assertViewHas('printUrl', null)->call('exportCsv')->assertStatus(422);
+});
+
+test('statement purchase returns open loaded on the purchase returns page', function (): void {
+    $return = PurchaseReturn::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'OPEN-PRET', 'total' => 20, 'created_at' => '2026-10-17']);
+    $url = route('tenant.purchase-returns', ['return' => $return->id]);
+
+    Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 4, $return->id)
+        ->assertDispatched('open-statement-document', url: $url, title: 'مردود مشتريات OPEN-PRET');
+    $this->get($url)->assertOk()->assertSee('OPEN-PRET');
 });
