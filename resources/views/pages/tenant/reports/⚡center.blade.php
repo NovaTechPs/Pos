@@ -606,13 +606,6 @@ new class extends Component {
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
     @endif
-    @if ($report === 'statement')
-        <footer class="reports-statement-end" data-statement-result-end>
-            <span></span>
-            <p>{{ $statementParty ? 'نهاية كشف حساب: '.$statementParty->name : 'نهاية مساحة كشف الحساب' }}</p>
-            <span></span>
-        </footer>
-    @endif
     </section>
     </div>
     </div>
