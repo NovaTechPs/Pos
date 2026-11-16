@@ -586,9 +586,13 @@ test('pos invoices report lists each pos invoice of the day and opens it', funct
 
 test('report center navigation groups preserve report selection dates and permissions', function (): void {
     $page = Livewire::test('pages::tenant.reports.center')->assertDontSee('reports-tabs', false)->assertSee('reports-menu-group-toggle', false)
+        ->assertDontSeeHtml('wire:click="selectReportGroup(\'الحسابات\')"')->assertSeeHtml('toggleReportGroup(')
         ->assertSee('reports-account-directory', false)->set('from', '2026-10-10')->call('selectReportGroup', 'المشتريات')->assertSet('report', 'purchases')->assertSet('from', '2026-10-10');
-    $page->call('selectReportGroup', 'المخزون')->assertSet('report', 'product-history')->call('selectReport', 'inventory')->assertSet('report', 'inventory');
-    $page->call('setPeriod', 'last-30')->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');
+    $overviewSignature = $page->get('overviewSignature');
+    expect($overviewSignature)->toBeString()->not->toBe('');
+    $page->call('selectReportGroup', 'المخزون')->assertSet('report', 'product-history')->assertSet('overviewSignature', $overviewSignature)
+        ->call('selectReport', 'inventory')->assertSet('report', 'inventory')->assertSet('overviewSignature', $overviewSignature);
+    $page->call('setPeriod', 'last-30')->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30')->assertNotSet('overviewSignature', $overviewSignature);
     $page->set('search', 'قهوة')->set('stockFilter', 'low')->call('resetFilters')->assertSet('search', '')->assertSet('stockFilter', 'all');
     Livewire::test('pages::tenant.reports.center')->call('selectReport', 'unknown')->assertForbidden();
     Livewire::test('pages::tenant.reports.center')->call('selectReportGroup', 'unknown')->assertForbidden();

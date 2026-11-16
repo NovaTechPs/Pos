@@ -85,7 +85,7 @@ new class extends Component {
 
 <div data-stock-alerts>
     @if ($this->expiringCount > 0)
-        <div class="px-3 pt-2">
+        <div class="px-1 pt-1">
             <a href="{{ route('tenant.reports', ['report' => 'expiring']) }}" wire:navigate data-expiry-alert
                 class="flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                 <flux:icon name="clock" class="size-4 shrink-0" />
@@ -95,8 +95,8 @@ new class extends Component {
         </div>
     @endif
     @if ($this->lowStockCount > 0)
-        <flux:dropdown position="bottom" align="start" class="w-full px-3 pt-2">
-            <button type="button" class="flex w-full items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-start text-sm font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+        <flux:dropdown position="bottom" align="start" class="w-full px-1 pt-1">
+            <button type="button" class="flex w-full items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-start text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
                 <flux:icon name="bell-alert" class="size-4 shrink-0" />
                 <span class="flex-1">تنبيهات المخزون</span>
                 <span class="rounded-full bg-rose-600 px-2 py-0.5 text-xs text-white">{{ number_format($this->lowStockCount) }}</span>

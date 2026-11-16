@@ -19,7 +19,13 @@ test('authenticated users can visit the dashboard', function () {
 
     $response = $this->get(route('tenant.dashboard'));
     $response->assertOk()
-        ->assertSee('wire:navigate', false);
+        ->assertSee('wire:navigate', false)
+        ->assertSee('data-tenant-navigation-drawer', false)
+        ->assertSee('data-tenant-navigation-toggle', false)
+        ->assertSee('data-tenant-navigation', false)
+        ->assertSee('الرئيسية')
+        ->assertSee('العملاء والموردون')
+        ->assertSee('المخزون والمنتجات');
 
     $branchNavigationLink = preg_match(
         '/<a\b(?=[^>]*href="'.preg_quote(route('tenant.branch'), '/').'")(?=[^>]*wire:navigate)[^>]*>/',

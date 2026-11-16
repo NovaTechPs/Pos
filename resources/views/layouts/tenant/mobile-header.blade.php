@@ -1,8 +1,9 @@
-<flux:header class="lg:hidden">
+<flux:header class="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur lg:hidden dark:border-zinc-800 dark:bg-zinc-950/95">
 
     {{-- Mobile Sidebar Toggle --}}
     <flux:sidebar.toggle
-        class="lg:hidden"
+        data-tenant-navigation-toggle
+        class="rounded-xl lg:hidden"
         icon="bars-2"
         inset="left"
     />

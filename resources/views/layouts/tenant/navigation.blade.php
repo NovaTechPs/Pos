@@ -1,13 +1,21 @@
 @php
+    $activeBranch = \App\Models\Branch::query()
+        ->select(['id', 'domain'])
+        ->where('id', session('active_branch_id'))
+        ->where('tenant_id', session('active_tenant_id'))
+        ->first();
+
     $navigationGroups = [
         [
             'label' => 'Home',
+            'icon' => 'squares-2x2',
             'items' => [
                 ['permission' => 'dashboard.view', 'route' => 'tenant.dashboard', 'label' => 'Dashboard', 'icon' => 'squares-2x2'],
             ],
         ],
         [
             'label' => 'People and Access',
+            'icon' => 'shield-check',
             'items' => [
                 ['permission' => 'branches.view', 'route' => 'tenant.branch', 'label' => 'Branches', 'icon' => 'building-office-2'],
                 ['permission' => 'roles.view', 'route' => 'tenant.role', 'label' => 'Roles', 'icon' => 'shield-check'],
@@ -16,6 +24,7 @@
         ],
         [
             'label' => 'Customers and Suppliers',
+            'icon' => 'users',
             'items' => [
                 ['permission' => 'customers.view', 'route' => 'tenant.customer', 'label' => 'Customers', 'icon' => 'users'],
                 ['permission' => 'store.orders.view', 'route' => 'tenant.customer-orders', 'label' => 'طلبات المتجر الإلكتروني', 'icon' => 'shopping-bag'],
@@ -24,6 +33,7 @@
         ],
         [
             'label' => 'Inventory and Products',
+            'icon' => 'cube',
             'items' => [
                 ['permission' => 'categories.view', 'route' => 'tenant.category', 'label' => 'Categories', 'icon' => 'tag'],
                 ['permission' => 'products.view', 'route' => 'tenant.product', 'label' => 'Products', 'icon' => 'cube'],
@@ -37,6 +47,7 @@
         ],
         [
             'label' => 'Invoices',
+            'icon' => 'document-text',
             'items' => [
                 ['permission' => 'pos.view', 'route' => 'tenant.pos', 'label' => 'POS', 'icon' => 'calculator'],
                 ['permission' => 'sales_invoices.view', 'route' => 'tenant.sale-invoices', 'label' => 'Sales Invoices', 'icon' => 'document-text'],
@@ -49,6 +60,7 @@
         ],
         [
             'label' => 'Reports and Accounts',
+            'icon' => 'chart-bar-square',
             'items' => [
                 ['permission' => 'reports.analytics', 'route' => 'tenant.reports', 'label' => 'التقارير / Reports', 'icon' => 'chart-bar-square'],
                 ['permission' => 'reports.daily_settlement', 'route' => 'tenant.daily-settlement', 'label' => 'Daily Settlement', 'icon' => 'scale'],
@@ -61,6 +73,7 @@
         ],
         [
             'label' => 'Store and Tools',
+            'icon' => 'cog',
             'items' => [
                 ['permission' => 'store.view', 'route' => 'tenant.store', 'label' => 'Store', 'icon' => 'building-storefront'],
                 ['permission' => 'excel.manage', 'route' => 'tenant.excel', 'label' => 'Excel Import Export', 'icon' => 'document-arrow-up'],
@@ -72,10 +85,10 @@
     ];
 @endphp
 
-<div class="space-y-1.5 px-2 pb-3">
+<div data-tenant-navigation class="space-y-2 px-1 pb-3">
     @foreach ($navigationGroups as $group)
         @php
-            $visibleItems = collect($group['items'])->filter(function (array $item): bool {
+            $visibleItems = collect($group['items'])->filter(function (array $item) use ($activeBranch): bool {
                 $user = auth()->user();
                 if (! $user?->can($item['permission'])) {
                     return false;
@@ -94,11 +107,7 @@
                 }
 
                 if ($item['route'] === 'tenant.store') {
-                    return \App\Models\Branch::query()
-                        ->where('id', session('active_branch_id'))
-                        ->where('tenant_id', session('active_tenant_id'))
-                        ->whereNotNull('domain')
-                        ->exists();
+                    return filled($activeBranch?->domain);
                 }
 
                 return true;
@@ -107,31 +116,27 @@
         @endphp
 
         @if ($visibleItems->isNotEmpty())
-        <details @if ($groupIsCurrent) open @endif class="overflow-hidden rounded-xl border border-zinc-200/80 bg-white/60 dark:border-zinc-700 dark:bg-zinc-800/40">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-bold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 [&::-webkit-details-marker]:hidden dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white">
-                <span>{{ __($group['label']) }}</span>
-                <svg class="h-4 w-4 shrink-0 text-zinc-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <details data-tenant-navigation-group @if ($groupIsCurrent || $loop->first) open @endif class="overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm transition dark:border-zinc-700 dark:bg-zinc-900/80">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 [&::-webkit-details-marker]:hidden dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-white">
+                <span class="flex min-w-0 items-center gap-2.5">
+                    <flux:icon :name="$group['icon']" class="size-5 shrink-0 text-blue-600 dark:text-blue-400" />
+                    <span class="truncate">{{ __($group['label']) }}</span>
+                </span>
+                <svg data-tenant-navigation-chevron class="h-4 w-4 shrink-0 text-slate-400 transition-transform dark:text-zinc-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.09 1.03l-4.25 4.51a.75.75 0 0 1-1.09 0l-4.25-4.51a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                 </svg>
             </summary>
 
-            <div class="grid gap-0.5 px-1.5 pb-1.5">
+            <div class="grid gap-0.5 border-t border-slate-100 px-1.5 py-1.5 dark:border-zinc-800">
                 @foreach ($visibleItems as $item)
                     @if ($item['route'] === 'tenant.store')
-                        @php
-                            $activeBranch = \App\Models\Branch::query()
-                                ->where('id', session('active_branch_id'))
-                                ->where('tenant_id', session('active_tenant_id'))
-                                ->first();
-                        @endphp
-
                         @if ($activeBranch?->domain)
-                            <flux:sidebar.item :icon="$item['icon']" :href="route($item['route'], ['slug' => $activeBranch->domain])" :current="request()->routeIs($item['route'])" wire:navigate>
+                            <flux:sidebar.item class="rounded-xl" :icon="$item['icon']" :href="route($item['route'], ['slug' => $activeBranch->domain])" :current="request()->routeIs($item['route'])" wire:navigate>
                                 {{ __($item['label']) }}
                             </flux:sidebar.item>
                         @endif
                     @else
-                        <flux:sidebar.item :icon="$item['icon']" :href="route($item['route'])" :current="request()->routeIs($item['route'])" wire:navigate>
+                        <flux:sidebar.item class="rounded-xl" :icon="$item['icon']" :href="route($item['route'])" :current="request()->routeIs($item['route'])" wire:navigate>
                             @if ($item['route'] === 'tenant.wholesale-sales' && str_contains((string) request()->userAgent(), 'Android'))
                                 {{ __('Sales') }}
                             @else

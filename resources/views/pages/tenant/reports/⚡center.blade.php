@@ -48,6 +48,7 @@ new class extends Component {
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
+        $this->forgetOverview();
     }
 
     #[Url]
@@ -71,6 +72,11 @@ new class extends Component {
     public string $statementBalanceFilter = 'all';
     #[Locked]
     public ?string $appliedStatementSignature = null;
+    #[Locked]
+    public ?string $overviewSignature = null;
+    /** @var array{sales: ?float, purchases: ?float, profit: ?float} */
+    #[Locked]
+    public array $cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
     public string $productSearch = '';
     /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
     public ?array $statementDocument = null;
@@ -130,6 +136,7 @@ new class extends Component {
 
         $this->branchId = $branchId;
         $this->resetPage();
+        $this->forgetOverview();
     }
 
     public function filters(): array
@@ -144,6 +151,7 @@ new class extends Component {
     {
         $this->resetErrorBag();
         $this->resetPage();
+        $this->forgetOverview();
         if ($this->report === 'statement') {
             $this->appliedStatementSignature = null;
             $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
@@ -278,6 +286,29 @@ new class extends Component {
     {
         [$this->from, $this->to] = $this->periodRanges()[$range] ?? [$this->from, $this->to];
         $this->resetPage();
+        $this->forgetOverview();
+    }
+
+    private function forgetOverview(): void
+    {
+        $this->overviewSignature = null;
+        $this->cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
+    }
+
+    /** @return array{sales: ?float, purchases: ?float, profit: ?float} */
+    private function overview(ReportingService $service): array
+    {
+        $signature = hash('sha256', json_encode([$service->tenantId, $service->branchId, $this->from, $this->to, auth()->id()], JSON_THROW_ON_ERROR));
+        if ($this->overviewSignature !== $signature) {
+            try {
+                $this->cachedOverview = $service->overview(['from' => $this->from, 'to' => $this->to]);
+            } catch (ValidationException) {
+                $this->cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
+            }
+            $this->overviewSignature = $signature;
+        }
+
+        return $this->cachedOverview;
     }
 
     public function exportCsv(): mixed
@@ -354,8 +385,7 @@ new class extends Component {
                 if (isset($entries[$this->report])) { $activeGroup = $group; }
             }
         }
-        try { $overview = $service->overview(['from' => $this->from, 'to' => $this->to]); }
-        catch (ValidationException) { $overview = ['sales' => null, 'purchases' => null, 'profit' => null]; }
+        $overview = $this->overview($service);
         $periodRanges = $this->periodRanges();
         $activeRange = collect($periodRanges)->search(fn (array $range): bool => $range[0] === $this->from && $range[1] === $this->to);
         return $this->view(['statementReady' => $statementReady, 'statementParty' => $statementParty, 'overview' => $overview, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
@@ -380,6 +410,8 @@ new class extends Component {
         </div>
     </header>
     <div class="reports-workspace {{ $report === 'statement' ? 'is-statement' : '' }}" x-data="{
+                expandedReportGroup: @js($activeGroup),
+                toggleReportGroup(group) { this.expandedReportGroup = this.expandedReportGroup === group ? null : group },
                 parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
                 rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
                 move(items, step) {
@@ -395,18 +427,17 @@ new class extends Component {
     <aside class="reports-menu" aria-label="اختيار التقرير">
         @foreach($navigationGroups as $group => $entries)
             <section wire:key="report-menu-group-{{ $loop->index }}" class="reports-menu-group {{ $activeGroup === $group ? 'is-expanded' : '' }}">
-                <button type="button" wire:click="selectReportGroup('{{ $group }}')" class="reports-menu-group-toggle" aria-expanded="{{ $activeGroup === $group ? 'true' : 'false' }}">
+                <button type="button" x-on:click="toggleReportGroup(@js($group))" x-bind:aria-expanded="expandedReportGroup === @js($group)" class="reports-menu-group-toggle" aria-expanded="{{ $activeGroup === $group ? 'true' : 'false' }}">
                     <flux:icon :name="$groupIcons[$group]" variant="outline" />
                     <span>تقارير {{ $group }}</span>
-                    <flux:icon :name="$activeGroup === $group ? 'chevron-up' : 'chevron-down'" variant="outline" />
+                    <span x-show="expandedReportGroup === @js($group)"><flux:icon.chevron-up variant="outline" /></span>
+                    <span x-show="expandedReportGroup !== @js($group)"><flux:icon.chevron-down variant="outline" /></span>
                 </button>
-                @if ($activeGroup === $group)
-                    <div class="reports-menu-items" role="group" aria-label="تقارير {{ $group }}">
-                        @foreach($entries as $key => $entry)
-                            <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" class="reports-menu-item {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}"><span class="reports-radio" aria-hidden="true"></span>{{ $entry[0] }}</button>
-                        @endforeach
-                    </div>
-                @endif
+                <div class="reports-menu-items" role="group" aria-label="تقارير {{ $group }}" x-show="expandedReportGroup === @js($group)" @if ($activeGroup !== $group) style="display: none" @endif>
+                    @foreach($entries as $key => $entry)
+                        <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" class="reports-menu-item {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}"><span class="reports-radio" aria-hidden="true"></span>{{ $entry[0] }}</button>
+                    @endforeach
+                </div>
             </section>
         @endforeach
     </aside>

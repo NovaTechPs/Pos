@@ -190,11 +190,11 @@ new class extends Component {
     }
 }; ?>
 
-<div class="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
+<div data-tenant-context class="rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/90">
     @if ($canSwitchTenants)
         <!-- تظهر القائمة لمدير النظام أو مالك أكثر من متجر -->
         <flux:dropdown position="bottom" align="start" class="w-full">
-            <flux:button variant="ghost" icon-trailing="chevron-down" class="w-full justify-between font-semibold">
+            <flux:button variant="ghost" icon-trailing="chevron-down" class="w-full justify-between rounded-xl px-2 font-semibold">
                 <div class="flex items-center gap-2 truncate">
                     <flux:icon name="building-storefront" class="size-4 text-indigo-600 dark:text-indigo-400" />
                     <span class="truncate">{{ $this->currentTenant['name'] ?? __('اختر متجر') }}</span>
@@ -217,15 +217,15 @@ new class extends Component {
         </flux:dropdown>
     @else
         <!-- عرض اسم المتجر فقط للموظف أو عند وجود متجر واحد -->
-        <div class="flex items-center gap-2 px-2 py-1.5 font-semibold text-zinc-800 dark:text-zinc-200">
+        <div class="flex items-center gap-2 rounded-xl px-2 py-1.5 font-semibold text-zinc-800 dark:text-zinc-200">
             <flux:icon name="building-storefront" class="size-4 text-indigo-600 dark:text-indigo-400" />
             <span class="truncate text-sm">{{ $this->currentTenant['name'] ?? __('لا يوجد متجر مرتبط') }}</span>
         </div>
     @endif
 
     @if ($canSwitchBranches)
-        <flux:dropdown position="bottom" align="start" class="w-full mt-2">
-            <flux:button variant="ghost" icon-trailing="chevron-down" class="w-full justify-between font-semibold">
+        <flux:dropdown position="bottom" align="start" class="mt-1.5 w-full border-t border-slate-100 pt-1.5 dark:border-zinc-800">
+            <flux:button variant="ghost" icon-trailing="chevron-down" class="w-full justify-between rounded-xl px-2 font-semibold">
                 <div class="flex items-center gap-2 truncate">
                     <flux:icon name="building-office-2" class="size-4 text-emerald-600 dark:text-emerald-400" />
                     <span class="truncate">{{ collect($branches)->firstWhere('id', $currentBranchId)['name'] ?? __('اختر فرعاً') }}</span>
