@@ -294,7 +294,7 @@ test('statement rows open their linked sales invoice or payment document', funct
 
     Livewire::test('pages::tenant.reports.center')
         ->call('openStatementDocument', 1, $order->id)
-        ->assertDispatched('open-statement-document', url: route('tenant.pos', ['invoice' => $order->id]), title: 'فاتورة مبيعات OPEN-ORDER')
+        ->assertDispatched('open-statement-document', url: route('tenant.sale-invoices', ['invoice' => $order->id]), title: 'فاتورة مبيعات OPEN-ORDER')
         ->call('openStatementDocument', 5, $payment->id)
         ->assertDispatched('open-statement-document', url: route($payment->type === 'receipt' ? 'tenant.receipts' : 'tenant.payment', ['voucher' => $payment->id]));
 });
@@ -647,7 +647,7 @@ test('statements of a supplier who also buys from the store match the recorded b
         ->and((float) $report['summary']['فرق المطابقة الحالي'])->toBe(0.0);
 
     Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id)
-        ->assertDispatched('open-statement-document', url: route('tenant.wholesale-sales', ['invoice' => $paidSale->last()->source_id]), title: 'فاتورة مبيعات SUP-SALE-PAID');
+        ->assertDispatched('open-statement-document', url: route('tenant.sale-invoices', ['invoice' => $paidSale->last()->source_id]), title: 'فاتورة مبيعات SUP-SALE-PAID');
 });
 
 test('customer statement dialog keeps all balance columns and responsive transaction cards', function (): void {

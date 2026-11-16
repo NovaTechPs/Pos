@@ -1492,7 +1492,7 @@ new class extends Component {
                 |--------------------------------------------------------------------------
                 */
 
-                $invoiceNumber = $this->makeInvoiceNumber();
+                $invoiceNumber = \App\Services\SalesInvoiceNumber::next((int) $tenantId, (int) $branchId);
 
                 /*
                 |--------------------------------------------------------------------------
@@ -1798,25 +1798,6 @@ new class extends Component {
     |--------------------------------------------------------------------------
     */
 
-    private function makeInvoiceNumber(): string
-    {
-        $tenantId = $this->tenantId();
-
-        $lastNumber = Order::query()->where('tenant_id', $tenantId)->where('type', 'wholesale')->where('invoice_number', 'like', 'W-%')->orderByDesc('id')->value('invoice_number');
-
-        $next = 1;
-
-        if (is_string($lastNumber) && preg_match('/^W-(\d+)$/', $lastNumber, $matches)) {
-            $next = ((int) $matches[1]) + 1;
-        }
-
-        do {
-            $number = 'W-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
-            $next++;
-        } while (Order::query()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
-
-        return $number;
-    }
 
     /*
     |--------------------------------------------------------------------------

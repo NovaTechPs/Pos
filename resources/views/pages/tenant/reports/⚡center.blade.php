@@ -214,7 +214,7 @@ new class extends Component {
 
         if (in_array($sourceOrder, [1, 2, 6], true)) {
             $order = Order::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
-            $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
+            $route = $order->type === 'return' || ($order->type === 'pos' && ! $order->customer_id) ? 'tenant.pos' : 'tenant.sale-invoices';
             $url = route($route, ['invoice' => $order->id]);
             $title = ($order->type === 'return' ? 'مردود مبيعات ' : 'فاتورة مبيعات ').$order->invoice_number;
         } elseif (in_array($sourceOrder, [3, 7], true)) {
@@ -622,9 +622,9 @@ new class extends Component {
         if (!url) return;
         let shell = window;
         try {
-            if (window.top !== window && window.top.document.querySelector('[data-workspace-tabs]')) shell = window.top;
+            if (window.top !== window && window.top.document.querySelector('.workspace-shell')) shell = window.top;
         } catch (_) {}
-        if (!shell.document.querySelector('[data-workspace-tabs]')) {
+        if (!shell.document.querySelector('.workspace-shell')) {
             window.location.assign(url);
             return;
         }

@@ -16,6 +16,7 @@ use App\Models\Shift;
 use App\Models\TenantSetting;
 use App\Services\ApiShiftLedger;
 use App\Services\PartyBalance;
+use App\Services\SalesInvoiceNumber;
 use App\Services\StockMovementContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -486,7 +487,7 @@ class PosController extends Controller
                 'tenant_id' => $tenantId, 'branch_id' => $branchId, 'created_by' => $user->id, 'shift_id' => $shift?->id,
                 'customer_id' => $customer?->id, 'customer_name' => $customer->name ?? 'زبون جملة عابر',
                 'customer_phone' => $customer?->phone,
-                'invoice_number' => 'W-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
+                'invoice_number' => SalesInvoiceNumber::next((int) $tenantId, (int) $branchId),
                 'type' => 'wholesale', 'source' => 'api', 'sale_kind' => 'wholesale', 'status' => 'completed', 'subtotal' => round($subtotal, 2),
                 'discount_type' => $discountType, 'discount_rate' => $discountRate, 'discount' => $discount,
                 'total' => $total, 'total_cost' => round($totalCost, 2),
@@ -692,7 +693,7 @@ class PosController extends Controller
                 'customer_id' => $customer?->id,
                 'customer_name' => $customer?->name,
                 'customer_phone' => $customer?->phone,
-                'invoice_number' => $editing->invoice_number ?? 'INV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
+                'invoice_number' => $editing->invoice_number ?? SalesInvoiceNumber::next((int) $tenantId, (int) $branchId),
                 'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail',
                 'status' => 'completed',
                 'subtotal' => $subtotal,

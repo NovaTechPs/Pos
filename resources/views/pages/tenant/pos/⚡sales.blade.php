@@ -4300,24 +4300,7 @@ new class extends Component {
 
     private function makeInvoiceNumber(string $type, int $tenantId, int $branchId): string
     {
-        $prefix = ($type === 'return' ? 'R' : 'A') . $branchId . '-';
-
-        // Short running numbers per branch (A12-1057). Older invoices carry nine random digits,
-        // so only shorter numbers count towards the sequence.
-        $latest = Order::withTrashed()
-            ->where('tenant_id', $tenantId)
-            ->where('invoice_number', 'like', $prefix . '%')
-            ->whereRaw('LENGTH(invoice_number) < ?', [strlen($prefix) + 9])
-            ->orderByRaw('LENGTH(invoice_number) DESC')
-            ->orderByDesc('invoice_number')
-            ->value('invoice_number');
-        $sequence = max(0, (int) substr((string) $latest, strlen($prefix)));
-
-        do {
-            $number = $prefix . (++$sequence);
-        } while (Order::withTrashed()->where('tenant_id', $tenantId)->where('invoice_number', $number)->exists());
-
-        return $number;
+        return \App\Services\SalesInvoiceNumber::next($tenantId, $branchId, $type === 'return');
     }
 
     private function roundMoney(float $amount): float

@@ -850,11 +850,11 @@ new class extends Component {
 
         if ($sourceType === 'order') {
             $order = Order::query()->where('tenant_id', $tenantId)->where('customer_id', $partyId)->findOrFail($sourceId);
-            $route = in_array($order->type, ['pos', 'return'], true) ? 'tenant.pos' : 'tenant.wholesale-sales';
+            $route = $order->type === 'return' ? 'tenant.pos' : 'tenant.sale-invoices';
 
             $this->dispatch(
                 'open-statement-document',
-                url: route($route, ['invoice' => $order->id, 'customer_copy' => 1]),
+                url: route($route, $route === 'tenant.pos' ? ['invoice' => $order->id, 'customer_copy' => 1] : ['invoice' => $order->id]),
                 title: 'فاتورة مبيعات '.$order->invoice_number,
             );
 

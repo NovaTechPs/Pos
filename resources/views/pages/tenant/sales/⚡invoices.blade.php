@@ -392,9 +392,15 @@ new class extends Component {
         $this->dispatch('focus-customer-search');
     }
 
+    /**
+     * Preview of the next shared sales number; the final number is taken when the invoice is saved.
+     */
     private function makeInvoiceNumber(): string
     {
-        return 'SAL-' . now()->format('YmdHis') . '-' . random_int(100, 999);
+        $tenantId = (int) $this->tenantId();
+        $branchId = (int) $this->selectedBranchId;
+
+        return $tenantId && $branchId ? \App\Services\SalesInvoiceNumber::next($tenantId, $branchId) : '';
     }
 
     /*
@@ -1201,6 +1207,7 @@ new class extends Component {
 
                     $order->items()->delete();
                 } else {
+                    $this->invoiceNumber = \App\Services\SalesInvoiceNumber::next((int) $tenantId, (int) $this->selectedBranchId);
                     $order = Order::query()->create([
                         'tenant_id' => $tenantId,
                         'branch_id' => $this->selectedBranchId,
