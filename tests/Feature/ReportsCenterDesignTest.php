@@ -123,6 +123,7 @@ test('statement shows opening balance, linked documents and a totals row', funct
     expect($total[0])->toContain('300.00', '120.00', '320.00');
     preg_match('/<tr data-statement-opening>.*?<\/tr>/s', $html, $opening);
     expect($opening[0])->toContain('140.00');
+    expect((string) file_get_contents(resource_path('css/reports.css')))->toContain('clamp(180px,24dvh,300px)');
 });
 
 test('statement document links open the matching purchase, return and voucher', function (): void {
