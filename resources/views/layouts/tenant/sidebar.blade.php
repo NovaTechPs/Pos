@@ -1,6 +1,6 @@
 <flux:sidebar
     sticky
-    collapsible="mobile"
+    collapsible
     data-tenant-navigation-drawer
     class="w-80 gap-3 border-e border-slate-200 bg-gradient-to-b from-slate-50 via-white to-blue-50/70 p-3 shadow-[0_0_28px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-950"
 >

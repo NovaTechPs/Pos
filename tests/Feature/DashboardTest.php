@@ -22,6 +22,7 @@ test('authenticated users can visit the dashboard', function () {
         ->assertSee('wire:navigate', false)
         ->assertSee('data-tenant-navigation-drawer', false)
         ->assertSee('data-tenant-navigation-toggle', false)
+        ->assertSee('data-tenant-desktop-navigation-toggle', false)
         ->assertSee('data-tenant-navigation', false)
         ->assertSee('الرئيسية')
         ->assertSee('العملاء والموردون')
