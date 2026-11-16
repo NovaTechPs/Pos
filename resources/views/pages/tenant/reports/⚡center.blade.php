@@ -455,7 +455,7 @@ new class extends Component {
         <div class="reports-account-labels"><span>الاسم / رقم الحساب</span><span>الرصيد الحالي</span></div>
         <div class="reports-account-list" x-on:keydown.arrow-down.prevent="move(parties(), 1)" x-on:keydown.arrow-up.prevent="move(parties(), -1)" x-on:keydown.arrow-left.prevent="toStatement()">
             @forelse ($statementParties as $party)
-                <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" aria-pressed="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:key="statement-party-{{ $party->id }}" wire:click="selectStatementParty({{ $party->id }})" wire:keydown.enter.prevent.stop="showStatementParty({{ $party->id }})" class="reports-account-row {{ (int) $partyId === (int) $party->id ? 'is-selected' : '' }}">
+                <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" aria-pressed="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:key="statement-party-{{ $party->id }}" wire:click="showStatementParty({{ $party->id }})" wire:keydown.enter.prevent.stop="showStatementParty({{ $party->id }})" class="reports-account-row {{ (int) $partyId === (int) $party->id ? 'is-selected' : '' }}">
                     <span><strong>{{ $party->name }}</strong><small>{{ $party->code ?: 'بدون رمز' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? $party->type }}</small></span><b dir="ltr">{{ number_format((float) $party->current_balance, 2) }}</b>
                 </button>
             @empty
@@ -594,7 +594,7 @@ new class extends Component {
                 @include('pages.tenant.reports.partials.statement-result')
             </section>
         @else
-            <div class="reports-statement-placeholder" data-statement-pending><flux:icon.document-text variant="outline" /><h3>اختر الحساب ثم اعرض الكشف</h3><p>النقر يحدد السطر فقط. اضغط Enter على الحساب أو «عرض التقرير» لعرض حركاته.</p></div>
+            <div class="reports-statement-placeholder" data-statement-pending><flux:icon.document-text variant="outline" /><h3>اختر الحساب ثم اعرض الكشف</h3><p>اضغط على الحساب أو Enter أو «عرض التقرير» لعرض حركاته.</p></div>
         @endif
     @else
     @if ($definition['notes'])<div class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div>@endif

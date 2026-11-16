@@ -680,6 +680,7 @@ test('statement stays empty until explicitly displayed and clears when selecting
         ->call('selectStatementParty', $this->customer->id)->assertHasNoErrors()
         ->assertSeeHtml('data-selected="true"')->assertDontSee('EXPLICIT-STATEMENT')
         ->assertSeeHtml('wire:keydown.enter.prevent.stop="showStatementParty('.$this->customer->id.')"')
+        ->assertSeeHtml('wire:click="showStatementParty('.$this->customer->id.')"')
         ->call('applyFilters')->assertSee('EXPLICIT-STATEMENT')->assertViewHas('statementReady', true)
         ->call('selectStatementParty', $this->supplier->id)->assertDontSee('EXPLICIT-STATEMENT')
         ->assertViewHas('statementReady', false)->assertViewHas('printUrl', null)
