@@ -55,3 +55,19 @@ test('reports retain frame detection when a request has no fetch destination hea
     $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/reports')->assertSuccessful()
         ->assertDontSee('data-workspace-tabs', false)->assertDontSee('data-flux-sidebar', false);
 });
+
+test('a page opened in a workspace tab without the iframe header can still scroll', function (): void {
+    $styles = (string) file_get_contents(resource_path('css/workspace-tabs.css'));
+    expect($styles)->toContain("html[data-tenant-shell]:not([data-workspace-frame]),\n    html:not([data-workspace-frame]) body[data-tenant-shell] {")
+        ->and($styles)->not->toMatch('/^\s{4}body\[data-tenant-shell\]/m');
+
+    $html = $this->get('/dashboard/product')->assertSuccessful()->assertSee('data-tenant-shell', false)
+        ->assertSee('data-workspace-frame-bootstrap', false)->getContent();
+    if ($previewPath = getenv('CODEX_FRAME_PREVIEW')) {
+        $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
+        $css = file_get_contents(public_path('build/'.$manifest['resources/css/app.css']['file']));
+        $html = preg_replace('/<script\b[^>]*>[\s\S]*?<\/script>/i', '', $html);
+        $html = preg_replace('/<link[^>]+(?:stylesheet|modulepreload)[^>]*>/i', '', $html);
+        file_put_contents($previewPath, str_replace('</head>', '<style>'.$css.'</style></head>', $html));
+    }
+});

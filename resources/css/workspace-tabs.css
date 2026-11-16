@@ -54,23 +54,23 @@
 }
 
 @media screen and (min-width: 1024px) {
-    html[data-tenant-shell],
-    body[data-tenant-shell] {
+    html[data-tenant-shell]:not([data-workspace-frame]),
+    html:not([data-workspace-frame]) body[data-tenant-shell] {
         block-size: 100dvh;
         min-block-size: 0;
         overflow: hidden;
     }
 
-    body[data-tenant-shell] > [data-workspace-tabs] {
+    html:not([data-workspace-frame]) body[data-tenant-shell] > [data-workspace-tabs] {
         block-size: 100%;
         min-block-size: 0;
     }
 
-    body[data-tenant-shell] [data-workspace-panels] {
+    html:not([data-workspace-frame]) body[data-tenant-shell] [data-workspace-panels] {
         overflow: hidden;
     }
 
-    body[data-tenant-shell] .workspace-initial {
+    html:not([data-workspace-frame]) body[data-tenant-shell] .workspace-initial {
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
     }
