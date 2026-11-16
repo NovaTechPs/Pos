@@ -11,7 +11,7 @@
 <p>{{ $ar('رقم المردود') }}: {{ $kind === 'sale' ? $return->invoice_number : $return->reference_number }}</p>
 <p>{{ $ar($party?->name) }} — {{ \Illuminate\Support\Carbon::parse($return->created_at)->format('Y-m-d') }}</p>
 <table><thead><tr><th>{{ $ar('الإجمالي') }}</th><th>{{ $ar('السعر') }}</th><th>{{ $ar('الكمية') }}</th><th>{{ $ar('الصنف') }}</th><th>{{ $ar('رقم الصنف') }}</th></tr></thead><tbody>
-@foreach($items as $item)<tr><td class="number">{{ number_format(abs((float) ($kind === 'sale' ? $item->total_price : $item->subtotal)), 2) }}</td><td class="number">{{ number_format((float) ($kind === 'sale' ? $item->unit_price : $item->unit_cost), 2) }}</td><td class="number">{{ number_format(abs((float) $item->quantity), 2) }}</td><td>{{ $ar($item->name) }}</td><td class="number">{{ $item->product_number ?: $item->product_id }}</td></tr>@endforeach
+@foreach($items as $item)<tr><td class="number">{{ number_format(abs((float) ($kind === 'sale' ? $item->total_price : $item->subtotal)), 2) }}</td><td class="number">{{ number_format((float) ($kind === 'sale' ? $item->unit_price : $item->unit_cost), 2) }}</td><td class="number">{{ number_format(abs((float) $item->quantity), 2) }}@if (abs((float) ($item->bonus_quantity ?? 0)) > 0)<br><span data-pdf-bonus>{{ number_format(abs((float) $item->bonus_quantity), 2) }} + {{ $ar('بونص') }}</span>@endif</td><td>{{ $ar($item->name) }}</td><td class="number">{{ $item->product_number ?: $item->product_id }}</td></tr>@endforeach
 </tbody></table>
 <table class="summary">
 @foreach(['subtotal' => 'المجموع الفرعي', 'discount' => 'الخصم', 'tax_amount' => 'الضريبة المضمنة', 'total' => 'إجمالي المردود', 'paid_amount' => 'الدفعة'] as $field => $label)

@@ -111,7 +111,7 @@
                 <tr class="{{ $loop->even ? 'alt' : '' }}">
                     <td class="num">{{ number_format((float) $item->total_price, 2) }}</td>
                     <td class="num">{{ number_format((float) $item->unit_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $item->quantity, 2) }}</td>
+                    <td class="num">{{ number_format((float) $item->quantity, 2) }}@if ((float) ($item->bonus_quantity ?? 0) > 0)<br><span data-pdf-bonus>{{ number_format((float) $item->bonus_quantity, 2) }} + {!! $ar('بونص') !!}</span>@endif</td>
                     <td class="name">{!! $ar(($item->product?->name ?? 'منتج غير محدد').($item->is_gift ? ' (هدية)' : ''), 45) !!}</td>
                     <td class="num">{{ $item->product?->product_number ?: ($item->product_id ?? '—') }}</td>
                     <td class="num">{{ $loop->iteration }}</td>

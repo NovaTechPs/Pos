@@ -78,7 +78,7 @@ class BranchStockAllocator
     public function restore(Order $order): void
     {
         DB::transaction(function () use ($order): void {
-            $expected = $order->items()->get()->groupBy('product_id')->map(fn ($items) => (float) $items->sum('quantity'));
+            $expected = $order->items()->get()->groupBy('product_id')->map(fn ($items) => (float) $items->sum(fn ($item) => (float) $item->quantity + (float) ($item->bonus_quantity ?? 0)));
             $movements = DB::table('stock_movements')->where('tenant_id', $order->tenant_id)->where('source_id', $order->id)
                 ->whereIn('source_type', ['order', 'sale_reversal'])->selectRaw('product_id, branch_id, SUM(quantity) AS effect')
                 ->groupBy('product_id', 'branch_id')->orderBy('product_id')->orderBy('branch_id')->get();

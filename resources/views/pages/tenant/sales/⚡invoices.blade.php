@@ -103,6 +103,9 @@ new class extends Component {
 
     public float $selectedDiscount = 0.0;
 
+    /** Free (bonus) units for the line being entered: they leave stock but are not charged. */
+    public float $selectedBonus = 0.0;
+
     public array $cart = [];
 
     public float $discount = 0.0;
@@ -371,6 +374,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->editingCartKey = null;
 
         $this->cart = [];
@@ -530,7 +534,7 @@ new class extends Component {
             ->get(['id', 'type', 'amount', 'order_id', 'payment_date', 'created_at', 'notes'])
             ->each(function (Payment $payment) use ($transactions): void {
                 $isRefund = $payment->type === 'payment';
-                $description = $isRefund ? 'مبلغ مردود للعميل' : 'سند قبض';
+                $description = $isRefund ? 'سند صرف' : 'سند قبض';
                 if ($payment->order_id) {
                     $description .= ' للفاتورة #'.$payment->order_id;
                 }
@@ -626,6 +630,9 @@ new class extends Component {
         $this->selectedDiscount = $this->editingCartKey !== null
             ? (float) ($this->cart[$this->editingCartKey]['discount'] ?? 0)
             : 0.0;
+        $this->selectedBonus = $this->editingCartKey !== null
+            ? (float) ($this->cart[$this->editingCartKey]['bonus'] ?? 0)
+            : 0.0;
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
@@ -682,6 +689,8 @@ new class extends Component {
             $this->selectedStock = 0;
             $this->selectedQuantity = 1;
             $this->selectedDiscount = 0.0;
+            $this->selectedBonus = 0.0;
+        $this->selectedBonus = 0.0;
         }
     }
 
@@ -711,6 +720,11 @@ new class extends Component {
             return;
         }
 
+        if ($this->selectedBonus < 0) {
+            $this->errorMessage = 'البونص يجب ألا يكون سالباً.';
+            return;
+        }
+
         if ($this->editingCartKey !== null && ! isset($this->cart[$this->editingCartKey])) {
             $this->errorMessage = 'تعذر العثور على سطر الفاتورة المراد تعديله.';
             $this->editingCartKey = null;
@@ -726,6 +740,7 @@ new class extends Component {
             'cost' => round((float) $this->selectedCost, 2),
             'quantity' => round((float) $this->selectedQuantity, 2),
             'discount' => round(min((float) $this->selectedDiscount, (float) $this->selectedPrice * (float) $this->selectedQuantity), 2),
+            'bonus' => round(max(0, (float) $this->selectedBonus), 2),
             'stock' => round((float) $this->selectedStock, 2),
         ];
 
@@ -736,6 +751,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
         $this->editingCartKey = null;
         $this->replacingCartKey = null;
@@ -857,6 +873,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
         $this->dispatch('focus-product-search');
     }
@@ -958,6 +975,15 @@ new class extends Component {
         $this->cart[$cartKey]['total_override'] = $lineTotal;
     }
 
+    public function updateItemBonus(string $cartKey, mixed $bonus): void
+    {
+        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['bonus'] = is_numeric($bonus) && is_finite((float) $bonus) ? max(0, round((float) $bonus, 2)) : 0.0;
+    }
+
     public function updateItemDiscount(string $cartKey, $discount): void
     {
         if (! $this->ensureInvoiceEditable()) {
@@ -994,7 +1020,8 @@ new class extends Component {
                 : max(0, ($price * $quantity) - $lineDiscount);
 
             $subtotal += $lineTotal;
-            $totalCost += $cost * $quantity;
+            // Bonus units are given free but still cost the store their purchase price.
+            $totalCost += $cost * ($quantity + max(0, (float) ($item['bonus'] ?? 0)));
         }
 
         $invoiceDiscount = max(0, (float) $this->discount);
@@ -1240,6 +1267,7 @@ new class extends Component {
 
                 foreach ($this->cart as $item) {
                     $quantity = (float) ($item['quantity'] ?? 0);
+                    $bonus = round(max(0, (float) ($item['bonus'] ?? 0)), 2);
                     $price = (float) ($item['price'] ?? 0);
                     $lineDiscount = (float) ($item['discount'] ?? 0);
                     $cost = (float) ($item['cost'] ?? 0);
@@ -1253,11 +1281,12 @@ new class extends Component {
                         'order_id' => $order->id,
                         'product_id' => (int) $item['id'],
                         'quantity' => $quantity,
+                        'bonus_quantity' => $bonus,
                         'unit_price' => $price,
                         'total_price' => $lineTotal,
                         'cost_price' => $cost,
                         'discount' => $lineDiscount,
-                        'total_cost' => $cost * $quantity,
+                        'total_cost' => $cost * ($quantity + $bonus),
                         'is_gift' => $isPosOrder && ! empty($item['is_gift']),
                         'offer_id' => $isPosOrder ? ($item['offer_id'] ?? null) : null,
                         'offer_quantity' => $isPosOrder ? ($item['offer_quantity'] ?? null) : null,
@@ -1271,7 +1300,7 @@ new class extends Component {
                 $saleQuantities = [];
                 foreach ($this->cart as $item) {
                     $productId = (int) ($item['id'] ?? 0);
-                    $quantity = max(0, (float) ($item['quantity'] ?? 0));
+                    $quantity = max(0, (float) ($item['quantity'] ?? 0)) + max(0, (float) ($item['bonus'] ?? 0));
                     if ($productId > 0 && $quantity > 0) {
                         $saleQuantities[$productId] = ($saleQuantities[$productId] ?? 0) + $quantity;
                     }
@@ -1664,6 +1693,7 @@ new class extends Component {
                 'cost' => (float) $item->cost_price,
                 'quantity' => (float) $item->quantity,
                 'discount' => (float) $item->discount,
+                'bonus' => (float) ($item->bonus_quantity ?? 0),
                 'stock' => 0,
                 'is_gift' => (bool) $item->is_gift,
                 'offer_id' => $item->offer_id,
@@ -1686,6 +1716,7 @@ new class extends Component {
         $this->selectedStock = 0;
         $this->selectedQuantity = 1;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
         $this->successMessage = $order->type === 'pos'
             ? "تم تحميل فاتورة نقطة البيع {$order->invoice_number}، والتحصيل والشيفت مرتبطان بسند القبض."
@@ -1768,6 +1799,7 @@ new class extends Component {
                 'name' => $item->product?->name ?? 'مادة غير محددة',
                 'product_number' => (string) ($item->product?->product_number ?: $item->product_id),
                 'quantity' => (float) $item->quantity,
+                'bonus' => (float) ($item->bonus_quantity ?? 0),
                 'price' => (float) $item->unit_price,
                 'discount' => (float) $item->discount,
                 'total' => (float) $item->total_price,
@@ -1828,6 +1860,79 @@ new class extends Component {
         ];
 
         $this->dispatchPrint($order, $totals);
+    }
+
+    /**
+     * Deletes the open sales invoice: its stock comes back, its receipt vouchers are removed and the
+     * customer's balance drops by what the invoice still owed.
+     */
+    public function deleteInvoice(): void
+    {
+        try {
+            $this->authorize('sales_invoices.delete');
+        } catch (\Illuminate\Auth\Access\AuthorizationException) {
+            $this->errorMessage = 'لا تملك صلاحية حذف فواتير المبيعات.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+        if (! $tenantId || ! $this->currentOrderId) {
+            $this->errorMessage = 'افتح فاتورة محفوظة أولاً لحذفها.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        try {
+            $number = DB::transaction(function () use ($tenantId): string {
+                $user = auth()->user();
+                $order = Order::query()->where('tenant_id', $tenantId)->whereKey($this->currentOrderId)
+                    ->when(! $user?->isTenantOwner() && ! $user?->isSaaSAdmin(), fn ($query) => $query->where('created_by', $user?->id))
+                    ->lockForUpdate()->first();
+
+                if (! $order) {
+                    throw new \DomainException('الفاتورة غير موجودة أو حُذفت من قبل.');
+                }
+                if ($order->type !== 'wholesale') {
+                    throw new \DomainException('فواتير نقطة البيع تُحذف من شاشة نقطة البيع.');
+                }
+                if ($order->returns()->withTrashed()->exists() || Order::query()->where('tenant_id', $tenantId)->where('original_order_id', $order->id)->exists()) {
+                    throw new \DomainException('لا يمكن حذف فاتورة مرتبطة بمرتجعات.');
+                }
+
+                app(\App\Services\BranchStockAllocator::class)->reverseRecorded($order);
+
+                $receipts = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->lockForUpdate()->get();
+                $received = (float) $receipts->where('type', 'receipt')->sum(fn (Payment $payment): float => (float) $payment->amount)
+                    - (float) $receipts->where('type', 'payment')->sum(fn (Payment $payment): float => (float) $payment->amount);
+                $outstanding = max(0, abs((float) $order->total) - (float) $order->delivery_fee) - $received;
+
+                if ($order->customer_id) {
+                    $customer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($order->customer_id);
+                    if ($customer && abs($outstanding) >= 0.005) {
+                        app(\App\Services\PartyBalance::class)->applySale($customer, -$outstanding);
+                    }
+                }
+
+                $receipts->each(fn (Payment $payment) => $payment->delete());
+                \App\Models\CustomerOrder::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)
+                    ->update(['order_id' => null, 'status' => 'processing', 'updated_at' => now()]);
+                $order->delete();
+
+                return (string) $order->invoice_number;
+            });
+        } catch (\DomainException $exception) {
+            $this->errorMessage = $exception->getMessage();
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        $this->startNewInvoice(false);
+        $this->successMessage = 'تم حذف فاتورة المبيعات '.$number.' وإرجاع مخزونها وتعديل رصيد الزبون.';
+        $this->dispatch('toast', type: 'success', message: $this->successMessage);
     }
 
     public function editLoadedInvoice(): void
@@ -2190,6 +2295,14 @@ new class extends Component {
                         </button>
                     @endif
 
+                    @if ($currentOrderId)
+                        @can('sales_invoices.delete')
+                            <button type="button" data-delete-invoice wire:click="deleteInvoice" wire:confirm="حذف فاتورة المبيعات نهائياً؟ سيرجع مخزونها وتُحذف سندات القبض المرتبطة بها ويتعدّل رصيد الزبون." wire:loading.attr="disabled" wire:target="deleteInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:opacity-50">
+                                <flux:icon.trash class="size-4" /> حذف
+                            </button>
+                        @endcan
+                    @endif
+
                     <button type="button" wire:click="startNewInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
                         <flux:icon.plus-circle class="size-5 text-blue-600" /> جديد <span class="text-xs text-slate-400">(Shift+F2)</span>
                     </button>
@@ -2445,6 +2558,7 @@ new class extends Component {
                             <th class="border-l border-slate-700 px-3 py-3">اسم الصنف</th>
                             <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">المخزون</th>
                             <th class="w-40 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
+                            <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">بونص</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">سعر الوحدة</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
                             <th class="w-24 px-3 py-3 text-center">حذف</th>
@@ -2517,7 +2631,7 @@ new class extends Component {
                                     @endif
                                 </td>
 
-                                <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-semibold {{ (float) ($item['stock'] ?? 0) < $lineQuantity ? 'text-rose-600' : 'text-slate-600' }}">
+                                <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-semibold {{ (float) ($item['stock'] ?? 0) < $lineQuantity + (float) ($item['bonus'] ?? 0) ? 'text-rose-600' : 'text-slate-600' }}">
                                     {{ number_format((float) ($item['stock'] ?? 0), 2) }}
                                 </td>
 
@@ -2543,6 +2657,10 @@ new class extends Component {
                                 </td>
 
                                 <td class="border-l border-slate-100 px-3 py-2 text-center">
+                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) ($item['bonus'] ?? 0), 2, '.', '') }}" data-grid-input data-bonus-input data-row="{{ $loop->index }}" data-col="1" wire:input.debounce.300ms="updateItemBonus('{{ $key }}', $event.target.value)" aria-label="بونص" title="كمية مجانية تخرج من المخزون ولا تُحسب في السعر" class="mx-auto block h-9 w-20 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2 text-center text-sm font-bold text-emerald-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                                </td>
+
+                                <td class="border-l border-slate-100 px-3 py-2 text-center">
                                     <input
                                         type="number"
                                         min="0"
@@ -2552,7 +2670,7 @@ new class extends Component {
                                         data-cart-key="{{ $key }}"
                                         data-grid-input
                                         data-row="{{ $loop->index }}"
-                                        data-col="1"
+                                        data-col="2"
                                         wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)"
                                         aria-label="سعر الوحدة"
                                         class="mx-auto block h-9 w-28 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -2560,7 +2678,7 @@ new class extends Component {
                                 </td>
 
                                 <td class="border-l border-slate-100 bg-slate-50 px-3 py-2 text-center">
-                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" data-grid-input data-row="{{ $loop->index }}" data-col="2" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" aria-label="إجمالي السطر" title="يمكن تعديل المجموع وسيُعاد حساب سعر الوحدة" />
+                                    <input type="number" min="0" step="0.01" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" data-grid-input data-row="{{ $loop->index }}" data-col="3" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" aria-label="إجمالي السطر" title="يمكن تعديل المجموع وسيُعاد حساب سعر الوحدة" />
                                 </td>
 
                                 <td class="px-3 py-2 text-center">
@@ -2618,9 +2736,13 @@ new class extends Component {
                                     wire:model="selectedQuantity"
                                     aria-label="الكمية"
                                     x-on:focus="$event.target.select()"
-                                    x-on:keydown.enter.prevent.stop="$refs.priceInput?.focus(); $refs.priceInput?.select()"
+                                    x-on:keydown.enter.prevent.stop="$refs.bonusInput?.focus(); $refs.bonusInput?.select()"
                                     class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                 />
+                            </td>
+
+                            <td class="px-2 py-2">
+                                <input x-ref="bonusInput" data-entry-bonus type="number" min="0" step="0.01" wire:model="selectedBonus" aria-label="بونص" title="كمية مجانية تخرج من المخزون ولا تُحسب في السعر" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent.stop="$refs.priceInput?.focus(); $refs.priceInput?.select()" class="mx-auto block h-9 w-20 rounded-md border border-emerald-300 bg-white px-2 text-center text-sm font-black text-emerald-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
                             </td>
 
                             <td class="px-2 py-2">
@@ -3365,7 +3487,7 @@ new class extends Component {
                 <td>${index + 1}</td>
                 <td class="num" data-print-product-number>${escapeHtml(item.product_number ?? '')}</td>
                 <td>${escapeHtml(item.name ?? '')}</td>
-                <td class="num">${Number(item.quantity ?? 0).toFixed(2)}</td>
+                <td class="num">${Number(item.quantity ?? 0).toFixed(2)}${Number(item.bonus ?? 0) > 0 ? '<br><small data-print-bonus>+ ' + Number(item.bonus).toFixed(2) + ' بونص</small>' : ''}</td>
                 <td class="num">${Number(item.price ?? 0).toFixed(2)}</td>
                 <td class="num">${Number(item.discount ?? 0).toFixed(2)}</td>
                 <td class="num">${Number(item.total ?? 0).toFixed(2)}</td>

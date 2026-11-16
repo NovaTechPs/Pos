@@ -52,6 +52,9 @@ new class extends Component {
 
     public float $selectedQuantity = 1.0;
 
+    /** Free (bonus) units received with the line: they enter stock and spread the line cost. */
+    public float $selectedBonus = 0.0;
+
     public float $selectedDiscount = 0.0;
 
     public array $cart = [];
@@ -290,6 +293,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->editingCartKey = null;
 
         $this->cart = [];
@@ -442,7 +446,10 @@ new class extends Component {
             $this->selectedRetailPrice = 0;
             $this->selectedStock = 0;
             $this->selectedQuantity = 1;
+            $this->selectedBonus = 0.0;
+        $this->selectedBonus = 0.0;
             $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         }
     }
 
@@ -502,7 +509,7 @@ new class extends Component {
     }
 
     // Pass current DOM values in one request so blur/morphing cannot lose edits.
-    public function commitRowWithValues($quantity, $price, $discount = 0): void
+    public function commitRowWithValues($quantity, $price, $discount = 0, $bonus = null): void
     {
         if (! $this->ensureInvoiceEditable()) {
             return;
@@ -524,6 +531,13 @@ new class extends Component {
         $this->selectedQuantity = round((float) $quantity, 2);
         $this->selectedPurchasePrice = round((float) $price, 2);
         $this->selectedDiscount = round((float) $discount, 2);
+        if ($bonus !== null && $bonus !== '') {
+            if (! is_numeric($bonus) || ! is_finite((float) $bonus) || (float) $bonus < 0) {
+                $this->errorMessage = 'البونص يجب ألا يكون سالباً.';
+                return;
+            }
+            $this->selectedBonus = round((float) $bonus, 2);
+        }
         if ($this->selectedQuantity <= 0) {
             $this->errorMessage = 'الكمية يجب أن تكون أكبر من صفر.';
             return;
@@ -552,6 +566,11 @@ new class extends Component {
             return;
         }
 
+        if ($this->selectedBonus < 0) {
+            $this->errorMessage = 'البونص يجب ألا يكون سالباً.';
+            return;
+        }
+
         $wasEditingCartItem = $this->editingCartKey !== null;
         if ($wasEditingCartItem && ! isset($this->cart[$this->editingCartKey])) {
             $this->errorMessage = 'تعذر العثور على سطر الفاتورة المراد تعديله.';
@@ -568,13 +587,14 @@ new class extends Component {
             'retail_price' => round((float) $this->selectedRetailPrice, 2),
             'quantity' => round((float) $this->selectedQuantity, 2),
             'discount' => round(min(max(0, (float) $this->selectedDiscount), (float) $this->selectedPurchasePrice * (float) $this->selectedQuantity), 2),
+            'bonus' => round(max(0, (float) $this->selectedBonus), 2),
             'stock' => round((float) $this->selectedStock, 2),
             // Replacing a line keeps the expiry date already entered for it.
             'expiry_date' => $wasEditingCartItem ? ($this->cart[$cartKey]['expiry_date'] ?? null) : null,
         ];
 
         $productId = $this->selectedProductId;
-        $purchaseCost = round((float) $this->selectedPurchasePrice, 2);
+        $purchaseCost = $this->unitCostWithBonus($this->cart[$cartKey]);
         $branchId = $this->selectedBranchId ?: $this->resolveBranchId();
 
         $this->selectedProductId = null;
@@ -584,6 +604,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
         $this->editingCartKey = null;
         $this->errorMessage = null;
@@ -624,6 +645,7 @@ new class extends Component {
         $this->selectedRetailPrice = 0.0;
         $this->selectedStock = 0.0;
         $this->selectedQuantity = (float) $this->cart[$cartKey]['quantity'];
+        $this->selectedBonus = (float) ($this->cart[$cartKey]['bonus'] ?? 0);
         $this->rowSearch = '';
         $this->errorMessage = null;
         $this->dispatch('focus-product-search');
@@ -639,6 +661,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
         $this->dispatch('focus-product-search');
     }
@@ -731,7 +754,7 @@ new class extends Component {
         unset($this->cart[$cartKey]['total_override']);
 
         if ($priceChanged) {
-            $this->preparePriceUpdateCandidate((int) $this->cart[$cartKey]['id'], $updatedPrice, $this->selectedBranchId ?: $this->resolveBranchId());
+            $this->preparePriceUpdateCandidate((int) $this->cart[$cartKey]['id'], $this->unitCostWithBonus($this->cart[$cartKey]), $this->selectedBranchId ?: $this->resolveBranchId());
         }
     }
 
@@ -754,6 +777,34 @@ new class extends Component {
         $discount = max(0, (float) ($this->cart[$cartKey]['discount'] ?? 0));
         $this->updateItemPrice($cartKey, ($lineTotal + $discount) / $quantity);
         $this->cart[$cartKey]['total_override'] = $lineTotal;
+    }
+
+    public function updateItemBonus(string $cartKey, mixed $bonus): void
+    {
+        if (! $this->ensureInvoiceEditable() || ! isset($this->cart[$cartKey])) {
+            return;
+        }
+
+        $this->cart[$cartKey]['bonus'] = is_numeric($bonus) && is_finite((float) $bonus) ? max(0, round((float) $bonus, 2)) : 0.0;
+    }
+
+    /**
+     * Cost of one received unit: the line total spread over the bought and the bonus units.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    private function unitCostWithBonus(array $item): float
+    {
+        $quantity = max(0, (float) ($item['quantity'] ?? 0));
+        $received = $quantity + max(0, (float) ($item['bonus'] ?? 0));
+        if ($received <= 0) {
+            return round(max(0, (float) ($item['price'] ?? 0)), 2);
+        }
+        $lineTotal = isset($item['total_override'])
+            ? max(0, (float) $item['total_override'])
+            : max(0, max(0, (float) ($item['price'] ?? 0)) * $quantity - max(0, (float) ($item['discount'] ?? 0)));
+
+        return round($lineTotal / $received, 2);
     }
 
     public function updateItemDiscount(string $cartKey, $discount): void
@@ -838,7 +889,7 @@ new class extends Component {
 
         foreach ($this->cart as $item) {
             $productId = (int) ($item['id'] ?? 0);
-            $quantity = max(0, (float) ($item['quantity'] ?? 0));
+            $quantity = max(0, (float) ($item['quantity'] ?? 0)) + max(0, (float) ($item['bonus'] ?? 0));
 
             if ($productId > 0 && $quantity > 0) {
                 $desiredQuantities[$productId] = ($desiredQuantities[$productId] ?? 0) + $quantity;
@@ -1087,11 +1138,11 @@ new class extends Component {
                         : min((float) $totals['total'], (float) $purchase->paid_amount);
 
                     $previousQuantities = DB::table('purchase_items')->where('purchase_id', $purchase->id)
-                        ->selectRaw('product_id, SUM(quantity) as quantity')->groupBy('product_id')
+                        ->selectRaw('product_id, SUM(quantity + bonus_quantity) as quantity')->groupBy('product_id')
                         ->pluck('quantity', 'product_id')->map(fn ($quantity): float => (float) $quantity)->all();
                     $previousBranchId = (int) $purchase->branch_id;
                     $previousLines = DB::table('purchase_items')->where('purchase_id', $purchase->id)
-                        ->get(['product_id', 'quantity', 'unit_cost', 'subtotal']);
+                        ->get(['product_id', 'quantity', 'bonus_quantity', 'unit_cost', 'subtotal']);
 
                     DB::table('purchase_items')
                         ->where('purchase_id', $purchase->id)
@@ -1155,7 +1206,7 @@ new class extends Component {
                 $costLines = [];
                 if ($averageCost->enabled($tenantId)) {
                     foreach ($previousLines ?? [] as $line) {
-                        $lineQuantity = (float) $line->quantity;
+                        $lineQuantity = (float) $line->quantity + (float) ($line->bonus_quantity ?? 0);
                         $costLines[(int) $line->product_id][] = [-$lineQuantity, $lineQuantity > 0 ? (float) $line->subtotal / $lineQuantity : (float) $line->unit_cost];
                     }
                     foreach ($this->cart as $item) {
@@ -1166,7 +1217,9 @@ new class extends Component {
                         $lineTotal = isset($item['total_override'])
                             ? max(0, (float) $item['total_override'])
                             : max(0, max(0, (float) ($item['price'] ?? 0)) * $lineQuantity - max(0, (float) ($item['discount'] ?? 0)));
-                        $costLines[(int) ($item['id'] ?? 0)][] = [$lineQuantity, $lineTotal / $lineQuantity];
+                        // Bonus units come in free, so the line total is spread over every unit received.
+                        $receivedQuantity = $lineQuantity + max(0, (float) ($item['bonus'] ?? 0));
+                        $costLines[(int) ($item['id'] ?? 0)][] = [$receivedQuantity, $lineTotal / $receivedQuantity];
                     }
                 }
                 $stockBeforeInvoice = $averageCost->stockOnHand($tenantId, array_keys($costLines));
@@ -1201,6 +1254,7 @@ new class extends Component {
                         'purchase_id' => $purchaseId,
                         'product_id' => $productId,
                         'quantity' => $quantity,
+                        'bonus_quantity' => round(max(0, (float) ($item['bonus'] ?? 0)), 2),
                         'unit_cost' => $unitCost,
                         'subtotal' => $lineTotal,
                         'expiry_date' => $item['expiry_date'] ?? null,
@@ -1662,6 +1716,7 @@ new class extends Component {
                 'pi.id as item_id',
                 'pi.product_id',
                 'pi.quantity',
+                'pi.bonus_quantity',
                 'pi.unit_cost',
                 'pi.subtotal',
                 'pi.expiry_date',
@@ -1679,6 +1734,7 @@ new class extends Component {
                 'price' => (float) $item->unit_cost,
                 'retail_price' => 0,
                 'quantity' => (float) $item->quantity,
+                'bonus' => (float) ($item->bonus_quantity ?? 0),
                 'discount' => max(0, ((float) $item->unit_cost * (float) $item->quantity) - (float) $item->subtotal),
                 'stock' => 0,
                 'expiry_date' => $item->expiry_date ? substr((string) $item->expiry_date, 0, 10) : null,
@@ -1700,7 +1756,9 @@ new class extends Component {
         $this->selectedRetailPrice = 0;
         $this->selectedStock = 0;
         $this->selectedQuantity = 1;
+        $this->selectedBonus = 0.0;
         $this->selectedDiscount = 0.0;
+        $this->selectedBonus = 0.0;
         $this->rowSearch = '';
 
         $this->successMessage = "تم تحميل فاتورة المشتريات {$purchase->reference_number}.";
@@ -1788,6 +1846,7 @@ new class extends Component {
             ->orderBy('pi.id')
             ->get([
                 'pi.quantity',
+                'pi.bonus_quantity',
                 'pi.unit_cost',
                 'pi.subtotal',
                 'p.name as product_name',
@@ -1800,6 +1859,7 @@ new class extends Component {
                     'name' => $item->product_name ?? 'مادة غير محددة',
                     'product_number' => (string) ($item->product_number ?: $item->product_id),
                     'quantity' => (float) $item->quantity,
+                    'bonus' => (float) ($item->bonus_quantity ?? 0),
                     'price' => (float) $item->unit_cost,
                     'discount' => max(0, $gross - (float) $item->subtotal),
                     'total' => (float) $item->subtotal,
@@ -1846,6 +1906,96 @@ new class extends Component {
         );
     }
 
+    /**
+     * Deletes the open purchase invoice: its received stock leaves again, its payment vouchers are
+     * removed and the supplier's balance drops by what the invoice still owed.
+     */
+    public function deleteInvoice(): void
+    {
+        try {
+            $this->authorize('purchases.delete');
+        } catch (\Illuminate\Auth\Access\AuthorizationException) {
+            $this->errorMessage = 'لا تملك صلاحية حذف فواتير المشتريات.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        $tenantId = $this->tenantId();
+        if (! $tenantId || ! $this->currentPurchaseId) {
+            $this->errorMessage = 'افتح فاتورة محفوظة أولاً لحذفها.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        try {
+            $number = DB::transaction(function () use ($tenantId): string {
+                $purchase = DB::table('purchases')->where('tenant_id', $tenantId)->where('id', $this->currentPurchaseId)
+                    ->whereNull('deleted_at')->lockForUpdate()->first();
+                if (! $purchase) {
+                    throw new \DomainException('الفاتورة غير موجودة أو حُذفت من قبل.');
+                }
+                if (DB::table('purchase_returns')->where('tenant_id', $tenantId)->where('purchase_id', $purchase->id)->exists()) {
+                    throw new \DomainException('لا يمكن حذف فاتورة مشتريات مرتبطة بمرتجعات.');
+                }
+
+                $lines = DB::table('purchase_items')->where('purchase_id', $purchase->id)
+                    ->get(['product_id', 'quantity', 'bonus_quantity', 'unit_cost', 'subtotal']);
+                $previousQuantities = [];
+                $costLines = [];
+                foreach ($lines as $line) {
+                    $units = (float) $line->quantity + (float) ($line->bonus_quantity ?? 0);
+                    $previousQuantities[(int) $line->product_id] = ($previousQuantities[(int) $line->product_id] ?? 0) + $units;
+                    $costLines[(int) $line->product_id][] = [-$units, $units > 0 ? (float) $line->subtotal / $units : (float) $line->unit_cost];
+                }
+
+                $averageCost = app(\App\Services\MovingAverageCost::class);
+                $stockBefore = $averageCost->enabled($tenantId) ? $averageCost->stockOnHand($tenantId, array_keys($costLines)) : [];
+
+                // With no lines wanted, the stock sync takes back everything this purchase brought in.
+                $this->cart = [];
+                $this->synchronizePurchaseStock($tenantId, (int) $purchase->id, (int) $purchase->branch_id, $previousQuantities, (int) $purchase->branch_id);
+
+                if ($averageCost->enabled($tenantId)) {
+                    foreach ($costLines as $productId => $moves) {
+                        $product = Product::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($productId);
+                        if ($product) {
+                            $averageCost->apply($product, $stockBefore[$productId] ?? 0.0, $moves);
+                        }
+                    }
+                }
+
+                $payments = Payment::query()->where('tenant_id', $tenantId)->where('purchase_id', $purchase->id)->lockForUpdate()->get();
+                $linkedPaid = (float) $payments->where('type', 'payment')->sum(fn (Payment $payment): float => (float) $payment->amount)
+                    - (float) $payments->where('type', 'receipt')->sum(fn (Payment $payment): float => (float) $payment->amount);
+                $paid = $payments->isNotEmpty() ? $linkedPaid : (float) $purchase->paid_amount;
+                $outstanding = round((float) $purchase->total - $paid, 2);
+
+                if ($purchase->supplier_id) {
+                    $supplier = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($purchase->supplier_id);
+                    if ($supplier && abs($outstanding) >= 0.005) {
+                        app(\App\Services\PartyBalance::class)->applyPurchase($supplier, -$outstanding);
+                    }
+                }
+
+                $payments->each(fn (Payment $payment) => $payment->delete());
+                \App\Models\Purchase::query()->where('tenant_id', $tenantId)->whereKey($purchase->id)->delete();
+
+                return (string) $purchase->reference_number;
+            });
+        } catch (\DomainException $exception) {
+            $this->errorMessage = $exception->getMessage();
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        $this->startNewInvoice(false);
+        $this->successMessage = 'تم حذف فاتورة المشتريات '.$number.' وسحب مخزونها وتعديل رصيد المورد.';
+        $this->dispatch('toast', type: 'success', message: $this->successMessage);
+    }
+
     public function editLoadedInvoice(): void
     {
         if (! $this->currentPurchaseId) {
@@ -1881,7 +2031,7 @@ new class extends Component {
             ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
             ->where('pi.purchase_id', $purchase->id)
             ->orderBy('pi.id')
-            ->get(['pi.product_id', 'pi.quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name', 'p.product_number']);
+            ->get(['pi.product_id', 'pi.quantity', 'pi.bonus_quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name', 'p.product_number']);
 
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $tenantId)->whereKey($purchase->supplier_id)->value('name')
@@ -2191,6 +2341,14 @@ new class extends Component {
                         </button>
                     @endif
 
+                    @if ($currentPurchaseId)
+                        @can('purchases.delete')
+                            <button type="button" data-delete-invoice wire:click="deleteInvoice" wire:confirm="حذف فاتورة المشتريات نهائياً؟ ستُسحب كمياتها من المخزون وتُحذف سندات الصرف المرتبطة بها ويتعدّل رصيد المورد." wire:loading.attr="disabled" wire:target="deleteInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:opacity-50">
+                                <flux:icon.trash class="size-4" /> حذف
+                            </button>
+                        @endcan
+                    @endif
+
                     <button type="button" wire:click="startNewInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
                         <flux:icon.plus-circle class="size-5 text-blue-600" /> جديد <span class="text-xs text-slate-400">(Shift+F2)</span>
                     </button>
@@ -2361,6 +2519,7 @@ new class extends Component {
                             <th class="border-l border-slate-700 px-3 py-3">اسم الصنف</th>
                             <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">المخزون</th>
                             <th class="w-40 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
+                            <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">بونص</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">التكلفة</th>
                             <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
                             @if ($trackExpiry)
@@ -2406,10 +2565,13 @@ new class extends Component {
                                     </div>
                                 </td>
                                 <td class="border-l border-slate-100 px-3 py-2 text-center">
-                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $item['price'], 2, '.', '') }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="1" aria-label="التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-blue-500" />
+                                    <input type="text" inputmode="decimal" value="{{ number_format((float) ($item['bonus'] ?? 0), 2, '.', '') }}" wire:input.debounce.300ms="updateItemBonus('{{ $key }}', $event.target.value)" data-purchase-grid-input data-bonus-input data-row="{{ $loop->index }}" data-col="1" aria-label="بونص" title="كمية مجانية تدخل المخزون وتوزَّع عليها التكلفة" class="mx-auto block h-9 w-20 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2 text-center text-sm font-bold text-emerald-800 outline-none focus:border-emerald-500" />
+                                </td>
+                                <td class="border-l border-slate-100 px-3 py-2 text-center">
+                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $item['price'], 2, '.', '') }}" wire:input.debounce.300ms="updateItemPrice('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" aria-label="التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-bold text-slate-900 outline-none focus:border-blue-500" />
                                 </td>
                                 <td class="border-l border-slate-100 bg-slate-50 px-3 py-2 text-center">
-                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="2" title="يمكن تعديل المجموع وسيُعاد حساب التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500" aria-label="إجمالي السطر" />
+                                    <input type="text" inputmode="decimal" value="{{ number_format((float) $lineTotal, 2, '.', '') }}" wire:input.debounce.300ms="updateItemTotal('{{ $key }}', $event.target.value)" data-purchase-grid-input data-row="{{ $loop->index }}" data-col="3" title="يمكن تعديل المجموع وسيُعاد حساب التكلفة" class="mx-auto block h-9 w-28 rounded-lg border border-transparent bg-transparent px-2 text-center text-base font-black text-slate-900 outline-none hover:border-slate-300 hover:bg-white focus:border-blue-500" aria-label="إجمالي السطر" />
                                 </td>
                                 @if ($trackExpiry)
                                     <td class="border-l border-slate-100 px-3 py-2 text-center">
@@ -2466,9 +2628,13 @@ new class extends Component {
                                     x-on:focus="$event.target.select()"
                                     x-on:keydown.arrow-up.stop.prevent="$refs.purchasePriceInput?.focus()"
                                     x-on:keydown.arrow-down.stop.prevent="$refs.purchasePriceInput?.focus()"
-                                    x-on:keydown.enter.stop.prevent="$refs.purchasePriceInput?.focus(); $refs.purchasePriceInput?.select()"
+                                    x-on:keydown.enter.stop.prevent="$refs.purchaseBonusInput?.focus(); $refs.purchaseBonusInput?.select()"
                                     class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                 />
+                            </td>
+
+                            <td class="px-2 py-2">
+                                <input x-ref="purchaseBonusInput" data-entry-bonus type="text" inputmode="decimal" wire:model="selectedBonus" aria-label="بونص" title="كمية مجانية تدخل المخزون وتوزَّع عليها التكلفة" x-on:focus="$event.target.select()" x-on:keydown.enter.stop.prevent="$refs.purchasePriceInput?.focus(); $refs.purchasePriceInput?.select()" class="mx-auto block h-9 w-20 rounded-md border border-emerald-300 bg-white px-2 text-center text-sm font-black text-emerald-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
                             </td>
 
                             <td class="px-2 py-2">
@@ -2836,7 +3002,7 @@ new class extends Component {
          */
         rejectScanInEntryField(event) {
             const field = event.target;
-            if (!['quantity', 'purchasePriceInput', 'purchaseEntryTotalInput'].includes(field?.getAttribute?.('x-ref'))) {
+            if (!['quantity', 'purchaseBonusInput', 'purchasePriceInput', 'purchaseEntryTotalInput'].includes(field?.getAttribute?.('x-ref'))) {
                 this.scanBurst = null;
                 return false;
             }
@@ -2879,7 +3045,7 @@ new class extends Component {
             }
             this.addingRow = true;
             try {
-                await this.$wire.commitRowWithValues(quantity, price, Number(this.entryDiscount) || 0);
+                await this.$wire.commitRowWithValues(quantity, price, Number(this.entryDiscount) || 0, this.entryRef('purchaseBonusInput')?.value?.trim() || 0);
                 if (!this.$wire.selectedProductId) this.entryDiscount = 0;
             } finally {
                 this.addingRow = false;
@@ -3245,7 +3411,7 @@ new class extends Component {
                 <td>${index + 1}</td>
                 <td data-print-product-number>${esc(item.product_number ?? '')}</td>
                 <td>${esc(item.name)}</td>
-                <td>${money(item.quantity)}</td>
+                <td>${money(item.quantity)}${Number(item.bonus || 0) > 0 ? '<br><small data-print-bonus>+ ' + money(item.bonus) + ' بونص</small>' : ''}</td>
                 <td>${money(item.price)}</td>
                 <td>${money(item.discount)}</td>
                 <td>${money(item.total)}</td>

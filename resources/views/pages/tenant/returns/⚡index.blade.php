@@ -84,6 +84,9 @@ new class extends Component
 
     public float $selectedQuantity = 1;
 
+    /** Free (bonus) units returned with the line: they move stock but carry no value. */
+    public float $selectedBonus = 0;
+
     public float $selectedPrice = 0;
 
     public array $lines = [];
@@ -385,7 +388,7 @@ new class extends Component
             return;
         }
 
-        $this->addProduct($this->selectedProductId, $this->selectedQuantity, $this->selectedPrice);
+        $this->addProduct($this->selectedProductId, $this->selectedQuantity, $this->selectedPrice, $this->selectedBonus);
     }
 
     /**
@@ -402,23 +405,23 @@ new class extends Component
             $sold = (float) DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
                 ->where('orders.tenant_id', $this->tenantId())->where('orders.customer_id', $partyId)
                 ->whereIn('orders.type', ['pos', 'wholesale', 'online'])->where('orders.status', 'completed')
-                ->whereNull('orders.deleted_at')->where('order_items.product_id', $productId)->sum('order_items.quantity');
+                ->whereNull('orders.deleted_at')->where('order_items.product_id', $productId)->sum(DB::raw('order_items.quantity + order_items.bonus_quantity'));
             $returned = (float) DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
                 ->where('orders.tenant_id', $this->tenantId())->where('orders.customer_id', $partyId)
                 ->where('orders.type', 'return')->whereNull('orders.deleted_at')
                 ->when($this->currentReturnId, fn ($query) => $query->where('orders.id', '!=', $this->currentReturnId))
-                ->where('order_items.product_id', $productId)->sum(DB::raw('ABS(order_items.quantity)'));
+                ->where('order_items.product_id', $productId)->sum(DB::raw('ABS(order_items.quantity) + ABS(order_items.bonus_quantity)'));
 
             return max(0, $sold - $returned);
         }
 
         $purchased = (float) DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
             ->where('purchases.tenant_id', $this->tenantId())->where('purchases.supplier_id', $partyId)
-            ->whereNull('purchases.deleted_at')->where('purchase_items.product_id', $productId)->sum('purchase_items.quantity');
+            ->whereNull('purchases.deleted_at')->where('purchase_items.product_id', $productId)->sum(DB::raw('purchase_items.quantity + purchase_items.bonus_quantity'));
         $returned = (float) DB::table('purchase_return_items')->join('purchase_returns', 'purchase_returns.id', '=', 'purchase_return_items.purchase_return_id')
             ->where('purchase_returns.tenant_id', $this->tenantId())->where('purchase_returns.supplier_id', $partyId)
             ->when($this->currentReturnId, fn ($query) => $query->where('purchase_returns.id', '!=', $this->currentReturnId))
-            ->where('purchase_return_items.product_id', $productId)->sum('purchase_return_items.quantity');
+            ->where('purchase_return_items.product_id', $productId)->sum(DB::raw('purchase_return_items.quantity + purchase_return_items.bonus_quantity'));
 
         return max(0, $purchased - $returned);
     }
@@ -455,7 +458,7 @@ new class extends Component
         return $lastCost !== null ? round((float) $lastCost, 2) : (float) $product->cost_price;
     }
 
-    public function addProduct(int $productId, ?float $quantity = null, ?float $price = null): void
+    public function addProduct(int $productId, ?float $quantity = null, ?float $price = null, ?float $bonus = null): void
     {
         $this->errorMessage = null;
         $tenantId = $this->tenantId();
@@ -488,20 +491,27 @@ new class extends Component
 
         $quantity ??= 1;
         $price ??= $this->latestPrice($productId, $this->selectedPartyId, $product);
-        if (! is_finite($quantity) || $quantity <= 0 || ! is_finite($price) || $price < 0) {
+        $bonus = round(max(0, (float) ($bonus ?? 0)), 2);
+        if (! is_finite($quantity) || $quantity <= 0 || ! is_finite($price) || $price < 0 || ! is_finite($bonus)) {
             $this->errorMessage = 'أدخل كمية وسعراً صالحين للصنف.';
+
+            return;
+        }
+        if ($quantity + $bonus > $available + 0.00001) {
+            $this->errorMessage = 'الكمية مع البونص أكبر من الكمية المتاحة للإرجاع.';
 
             return;
         }
 
         $lineIndex = collect($this->lines)->search(fn (array $line): bool => (int) $line['id'] === $productId);
         if ($lineIndex !== false) {
-            if ((float) $this->lines[$lineIndex]['quantity'] + $quantity > $available) {
+            if ((float) $this->lines[$lineIndex]['quantity'] + (float) ($this->lines[$lineIndex]['bonus'] ?? 0) + $quantity + $bonus > $available + 0.00001) {
                 $this->errorMessage = 'الكمية المطلوب إرجاعها أكبر من الكمية المتاحة.';
 
                 return;
             }
             $this->lines[$lineIndex]['quantity'] = (float) $this->lines[$lineIndex]['quantity'] + $quantity;
+            $this->lines[$lineIndex]['bonus'] = (float) ($this->lines[$lineIndex]['bonus'] ?? 0) + $bonus;
         } else {
             $this->lines[] = [
                 'id' => $productId,
@@ -510,6 +520,7 @@ new class extends Component
                 'product_number' => $product->product_number,
                 'available' => $available,
                 'quantity' => $quantity,
+                'bonus' => $bonus,
                 'price' => $price,
             ];
         }
@@ -526,6 +537,7 @@ new class extends Component
         $this->selectedProductName = '';
         $this->selectedProductAvailable = 0;
         $this->selectedQuantity = 1;
+        $this->selectedBonus = 0;
         $this->selectedPrice = 0;
     }
 
@@ -568,7 +580,7 @@ new class extends Component
             return 0;
         }
 
-        return (float) $this->savedLines($this->currentReturnId)->where('product_id', $productId)->sum('quantity');
+        return (float) $this->savedLines($this->currentReturnId)->where('product_id', $productId)->sum(fn ($line): float => (float) $line->quantity + (float) ($line->bonus_quantity ?? 0));
     }
 
     private function returnQuery(): Builder
@@ -627,6 +639,7 @@ new class extends Component
             $this->lines[] = [
                 'id' => $product->id, 'name' => $product->name, 'product_number' => $product->product_number,
                 'quantity' => abs((float) $line->quantity),
+                'bonus' => abs((float) ($line->bonus_quantity ?? 0)),
                 'price' => (float) ($this->kind === 'sale' ? $line->unit_price : $line->unit_cost),
                 'available' => $this->remainingQuantity($product->id, $this->selectedPartyId),
                 'returned_to_stock' => (bool) ($line->returned_to_stock ?? true),
@@ -709,13 +722,13 @@ new class extends Component
         if ($old) {
             foreach ($this->savedLines((int) $old->id) as $line) {
                 if ($this->kind !== 'sale' || ($line->returned_to_stock ?? true)) {
-                    $add((int) $old->branch_id, (int) $line->product_id, -$direction * abs((float) $line->quantity));
+                    $add((int) $old->branch_id, (int) $line->product_id, -$direction * (abs((float) $line->quantity) + abs((float) ($line->bonus_quantity ?? 0))));
                 }
             }
         }
         foreach ($items as $line) {
             if ($this->kind !== 'sale' || ($line['returned_to_stock'] ?? true)) {
-                $add($branchId, (int) $line['id'], $direction * (float) $line['quantity']);
+                $add($branchId, (int) $line['id'], $direction * ((float) $line['quantity'] + max(0, (float) ($line['bonus'] ?? 0))));
             }
         }
         foreach ($changes as $change) {
@@ -742,10 +755,13 @@ new class extends Component
         }
         $plan = [];
         foreach ($old ? $this->savedLines((int) $old->id) : [] as $line) {
-            $plan[(int) $line->product_id][] = [abs((float) $line->quantity), (float) $line->unit_cost];
+            $units = abs((float) $line->quantity) + abs((float) ($line->bonus_quantity ?? 0));
+            $plan[(int) $line->product_id][] = [$units, $units > 0 ? abs((float) $line->quantity) * (float) $line->unit_cost / $units : (float) $line->unit_cost];
         }
         foreach ($lines as $line) {
-            $plan[(int) $line['id']][] = [-(float) $line['quantity'], (float) $line['price']];
+            // Bonus units leave with the paid ones, so the line value is spread over all of them.
+            $units = (float) $line['quantity'] + max(0, (float) ($line['bonus'] ?? 0));
+            $plan[(int) $line['id']][] = [-$units, $units > 0 ? (float) $line['quantity'] * (float) $line['price'] / $units : (float) $line['price']];
         }
 
         return ['stock' => $averageCost->stockOnHand($this->tenantId(), array_keys($plan)), 'moves' => $plan];
@@ -790,7 +806,7 @@ new class extends Component
             'selectedPartyId' => ['required', 'integer'], 'invoiceDate' => ['required', 'date'],
             'invoiceNumber' => ['required', 'string', 'max:100', Rule::unique($this->kind === 'sale' ? 'orders' : 'purchase_returns', $this->kind === 'sale' ? 'invoice_number' : 'reference_number')->where('tenant_id', $this->tenantId())->ignore($this->currentReturnId)], 'notes' => ['nullable', 'string', 'max:5000'],
             'lines' => ['required', 'array', 'min:1'], 'lines.*.id' => ['required', 'integer', 'distinct'],
-            'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.price' => ['required', 'numeric', 'min:0'],
+            'lines.*.quantity' => ['required', 'numeric', 'min:0.01'], 'lines.*.bonus' => ['nullable', 'numeric', 'min:0'], 'lines.*.price' => ['required', 'numeric', 'min:0'],
             'lines.*.returned_to_stock' => ['sometimes', 'boolean'],
             'discountType' => ['required', 'in:fixed,percentage'], 'discountRate' => ['required', 'numeric', 'min:0'],
             'taxPercent' => ['required', 'numeric', 'min:0'], 'paidAmount' => ['required', 'numeric', 'min:0'],
@@ -798,6 +814,7 @@ new class extends Component
         ]);
         foreach ($this->lines as &$line) {
             $line['quantity'] = round((float) $line['quantity'], 2);
+            $line['bonus'] = round(max(0, (float) ($line['bonus'] ?? 0)), 2);
             $line['price'] = round((float) $line['price'], 2);
         }
         unset($line);
@@ -819,10 +836,10 @@ new class extends Component
                 $cost = 0;
                 foreach ($this->lines as $line) {
                     $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($line['id']);
-                    if ((float) $line['quantity'] > $this->remainingQuantity($product->id, $party->id) + 0.00001) {
+                    if ((float) $line['quantity'] + (float) ($line['bonus'] ?? 0) > $this->remainingQuantity($product->id, $party->id) + 0.00001) {
                         throw new DomainException('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل أو المورد سابقاً.');
                     }
-                    $cost += (float) $product->cost_price * (float) $line['quantity'];
+                    $cost += (float) $product->cost_price * ((float) $line['quantity'] + (float) ($line['bonus'] ?? 0));
                 }
                 $changes = $this->stockChanges($old, $this->lines, $branchId);
                 $costPlan = $this->purchaseReturnCostPlan($old, $this->lines);
@@ -864,9 +881,10 @@ new class extends Component
                     $item = ['tenant_id' => $tenantId, $foreign => $id, 'product_id' => $product->id, 'created_at' => now(), 'updated_at' => now()];
                     $quantity = round((float) $line['quantity'], 2);
                     $price = round((float) $line['price'], 2);
+                    $bonus = round(max(0, (float) ($line['bonus'] ?? 0)), 2);
                     $item += $this->kind === 'sale'
-                        ? ['quantity' => -$quantity, 'unit_price' => $price, 'total_price' => -round($quantity * $price, 2), 'cost_price' => $product->cost_price, 'total_cost' => -$quantity * (float) $product->cost_price, 'discount' => 0, 'returned_to_stock' => (bool) ($line['returned_to_stock'] ?? true)]
-                        : ['quantity' => $quantity, 'unit_cost' => $price, 'subtotal' => round($quantity * $price, 2)];
+                        ? ['quantity' => -$quantity, 'bonus_quantity' => -$bonus, 'unit_price' => $price, 'total_price' => -round($quantity * $price, 2), 'cost_price' => $product->cost_price, 'total_cost' => -($quantity + $bonus) * (float) $product->cost_price, 'discount' => 0, 'returned_to_stock' => (bool) ($line['returned_to_stock'] ?? true)]
+                        : ['quantity' => $quantity, 'bonus_quantity' => $bonus, 'unit_cost' => $price, 'subtotal' => round($quantity * $price, 2)];
                     DB::table($table)->insert($item);
                 }
                 foreach ($changes as $change) {
@@ -967,7 +985,7 @@ new class extends Component
             'paid' => abs((float) $return->paid_amount), 'balance' => (float) ($party?->current_balance ?? 0),
             'notes' => $return->notes, 'lines' => $this->savedLines($return->id)->map(function ($line): array {
                 return ['name' => Product::query()->where('tenant_id', $this->tenantId())->whereKey($line->product_id)->value('name'),
-                    'quantity' => abs((float) $line->quantity), 'price' => (float) ($this->kind === 'sale' ? $line->unit_price : $line->unit_cost),
+                    'quantity' => abs((float) $line->quantity), 'bonus' => abs((float) ($line->bonus_quantity ?? 0)), 'price' => (float) ($this->kind === 'sale' ? $line->unit_price : $line->unit_cost),
                     'total' => abs((float) ($this->kind === 'sale' ? $line->total_price : $line->subtotal))];
             })->all(),
         ];
@@ -1265,6 +1283,7 @@ new class extends Component
                                 <th class="border-l border-slate-700 px-3 py-3">اسم الصنف</th>
                                 <th class="w-32 border-l border-slate-700 px-3 py-3 text-center">المتاح للإرجاع</th>
                                 <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">الكمية</th>
+                                <th class="w-28 border-l border-slate-700 px-3 py-3 text-center">بونص</th>
                                 <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">{{ $isSale ? 'سعر البيع' : 'تكلفة الشراء' }}</th>
                                 <th class="w-36 border-l border-slate-700 px-3 py-3 text-center">المجموع</th>
                                 <th class="w-24 px-3 py-3 text-center">حذف</th>
@@ -1292,6 +1311,7 @@ new class extends Component
                                     </td>
                                     <td class="border-l border-slate-100 px-3 py-2 text-center"><span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-black text-slate-600">{{ $line['available'] >= 99999999 ? 'مفتوح' : number_format($line['available'], 2) }}</span></td>
                                     <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0.01" max="{{ $line['available'] >= 99999999 ? '' : $line['available'] }}" step="0.01" aria-label="الكمية" wire:model.live.debounce.400ms="lines.{{ $index }}.quantity" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
+                                    <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0" step="0.01" aria-label="بونص" title="كمية مجانية ترجع مع الصنف بدون قيمة" data-bonus-input wire:model.live.debounce.400ms="lines.{{ $index }}.bonus" class="mx-auto block h-9 w-20 rounded-md border border-emerald-200 bg-emerald-50/50 px-2 text-center text-sm font-bold text-emerald-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"></td>
                                     <td class="border-l border-slate-100 px-3 py-2"><input type="number" min="0" step="0.01" aria-label="السعر" wire:model.live.debounce.400ms="lines.{{ $index }}.price" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></td>
                                     <td class="border-l border-slate-100 px-3 py-2 text-center font-mono text-sm font-black text-slate-900">{{ number_format((float) $line['quantity'] * (float) $line['price'], 2) }}</td>
                                     <td class="px-3 py-2 text-center"><button type="button" wire:click="removeLine({{ $index }})" aria-label="حذف السطر" class="inline-flex size-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"><flux:icon.trash class="size-4" /></button></td>
@@ -1317,7 +1337,10 @@ new class extends Component
                                 </td>
                                 <td class="px-2 py-2 text-center font-mono text-sm font-semibold text-slate-600">{{ $selectedProductId ? ($selectedProductAvailable >= 99999999 ? 'مفتوح' : number_format($selectedProductAvailable, 2)) : '—' }}</td>
                                 <td class="px-2 py-2">
-                                    <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable >= 99999999 ? '' : ($selectedProductAvailable ?: '') }}" step="0.01" wire:model="selectedQuantity" aria-label="كمية الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                    <input x-ref="returnQuantity" type="number" min="0.01" max="{{ $selectedProductAvailable >= 99999999 ? '' : ($selectedProductAvailable ?: '') }}" step="0.01" wire:model="selectedQuantity" aria-label="كمية الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnBonus?.focus(); $refs.returnBonus?.select()" class="mx-auto block h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                                </td>
+                                <td class="px-2 py-2">
+                                    <input x-ref="returnBonus" data-entry-bonus type="number" min="0" step="0.01" wire:model="selectedBonus" aria-label="بونص" title="كمية مجانية ترجع مع الصنف بدون قيمة" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnPrice?.focus(); $refs.returnPrice?.select()" class="mx-auto block h-9 w-20 rounded-md border border-emerald-300 bg-white px-2 text-center text-sm font-black text-emerald-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
                                 </td>
                                 <td class="px-2 py-2">
                                     <input x-ref="returnPrice" type="number" min="0" step="0.01" wire:model="selectedPrice" aria-label="سعر الصنف المختار" x-on:focus="$event.target.select()" x-on:keydown.enter.prevent="$refs.returnTotal?.focus(); $refs.returnTotal?.select()" class="mx-auto block h-9 w-28 rounded-md border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />

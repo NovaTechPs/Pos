@@ -557,6 +557,7 @@ new class extends Component {
                         'id',
                         'party_id',
                         'type',
+                        'voucher_number',
                         'amount',
                         'payment_method',
                         'order_id',
@@ -656,7 +657,7 @@ new class extends Component {
             if (! $isReturn) {
                 // Paid on the invoice itself without a receipt voucher: shown as its own line. Linked vouchers are listed on their own.
                 $paidOnInvoice = max(0, (float) $order->paid_amount - (float) $order->delivery_fee - (float) ($linkedReceipts[$order->id] ?? 0));
-                $push('order-paid-'.$order->id, 'order', $order->id, $date, 'دفعة على فاتورة المبيعات #'.$number, null, -min($amount, $paidOnInvoice));
+                $push('order-paid-'.$order->id, 'order', $order->id, $date, 'سند قبض — فاتورة المبيعات #'.$number, null, -min($amount, $paidOnInvoice));
             }
         }
 
@@ -689,7 +690,7 @@ new class extends Component {
             $total = abs((float) $purchase->total);
             $push('purchase-'.$purchase->id, 'purchase', $purchase->id, $date, 'فاتورة مشتريات #'.$number, $purchase->notes, -$total);
             $paidOnInvoice = max(0, (float) $purchase->paid_amount - (float) ($linkedPurchasePayments[$purchase->id] ?? 0));
-            $push('purchase-paid-'.$purchase->id, 'purchase', $purchase->id, $date, 'دفعة على فاتورة المشتريات #'.$number, null, min($total, $paidOnInvoice));
+            $push('purchase-paid-'.$purchase->id, 'purchase', $purchase->id, $date, 'سند صرف — فاتورة المشتريات #'.$number, null, min($total, $paidOnInvoice));
         }
 
         foreach ($party->purchaseReturns as $purchaseReturn) {
@@ -706,7 +707,7 @@ new class extends Component {
         foreach ($party->payments as $payment) {
             $amount = abs((float) $payment->amount);
             $description = $payment->purchase_return_id
-                ? 'دفعة مستردة من مردود مشتريات'
+                ? 'سند قبض — مردود مشتريات'
                 : $this->paymentDescription($payment, $payment->type === 'payment' && ($payment->purchase_id !== null || ($payment->order_id === null && in_array($party->type, ['supplier', 'both'], true))));
             $push('payment-'.$payment->id, 'payment', $payment->id, $payment->payment_date ?: $payment->created_at,
                 $description, $payment->notes, $payment->type === 'receipt' ? -$amount : $amount);
@@ -733,12 +734,14 @@ new class extends Component {
      */
     private function paymentDescription($payment, bool $isSupplier = false): string
     {
-        $description = $isSupplier
-            ? 'سداد للمورد'
-            : ($payment->type === 'payment' ? 'مبلغ مردود للعميل' : 'سند قبض');
+        $description = $payment->type === 'receipt' ? 'سند قبض' : 'سند صرف';
 
-        if (!empty($payment->order_id)) {
-            $description .= ' للفاتورة #' . $payment->order_id;
+        if (! empty($payment->voucher_number)) {
+            $description .= ' #'.$payment->voucher_number;
+        }
+
+        if (! empty($payment->order_id)) {
+            $description .= ' — للفاتورة #'.$payment->order_id;
         }
 
         return $description;

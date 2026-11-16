@@ -50,7 +50,7 @@ class TenantInvoicePdfController extends Controller
             ->leftJoin('products as p', 'p.id', '=', 'pi.product_id')
             ->where('pi.purchase_id', $purchase->id)
             ->orderBy('pi.id')
-            ->get(['pi.product_id', 'pi.quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name', 'p.product_number']);
+            ->get(['pi.product_id', 'pi.quantity', 'pi.bonus_quantity', 'pi.unit_cost', 'pi.subtotal', 'p.name as product_name', 'p.product_number']);
         $supplierName = $purchase->supplier_id
             ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('name')
             : null;

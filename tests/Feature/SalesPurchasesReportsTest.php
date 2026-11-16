@@ -157,7 +157,8 @@ test('supplier statement includes purchase invoices and payments with matching b
         ->test('pages::tenant.customers.index')
         ->call('openStatementModal', $supplier->id)
         ->assertSee('فاتورة مشتريات #PUR-STATEMENT-1')
-        ->assertSee('سداد للمورد')
+        ->assertSee('سند صرف')
+        ->assertDontSee('سداد للمورد')
         ->assertSee('50.00');
 });
 

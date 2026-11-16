@@ -632,7 +632,7 @@ test('statements of a supplier who also buys from the store match the recorded b
     $this->supplier->update(['current_balance' => 100 + 112 - 1800]);
 
     $component = Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $this->supplier->id)
-        ->assertDontSee('يوجد اختلاف في الرصيد')->assertSee('دفعة على فاتورة المبيعات #SUP-SALE-PAID');
+        ->assertDontSee('يوجد اختلاف في الرصيد')->assertSee('سند قبض — فاتورة المبيعات #SUP-SALE-PAID');
     $statement = (fn () => $this->buildStatementData($this->selectedPartyForStatement))->call($component->instance());
     expect($statement['final_balance'])->toBe(-1588.0)->and($statement['difference'])->toBe(0.0)
         ->and($statement['transactions']->pluck('description')->implode('|'))->not->toContain('SUP-DRAFT');
@@ -642,7 +642,7 @@ test('statements of a supplier who also buys from the store match the recorded b
     $paidSale = $rows->where('reference', 'SUP-SALE-PAID');
     expect($paidSale->pluck('debit')->map(fn ($value): float => (float) $value)->max())->toBe(600.0)
         ->and($paidSale->pluck('credit')->map(fn ($value): float => (float) $value)->max())->toBe(600.0)
-        ->and($paidSale->pluck('description')->all())->toBe(['فاتورة مبيعات', 'دفعة على فاتورة المبيعات'])
+        ->and($paidSale->pluck('description')->all())->toBe(['فاتورة مبيعات', 'سند قبض'])
         ->and((float) $report['summary']['رصيد آخر الفترة'])->toBe(1588.0)
         ->and((float) $report['summary']['فرق المطابقة الحالي'])->toBe(0.0);
 
