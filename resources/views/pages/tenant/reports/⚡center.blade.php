@@ -6,6 +6,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
+use App\Services\BackfillLegacySalesReceipts;
 use App\Services\ReportingService;
 use App\Services\PosProductSearch;
 use Illuminate\Support\Facades\DB;
@@ -212,7 +213,20 @@ new class extends Component {
     {
         $tenantId = $this->service()->tenantId;
 
-        if (in_array($sourceOrder, [1, 2, 6], true)) {
+        if ($sourceOrder === 6) {
+            $this->authorize('accounting.receipt.create');
+            $order = Order::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
+            $payment = app(BackfillLegacySalesReceipts::class)->createFor($order->id, $tenantId)
+                ?? Payment::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('order_id', $order->id)
+                    ->where('type', 'receipt')
+                    ->latest('id')
+                    ->first();
+            abort_unless($payment !== null, 409, 'تعذر إنشاء سند القبض التاريخي لهذه الفاتورة.');
+            $url = route('tenant.receipts', ['voucher' => $payment->id]);
+            $title = 'سند قبض '.$payment->voucher_number;
+        } elseif (in_array($sourceOrder, [1, 2], true)) {
             $order = Order::query()->where('tenant_id', $tenantId)->findOrFail($sourceId);
             $route = $order->type === 'return' || ($order->type === 'pos' && ! $order->customer_id) ? 'tenant.pos' : 'tenant.sale-invoices';
             $url = route($route, ['invoice' => $order->id]);

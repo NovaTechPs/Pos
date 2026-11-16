@@ -7,6 +7,7 @@ use App\Models\Payment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\LazyCollection;
+use Illuminate\Support\Str;
 
 final class BackfillLegacySalesReceipts
 {
@@ -44,10 +45,13 @@ final class BackfillLegacySalesReceipts
             ->filter(fn (Order $order): bool => $this->unvoucheredAmount($order, (float) ($order->linked_receipt_amount ?? 0)) > 0);
     }
 
-    public function createFor(int $orderId): ?Payment
+    public function createFor(int $orderId, ?int $tenantId = null): ?Payment
     {
-        return DB::transaction(function () use ($orderId): ?Payment {
-            $order = Order::query()->lockForUpdate()->find($orderId);
+        return DB::transaction(function () use ($orderId, $tenantId): ?Payment {
+            $order = Order::query()
+                ->when($tenantId, fn (Builder $query): Builder => $query->where('tenant_id', $tenantId))
+                ->lockForUpdate()
+                ->find($orderId);
             if (! $this->isEligible($order)) {
                 return null;
             }
@@ -68,7 +72,7 @@ final class BackfillLegacySalesReceipts
                 'created_by' => $order->created_by,
                 'party_id' => $order->customer_id,
                 'type' => 'receipt',
-                'voucher_number' => 'RCV-LEGACY-'.$order->id,
+                'voucher_number' => 'RCV-LEGACY-'.$order->id.'-'.Str::upper(Str::random(8)),
                 'amount' => $amount,
                 'payment_method' => $this->paymentMethod($order),
                 'order_id' => $order->id,

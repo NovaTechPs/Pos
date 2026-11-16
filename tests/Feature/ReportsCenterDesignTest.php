@@ -144,6 +144,39 @@ test('statement document links open invoices and every voucher in its voucher sc
     }
 });
 
+test('opening a legacy sales payment creates and opens its linked receipt without changing the statement balance', function (): void {
+    $order = ($this->makeOrder)([
+        'type' => 'wholesale',
+        'invoice_number' => 'CTR-LEGACY-PAYMENT',
+        'invoice_date' => '2026-10-15',
+        'subtotal' => 100,
+        'total' => 100,
+        'paid_amount' => 60,
+        'payment_status' => 'partial',
+    ]);
+    $ledgerBefore = (new ReportingService($this->user, null, false))->partyLedgerBalance($this->customer->id);
+    $recordedBalance = (float) $this->customer->current_balance;
+
+    $component = Livewire::test('pages::tenant.reports.center')
+        ->call('openStatementDocument', 6, $order->id);
+
+    $receipt = Payment::query()->sole();
+
+    $component->assertDispatched(
+        'open-statement-document',
+        url: route('tenant.receipts', ['voucher' => $receipt->id]),
+        title: 'سند قبض '.$receipt->voucher_number,
+    );
+
+    expect($receipt->type)->toBe('receipt')
+        ->and((int) $receipt->order_id)->toBe($order->id)
+        ->and((int) $receipt->party_id)->toBe($this->customer->id)
+        ->and((float) $receipt->amount)->toBe(60.0)
+        ->and($receipt->payment_date->toDateString())->toBe('2026-10-15')
+        ->and((float) $this->customer->fresh()->current_balance)->toBe($recordedBalance)
+        ->and((new ReportingService($this->user, null, false))->partyLedgerBalance($this->customer->id))->toBe($ledgerBefore);
+});
+
 test('reports export as a PDF download with the report rows', function (): void {
     ($this->makeOrder)(['invoice_number' => 'CTR-PDF']);
 
