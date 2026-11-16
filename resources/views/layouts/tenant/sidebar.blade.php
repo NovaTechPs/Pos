@@ -12,7 +12,7 @@
         aria-modal="true"
         aria-label="القائمة الرئيسية"
         x-on:click="if ($event.target.closest('a[data-flux-sidebar-item]')) tenantNavigationOpen = false"
-        class="fixed inset-y-2 end-2 h-[calc(100dvh-1rem)] w-[min(18rem,calc(100vw-1rem))] gap-3 overflow-y-auto rounded-[1.5rem] border border-slate-200 bg-gradient-to-b from-slate-50 via-white to-blue-50/70 p-3 shadow-2xl dark:border-zinc-700 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-950"
+        class="fixed inset-y-2 right-2 h-[calc(100dvh-1rem)] w-[min(18rem,calc(100vw-1rem))] gap-3 overflow-y-auto rounded-[1.5rem] border border-slate-200 bg-gradient-to-b from-slate-50 via-white to-blue-50/70 p-3 shadow-2xl dark:border-zinc-700 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-950"
     >
         <flux:sidebar.header class="flex-none rounded-2xl border border-slate-200 bg-white px-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <x-app-logo
