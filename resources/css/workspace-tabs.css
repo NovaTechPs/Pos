@@ -54,6 +54,27 @@
 }
 
 @media screen and (min-width: 1024px) {
+    html[data-tenant-shell],
+    body[data-tenant-shell] {
+        block-size: 100dvh;
+        min-block-size: 0;
+        overflow: hidden;
+    }
+
+    body[data-tenant-shell] > [data-workspace-tabs] {
+        block-size: 100%;
+        min-block-size: 0;
+    }
+
+    body[data-tenant-shell] [data-workspace-panels] {
+        overflow: hidden;
+    }
+
+    body[data-tenant-shell] .workspace-initial {
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
     [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] {
         gap: 0.5rem;
     }

@@ -1,8 +1,13 @@
+@php
+    $isWorkspaceFrame = request()->header('Sec-Fetch-Dest') === 'iframe';
+@endphp
+
 <!DOCTYPE html>
 <html
     lang="{{ str_replace('_', '-', app()->getLocale()) }}"
     dir="{{ app()->getLocale() == 'ar' ? 'rtl' : 'ltr' }}"
     data-theme="{{ $appTheme }}"
+    @if (! $isWorkspaceFrame) data-tenant-shell @endif
 >
 <head>
     @include('layouts.partials.head')
@@ -32,10 +37,14 @@
     </style>
 </head>
 
-<body data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" class="{{ (request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+<body
+    @if (! $isWorkspaceFrame) data-tenant-shell @endif
+    data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}"
+    class="{{ $isWorkspaceFrame ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+>
 
     {{-- Sidebar --}}
-    @if (request()->header('Sec-Fetch-Dest') !== 'iframe')
+    @if (! $isWorkspaceFrame)
     @include('layouts.tenant.sidebar')
 
     {{-- Mobile Header / Burger --}}

@@ -16,7 +16,12 @@ beforeEach(function (): void {
 
 test('tenant pages expose one accessible workspace without duplicating the livewire page', function (string $path): void {
     $response = $this->get($path)->assertSuccessful()->assertSee('data-workspace-tabs', false)
-        ->assertSee('role="tablist"', false)->assertSee('فتح قسم')->assertSee('data-workspace-loading', false);
+        ->assertSee('role="tablist"', false)->assertSee('data-workspace-loading', false);
+    if ($path === '/dashboard/pos') {
+        $response->assertSee('فتح قسم')->assertDontSee('data-tenant-shell', false);
+    } else {
+        $response->assertDontSee('فتح قسم')->assertSee('data-tenant-shell', false);
+    }
     $html = $response->getContent();
     $dom = new DOMDocument;
     $dom->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
@@ -32,7 +37,8 @@ test('tenant pages expose one accessible workspace without duplicating the livew
 
 test('framed pages keep their normal permissions and omit nested workspace controls', function (): void {
     $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/product')->assertSuccessful()
-        ->assertDontSee('data-workspace-tabs', false)->assertSee('workspace-frame-body')->assertDontSee('data-flux-sidebar', false);
+        ->assertDontSee('data-workspace-tabs', false)->assertSee('workspace-frame-body')->assertDontSee('data-flux-sidebar', false)
+        ->assertDontSee('data-tenant-shell', false);
     auth()->user()->update(['is_owner' => false]);
     $this->withHeader('Sec-Fetch-Dest', 'iframe')->get('/dashboard/product')->assertForbidden();
 });

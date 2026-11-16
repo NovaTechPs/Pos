@@ -20,6 +20,7 @@ test('authenticated users can visit the dashboard', function () {
     $response = $this->get(route('tenant.dashboard'));
     $response->assertOk()
         ->assertSee('wire:navigate', false)
+        ->assertSee('data-tenant-shell', false)
         ->assertSee('data-tenant-navigation-drawer', false)
         ->assertSee('data-tenant-navigation-trigger', false)
         ->assertSee('data-tenant-navigation', false)
