@@ -657,7 +657,7 @@ test('customer statement dialog keeps all balance columns and responsive transac
     ($this->makePayment)();
     $page = Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $this->customer->id)
         ->assertSee('CUSTOMER-STMT-01')->assertSee('customer-statement-dialog', false)->assertSee('data-label="الرصيد"', false)
-        ->assertSee('إجمالي الحركات')->assertSee('طباعة حرارية')->assertSee('إرسال واتساب');
+        ->assertSee('الإجمالي مع الرصيد الافتتاحي')->assertSee('طباعة حرارية')->assertSee('إرسال واتساب');
     $html = $page->html();
     expect($html)->toContain('aria-labelledby="customer-statement-title"')->toContain('data-label="مدين" dir="ltr"')
         ->toContain('data-label="دائن" dir="ltr"');
@@ -668,6 +668,31 @@ test('customer statement dialog keeps all balance columns and responsive transac
         file_put_contents($previewPath, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'.$css.'</style><body>'.$markup.'</body></html>');
     }
     $page->call('closeStatementModal')->assertSet('showStatementModal', false)->assertDontSee('customer-statement-dialog', false);
+});
+
+test('parties list and statement rows can be walked with the arrow keys', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'ARROW-ORDER']);
+    Livewire::test('pages::tenant.customers.index')
+        ->assertSee('data-party-row="'.$this->customer->id.'"', false)
+        ->assertSee('x-on:keydown.arrow-down.prevent', false)
+        ->call('openStatementModal', $this->customer->id)
+        ->assertSee('data-statement-row', false)
+        ->call('closeStatementModal')
+        ->assertDispatched('statement-closed', id: $this->customer->id);
+});
+
+test('customer statement totals include the opening balance and delivery lines open their invoice', function (): void {
+    $order = ($this->makeOrder)(['invoice_number' => 'TOTALS-ORDER']);
+    $page = Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $this->customer->id);
+    $totals = str($page->html())->after('data-statement-totals')->before('</tfoot>')->toString();
+    $expectedDebit = number_format(10 + max(0, (float) $order->total - (float) $order->delivery_fee), 2);
+    expect($totals)->toContain($expectedDebit);
+
+    $courier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'شركة توصيل', 'type' => 'supplier']);
+    $order->forceFill(['delivery_party_id' => $courier->id])->save();
+    Livewire::test('pages::tenant.customers.index')->call('openStatementModal', $courier->id)
+        ->call('openStatementDocument', 'delivery', $order->id)
+        ->assertDispatched('open-statement-document', url: route('tenant.sale-invoices', ['invoice' => $order->id]));
 });
 
 test('statement stays empty until explicitly displayed and clears when selecting another account or period', function (): void {

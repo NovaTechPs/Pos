@@ -1,3 +1,4 @@
+import './latin-digits.js';
 import './prevent-enter-submit.js';
 import './form-arrow-navigation.js';
 import './workspace-tabs.js';

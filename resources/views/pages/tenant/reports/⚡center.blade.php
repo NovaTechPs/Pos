@@ -463,7 +463,7 @@ new class extends Component {
     @if ($report === 'statement')
     <aside class="reports-account-directory" data-statement-directory>
         <h2><flux:icon.user-group variant="outline" />قائمة العملاء</h2>
-        <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" wire:model.live.debounce.300ms="partySearch" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
+        <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
         <div class="reports-account-types" role="group" aria-label="نوع الحساب">
             @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
                 <button type="button" wire:key="statement-party-type-{{ $type }}" wire:click="$set('statementPartyType', '{{ $type }}')" aria-pressed="{{ $statementPartyType === $type ? 'true' : 'false' }}" class="{{ $statementPartyType === $type ? 'is-active' : '' }}">{{ $label }}</button>
@@ -472,7 +472,7 @@ new class extends Component {
         <flux:select aria-label="فلتر رصيد الحساب" wire:model.live="statementBalanceFilter"><option value="all">كل الأرصدة</option><option value="nonzero">رصيد غير صفري</option></flux:select>
         <p class="reports-directory-hint">دليل الحسابات · ↑ ↓ للتنقل · Enter لعرض الكشف</p>
         <div class="reports-account-labels"><span>الاسم / رقم الحساب</span><span>الرصيد الحالي</span></div>
-        <div class="reports-account-list" x-on:keydown.arrow-down.prevent="move(parties(), 1)" x-on:keydown.arrow-up.prevent="move(parties(), -1)" x-on:keydown.arrow-left.prevent="toStatement()">
+        <div class="reports-account-list" x-on:keydown.arrow-down.prevent="move(parties(), 1)" x-on:keydown.arrow-up.prevent="parties().indexOf(document.activeElement) === 0 ? $root.querySelector('input[data-statement-party-search], [data-statement-party-search] input')?.focus() : move(parties(), -1)" x-on:keydown.arrow-left.prevent="toStatement()">
             @forelse ($statementParties as $party)
                 <button type="button" data-statement-party data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" aria-pressed="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:key="statement-party-{{ $party->id }}" wire:click="showStatementParty({{ $party->id }})" wire:keydown.enter.prevent.stop="showStatementParty({{ $party->id }})" class="reports-account-row {{ (int) $partyId === (int) $party->id ? 'is-selected' : '' }}">
                     <span><strong>{{ $party->name }}</strong><small>{{ $party->code ?: 'بدون رمز' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? $party->type }}</small></span><b dir="ltr">{{ number_format((float) $party->current_balance, 2) }}</b>
@@ -642,7 +642,7 @@ new class extends Component {
             window.location.assign(url);
             return;
         }
-        shell.dispatchEvent(new CustomEvent('workspace:open-page', { detail: { url, title: title || 'المستند' } }));
+        shell.dispatchEvent(new shell.CustomEvent('workspace:open-page', { detail: { url, title: title || 'المستند' } }));
     });
 </script>
 @endscript

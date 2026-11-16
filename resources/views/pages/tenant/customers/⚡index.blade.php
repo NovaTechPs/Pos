@@ -838,6 +838,10 @@ new class extends Component {
     {
         $this->showStatementModal = false;
 
+        if ($this->selectedPartyForStatement) {
+            $this->dispatch('statement-closed', id: $this->selectedPartyForStatement->id);
+        }
+
         $this->selectedPartyForStatement = null;
     }
 
@@ -855,6 +859,17 @@ new class extends Component {
             $this->dispatch(
                 'open-statement-document',
                 url: route($route, $route === 'tenant.pos' ? ['invoice' => $order->id, 'customer_copy' => 1] : ['invoice' => $order->id]),
+                title: 'فاتورة مبيعات '.$order->invoice_number,
+            );
+
+            return;
+        }
+
+        if ($sourceType === 'delivery') {
+            $order = Order::query()->where('tenant_id', $tenantId)->where('delivery_party_id', $partyId)->findOrFail($sourceId);
+            $this->dispatch(
+                'open-statement-document',
+                url: route('tenant.sale-invoices', ['invoice' => $order->id]),
                 title: 'فاتورة مبيعات '.$order->invoice_number,
             );
 
@@ -1361,6 +1376,7 @@ new class extends Component {
                     <input
                         type="text"
                         wire:model.live.debounce.300ms="search"
+                        x-on:keydown.arrow-down.prevent="document.querySelector('[data-party-row]')?.focus()"
                         placeholder="ابحث بالرمز، الاسم، الهاتف، العنوان أو الرقم الضريبي..."
                         class="w-full pl-4 pr-10 py-2.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600"
                     >
@@ -1493,6 +1509,7 @@ new class extends Component {
 
 
                 <tbody
+                    x-data data-party-rows x-on:statement-closed.window="$nextTick(() => $el.querySelector(`[data-party-row='${$event.detail.id}']`)?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
                     class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm"
                 >
 
@@ -1500,7 +1517,8 @@ new class extends Component {
 
                         <tr
                             wire:key="party-{{ $party->id }}"
-                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition"
+                            tabindex="0" data-nav-row data-party-row="{{ $party->id }}" x-on:keydown.enter.self.prevent="$wire.openStatementModal({{ $party->id }})"
+                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition focus:outline-none focus:bg-indigo-50 dark:focus:bg-indigo-950/30"
                         >
 
                             <td
@@ -2352,6 +2370,7 @@ new class extends Component {
 
 
                                 <tbody
+                                    x-data x-init="$nextTick(() => $el.querySelector('[data-nav-row]')?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
                                     class="divide-y divide-gray-100 dark:divide-gray-700"
                                 >
 
@@ -2425,9 +2444,9 @@ new class extends Component {
                                         @endphp
 
                                         <tr
-                                            wire:key="customer-statement-{{ $item['source_type'] }}-{{ $item['source_id'] }}-{{ $loop->index }}" tabindex="0" x-on:keydown.enter.prevent="$el.click()"
+                                            wire:key="customer-statement-{{ $item['source_type'] }}-{{ $item['source_id'] }}-{{ $loop->index }}" tabindex="0" data-nav-row data-statement-row x-on:keydown.enter.prevent="$el.click()"
                                             wire:click="openStatementDocument('{{ $item['source_type'] }}', {{ $item['source_id'] }})"
-                                            class="cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                                            class="cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30 focus:outline-none focus:bg-indigo-50 dark:focus:bg-indigo-950/30"
                                         >
 
                                             <td data-label="التاريخ"
@@ -2518,7 +2537,7 @@ new class extends Component {
                                     @endif
 
                                 </tbody>
-                                <tfoot><tr><th colspan="3">إجمالي الحركات</th><td dir="ltr">{{ number_format($statementTransactions->sum('debit'), 2) }}</td><td dir="ltr">{{ number_format($statementTransactions->sum('credit'), 2) }}</td><td dir="ltr">{{ number_format($statementData['final_balance'], 2) }}</td></tr></tfoot>
+                                <tfoot data-statement-totals><tr><th colspan="3">الإجمالي مع الرصيد الافتتاحي</th><td dir="ltr">{{ number_format($statementTransactions->sum('debit') + max(0, $statementData['opening_balance']), 2) }}</td><td dir="ltr">{{ number_format($statementTransactions->sum('credit') + max(0, -$statementData['opening_balance']), 2) }}</td><td dir="ltr">{{ number_format($statementData['final_balance'], 2) }}</td></tr></tfoot>
 
                             </table>
                             </div>
@@ -2742,14 +2761,18 @@ new class extends Component {
         // The customer statement can itself be displayed inside a workspace
         // iframe. Ask the top-level WaslaPOS workspace to create its own tab,
         // rather than opening a separate browser tab.
+        let shell = window;
         try {
-            const workspace = window.top || window;
-            workspace.dispatchEvent(new CustomEvent('workspace:open-page', {
-                detail: { url, title: title || 'المستند' },
-            }));
-        } catch (_) {
+            if (window.top !== window && window.top.document.querySelector('.workspace-shell')) shell = window.top;
+        } catch (_) {}
+        if (!shell.document.querySelector('.workspace-shell')) {
             window.location.assign(url);
+            return;
         }
+        // Build the event in the shell's own window so its listener always receives it.
+        shell.dispatchEvent(new shell.CustomEvent('workspace:open-page', {
+            detail: { url, title: title || 'المستند' },
+        }));
     });
 
 </script>

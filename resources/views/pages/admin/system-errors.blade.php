@@ -3,7 +3,7 @@
         <div class="mx-auto flex w-full max-w-5xl flex-col gap-5" dir="rtl">
             <div>
                 <flux:heading size="xl">أخطاء النظام</flux:heading>
-                <flux:text class="mt-2">لإدارة المنصة فقط. آخر ٥٠ خطأ من نهاية الملف المحدد، والأحدث أولًا.</flux:text>
+                <flux:text class="mt-2">لإدارة المنصة فقط. آخر 50 خطأ من نهاية الملف المحدد، والأحدث أولًا.</flux:text>
             </div>
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
                 تُعرض أنواع الاستثناءات وأماكنها فقط. تُحجب نصوص الطلبات والاستعلامات والرسائل الحرة لحماية كلمات المرور وبيانات العملاء.
@@ -43,7 +43,7 @@
                 </section>
             @empty
                 <div role="status" class="rounded-xl border border-zinc-200 p-6 text-center text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
-                    لا توجد أخطاء قابلة للعرض في آخر ٢٥٦ كيلوبايت من الملف. إذا لم توجد ملفات، تحقق من صلاحية كتابة مجلد storage/logs، ثم حدّث الصفحة بعد حدوث الخطأ.
+                    لا توجد أخطاء قابلة للعرض في آخر 256 كيلوبايت من الملف. إذا لم توجد ملفات، تحقق من صلاحية كتابة مجلد storage/logs، ثم حدّث الصفحة بعد حدوث الخطأ.
                 </div>
             @endforelse
         </div>
