@@ -329,25 +329,29 @@ new class extends Component {
         */
 
         if ($this->partyId) {
-            $party = Party::query()
-                ->where('tenant_id', $tenantId)
-                ->findOrFail($this->partyId);
-
             /*
-             * الرصيد الافتتاحي ثابت بعد الإنشاء.
-             *
-             * لا نسمح بتغييره.
-             */
-            unset($validated['opening_balance']);
-
-            /*
-             * current_balance لا يتم تعديله هنا.
-             *
-             * يتم تغييره فقط بواسطة العمليات المالية.
+             * تعديل الرصيد الافتتاحي يحرّك الرصيد الحالي بنفس الفرق،
+             * حتى يبقى كشف الحساب مطابقاً للرصيد المسجّل.
+             * current_balance لا يُعدَّل مباشرة من هنا.
              */
             unset($validated['current_balance']);
 
-            $party->update($validated);
+            DB::transaction(function () use ($validated, $tenantId): void {
+                $party = Party::query()
+                    ->where('tenant_id', $tenantId)
+                    ->lockForUpdate()
+                    ->findOrFail($this->partyId);
+
+                $newOpeningBalance = round((float) ($validated['opening_balance'] ?? 0), 2);
+                $difference = round($newOpeningBalance - (float) $party->opening_balance, 2);
+                $validated['opening_balance'] = $newOpeningBalance;
+
+                if (abs($difference) >= 0.005) {
+                    $validated['current_balance'] = round((float) $party->current_balance + $difference, 2);
+                }
+
+                $party->update($validated);
+            });
 
             session()->flash(
                 'message',
@@ -2004,23 +2008,6 @@ new class extends Component {
                             </label>
 
 
-                            @if ($partyId)
-
-                                <div
-                                    class="w-full border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 rounded-lg p-2.5 text-sm text-gray-700 dark:text-gray-300"
-                                >
-                                    {{ number_format((float) $opening_balance, 2) }}
-                                    شيكل
-                                </div>
-
-                                <p
-                                    class="text-[11px] text-gray-500 dark:text-gray-400 mt-1"
-                                >
-                                    الرصيد الافتتاحي ثابت ولا يتغير بعد إنشاء الطرف.
-                                </p>
-
-                            @else
-
                                 <div class="relative">
 
                                     <input
@@ -2043,7 +2030,11 @@ new class extends Component {
                                 <p
                                     class="text-[11px] text-gray-500 dark:text-gray-400 mt-1"
                                 >
-                                    عند إنشاء الطرف سيبدأ الرصيد الحالي بنفس قيمة الرصيد الافتتاحي.
+                                    @if ($partyId)
+                                        عند تغيير الرصيد الافتتاحي يتحرك الرصيد الحالي بنفس الفرق.
+                                    @else
+                                        عند إنشاء الطرف سيبدأ الرصيد الحالي بنفس قيمة الرصيد الافتتاحي.
+                                    @endif
                                 </p>
 
                                 @error('opening_balance')
@@ -2053,8 +2044,6 @@ new class extends Component {
                                     </span>
 
                                 @enderror
-
-                            @endif
 
                         </div>
 

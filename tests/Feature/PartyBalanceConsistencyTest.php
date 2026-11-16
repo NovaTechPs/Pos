@@ -163,3 +163,21 @@ test('employees do not start the check or see the alert', function (): void {
 
     $this->actingAs($employee)->get(route('tenant.dashboard'))->assertOk()->assertDontSee('data-party-balance-alert', false);
 });
+
+test('editing the opening balance moves the current balance by the same difference', function (): void {
+    $this->customer->update(['opening_balance' => 100, 'current_balance' => 340]);
+
+    Livewire::test('pages::tenant.customers.index')
+        ->call('editParty', $this->customer->id)
+        ->assertSet('opening_balance', 100.0)
+        ->set('opening_balance', 150)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $customer = $this->customer->fresh();
+    expect((float) $customer->opening_balance)->toBe(150.0)
+        ->and((float) $customer->current_balance)->toBe(390.0);
+
+    Livewire::test('pages::tenant.customers.index')->call('editParty', $this->customer->id)->set('name', 'Customer renamed')->call('save');
+    expect((float) $this->customer->fresh()->current_balance)->toBe(390.0);
+});
