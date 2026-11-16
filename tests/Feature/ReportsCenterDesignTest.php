@@ -116,7 +116,9 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->assertDontSee('ملاحظات حول طريقة احتساب الكشف')
         ->assertDontSee('الرصيد المسجل حالياً')
         ->assertDontSeeHtml('reports-ledger-totals')
-        ->assertDontSeeHtml('reports-ledger-footer');
+        ->assertDontSeeHtml('reports-ledger-footer')
+        ->assertSeeHtml('data-statement-party-search')
+        ->assertSeeHtml('$wire.$commit()');
 
     $html = $component->html();
     preg_match('/<tr data-statement-total>.*?<\/tr>/s', $html, $total);
@@ -184,5 +186,5 @@ test('reports export as a PDF download with the report rows', function (): void 
         ->assertOk()->assertHeader('Content-Type', 'application/pdf');
 
     expect($response->streamedContent())->toStartWith('%PDF')
-        ->and($response->headers->get('Content-Disposition'))->toContain('report-statement-2026-10-01-2026-10-30.pdf');
+        ->and($response->headers->get('Content-Disposition'))->toContain(rawurlencode('كشف حساب '.$this->customer->name.' 2026-10-01 - 2026-10-30.pdf'));
 });

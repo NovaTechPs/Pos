@@ -24,7 +24,10 @@ beforeEach(function (): void {
 test('pdf file names use the party name then the document number', function (): void {
     expect(PdfFilename::forDocument('محمد للتجارة', 'SAL-1', 'زبون عام'))->toBe('محمد للتجارة - SAL-1.pdf')
         ->and(PdfFilename::forDocument(null, 'SAL-2', 'زبون عام'))->toBe('زبون عام - SAL-2.pdf')
-        ->and(PdfFilename::forDocument('  شركة/النور: "فرع"  ', 'PUR?3', 'مورد عام'))->toBe('شركة-النور- -فرع - PUR-3.pdf');
+        ->and(PdfFilename::forDocument('  شركة/النور: "فرع"  ', 'PUR?3', 'مورد عام'))->toBe('شركة-النور- -فرع - PUR-3.pdf')
+        ->and(PdfFilename::forDocument('عيسى', 'A1-7', 'زبون عام', 'فاتورة مبيعات'))->toBe('فاتورة مبيعات عيسى - A1-7.pdf')
+        ->and(PdfFilename::forDocument(null, 'RV-1', 'سند قبض', 'سند قبض'))->toBe('سند قبض - RV-1.pdf')
+        ->and(PdfFilename::forReport('كشف حساب', 'عيسى', '2026-11-01', '2026-11-17'))->toBe('كشف حساب عيسى 2026-11-01 - 2026-11-17.pdf');
 });
 
 test('sales invoice pdf shows item numbers in right-to-left column order with latin digits', function (): void {
@@ -65,10 +68,10 @@ test('invoice and voucher pdf downloads are named after the party and the docume
     $payment = Payment::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $party->id, 'created_by' => $this->user->id, 'type' => 'payment', 'amount' => 5, 'payment_method' => 'cash', 'payment_date' => now(), 'voucher_number' => 'PV-500']);
 
     $downloads = [
-        route('tenant.sale-invoices.pdf', ['orderId' => $order->id]) => 'أبو أحمد للتجارة - SAL-500.pdf',
-        route('tenant.purchase-invoices.pdf', ['purchaseId' => $purchase->id]) => 'أبو أحمد للتجارة - PUR-500.pdf',
-        route('tenant.vouchers.pdf', ['type' => 'receipt', 'paymentId' => $receipt->id]) => 'أبو أحمد للتجارة - RV-500.pdf',
-        route('tenant.vouchers.pdf', ['type' => 'payment', 'paymentId' => $payment->id]) => 'أبو أحمد للتجارة - PV-500.pdf',
+        route('tenant.sale-invoices.pdf', ['orderId' => $order->id]) => 'فاتورة مبيعات أبو أحمد للتجارة - SAL-500.pdf',
+        route('tenant.purchase-invoices.pdf', ['purchaseId' => $purchase->id]) => 'فاتورة مشتريات أبو أحمد للتجارة - PUR-500.pdf',
+        route('tenant.vouchers.pdf', ['type' => 'receipt', 'paymentId' => $receipt->id]) => 'سند قبض أبو أحمد للتجارة - RV-500.pdf',
+        route('tenant.vouchers.pdf', ['type' => 'payment', 'paymentId' => $payment->id]) => 'سند صرف أبو أحمد للتجارة - PV-500.pdf',
     ];
 
     foreach ($downloads as $url => $filename) {

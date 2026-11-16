@@ -27,7 +27,7 @@ test('printed sales invoices show the product number and are titled with the cus
 
     Livewire::test('pages::tenant.sales.invoices')->set('currentOrderId', $order->id)->call('printCurrentInvoice')
         ->assertDispatched('print-sales-invoice', fn (string $name, array $params): bool => $params['invoice']['items'][0]['product_number'] === 'I00000207'
-            && $params['invoice']['file_title'] === 'ابو هاشم ياسين - SAL-PRINT-1')
+            && $params['invoice']['file_title'] === 'فاتورة مبيعات ابو هاشم ياسين - SAL-PRINT-1')
         ->assertSee('رقم الصنف');
 });
 
@@ -39,7 +39,7 @@ test('printed purchase invoices show the product number and are titled with the 
 
     Livewire::test('pages::tenant.purchases.invoices')->set('currentPurchaseId', $id)->call('printCurrentInvoice')
         ->assertDispatched('print-purchase-invoice', fn (string $name, array $params): bool => $params['invoice']['items'][0]['product_number'] === 'I00000207'
-            && $params['invoice']['file_title'] === 'مورد الطباعة - PUR-PRINT-1');
+            && $params['invoice']['file_title'] === 'فاتورة مشتريات مورد الطباعة - PUR-PRINT-1');
 });
 
 test('invoice prints use the same PDF as the download, shown inline for printing', function (): void {
@@ -57,8 +57,8 @@ test('invoice prints use the same PDF as the download, shown inline for printing
     $inline = $this->get($url.'?inline=1')->assertOk()->assertHeader('Content-Type', 'application/pdf');
     expect($inline->headers->get('Content-Disposition'))->toStartWith('inline;')
         ->and($inline->streamedContent())->toStartWith('%PDF');
-    expect($this->get($url)->headers->get('Content-Disposition'))->toStartWith('attachment;')->toContain("filename*=utf-8''".rawurlencode('زبون الطباعة - SAL-INLINE.pdf'));
-    expect($inline->headers->get('Content-Disposition'))->toContain("filename*=utf-8''".rawurlencode('زبون الطباعة - SAL-INLINE.pdf'));
+    expect($this->get($url)->headers->get('Content-Disposition'))->toStartWith('attachment;')->toContain("filename*=utf-8''".rawurlencode('فاتورة مبيعات زبون الطباعة - SAL-INLINE.pdf'));
+    expect($inline->headers->get('Content-Disposition'))->toContain("filename*=utf-8''".rawurlencode('فاتورة مبيعات زبون الطباعة - SAL-INLINE.pdf'));
 });
 
 test('purchase prints carry their PDF and return prints request the return PDF', function (): void {

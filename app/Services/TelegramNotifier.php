@@ -86,7 +86,7 @@ class TelegramNotifier
             return;
         }
         $party = Party::withoutGlobalScopes()->find($order->customer_id);
-        $filename = PdfFilename::forDocument($party?->name, $order->invoice_number, 'زبون');
+        $filename = PdfFilename::forDocument($party?->name, $order->invoice_number, 'زبون', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات');
         $pdf = app('dompdf.wrapper')->loadView('pages.tenant.pos.partials.invoice-pdf', [
             'order' => $order,
             'accountBalance' => $party?->current_balance,

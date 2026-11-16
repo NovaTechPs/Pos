@@ -23,7 +23,7 @@ class ShopInvoiceController extends Controller
             ->whereNull('deleted_at')->where('status', 'completed')->whereKey($order)
             ->with(['items' => fn ($items) => $items->withoutGlobalScopes(), 'items.product' => fn ($product) => $product->withoutGlobalScopes(), 'user', 'branch'])
             ->firstOrFail();
-        $filename = PdfFilename::forDocument($account->party?->name, $invoice->invoice_number, 'زبون');
+        $filename = PdfFilename::forDocument($account->party?->name, $invoice->invoice_number, 'زبون', $invoice->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات');
 
         return response()->streamDownload(function () use ($invoice, $account, $filename): void {
             echo app('dompdf.wrapper')->loadView('pages.tenant.pos.partials.invoice-pdf', [

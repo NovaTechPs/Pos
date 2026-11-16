@@ -1782,7 +1782,7 @@ new class extends Component {
                 'number' => $order->invoice_number,
                 'date' => $order->invoice_date?->format('Y-m-d') ?? $order->created_at?->format('Y-m-d H:i'),
                 'customer' => $order->customer_name ?: 'زبون عام',
-                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($order->customer_name ?: $customer?->name, $order->invoice_number, 'زبون عام'), '.pdf'),
+                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($order->customer_name ?: $customer?->name, $order->invoice_number, 'زبون عام', 'فاتورة مبيعات'), '.pdf'),
                 'phone' => $order->customer_phone,
                 'notes' => $order->notes,
                 'items' => $items,
@@ -1872,7 +1872,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'));
+        }, \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات'));
     }
 
     public function shareInvoicePdf(): void
@@ -1890,7 +1890,7 @@ new class extends Component {
         $this->dispatch(
             'share-invoice-pdf',
             url: route('tenant.sale-invoices.pdf', ['orderId' => $this->currentOrderId]),
-            filename: \App\Services\PdfFilename::forDocument($customerName, $this->invoiceNumber, 'زبون عام'),
+            filename: \App\Services\PdfFilename::forDocument($customerName, $this->invoiceNumber, 'زبون عام', 'فاتورة مبيعات'),
             message: 'مرفق فاتورة مبيعات رقم '.$this->invoiceNumber
         );
     }

@@ -1831,7 +1831,7 @@ new class extends Component {
                 'number' => $purchase->reference_number,
                 'date' => $purchase->invoice_date ?: $purchase->created_at,
                 'supplier' => $supplierName,
-                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($supplier?->name, $purchase->reference_number, 'مورد عام'), '.pdf'),
+                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($supplier?->name, $purchase->reference_number, 'مورد عام', 'فاتورة مشتريات'), '.pdf'),
                 'notes' => $purchase->notes ?? null,
                 'items' => $items,
                 'subtotal' => array_sum(array_map(fn ($item) => (float) $item['total'], $items)),
@@ -1902,7 +1902,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, \App\Services\PdfFilename::forDocument($supplierName, $purchase->reference_number, 'مورد عام'));
+        }, \App\Services\PdfFilename::forDocument($supplierName, $purchase->reference_number, 'مورد عام', 'فاتورة مشتريات'));
     }
 
     public function shareInvoicePdf(): void
@@ -1916,7 +1916,7 @@ new class extends Component {
         $this->dispatch(
             'share-invoice-pdf',
             url: route('tenant.purchase-invoices.pdf', ['purchaseId' => $this->currentPurchaseId]),
-            filename: \App\Services\PdfFilename::forDocument($this->selectedSupplierId ? Party::query()->where('tenant_id', $this->tenantId())->whereKey($this->selectedSupplierId)->value('name') : null, $this->invoiceNumber, 'مورد عام'),
+            filename: \App\Services\PdfFilename::forDocument($this->selectedSupplierId ? Party::query()->where('tenant_id', $this->tenantId())->whereKey($this->selectedSupplierId)->value('name') : null, $this->invoiceNumber, 'مورد عام', 'فاتورة مشتريات'),
             message: 'مرفق فاتورة مشتريات رقم '.$this->invoiceNumber
         );
     }

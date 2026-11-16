@@ -389,7 +389,7 @@ new class extends Component {
             'print-wholesale-invoice',
             data: [
                 'pdf_url' => route('tenant.sale-invoices.pdf', ['orderId' => $order->id]),
-                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($order->customer_name ?: $order->party?->name, $order->invoice_number, 'زبون عام'), '.pdf'),
+                'file_title' => \Illuminate\Support\Str::beforeLast(\App\Services\PdfFilename::forDocument($order->customer_name ?: $order->party?->name, $order->invoice_number, 'زبون عام', 'فاتورة مبيعات'), '.pdf'),
                 'store_name' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
                 'title' => 'فاتورة مبيعات جملة',
                 'invoice_number' => $order->invoice_number,

@@ -539,7 +539,7 @@ new class extends Component
     {
         Gate::authorize('returns.view');
         abort_unless($this->currentReturnId && $this->returnQuery()->where('id', $this->currentReturnId)->exists(), 404);
-        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: PdfFilename::forDocument($this->selectedPartyName, $this->invoiceNumber, $this->kind === 'sale' ? 'زبون' : 'مورد'));
+        $this->dispatch('share-return-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $this->currentReturnId]), filename: PdfFilename::forDocument($this->selectedPartyName, $this->invoiceNumber, $this->kind === 'sale' ? 'زبون' : 'مورد', $this->kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات'));
     }
 
     public function copyReturn(): void
@@ -973,7 +973,7 @@ new class extends Component
         ];
         $this->showPrint = true;
         $this->dispatch('print-pdf', url: route('tenant.returns.pdf', ['kind' => $this->kind, 'returnId' => $return->id]),
-            title: Str::beforeLast(PdfFilename::forDocument($party?->name, $this->printData['number'], $this->kind === 'sale' ? 'زبون' : 'مورد'), '.pdf'));
+            title: Str::beforeLast(PdfFilename::forDocument($party?->name, $this->printData['number'], $this->kind === 'sale' ? 'زبون' : 'مورد', $this->kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات'), '.pdf'));
     }
 
     public function render(): View

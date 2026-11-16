@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PdfFilename;
 use App\Services\ReportingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,11 @@ class ReportPrintController extends Controller
             'branchName' => $service->branchId ? DB::table('branches')->where('tenant_id', $service->tenantId)->where('id', $service->branchId)->value('name') : 'كل الفروع'];
 
         if ($request->input('format') === 'pdf') {
+            $partyName = $request->integer('party_id') > 0
+                ? DB::table('parties')->where('tenant_id', $service->tenantId)->where('id', $request->integer('party_id'))->value('name')
+                : null;
+            $data['filename'] = PdfFilename::forReport($report === 'statement' ? 'كشف حساب' : $data['title'], $partyName, $data['from'], $data['to']);
+
             return $this->pdf($report, $data);
         }
 
@@ -51,6 +57,6 @@ class ReportPrintController extends Controller
 
         return response()->streamDownload(function () use ($data): void {
             echo app('dompdf.wrapper')->loadView('pages.tenant.reports.pdf', $data)->setPaper('a4', 'landscape')->output();
-        }, 'report-'.$report.'-'.$data['from'].'-'.$data['to'].'.pdf', ['Content-Type' => 'application/pdf', 'Cache-Control' => 'private, no-store']);
+        }, $data['filename'], ['Content-Type' => 'application/pdf', 'Cache-Control' => 'private, no-store']);
     }
 }

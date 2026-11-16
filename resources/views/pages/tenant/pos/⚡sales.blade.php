@@ -4884,7 +4884,7 @@ new class extends Component {
             phone: $phone,
             message: $message,
             pdfUrl: route('tenant.sale-invoices.pdf', ['orderId' => $order->id]),
-            filename: \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'),
+            filename: \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات'),
         );
     }
 
@@ -4933,7 +4933,7 @@ new class extends Component {
             ]);
 
             echo $pdf->output();
-        }, \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'));
+        }, \App\Services\PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات'));
     }
 
     /** @return array{local: array<int, float|null>, shared: array<int, float|null>} */

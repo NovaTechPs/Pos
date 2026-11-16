@@ -35,7 +35,7 @@ class TenantInvoicePdfController extends Controller
             'order' => $order,
             'accountBalance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
             'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
-        ], PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام'));
+        ], PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات'));
     }
 
     public function purchase(Request $request, int $purchaseId): mixed
@@ -65,7 +65,7 @@ class TenantInvoicePdfController extends Controller
             'supplierName' => $supplierName ?: 'مورد عام',
             'accountBalance' => $purchase->supplier_id ? Party::query()->where('tenant_id', $purchase->tenant_id)->whereKey($purchase->supplier_id)->value('current_balance') : null,
             'storeName' => $branchName ?: Tenant::query()->whereKey($purchase->tenant_id)->value('name') ?: 'المتجر',
-        ], PdfFilename::forDocument($supplierName, $purchase->reference_number, 'مورد عام'));
+        ], PdfFilename::forDocument($supplierName, $purchase->reference_number, 'مورد عام', 'فاتورة مشتريات'));
     }
 
     public function voucher(Request $request, string $type, int $paymentId): mixed
@@ -78,7 +78,7 @@ class TenantInvoicePdfController extends Controller
             ->with(['party', 'creator', 'branch', 'tenant'])->findOrFail($paymentId);
 
         return $this->pdfResponse($request, 'pages.tenant.accounting.partials.voucher-pdf', ['voucher' => $voucher],
-            PdfFilename::forDocument($voucher->party?->name, $voucher->voucher_number ?: (string) $voucher->id, $type === 'receipt' ? 'سند قبض' : 'سند صرف'));
+            PdfFilename::forDocument($voucher->party?->name, $voucher->voucher_number ?: (string) $voucher->id, $type === 'receipt' ? 'سند قبض' : 'سند صرف', $type === 'receipt' ? 'سند قبض' : 'سند صرف'));
     }
 
     public function returns(Request $request, string $kind, int $returnId): mixed
@@ -105,7 +105,7 @@ class TenantInvoicePdfController extends Controller
         $showTax = TenantSetting::getBool($tenantId, 'show_tax', true);
 
         return $this->pdfResponse($request, 'pages.tenant.returns.partials.invoice-pdf', compact('return', 'items', 'party', 'branchName', 'kind', 'showTax'),
-            PdfFilename::forDocument($party?->name ?? ($kind === 'sale' ? ($return->customer_name ?? null) : null), $kind === 'sale' ? $return->invoice_number : $return->reference_number, $kind === 'sale' ? 'زبون' : 'مورد'));
+            PdfFilename::forDocument($party?->name ?? ($kind === 'sale' ? ($return->customer_name ?? null) : null), $kind === 'sale' ? $return->invoice_number : $return->reference_number, $kind === 'sale' ? 'زبون' : 'مورد', $kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات'));
     }
 
     /**

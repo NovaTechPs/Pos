@@ -49,7 +49,7 @@ test('sending a point of sale invoice by WhatsApp hands the browser the invoice 
         ->assertDispatched('whatsapp-invoice',
             phone: '972599123456',
             pdfUrl: route('tenant.sale-invoices.pdf', ['orderId' => $this->own->id]),
-            filename: 'أبو أحمد - POS-OWN-1.pdf')
+            filename: 'فاتورة مبيعات أبو أحمد - POS-OWN-1.pdf')
         ->assertSeeHtml('window.posSharesInvoiceFile?.() ? null : window.open');
 
     expect(file_get_contents(resource_path('views/pages/tenant/pos/⚡sales.blade.php')))

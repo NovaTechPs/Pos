@@ -267,8 +267,9 @@ test('return PDFs are downloadable and tenant scoped', function (string $kind): 
     $id = $component->get('lastSavedReturnId');
     $component->call('loadReturn', $id);
     $url = route('tenant.returns.pdf', ['kind' => $kind, 'returnId' => $id]);
-    $filename = 'Return account - '.$component->get('invoiceNumber').'.pdf';
-    $response = $this->get($url)->assertOk()->assertDownload($filename);
+    $filename = ($kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات').' Return account - '.$component->get('invoiceNumber').'.pdf';
+    $response = $this->get($url)->assertOk();
+    expect($response->headers->get('content-disposition'))->toStartWith('attachment;')->toContain("filename*=utf-8''".rawurlencode($filename));
     expect($response->streamedContent())->toStartWith('%PDF');
     $component->call('shareInvoicePdf')->assertDispatched('share-return-pdf', filename: $filename);
     $return = DB::table($kind === 'sale' ? 'orders' : 'purchase_returns')->find($id);

@@ -119,7 +119,7 @@ test('voucher print and download include the signed account balance', function (
     expect($html)->toContain(number_format($balance, 2), 'V-123');
     $response = $this->get(route('tenant.vouchers.pdf', ['type' => $type, 'paymentId' => $voucher->id]));
     $response->assertSuccessful();
-    expect($response->headers->get('content-disposition'))->toContain("filename*=utf-8''".rawurlencode('الحساب - V-123.pdf'));
+    expect($response->headers->get('content-disposition'))->toContain("filename*=utf-8''".rawurlencode(($type === 'receipt' ? 'سند قبض' : 'سند صرف').' الحساب - V-123.pdf'));
     expect($response->streamedContent())->toStartWith('%PDF-');
 })->with(['receipt', 'payment'])->with([125.0, 0.0, -50.0]);
 
@@ -182,7 +182,7 @@ test('invoice pdf downloads receive the current signed account balance', functio
     if ($fromPage) {
         Livewire::test('pages::tenant.'.($kind === 'sales' ? 'sales' : 'purchases').'.invoices')
             ->set($kind === 'sales' ? 'currentOrderId' : 'currentPurchaseId', $invoice->id)
-            ->call('downloadInvoicePdf')->assertFileDownloaded('الحساب - PDF-BAL.pdf');
+            ->call('downloadInvoicePdf')->assertFileDownloaded(($kind === 'sales' ? 'فاتورة مبيعات' : 'فاتورة مشتريات').' الحساب - PDF-BAL.pdf');
     } else {
         $response = $this->get($url)->assertSuccessful();
         expect($response->streamedContent())->toBe('%PDF-test');
