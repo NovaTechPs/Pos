@@ -622,9 +622,9 @@ test('report center shows the actual selected account statement in the redesigne
     }
 });
 
-test('statements of a supplier who also buys from the store match the recorded balance and show invoice payments as their own lines', function (): void {
+test('statements of a supplier who also buys from the store match the recorded balance and open legacy invoice payments as receipts', function (): void {
     // Opening 100 owed to the supplier; a 600 sale paid at the till without a voucher; an unpaid 1800 sale; an unpaid 112 purchase.
-    ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-SALE-PAID', 'total' => 600, 'paid_amount' => 600, 'type' => 'wholesale']);
+    $paidSaleOrder = ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-SALE-PAID', 'total' => 600, 'paid_amount' => 600, 'type' => 'wholesale']);
     ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-SALE-OPEN', 'total' => 1800, 'type' => 'wholesale']);
     Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'SUP-PUR', 'total' => 112, 'paid_amount' => 0, 'created_at' => '2026-10-16']);
     ($this->makeOrder)(['customer_id' => $this->supplier->id, 'invoice_number' => 'SUP-DRAFT', 'total' => 999, 'status' => 'pending']);
@@ -646,8 +646,10 @@ test('statements of a supplier who also buys from the store match the recorded b
         ->and((float) $report['summary']['رصيد آخر الفترة'])->toBe(1588.0)
         ->and((float) $report['summary']['فرق المطابقة الحالي'])->toBe(0.0);
 
-    Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id)
-        ->assertDispatched('open-statement-document', url: route('tenant.sale-invoices', ['invoice' => $paidSale->last()->source_id]), title: 'فاتورة مبيعات SUP-SALE-PAID');
+    $page = Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 6, $paidSale->last()->source_id);
+    $receipt = Payment::query()->where('tenant_id', $this->tenant->id)->where('order_id', $paidSaleOrder->id)->where('type', 'receipt')->sole();
+
+    $page->assertDispatched('open-statement-document', url: route('tenant.receipts', ['voucher' => $receipt->id]), title: 'سند قبض '.$receipt->voucher_number);
 });
 
 test('customer statement dialog keeps all balance columns and responsive transaction cards', function (): void {

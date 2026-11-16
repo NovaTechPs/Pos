@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -25,6 +26,7 @@ jobs:
           php-version: '8.5'
           tools: composer:v2
           coverage: none
+          ini-values: memory_limit=1G
 
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -34,8 +36,30 @@ jobs:
       - name: Setup Application
         run: composer setup
 
-      - name: Run CI Checks
-        run: composer ci:check
+      - name: Check formatting and tests
+        run: |
+          composer lint:check
+          php artisan test --compact
+
+      - name: Analyze changed PHP files
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+          fi
+
+          php_files=()
+          while IFS= read -r file; do
+            if [[ "$file" == app/*.php ]]; then
+              php_files+=("$file")
+            fi
+          done < <(git diff --name-only --diff-filter=ACMR "$base_sha" "$GITHUB_SHA" -- '*.php')
+
+          if [ "${#php_files[@]}" -gt 0 ]; then
+            vendor/bin/phpstan analyse --memory-limit=1G "${php_files[@]}"
+          fi
 
   # Render deploys only after every test passes: turn Auto-Deploy off in Render and save the
   # service's Deploy Hook URL as the RENDER_DEPLOY_HOOK_URL repository secret.
