@@ -53,6 +53,44 @@
     .workspace-panels > [hidden] { display: none !important; }
 }
 
+@media screen and (min-width: 1024px) {
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] {
+        gap: 0.5rem;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-flux-sidebar-header] {
+        padding: 0.25rem;
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-context],
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-footer],
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-account] {
+        display: none;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation] {
+        padding-inline: 0;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-group] {
+        border: 0;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-group] > summary {
+        justify-content: center;
+        padding: 0.625rem;
+    }
+
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-group] > summary > span > span,
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-chevron],
+    [data-tenant-navigation-drawer][data-flux-sidebar-collapsed-desktop] [data-tenant-navigation-group] > div {
+        display: none !important;
+    }
+}
+
 @media screen {
     .workspace-frame-body.pos-shell { display: flex !important; flex-direction: column; height: 100dvh; }
     .workspace-frame-body.pos-shell > main { height: 100dvh; }

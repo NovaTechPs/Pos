@@ -117,7 +117,11 @@
 
         @if ($visibleItems->isNotEmpty())
         <details data-tenant-navigation-group @if ($groupIsCurrent || $loop->first) open @endif class="overflow-hidden border-b border-slate-100 last:border-0 dark:border-zinc-800">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 [&::-webkit-details-marker]:hidden dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-white">
+            <summary
+                title="{{ __($group['label']) }}"
+                x-on:click="if ($el.closest('[data-flux-sidebar-collapsed-desktop]')) $dispatch('flux-sidebar-toggle')"
+                class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 [&::-webkit-details-marker]:hidden dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-white"
+            >
                 <span class="flex min-w-0 items-center gap-2.5">
                     <flux:icon :name="$group['icon']" class="size-5 shrink-0 text-blue-600 dark:text-blue-400" />
                     <span class="truncate">{{ __($group['label']) }}</span>

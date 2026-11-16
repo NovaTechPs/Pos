@@ -32,13 +32,7 @@
     </style>
 </head>
 
-<body
-    data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}"
-    x-data="{ tenantNavigationOpen: false }"
-    x-on:tenant-navigation-toggle.window="tenantNavigationOpen = ! tenantNavigationOpen"
-    x-on:keydown.escape.window="tenantNavigationOpen = false"
-    class="{{ (request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
->
+<body data-workspace-context="{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" class="{{ (request()->header('Sec-Fetch-Dest') === 'iframe') ? 'workspace-frame-body' : '' }} app-responsive min-h-screen bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
 
     {{-- Sidebar --}}
     @if (request()->header('Sec-Fetch-Dest') !== 'iframe')
