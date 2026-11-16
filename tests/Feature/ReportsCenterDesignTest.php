@@ -51,16 +51,16 @@ test('overview hides figures the user may not see and the page shows only allowe
 
     expect((new ReportingService($staff))->overview($this->filters))->toBe(['sales' => null, 'purchases' => null, 'profit' => null]);
     Livewire::actingAs($staff)->test('pages::tenant.reports.center')
-        ->assertSee('عدد الحركات')->assertDontSee('إجمالي المبيعات')->assertDontSee('إجمالي الأرباح')
+        ->assertDontSee('إجمالي المبيعات')->assertDontSee('إجمالي الأرباح')
         ->assertSee('الحسابات')->assertDontSeeHtml('selectReportGroup(\'المبيعات\')');
 });
 
 test('report center shows the designed header tabs cards and quick ranges with real totals', function (): void {
     ($this->makeOrder)(['created_at' => now()->toDateTimeString()]);
 
-    Livewire::test('pages::tenant.reports.center')
+    Livewire::test('pages::tenant.reports.center')->call('selectReport', 'sales')
         ->assertSee(['مركز التقارير', 'طباعة التقرير', 'تصدير PDF', 'تصدير Excel', 'التحليلات السابقة'])
-        ->assertSee(['الحسابات', 'المبيعات', 'المشتريات', 'المخزون', 'الموظفون', 'تقارير عامة'])
+        ->assertSee(['الحسابات', 'المبيعات', 'المشتريات', 'المخزون', 'الموظفون', 'المالية'])
         ->assertSee(['عدد الحركات', 'إجمالي المبيعات', 'إجمالي المشتريات', 'إجمالي الأرباح', '₪ 300.00'])
         ->assertSee(['اليوم', 'أمس', 'هذا الشهر', 'الشهر السابق', 'آخر 30 يوم', 'إعادة التعيين'])
         ->assertSeeHtml('aria-pressed="true"')
@@ -103,7 +103,7 @@ test('statement shows opening balance, linked documents and a totals row', funct
 
     $component = Livewire::test('pages::tenant.reports.center')->set('report', 'statement')
         ->set('from', '2026-10-01')->set('to', '2026-10-30')
-        ->call('selectStatementParty', $this->customer->id)
+        ->call('showStatementParty', $this->customer->id)
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
         ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total');
 

@@ -455,12 +455,15 @@ test('statement directory starts with all parties and supports keyboard navigati
         ->assertSet('statementPartyType', 'all')
         ->assertSee($this->customer->name)->assertSee($this->supplier->name)
         ->assertSeeHtml('data-statement-party')
+        ->assertSee('تقارير الحسابات')->assertSee('تقارير المبيعات')->assertSee('تقارير المشتريات')
+        ->assertSeeHtml('aria-expanded="true"')->assertSeeHtml('aria-expanded="false"')
         ->assertSeeHtml('x-on:keydown.arrow-left.prevent="toStatement()"')
         ->call('selectStatementParty', $this->customer->id)
         ->assertSeeHtml('data-selected="true"')->assertDontSee('KEYBOARD-ROW')
         ->call('showStatementParty', $this->customer->id)
         ->assertSeeHtml('x-on:keydown.arrow-right.prevent="toParties()"')
         ->assertSeeHtml('data-statement-row tabindex="0"')
+        ->assertSeeHtml('reports-ledger-footer')
         ->assertSee('KEYBOARD-ROW');
 
     $html = $component->html();
@@ -582,7 +585,7 @@ test('pos invoices report lists each pos invoice of the day and opens it', funct
 });
 
 test('report center navigation groups preserve report selection dates and permissions', function (): void {
-    $page = Livewire::test('pages::tenant.reports.center')->assertSee('reports-tabs', false)->assertSee('reports-menu', false)
+    $page = Livewire::test('pages::tenant.reports.center')->assertDontSee('reports-tabs', false)->assertSee('reports-menu-group-toggle', false)
         ->assertSee('reports-account-directory', false)->set('from', '2026-10-10')->call('selectReportGroup', 'المشتريات')->assertSet('report', 'purchases')->assertSet('from', '2026-10-10');
     $page->call('selectReportGroup', 'المخزون')->assertSet('report', 'product-history')->call('selectReport', 'inventory')->assertSet('report', 'inventory');
     $page->call('setPeriod', 'last-30')->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');

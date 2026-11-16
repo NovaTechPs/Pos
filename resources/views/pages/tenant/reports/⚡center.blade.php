@@ -24,7 +24,7 @@ new class extends Component {
         'المشتريات' => ['purchases'],
         'المخزون' => ['product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments', 'employees'],
-        'تقارير عامة' => ['branches', 'tax'],
+        'المالية' => ['branches', 'tax'],
     ];
 
     public function selectReport(string $key): void
@@ -363,8 +363,8 @@ new class extends Component {
 };
 ?>
 
-<flux:main dir="rtl" class="reports-center" data-keyboard-tables x-data="{ reportMenuQuery: '' }">
-    @php($groupIcons = ['الحسابات' => 'circle-stack', 'المبيعات' => 'shopping-bag', 'المشتريات' => 'shopping-cart', 'المخزون' => 'cube', 'الموظفون' => 'user-group', 'تقارير عامة' => 'squares-2x2'])
+<flux:main dir="rtl" class="reports-center" data-keyboard-tables>
+    @php($groupIcons = ['الحسابات' => 'circle-stack', 'المبيعات' => 'shopping-bag', 'المشتريات' => 'shopping-cart', 'المخزون' => 'cube', 'الموظفون' => 'user-group', 'المالية' => 'chart-bar'])
     <header class="reports-header">
         <div class="reports-title">
             <span class="reports-title-icon" aria-hidden="true"><flux:icon.share variant="outline" /></span>
@@ -379,11 +379,6 @@ new class extends Component {
             @endif
         </div>
     </header>
-    <nav class="reports-tabs" aria-label="أقسام التقارير">
-        @foreach($navigationGroups as $group => $entries)
-            <button type="button" wire:key="report-tab-{{ $loop->index }}" wire:click="selectReportGroup('{{ $group }}')" x-on:click="reportMenuQuery = ''" aria-current="{{ $activeGroup === $group ? 'page' : 'false' }}" class="{{ $activeGroup === $group ? 'is-active' : '' }}"><flux:icon :name="$groupIcons[$group]" variant="outline" />{{ $group }}</button>
-        @endforeach
-    </nav>
     <div class="reports-workspace {{ $report === 'statement' ? 'is-statement' : '' }}" x-data="{
                 parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
                 rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
@@ -398,14 +393,21 @@ new class extends Component {
                 toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; if (party) { party.focus() } },
             }">
     <aside class="reports-menu" aria-label="اختيار التقرير">
-        <h2><flux:icon :name="$groupIcons[$activeGroup] ?? 'squares-2x2'" variant="outline" />تقارير {{ $activeGroup }}</h2>
-        <label class="reports-menu-search"><x-shop-icon name="search" /><input type="search" x-model="reportMenuQuery" placeholder="ابحث في التقارير…" aria-label="ابحث في التقارير"></label>
         @foreach($navigationGroups as $group => $entries)
-            <div wire:key="report-menu-group-{{ $loop->index }}" @if($activeGroup !== $group) style="display: none" @endif x-show="reportMenuQuery.trim() !== '' || @js($activeGroup === $group)">
-                @foreach($entries as $key => $entry)
-                    <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" x-show="!reportMenuQuery.trim() || @js($entry[0]).includes(reportMenuQuery.trim())" class="reports-menu-item {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}"><span class="reports-radio" aria-hidden="true"></span>{{ $entry[0] }}</button>
-                @endforeach
-            </div>
+            <section wire:key="report-menu-group-{{ $loop->index }}" class="reports-menu-group {{ $activeGroup === $group ? 'is-expanded' : '' }}">
+                <button type="button" wire:click="selectReportGroup('{{ $group }}')" class="reports-menu-group-toggle" aria-expanded="{{ $activeGroup === $group ? 'true' : 'false' }}">
+                    <flux:icon :name="$groupIcons[$group]" variant="outline" />
+                    <span>تقارير {{ $group }}</span>
+                    <flux:icon :name="$activeGroup === $group ? 'chevron-up' : 'chevron-down'" variant="outline" />
+                </button>
+                @if ($activeGroup === $group)
+                    <div class="reports-menu-items" role="group" aria-label="تقارير {{ $group }}">
+                        @foreach($entries as $key => $entry)
+                            <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" class="reports-menu-item {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}"><span class="reports-radio" aria-hidden="true"></span>{{ $entry[0] }}</button>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
         @endforeach
     </aside>
     @if ($report === 'statement')

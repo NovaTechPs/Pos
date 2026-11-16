@@ -49,3 +49,13 @@
     <dl class="reports-summary-chips"><div><dt>الرصيد المسجل حالياً</dt><dd dir="ltr">{{ $money($summary['الرصيد المسجل حالياً']) }}</dd></div><div><dt>فرق المطابقة الحالي</dt><dd dir="ltr">{{ $money($summary['فرق المطابقة الحالي']) }}</dd></div></dl>
 @endif
 <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد الحركات: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
+@if ($hasParty)
+    <footer class="reports-ledger-footer" aria-label="إجماليات كشف الحساب">
+        <p>عدد الحركات: {{ $rows->total() }}</p>
+        <dl>
+            @foreach (['رصيد آخر الفترة' => 'balance', 'إجمالي الدائن' => 'credit', 'إجمالي المدين' => 'debit'] as $label => $tone)
+                <div class="is-{{ $tone }}"><dt>{{ $label }}</dt><dd dir="ltr">{{ $money($summary[$label]) }}</dd></div>
+            @endforeach
+        </dl>
+    </footer>
+@endif
