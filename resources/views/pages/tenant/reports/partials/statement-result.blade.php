@@ -35,10 +35,6 @@
         @endif
     </table>
 </div>
-@if ($hasParty)
-    <footer class="reports-statement-closing" data-statement-closing>
-        <span>الرصيد في نهاية الفترة</span>
-        <strong dir="ltr">{{ $money($summary['رصيد آخر الفترة']) }}</strong>
-    </footer>
+@if ($rows->hasPages())
+    <div class="reports-statement-pages">{{ $rows->links() }}</div>
 @endif
-<div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد الحركات: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>

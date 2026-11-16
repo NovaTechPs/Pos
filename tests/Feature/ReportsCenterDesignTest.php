@@ -107,8 +107,8 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
         ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total')
         ->assertSeeHtml('data-statement-scroll')
-        ->assertSeeHtml('data-statement-closing')
-        ->assertSee('الرصيد في نهاية الفترة')
+        ->assertDontSeeHtml('data-statement-closing')
+        ->assertDontSee('الرصيد في نهاية الفترة')
         ->assertDontSeeHtml('data-statement-result-end')
         ->assertDontSee('نهاية كشف حساب')
         ->assertSeeHtml('data-statement-filter-panel')
@@ -123,7 +123,8 @@ test('statement shows opening balance, linked documents and a totals row', funct
     expect($total[0])->toContain('300.00', '120.00', '320.00');
     preg_match('/<tr data-statement-opening>.*?<\/tr>/s', $html, $opening);
     expect($opening[0])->toContain('140.00');
-    expect((string) file_get_contents(resource_path('css/reports.css')))->toContain('clamp(180px,24dvh,300px)');
+    expect((string) file_get_contents(resource_path('css/reports.css')))->toContain('max-height:max(220px,calc(100dvh - 400px))', '.reports-account-list{max-height:max(200px,calc(100dvh - 420px))}');
+    expect(file_get_contents(resource_path('views/pages/tenant/reports/partials/statement-result.blade.php')))->not->toContain('عدد الحركات');
 });
 
 test('statement document links open the matching purchase, return and voucher', function (): void {
