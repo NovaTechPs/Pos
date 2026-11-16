@@ -163,7 +163,7 @@ class PermissionSeeder extends Seeder
             ],
             [
                 'name' => 'products.branch_prices.edit',
-                'display_name' => 'تعديل أسعار البيع للفروع (فرع الموظف أو الفروع المحددة له)',
+                'display_name' => 'تعديل أسعار البيع لفرع الموظف',
                 'group' => 'المنتجات',
             ],
             [

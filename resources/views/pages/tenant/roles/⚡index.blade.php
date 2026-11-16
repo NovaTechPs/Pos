@@ -32,6 +32,13 @@ new class extends Component
 
     public string $searchPermission = '';
 
+    /**
+     * Branches whose selling prices this role's employees may edit (one permission per branch).
+     *
+     * @var list<int|string>
+     */
+    public array $priceBranchIds = [];
+
     /*
     |--------------------------------------------------------------------------
     | Modal
@@ -70,6 +77,15 @@ new class extends Component
 
             'selectedPermissions.*' => [
                 'exists:permissions,id',
+            ],
+
+            'priceBranchIds' => [
+                'nullable',
+                'array',
+            ],
+
+            'priceBranchIds.*' => [
+                'integer',
             ],
         ];
     }
@@ -159,6 +175,13 @@ new class extends Component
             ->map(fn ($id) => (string) $id)
             ->values()
             ->toArray();
+
+        $this->priceBranchIds = $role->priceBranches()
+            ->where('branches.tenant_id', $tenantId)
+            ->orderBy('branches.id')
+            ->pluck('branches.id')
+            ->map(fn ($id): string => (string) $id)
+            ->all();
 
         $this->searchPermission = '';
 
@@ -334,6 +357,12 @@ new class extends Component
 
         $role->permissions()->sync($permissionIds);
 
+        $priceBranchIds = \App\Models\Branch::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('id', collect($this->priceBranchIds)->map(fn ($id): int => (int) $id)->all())
+            ->pluck('id');
+        $role->priceBranches()->sync($priceBranchIds->mapWithKeys(fn ($id): array => [(int) $id => ['tenant_id' => $tenantId]])->all());
+
         session()->flash(
             'message',
             $message
@@ -367,6 +396,8 @@ new class extends Component
             ->findOrFail($id);
 
         $role->permissions()->detach();
+
+        $role->priceBranches()->detach();
 
         $role->delete();
 
@@ -406,6 +437,8 @@ new class extends Component
         $this->description = '';
 
         $this->selectedPermissions = [];
+
+        $this->priceBranchIds = [];
 
         $this->searchPermission = '';
 
@@ -541,6 +574,10 @@ new class extends Component
             'assignedPermissions' => $assignedPermissions,
 
             'visiblePermissionIds' => $visiblePermissionIds,
+
+            'tenantBranches' => $tenantId
+                ? \App\Models\Branch::query()->where('tenant_id', $tenantId)->orderBy('id')->get(['id', 'name'])
+                : collect(),
         ])->layout('layouts::tenant');
     }
 };
@@ -1448,6 +1485,28 @@ new class extends Component
                                     @endforeach
 
                                 </div>
+
+                                @if ($groupPermissions->contains(fn ($permission) => str_starts_with((string) $permission->name, 'products.')) && $tenantBranches->isNotEmpty())
+                                    <div data-role-price-branches class="border-t border-zinc-200 p-3 dark:border-zinc-800">
+                                        <div class="mb-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300">تعديل أسعار البيع حسب الفرع</div>
+                                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            @foreach ($tenantBranches as $priceBranch)
+                                                @php
+                                                    $branchSelected = in_array((string) $priceBranch->id, array_map('strval', $priceBranchIds), true);
+                                                @endphp
+                                                <label wire:key="role-price-branch-{{ $priceBranch->id }}"
+                                                    class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition {{ $branchSelected ? 'border-indigo-300 bg-indigo-50/70 dark:border-indigo-700 dark:bg-indigo-950/30' : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/70' }}">
+                                                    <input type="checkbox" wire:model="priceBranchIds" value="{{ $priceBranch->id }}"
+                                                        class="mt-0.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800">
+                                                    <div class="min-w-0">
+                                                        <div class="text-sm font-medium text-zinc-800 dark:text-zinc-200">تعديل سعر البيع — {{ $priceBranch->name }}</div>
+                                                        <div class="mt-0.5 truncate text-[11px] text-zinc-400">products.branch_price.{{ $priceBranch->id }}</div>
+                                                    </div>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
 
                             </div>
 

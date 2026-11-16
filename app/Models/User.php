@@ -5,7 +5,6 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -179,21 +178,9 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
-     * Extra branches (beyond their own) whose selling prices the owner let this employee edit.
-     *
-     * @return BelongsToMany<Branch, $this>
-     */
-    public function priceBranches(): BelongsToMany
-    {
-        return $this->belongsToMany(Branch::class, 'user_price_branches')
-            ->withPivot('tenant_id')
-            ->withTimestamps();
-    }
-
-    /**
      * Branches of the store whose selling prices this user may change.
      * Owners: every branch. Employees: their own branch (with `products.price.edit` or
-     * `products.branch_prices.edit`), plus the branches the owner granted them (with `products.branch_prices.edit`).
+     * `products.branch_prices.edit`), plus the branches ticked for their role on the roles screen.
      *
      * @return list<int>
      */
@@ -215,21 +202,22 @@ class User extends Authenticatable implements PasskeyUser
             return [];
         }
 
-        $canEditOtherBranches = $this->hasPermission('products.branch_prices.edit');
         $branchIds = [];
 
-        if ($canEditOtherBranches || $this->hasPermission('products.price.edit')) {
+        if ($this->hasPermission('products.branch_prices.edit') || $this->hasPermission('products.price.edit')) {
             $ownBranchId = $this->branch_id ?: $this->activeBranchId();
             if ($ownBranchId) {
                 $branchIds[] = (int) $ownBranchId;
             }
         }
 
-        if ($canEditOtherBranches) {
-            $grantedBranchIds = DB::table('user_price_branches')
-                ->where('tenant_id', $tenantId)
-                ->where('user_id', $this->id)
-                ->pluck('branch_id')
+        if ($this->role_id) {
+            $grantedBranchIds = DB::table('role_price_branches')
+                ->join('roles', 'roles.id', '=', 'role_price_branches.role_id')
+                ->where('role_price_branches.tenant_id', $tenantId)
+                ->where('roles.tenant_id', $tenantId)
+                ->where('role_price_branches.role_id', $this->role_id)
+                ->pluck('role_price_branches.branch_id')
                 ->map(fn ($id): int => (int) $id)
                 ->all();
             $branchIds = [...$branchIds, ...$grantedBranchIds];

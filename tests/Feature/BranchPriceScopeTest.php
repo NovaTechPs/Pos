@@ -23,9 +23,9 @@ function branchRetailPrice(Branch $branch, Product $product): float
 
 function grantPriceBranch(User $user, Branch $branch): void
 {
-    DB::table('user_price_branches')->insert([
+    DB::table('role_price_branches')->insert([
         'tenant_id' => $branch->tenant_id,
-        'user_id' => $user->id,
+        'role_id' => $user->role_id,
         'branch_id' => $branch->id,
         'created_at' => now(),
         'updated_at' => now(),
@@ -119,13 +119,12 @@ test('branches granted by the owner become editable, others stay read-only', fun
         ->assertForbidden();
 });
 
-test('granted branches need the branch prices permission', function (): void {
+test('a branch ticked for the role is enough to edit its prices, without any own-branch permission', function (): void {
     grantPriceBranch($this->employee, $this->otherBranch);
-    $ownBranchOnly = Permission::query()->create(['name' => 'products.price.edit', 'display_name' => 'Edit prices', 'group' => 'Products']);
-    $this->role->permissions()->sync([$ownBranchOnly->id]);
+    $this->role->permissions()->sync([]);
     $this->employee->unsetRelation('role');
 
-    expect($this->employee->priceEditableBranchIds($this->tenant->id))->toBe([$this->ownBranch->id]);
+    expect($this->employee->priceEditableBranchIds($this->tenant->id))->toBe([$this->otherBranch->id]);
 });
 
 test('the owner can edit prices in every branch', function (): void {
@@ -190,42 +189,31 @@ test('a full product edit cannot change prices without price scope', function ()
         ->and(branchRetailPrice($this->ownBranch, $this->product))->toBe(10.0);
 });
 
-test('the owner grants extra price branches from the employees screen', function (): void {
+test('the owner ticks price branches per role on the roles screen', function (): void {
     $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->ownBranch->id, 'is_owner' => true]);
-    $profile = Employee::query()->create([
-        'tenant_id' => $this->tenant->id,
-        'branch_id' => $this->ownBranch->id,
-        'user_id' => $this->employee->id,
-        'employee_code' => 'EMP-'.$this->employee->id,
-        'first_name' => 'Price',
-        'last_name' => 'Editor',
-        'hire_date' => '2026-01-01',
-        'basic_salary' => 1000,
-    ]);
     $this->actingAs($owner);
 
-    Livewire::test('pages::tenant.employees.index')
-        ->call('edit', $this->employee->id)
-        ->assertSet('employee_profile_id', $profile->id)
-        ->assertSee('فروع إضافية لتعديل أسعار البيع')
-        ->assertSeeHtml('wire:model.self="price_branch_ids" data-flux-checkbox-group')
-        ->set('price_branch_ids', [(string) $this->otherBranch->id])
+    Livewire::test('pages::tenant.roles.index')
+        ->call('edit', $this->role->id)
+        ->assertSeeHtml('data-role-price-branches')
+        ->assertSee('تعديل سعر البيع — Other branch')
+        ->assertSee('تعديل سعر البيع — Third branch')
+        ->set('priceBranchIds', [(string) $this->otherBranch->id])
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(DB::table('user_price_branches')->where('user_id', $this->employee->id)->pluck('branch_id')->map(fn ($id) => (int) $id)->all())
+    expect(DB::table('role_price_branches')->where('role_id', $this->role->id)->pluck('branch_id')->map(fn ($id) => (int) $id)->all())
         ->toBe([$this->otherBranch->id])
         ->and($this->employee->fresh()->priceEditableBranchIds($this->tenant->id))->toBe([$this->ownBranch->id, $this->otherBranch->id]);
 
-    Livewire::test('pages::tenant.employees.index')
-        ->call('edit', $this->employee->id)
-        ->assertSet('price_branch_ids', [(string) $this->otherBranch->id]);
+    Livewire::test('pages::tenant.roles.index')
+        ->call('edit', $this->role->id)
+        ->assertSet('priceBranchIds', [(string) $this->otherBranch->id]);
 
-    // The employee can now change the granted branch's price, but still not the third branch.
+    // The employee can now change the ticked branch's price, but still not the third branch.
     $this->actingAs($this->employee->fresh());
 
     Livewire::test('pages::tenant.products.index')
-        ->assertSee('تعديل أسعار الفروع')
         ->call('editBranchPrice', $this->product->id)
         ->set('branchPriceBranchId', $this->otherBranch->id)
         ->assertSet('branchRetailPrice', '20.00')
@@ -233,35 +221,30 @@ test('the owner grants extra price branches from the employees screen', function
         ->call('saveBranchPrice')
         ->assertHasNoErrors();
 
-    expect(branchRetailPrice($this->otherBranch, $this->product))->toBe(22.0)
-        ->and(branchRetailPrice($this->ownBranch, $this->product))->toBe(10.0);
+    expect(branchRetailPrice($this->otherBranch, $this->product))->toBe(22.0);
 
     Livewire::test('pages::tenant.products.index')
         ->call('editBranchPrice', $this->product->id, $this->thirdBranch->id)
         ->assertForbidden();
 
+    // A branch of another store is never stored for the role.
     $this->actingAs($owner);
-
     $foreignBranch = Branch::query()->create([
         'tenant_id' => Tenant::query()->create(['name' => 'Other store', 'is_active' => true])->id,
         'name' => 'Foreign',
     ]);
 
-    Livewire::test('pages::tenant.employees.index')
-        ->call('edit', $this->employee->id)
-        ->set('price_branch_ids', [(string) $foreignBranch->id])
-        ->call('save')
-        ->assertHasErrors('price_branch_ids.0');
+    Livewire::test('pages::tenant.roles.index')
+        ->call('edit', $this->role->id)
+        ->set('priceBranchIds', [(string) $foreignBranch->id])
+        ->call('save');
 
-    expect(DB::table('user_price_branches')->where('branch_id', $foreignBranch->id)->exists())->toBeFalse();
+    expect(DB::table('role_price_branches')->where('role_id', $this->role->id)->count())->toBe(0);
 });
 
-test('an employee manager cannot change price branch grants', function (): void {
-    $employeesEdit = Permission::query()->create(['name' => 'employees.edit', 'display_name' => 'Edit employees', 'group' => 'Employees']);
-    $managerRole = Role::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'HR']);
-    $managerRole->permissions()->attach($employeesEdit);
-    $manager = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->ownBranch->id, 'role_id' => $managerRole->id, 'is_owner' => false]);
-    $profile = Employee::query()->create([
+test('the employee window no longer has its own price branch picker', function (): void {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->ownBranch->id, 'is_owner' => true]);
+    Employee::query()->create([
         'tenant_id' => $this->tenant->id,
         'branch_id' => $this->ownBranch->id,
         'user_id' => $this->employee->id,
@@ -271,16 +254,11 @@ test('an employee manager cannot change price branch grants', function (): void 
         'hire_date' => '2026-01-01',
         'basic_salary' => 1000,
     ]);
-    $this->actingAs($manager);
+    $this->actingAs($owner);
 
     Livewire::test('pages::tenant.employees.index')
         ->call('edit', $this->employee->id)
-        ->assertDontSee('فروع إضافية لتعديل أسعار البيع')
-        ->set('price_branch_ids', [(string) $this->thirdBranch->id])
-        ->call('save')
-        ->assertHasNoErrors();
-
-    expect(DB::table('user_price_branches')->count())->toBe(0);
+        ->assertDontSee('فروع إضافية لتعديل أسعار البيع');
 });
 
 test('the pos api keeps a branch employee on their own branch', function (): void {

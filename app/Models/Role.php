@@ -28,6 +28,18 @@ class Role extends Model
         return $this->belongsToMany(Permission::class);
     }
 
+    /**
+     * Branches whose selling prices this role's employees may edit.
+     *
+     * @return BelongsToMany<Branch, $this>
+     */
+    public function priceBranches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'role_price_branches')
+            ->withPivot('tenant_id')
+            ->withTimestamps();
+    }
+
     /** @return HasMany<User, $this> */
     public function users(): HasMany
     {

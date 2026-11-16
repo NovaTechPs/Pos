@@ -40,13 +40,6 @@ new class extends Component
     public $branch_id = null;
     public $role_id = null;
 
-    /**
-     * Extra branches (beyond the employee's own) whose selling prices they may edit.
-     * Only the store owner can change this list.
-     *
-     * @var list<int|string>
-     */
-    public array $price_branch_ids = [];
 
     public bool $is_active = true;
 
@@ -153,15 +146,6 @@ new class extends Component
                 'boolean',
             ],
 
-            'price_branch_ids' => [
-                'array',
-            ],
-
-            'price_branch_ids.*' => [
-                'integer',
-                Rule::exists('branches', 'id')
-                    ->where(fn ($query) => $query->where('tenant_id', $tenantId)),
-            ],
         ];
     }
 
@@ -358,13 +342,6 @@ new class extends Component
         $linkedProfile = Employee::query()->where('user_id', $employee->id)->first();
         $this->employee_profile_id = $linkedProfile?->id;
         $this->branch_id = $linkedProfile?->branch_id ?? $employee->branch_id;
-        $this->price_branch_ids = DB::table('user_price_branches')
-            ->where('tenant_id', $tenantId)
-            ->where('user_id', $employee->id)
-            ->orderBy('branch_id')
-            ->pluck('branch_id')
-            ->map(fn ($branchId): string => (string) $branchId)
-            ->all();
 
         if ($linkedProfile && !$this->employeeProfiles->contains('id', $linkedProfile->id)) {
             $this->employeeProfiles->push($linkedProfile);
@@ -488,9 +465,6 @@ new class extends Component
             $profile->branch_id = $employee->branch_id;
             $profile->save();
 
-            if ($this->actorIsOwner()) {
-                $this->syncPriceBranches($employee, $tenantId, $validated['price_branch_ids'] ?? []);
-            }
         });
 
         $message = $this->isEditing
@@ -541,37 +515,10 @@ new class extends Component
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Replace the employee's extra price branches; their own branch and owners need no entry.
-     *
-     * @param  array<int, int|string>  $branchIds
-     */
-    private function syncPriceBranches(User $employee, int $tenantId, array $branchIds): void
-    {
-        $branchIds = collect($branchIds)
-            ->map(fn ($branchId): int => (int) $branchId)
-            ->reject(fn (int $branchId): bool => $employee->is_owner || $branchId === (int) $employee->branch_id)
-            ->unique()
-            ->values();
-        $branchIds = Branch::query()->where('tenant_id', $tenantId)->whereIn('id', $branchIds)->pluck('id');
-
-        DB::table('user_price_branches')
-            ->where('user_id', $employee->id)
-            ->delete();
-
-        DB::table('user_price_branches')->insert($branchIds->map(fn ($branchId): array => [
-            'tenant_id' => $tenantId,
-            'user_id' => $employee->id,
-            'branch_id' => (int) $branchId,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ])->all());
-    }
 
     private function resetInputFields(): void
     {
         $this->user_id = null;
-        $this->price_branch_ids = [];
 
         $this->email = '';
         $this->password = '';
@@ -1420,29 +1367,6 @@ new class extends Component
                 </div>
 
             </div>
-
-
-            {{-- Branch price scope --}}
-
-            @if (auth()->user()?->isTenantOwner() && ! $is_partner && $branches->count() > 1)
-                <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800" data-price-branches>
-                    <div class="text-sm font-medium text-zinc-900 dark:text-white">فروع إضافية لتعديل أسعار البيع</div>
-                    <p class="mt-1 text-xs text-zinc-500">
-                        بشكل افتراضي يعدّل الموظف أسعار فرعه فقط. اختر فروعاً أخرى ليعدّل أسعارها أيضاً؛ يتطلب ذلك أن يتضمن دوره صلاحية «تعديل أسعار البيع للفروع».
-                    </p>
-
-                    <flux:checkbox.group wire:model="price_branch_ids" class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        @foreach ($branches as $branch)
-                            @if ((int) $branch->id !== (int) $branch_id)
-                                <flux:checkbox wire:key="price-branch-{{ $branch->id }}" value="{{ $branch->id }}" label="{{ $branch->name }}" />
-                            @endif
-                        @endforeach
-                    </flux:checkbox.group>
-
-                    <flux:error name="price_branch_ids" />
-                    <flux:error name="price_branch_ids.*" />
-                </div>
-            @endif
 
 
             {{-- Status --}}
