@@ -681,10 +681,11 @@ test('statement stays empty until explicitly displayed and clears when selecting
         ->assertSeeHtml('data-selected="true"')->assertDontSee('EXPLICIT-STATEMENT')
         ->assertSeeHtml('wire:keydown.enter.prevent.stop="showStatementParty('.$this->customer->id.')"')
         ->assertSeeHtml('wire:click="showStatementParty('.$this->customer->id.')"')
+        ->assertSeeHtml('x-on:statement-shown.window')
         ->call('applyFilters')->assertSee('EXPLICIT-STATEMENT')->assertViewHas('statementReady', true)
         ->call('selectStatementParty', $this->supplier->id)->assertDontSee('EXPLICIT-STATEMENT')
         ->assertViewHas('statementReady', false)->assertViewHas('printUrl', null)
-        ->call('showStatementParty', $this->customer->id)->assertSee('EXPLICIT-STATEMENT')
+        ->call('showStatementParty', $this->customer->id)->assertSee('EXPLICIT-STATEMENT')->assertDispatched('statement-shown')
         ->call('setPeriod', 'today')->assertDontSee('EXPLICIT-STATEMENT')->assertViewHas('statementReady', false)
         ->call('resetFilters')->assertSet('partyId', null)->assertSet('appliedStatementSignature', null);
 });

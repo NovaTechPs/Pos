@@ -157,6 +157,7 @@ new class extends Component {
             $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
             $this->service()->prepare($this->report, $this->filters());
             $this->appliedStatementSignature = $this->statementSignature();
+            $this->dispatch('statement-shown');
         }
     }
 
@@ -423,7 +424,7 @@ new class extends Component {
                 },
                 toStatement() { this.rows()[0]?.focus() },
                 toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; if (party) { party.focus() } },
-            }">
+            }" x-on:statement-shown.window="$nextTick(() => requestAnimationFrame(() => { const row = rows()[0]; if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }) } }))">
     <aside class="reports-menu" aria-label="اختيار التقرير">
         @foreach($navigationGroups as $group => $entries)
             <section wire:key="report-menu-group-{{ $loop->index }}" class="reports-menu-group {{ $activeGroup === $group ? 'is-expanded' : '' }}">
