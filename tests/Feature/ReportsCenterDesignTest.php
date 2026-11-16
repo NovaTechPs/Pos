@@ -127,15 +127,17 @@ test('statement shows opening balance, linked documents and a totals row', funct
     expect(file_get_contents(resource_path('views/pages/tenant/reports/partials/statement-result.blade.php')))->not->toContain('عدد الحركات');
 });
 
-test('statement document links open the matching purchase, return and voucher', function (): void {
+test('statement document links open invoices and every voucher in its voucher screen', function (): void {
     $purchase = Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'CTR-PURCHASE', 'total' => 70, 'paid_amount' => 0, 'created_at' => '2026-10-10']);
     $payment = Payment::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $this->supplier->id, 'type' => 'payment',
         'voucher_number' => 'CTR-VOUCHER', 'amount' => 30, 'payment_method' => 'cash', 'payment_date' => '2026-10-12 12:00:00']);
+    $linkedPayment = Payment::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $this->supplier->id, 'purchase_id' => $purchase->id, 'type' => 'payment',
+        'voucher_number' => 'CTR-LINKED-VOUCHER', 'amount' => 40, 'payment_method' => 'cash', 'payment_date' => '2026-10-13 12:00:00']);
     $rows = (new ReportingService($this->user))->prepare('statement', $this->filters + ['party_id' => $this->supplier->id, 'party_type' => 'all', 'balance_side' => 'all', 'stock_filter' => 'all'])['query']->get()->keyBy('reference');
 
     $component = Livewire::test('pages::tenant.reports.center');
-    $urls = ['CTR-PURCHASE' => route('tenant.purchase-invoices', ['purchase' => $purchase->id]), 'CTR-VOUCHER' => route('tenant.payment', ['voucher' => $payment->id])];
-    foreach (['CTR-PURCHASE' => $purchase->id, 'CTR-VOUCHER' => $payment->id] as $reference => $id) {
+    $urls = ['CTR-PURCHASE' => route('tenant.purchase-invoices', ['purchase' => $purchase->id]), 'CTR-VOUCHER' => route('tenant.payment', ['voucher' => $payment->id]), 'CTR-LINKED-VOUCHER' => route('tenant.payment', ['voucher' => $linkedPayment->id])];
+    foreach (['CTR-PURCHASE' => $purchase->id, 'CTR-VOUCHER' => $payment->id, 'CTR-LINKED-VOUCHER' => $linkedPayment->id] as $reference => $id) {
         expect((int) $rows[$reference]->source_id)->toBe($id);
         $component->call('openStatementDocument', (int) $rows[$reference]->source_order, (int) $rows[$reference]->source_id)
             ->assertDispatched('open-statement-document', url: $urls[$reference]);
