@@ -455,6 +455,8 @@ test('statement directory starts with all parties and supports keyboard navigati
         ->assertSet('statementPartyType', 'all')
         ->assertSee($this->customer->name)->assertSee($this->supplier->name)
         ->assertSeeHtml('data-statement-party')
+        ->assertSeeHtml('data-statement-directory-end')
+        ->assertSee('نهاية قائمة الحسابات')
         ->assertSee('تقارير الحسابات')->assertSee('تقارير المبيعات')->assertSee('تقارير المشتريات')
         ->assertSeeHtml('aria-expanded="true"')->assertSeeHtml('aria-expanded="false"')
         ->assertSeeHtml('x-on:keydown.arrow-left.prevent="toStatement()"')

@@ -463,6 +463,7 @@ new class extends Component {
             @endforelse
         </div>
         @if ($statementParties->hasPages())<div class="reports-account-pagination">{{ $statementParties->links() }}</div>@endif
+        <footer class="reports-account-end" data-statement-directory-end>نهاية قائمة الحسابات</footer>
     </aside>
     @endif
     <div class="reports-content">
