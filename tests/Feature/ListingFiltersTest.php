@@ -172,6 +172,36 @@ test('voucher filters combine dates method amount and source and can be cleared'
     ['pages::tenant.accounting.payment', 'payment'],
 ]);
 
+test('voucher filters support the payment method values saved by the voucher form', function (string $page, string $type): void {
+    $transfer = Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'type' => $type,
+        'voucher_number' => 'TRANSFER-VOUCHER',
+        'amount' => 25,
+        'payment_method' => 'bank_transfer',
+        'payment_date' => '2026-10-20',
+    ]);
+    Payment::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'type' => $type,
+        'voucher_number' => 'CASH-VOUCHER',
+        'amount' => 25,
+        'payment_method' => 'cash',
+        'payment_date' => '2026-10-20',
+    ]);
+
+    $component = Livewire::test($page)->set('filterMethod', 'bank_transfer');
+
+    expect($component->get('items')->pluck('id')->all())->toBe([$transfer->id]);
+    $component->set('filterMethod', 'bank');
+    expect($component->get('items')->pluck('id')->all())->toBe([$transfer->id]);
+})->with([
+    ['pages::tenant.accounting.receipts', 'receipt'],
+    ['pages::tenant.accounting.payment', 'payment'],
+]);
+
 test('transfer date and direction filters combine with status and preserve tenant scope', function (): void {
     $transfer = StockTransfer::query()->create(['tenant_id' => $this->tenant->id, 'from_branch_id' => $this->branch->id, 'to_branch_id' => $this->otherBranch->id, 'transfer_number' => 'TR-MATCH', 'status' => 'completed', 'transfer_date' => '2026-10-20 23:59:00']);
     StockTransfer::query()->create(['tenant_id' => $this->tenant->id, 'from_branch_id' => $this->otherBranch->id, 'to_branch_id' => $this->branch->id, 'transfer_number' => 'TR-OTHER', 'status' => 'pending', 'transfer_date' => '2026-10-19']);

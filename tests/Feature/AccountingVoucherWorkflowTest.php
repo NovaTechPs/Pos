@@ -38,6 +38,23 @@ test('voucher amount is a plain numeric field and accepts decimal amounts', func
     ['payment', 'savePayment', 'supplier'],
 ]);
 
+test('voucher pages use the financial voucher workspace and centered creation form', function (string $page, string $title): void {
+    $page = Livewire::test('pages::tenant.accounting.'.$page)
+        ->assertSeeHtml('data-voucher-workspace')
+        ->assertSee('فلاتر متقدمة')
+        ->assertSee($title)
+        ->call('openCreate')
+        ->assertSeeHtml('data-voucher-form')
+        ->assertSeeHtml('data-voucher-mode')
+        ->assertSeeHtml('value="bank_transfer"')
+        ->assertSeeHtml('value="cheque"');
+
+    expect($page->html())->toContain('max-w-6xl')->toContain('إنشاء '.$title);
+})->with([
+    ['receipts', 'سند قبض'],
+    ['payment', 'سند صرف'],
+]);
+
 test('saving a payment voucher closes the form and dispatches one success notice', function (): void {
     $supplier = Party::query()->create([
         'tenant_id' => $this->tenant->id,

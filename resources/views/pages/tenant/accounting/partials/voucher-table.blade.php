@@ -1,430 +1,137 @@
 @php
     $isPayment = $mode === 'payment';
-
-    $accent = $isPayment ? 'indigo' : 'emerald';
-
-    $partyLabel = $isPayment ? 'المورد' : 'العميل';
-
-    $emptyTitle = $isPayment
-        ? 'لا توجد سندات صرف'
-        : 'لا توجد سندات قبض';
-
-    $emptyDescription = $isPayment
-        ? 'لم يتم تسجيل أي سند صرف حتى الآن.'
-        : 'لم يتم تسجيل أي سند قبض حتى الآن.';
+    $partyLabel = $isPayment ? 'المورد / الجهة' : 'العميل / الجهة';
+    $voucherLabel = $isPayment ? 'سند صرف' : 'سند قبض';
+    $emptyTitle = $isPayment ? 'لا توجد سندات صرف' : 'لا توجد سندات قبض';
+    $emptyDescription = $isPayment ? 'أنشئ أول سند صرف لتظهر حركات الموردين والجهات هنا.' : 'أنشئ أول سند قبض لتظهر المقبوضات وحركات العملاء هنا.';
+    $methodLabels = [
+        'cash' => 'نقدي',
+        'card' => 'بطاقة',
+        'bank_transfer' => 'تحويل بنكي',
+        'bank' => 'تحويل بنكي',
+        'cheque' => 'شيك',
+        'check' => 'شيك',
+    ];
 @endphp
 
-<div class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
-
-    {{-- Header --}}
-    <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-            <div class="mb-2 flex items-center gap-2">
-                <span
-                    class="inline-flex size-9 items-center justify-center rounded-xl
-                    {{ $isPayment
-                        ? 'bg-indigo-50 text-indigo-600'
-                        : 'bg-emerald-50 text-emerald-600' }}"
-                >
-                    <flux:icon
-                        :name="$isPayment ? 'arrow-up-right' : 'arrow-down-left'"
-                        class="size-5"
-                    />
-                </span>
-
-                <span class="text-xs font-bold text-slate-400">
-                    المحاسبة
-                </span>
+<div data-voucher-workspace class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8" dir="rtl">
+    <header class="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-7 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+            <div class="mb-2 flex items-center gap-2 text-xs font-bold text-slate-400">
+                <span>الرئيسية</span><span>/</span><span>السندات المالية</span>
             </div>
-
-            <h1 class="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-                {{ $title }}
-            </h1>
-
-            <p class="mt-1 text-sm text-slate-500">
-                {{ $subtitle }}
-            </p>
+            <div class="flex items-center gap-3">
+                <span class="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><flux:icon name="document-text" class="size-6" /></span>
+                <div>
+                    <h1 class="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{{ $title }}</h1>
+                    <p class="mt-1 text-sm text-slate-500">{{ $subtitle }}</p>
+                </div>
+            </div>
         </div>
 
-        <button
-            type="button"
-            wire:click="openCreate"
-            class="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-sm transition
-            {{ $isPayment
-                ? 'bg-indigo-600 hover:bg-indigo-700'
-                : 'bg-emerald-600 hover:bg-emerald-700' }}"
-        >
-            <flux:icon name="plus" class="size-5" />
-
-            {{ $createLabel }}
+        <button type="button" wire:click="openCreate" class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100">
+            <flux:icon name="plus" class="size-5" />{{ $createLabel }}
         </button>
-    </div>
+    </header>
 
-    {{-- Stats --}}
-    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-        {{-- Today total --}}
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between">
-                <div>
-                    <div class="text-xs font-bold text-slate-400">
-                        {{ $isPayment
-                            ? 'إجمالي المدفوع اليوم'
-                            : 'إجمالي المقبوض اليوم' }}
-                    </div>
-
-                    <div class="mt-2 text-2xl font-black text-slate-900">
-                        {{ number_format((float) $todayTotal, 2) }}
-                    </div>
+    <section class="mb-5 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4" aria-label="فلاتر {{ $voucherLabel }}">
+        <div class="grid grid-cols-1 items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.8fr)_repeat(3,minmax(150px,1fr))_auto]">
+            <label class="block">
+                <span class="mb-1.5 block text-xs font-bold text-slate-600">بحث سريع</span>
+                <span class="relative block">
+                    <flux:icon name="magnifying-glass" class="pointer-events-none absolute end-3 top-1/2 size-5 -translate-y-1/2 text-blue-600" />
+                    <input type="search" wire:model.live.debounce.300ms="tableSearch" placeholder="ابحث برقم السند أو اسم {{ $partyLabel }} أو الهاتف..." class="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-4 pe-11 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50">
+                </span>
+            </label>
+            <label class="block">
+                <span class="mb-1.5 block text-xs font-bold text-slate-600">من تاريخ</span>
+                <input type="date" wire:model.live="filterDateFrom" class="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50">
+            </label>
+            <label class="block">
+                <span class="mb-1.5 block text-xs font-bold text-slate-600">إلى تاريخ</span>
+                <input type="date" wire:model.live="filterDateTo" class="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50">
+            </label>
+            <label class="block">
+                <span class="mb-1.5 block text-xs font-bold text-slate-600">طريقة الدفع</span>
+                <select wire:model.live="filterMethod" class="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50">
+                    <option value="">الكل</option><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option>
+                </select>
+            </label>
+            <details class="relative self-end" data-voucher-advanced-filters>
+                <summary class="flex h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 text-sm font-black text-blue-700 transition hover:bg-blue-100"><span>فلاتر متقدمة</span><span class="text-lg leading-none">⌄</span></summary>
+                <div class="absolute end-0 z-20 mt-2 grid w-[min(92vw,420px)] grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:grid-cols-2">
+                    <label class="text-xs font-bold text-slate-600">مصدر السند
+                        <select wire:model.live="filterSource" class="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500"><option value="">الكل</option><option value="invoice">مرتبط بفاتورة</option><option value="manual">سند مستقل</option></select>
+                    </label>
+                    <label class="text-xs font-bold text-slate-600">المبلغ من<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMinAmount" class="mt-1.5 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-500"></label>
+                    <label class="text-xs font-bold text-slate-600">المبلغ إلى<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMaxAmount" class="mt-1.5 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-500"></label>
+                    <button type="button" wire:click="clearVoucherFilters" class="mt-auto h-11 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50">إعادة التعيين</button>
                 </div>
-
-                <div
-                    class="flex size-11 items-center justify-center rounded-xl
-                    {{ $isPayment
-                        ? 'bg-indigo-50 text-indigo-600'
-                        : 'bg-emerald-50 text-emerald-600' }}"
-                >
-                    <flux:icon name="banknotes" class="size-5" />
-                </div>
-            </div>
+            </details>
         </div>
+    </section>
 
-        {{-- Count --}}
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between">
-                <div>
-                    <div class="text-xs font-bold text-slate-400">
-                        عدد السندات
-                    </div>
-
-                    <div class="mt-2 text-2xl font-black text-slate-900">
-                        {{ number_format($voucherCount) }}
-                    </div>
-                </div>
-
-                <div class="flex size-11 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                    <flux:icon name="document-text" class="size-5" />
-                </div>
-            </div>
-        </div>
-
-        {{-- Status --}}
-        <div class="hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:block">
-            <div class="flex items-start justify-between">
-                <div>
-                    <div class="text-xs font-bold text-slate-400">
-                        الحالة
-                    </div>
-
-                    <div class="mt-2 flex items-center gap-2 text-sm font-bold text-emerald-700">
-                        <span class="size-2 rounded-full bg-emerald-500"></span>
-                        النظام يعمل
-                    </div>
-                </div>
-
-                <div class="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                    <flux:icon name="check-circle" class="size-5" />
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- Filters --}}
-    <div class="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-        <div class="relative">
-            <flux:icon
-                name="magnifying-glass"
-                class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-slate-400"
-            />
-
-            <input
-                type="search"
-                wire:model.live.debounce.300ms="tableSearch"
-                placeholder="ابحث برقم السند أو اسم {{ $partyLabel }} أو الهاتف..."
-                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pr-10 pl-4 text-sm font-medium text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:bg-white focus:ring-2 focus:ring-{{ $accent }}-100"
-            >
-        </div>
-    </div>
-
-    <div class="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-4">
-        <label class="text-xs font-bold text-slate-600">من تاريخ<input type="date" wire:model.live="filterDateFrom" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
-        <label class="text-xs font-bold text-slate-600">إلى تاريخ<input type="date" wire:model.live="filterDateTo" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
-        <label class="text-xs font-bold text-slate-600">طريقة الدفع<select wire:model.live="filterMethod" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="">الكل</option><option value="cash">نقدي</option><option value="bank">بنكي</option><option value="card">بطاقة</option><option value="check">شيك</option><option value="transfer">تحويل</option></select></label>
-        <label class="text-xs font-bold text-slate-600">مصدر السند<select wire:model.live="filterSource" class="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 text-sm"><option value="">الكل</option><option value="invoice">مرتبط بفاتورة</option><option value="manual">سند مستقل</option></select></label>
-        <label class="text-xs font-bold text-slate-600">المبلغ من<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMinAmount" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
-        <label class="text-xs font-bold text-slate-600">المبلغ إلى<input type="number" min="0" step="0.01" wire:model.live.debounce.300ms="filterMaxAmount" class="mt-1 w-full rounded-xl border border-slate-200 p-2 text-sm"></label>
-        <button type="button" wire:click="clearVoucherFilters" class="self-end rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold">مسح الفلاتر</button>
-    </div>
-
-    {{-- Table --}}
-    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
+    <section class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         @if ($items->count())
-
-            <div class="overflow-x-auto">
-                <div class="app-table-scroll" role="region" aria-label="جدول السندات — اسحب لعرض بقية الأعمدة" tabindex="0">
-                <table class="w-full min-w-[900px] text-right">
-
-                    <thead class="border-b border-slate-200 bg-slate-50">
+            <div class="app-table-scroll overflow-x-auto" role="region" aria-label="جدول {{ $title }} — اسحب لعرض بقية الأعمدة" tabindex="0">
+                <table class="w-full min-w-[980px] text-right">
+                    <thead class="border-b border-slate-200 bg-slate-100/90">
                         <tr>
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                رقم السند
-                            </th>
-
-                            @if (!$isPayment)
-                                <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                    الفاتورة
-                                </th>
-                            @endif
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                {{ $partyLabel }}
-                            </th>
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                التاريخ
-                            </th>
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                الطريقة
-                            </th>
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                المبلغ
-                            </th>
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500">
-                                الرصيد الحالي
-                            </th>
-
-                            <th class="px-5 py-4 text-xs font-black text-slate-500"></th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">رقم السند</th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">{{ $partyLabel }}</th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">التاريخ</th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">الطريقة</th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">المبلغ</th>
+                            <th class="px-5 py-4 text-xs font-black text-slate-600">الرصيد الحالي</th>
+                            <th class="px-5 py-4 text-center text-xs font-black text-slate-600">إجراءات</th>
                         </tr>
                     </thead>
-
                     <tbody class="divide-y divide-slate-100">
-
                         @foreach ($items as $item)
-
-                            <tr
-                                wire:key="{{ $mode }}-voucher-{{ $item->id }}"
-                                class="group transition hover:bg-slate-50/80"
-                            >
-
-                                {{-- Voucher --}}
+                            @php
+                                $method = $methodLabels[$item->payment_method] ?? ($item->payment_method ?: '-');
+                                $linkedDocument = $item->order_id ? ($item->linked_invoice_number ?? ('#'.$item->order_id)) : ($item->purchase_id ? 'فاتورة مشتريات #'.$item->purchase_id : 'سند مستقل');
+                            @endphp
+                            <tr wire:key="{{ $mode }}-voucher-{{ $item->id }}" class="group transition hover:bg-blue-50/40">
+                                <td class="px-5 py-4 align-top"><p class="font-mono text-sm font-black text-slate-900" dir="ltr">{{ $item->voucher_number }}</p><p class="mt-1 text-xs font-medium text-slate-400">{{ $linkedDocument }}</p></td>
                                 <td class="px-5 py-4">
-                                    <span
-                                        class="font-mono text-sm font-black text-slate-800"
-                                        dir="ltr"
-                                    >
-                                        {{ $item->voucher_number }}
-                                    </span>
-                                </td>
-
-                                @if (!$isPayment)
-                                    {{-- Linked wholesale invoice --}}
-                                    <td class="px-5 py-4">
-                                        @if ($item->order_id)
-                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                                                <flux:icon name="document-text" class="size-3.5" />
-                                                {{ $item->linked_invoice_number ?? ('#' . $item->order_id) }}
-                                            </span>
-                                        @else
-                                            <span class="text-xs font-semibold text-slate-400">
-                                                سند مستقل
-                                            </span>
-                                        @endif
-                                    </td>
-                                @endif
-
-                                {{-- Party --}}
-                                <td class="px-5 py-4">
-                                    <div class="flex items-center gap-3">
-
-                                        <div class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-                                            <flux:icon
-                                                name="user"
-                                                class="size-4"
-                                            />
-                                        </div>
-
-                                        <div class="min-w-0">
-                                            <div class="truncate text-sm font-bold text-slate-800">
-                                                {{ $item->party?->name ?? 'غير محدد' }}
-                                            </div>
-
-                                            @if ($item->party?->phone)
-                                                <div
-                                                    class="mt-0.5 text-xs text-slate-400"
-                                                    dir="ltr"
-                                                >
-                                                    {{ $item->party->phone }}
-                                                </div>
-                                            @endif
-                                        </div>
-
+                                    <div class="flex min-w-[180px] items-center gap-3">
+                                        <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><flux:icon name="user" class="size-4" /></span>
+                                        <div class="min-w-0"><p class="truncate text-sm font-bold text-slate-800">{{ $item->party?->name ?? 'غير محدد' }}</p>@if ($item->party?->phone)<p class="mt-0.5 text-xs text-slate-400" dir="ltr">{{ $item->party->phone }}</p>@endif</div>
                                     </div>
                                 </td>
-
-                                {{-- Date --}}
+                                <td class="px-5 py-4 text-sm font-semibold text-slate-700">{{ optional($item->payment_date)->format('Y-m-d') ?: '-' }}</td>
+                                <td class="px-5 py-4"><span class="inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{{ $method }}</span></td>
+                                <td class="px-5 py-4"><span class="text-base font-black text-blue-700" dir="ltr">{{ number_format((float) $item->amount, 2) }}</span></td>
+                                <td class="px-5 py-4"><span class="text-sm font-bold text-slate-700" dir="ltr">{{ number_format((float) ($item->party?->current_balance ?? 0), 2) }}</span></td>
                                 <td class="px-5 py-4">
-                                    <div class="text-sm font-semibold text-slate-700">
-                                        {{ optional($item->payment_date)->format('Y-m-d') ?: '-' }}
-                                    </div>
-                                </td>
-
-                                {{-- Method --}}
-                                <td class="px-5 py-4">
-                                    @php
-                                        $method = match ($item->payment_method) {
-                                            'cash' => 'نقدي',
-                                            'bank' => 'تحويل بنكي',
-                                            'card' => 'بطاقة',
-                                            'check' => 'شيك',
-                                            default => $item->payment_method ?: '-',
-                                        };
-                                    @endphp
-
-                                    <span class="inline-flex rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
-                                        {{ $method }}
-                                    </span>
-                                </td>
-
-                                {{-- Amount --}}
-                                <td class="px-5 py-4">
-                                    <span
-                                        class="text-sm font-black
-                                        {{ $isPayment
-                                            ? 'text-indigo-700'
-                                            : 'text-emerald-700' }}"
-                                    >
-                                        {{ number_format((float) $item->amount, 2) }}
-                                    </span>
-                                </td>
-
-                                {{-- Balance --}}
-                                <td class="px-5 py-4">
-                                    <span class="text-sm font-bold text-slate-700">
-                                        {{ number_format(
-                                            (float) ($item->party?->current_balance ?? 0),
-                                            2
-                                        ) }}
-                                    </span>
-                                </td>
-
-                                {{-- Actions --}}
-                                <td class="px-5 py-4">
-                                    <div class="flex items-center justify-end gap-1 opacity-70 transition group-hover:opacity-100">
-
+                                    <div class="flex items-center justify-center gap-1.5">
                                         @if (!$item->purchase_return_id && $item->order?->type !== 'return')
-                                            <button
-                                                type="button"
-                                                wire:click="edit({{ $item->id }})"
-                                                title="تعديل"
-                                                class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                                            >
-                                                <flux:icon
-                                                    name="pencil-square"
-                                                    class="size-4"
-                                                />
-                                            </button>
+                                            <button type="button" wire:click="edit({{ $item->id }})" title="تعديل" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"><flux:icon name="pencil-square" class="size-4" /></button>
                                         @endif
-
-                                        <a href="{{ route('tenant.vouchers.pdf', ['type' => $item->type, 'paymentId' => $item->id]) }}" class="rounded-lg px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100">تنزيل PDF</a>
-                                        <button
-                                            type="button"
-                                            wire:click="print({{ $item->id }})"
-                                            title="طباعة السند" aria-label="طباعة السند"
-                                            class="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                                        >
-                                            <flux:icon
-                                                name="printer"
-                                                class="size-4"
-                                            />
-                                        <span>طباعة</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            wire:click="sendWhatsapp({{ $item->id }})"
-                                            title="WhatsApp"
-                                            class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
-                                        >
-                                            <flux:icon
-                                                name="chat-bubble-left-right"
-                                                class="size-4"
-                                            />
-                                        </button>
-
+                                        <a href="{{ route('tenant.vouchers.pdf', ['type' => $item->type, 'paymentId' => $item->id]) }}" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200">PDF</a>
+                                        <button type="button" wire:click="print({{ $item->id }})" title="طباعة السند" aria-label="طباعة السند" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100"><flux:icon name="printer" class="size-4" /></button>
+                                        <button type="button" wire:click="sendWhatsapp({{ $item->id }})" title="إرسال واتساب" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"><flux:icon name="chat-bubble-left-right" class="size-4" /></button>
                                         @if (!$item->purchase_return_id && $item->order?->type !== 'return')
-                                            <button
-                                                type="button"
-                                                wire:click="confirmDelete({{ $item->id }})"
-                                                title="حذف"
-                                                class="flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-                                            >
-                                                <flux:icon
-                                                    name="trash"
-                                                    class="size-4"
-                                                />
-                                            </button>
+                                            <button type="button" wire:click="confirmDelete({{ $item->id }})" title="حذف" class="inline-flex size-9 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-700"><flux:icon name="trash" class="size-4" /></button>
                                         @endif
-
                                     </div>
                                 </td>
-
                             </tr>
-
                         @endforeach
-
                     </tbody>
                 </table>
-                </div>
             </div>
-
-            {{-- Pagination --}}
-            <div class="border-t border-slate-100 px-4 py-4">
-                {{ $items->links() }}
+            <div class="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                <p>عرض {{ $items->firstItem() }} إلى {{ $items->lastItem() }} من أصل {{ $items->total() }} سند</p><div>{{ $items->links() }}</div>
             </div>
-
         @else
-
-            {{-- Empty --}}
             <div class="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-
-                <div class="flex size-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                    <flux:icon
-                        name="document-text"
-                        class="size-8"
-                    />
-                </div>
-
-                <h3 class="mt-5 text-base font-black text-slate-800">
-                    {{ $emptyTitle }}
-                </h3>
-
-                <p class="mt-1 max-w-sm text-sm leading-6 text-slate-500">
-                    {{ $emptyDescription }}
-                </p>
-
-                <button
-                    type="button"
-                    wire:click="openCreate"
-                    class="mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white
-                    {{ $isPayment
-                        ? 'bg-indigo-600 hover:bg-indigo-700'
-                        : 'bg-emerald-600 hover:bg-emerald-700' }}"
-                >
-                    <flux:icon
-                        name="plus"
-                        class="size-4"
-                    />
-
-                    {{ $createLabel }}
-                </button>
-
+                <span class="inline-flex size-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><flux:icon name="document-text" class="size-8" /></span>
+                <h2 class="mt-5 text-lg font-black text-slate-900">{{ $emptyTitle }}</h2>
+                <p class="mt-2 max-w-md text-sm leading-6 text-slate-500">{{ $emptyDescription }}</p>
+                <button type="button" wire:click="openCreate" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"><flux:icon name="plus" class="size-5" />{{ $createLabel }}</button>
             </div>
-
         @endif
-
-    </div>
+    </section>
 </div>

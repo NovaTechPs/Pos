@@ -40,8 +40,14 @@ trait FiltersVouchers
                 $query->whereDate('payment_date', $operator, $this->{$property});
             }
         }
-        if (in_array($this->filterMethod, ['cash', 'bank', 'card', 'check', 'transfer'], true)) {
-            $query->where('payment_method', $this->filterMethod);
+        $paymentMethod = match ($this->filterMethod) {
+            'bank', 'transfer' => 'bank_transfer',
+            'check' => 'cheque',
+            default => $this->filterMethod,
+        };
+
+        if (in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque'], true)) {
+            $query->where('payment_method', $paymentMethod);
         }
         if ($this->filterSource === 'invoice') {
             $query->where(function (Builder $source): void {

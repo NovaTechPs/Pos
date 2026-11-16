@@ -1,7 +1,10 @@
 @php
     $isPayment = $mode === 'payment';
 
-    $accent = $isPayment ? 'indigo' : 'emerald';
+    $accent = 'blue';
+
+    $voucherLabel = $isPayment ? 'سند صرف' : 'سند قبض';
+    $partyLabel = $isPayment ? 'المورد / الجهة' : 'العميل / الجهة';
 
     $selectedParty = $selectedParty ?? null;
     $partyResults = $partyResults ?? collect();
@@ -32,7 +35,8 @@
     <div
         x-data="{ open: @entangle('showForm') }"
         x-cloak
-        class="fixed inset-0 z-[90]"
+        data-voucher-form
+        class="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6"
     >
 
         {{-- Backdrop --}}
@@ -45,18 +49,18 @@
 
         {{-- Drawer --}}
         <div
-            class="absolute inset-y-0 end-0 flex w-full max-w-xl flex-col bg-white shadow-2xl"
+            class="relative flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
             x-show="open"
-            x-transition:enter="transform transition ease-out duration-300"
-            x-transition:enter-start="translate-x-full"
-            x-transition:enter-end="translate-x-0"
-            x-transition:leave="transform transition ease-in duration-200"
-            x-transition:leave-start="translate-x-0"
-            x-transition:leave-end="translate-x-full"
+            x-transition:enter="transform transition ease-out duration-200"
+            x-transition:enter-start="scale-95 opacity-0"
+            x-transition:enter-end="scale-100 opacity-100"
+            x-transition:leave="transform transition ease-in duration-150"
+            x-transition:leave-start="scale-100 opacity-100"
+            x-transition:leave-end="scale-95 opacity-0"
         >
 
             {{-- Header --}}
-            <div class="shrink-0 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
+            <div class="shrink-0 border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
                 <div class="flex items-start justify-between gap-4">
 
                     <div>
@@ -106,15 +110,14 @@
                             </div>
 
                             <div>
-                                <h2 class="text-lg font-bold text-slate-900">
-                                    {{ $paymentId ? 'تعديل ' : 'إضافة ' }}
-                                    {{ $isPayment ? 'سند صرف' : 'سند قبض' }}
+                                <h2 class="text-xl font-black text-slate-950 sm:text-2xl">
+                                    {{ $paymentId ? 'تعديل ' : 'إنشاء ' }}{{ $voucherLabel }}
                                 </h2>
 
                                 <p class="mt-0.5 text-xs text-slate-500">
                                     {{ $isPayment
-                                        ? 'تسجيل دفعة للمورد وتحديث رصيده.'
-                                        : 'تسجيل قبض من العميل وتحديث رصيده.' }}
+                                        ? 'سجّل دفعة للمورد أو الجهة مع تحديث الرصيد تلقائياً.'
+                                        : 'سجّل قبضاً من العميل أو الجهة مع تحديث الرصيد تلقائياً.' }}
                                 </p>
                             </div>
 
@@ -124,7 +127,7 @@
                     <button
                         type="button"
                         wire:click="$set('showForm', false)"
-                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
                         aria-label="إغلاق"
                     >
                         <svg
@@ -146,7 +149,7 @@
             </div>
 
             {{-- Archive: browse saved vouchers like the invoice archive --}}
-            <div data-voucher-archive class="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 sm:px-6">
+            <div data-voucher-archive class="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-2.5 sm:px-8">
                 <div class="inline-flex h-9 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
                     <button type="button" wire:click="previousVoucher" wire:loading.attr="disabled" wire:target="previousVoucher,nextVoucher" title="السند السابق" class="inline-flex items-center gap-1 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
                         <flux:icon.chevron-right class="size-4" /> السابق
@@ -156,7 +159,7 @@
                     </button>
                 </div>
                 <form wire:submit="searchVoucherArchive" class="flex min-w-0 flex-1 items-center gap-1.5">
-                    <input type="text" wire:model="voucherArchiveSearch" maxlength="100" inputmode="search" autocomplete="off" aria-label="بحث برقم السند" placeholder="رقم السند…" class="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-2 {{ $isPayment ? 'focus:border-indigo-400 focus:ring-indigo-100' : 'focus:border-emerald-400 focus:ring-emerald-100' }}" />
+                    <input type="text" wire:model="voucherArchiveSearch" maxlength="100" inputmode="search" autocomplete="off" aria-label="بحث برقم السند" placeholder="رقم السند…" class="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
                     <button type="submit" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
                         <flux:icon.magnifying-glass class="size-4" /> استعلام
                     </button>
@@ -166,7 +169,7 @@
                         <flux:icon.printer class="size-4" /> طباعة
                     </button>
                     <button type="button" wire:click="openCreate" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-                        <flux:icon.plus-circle class="size-4 {{ $isPayment ? 'text-indigo-600' : 'text-emerald-600' }}" /> جديد
+                        <flux:icon.plus-circle class="size-4 text-blue-600" /> جديد
                     </button>
                 @endif
             </div>
@@ -177,14 +180,25 @@
                 <form
                     wire:submit="{{ $saveMethod }}"
                     id="{{ $formId }}"
-                    class="space-y-5 p-5 sm:p-6"
+                    class="space-y-5 p-5 sm:p-8"
                 >
+
+                    <div data-voucher-mode class="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="inline-flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><flux:icon name="document-text" class="size-5" /></span>
+                            <div>
+                                <p class="text-sm font-black text-slate-900">نوع السند <span class="text-rose-500">*</span></p>
+                                <p class="text-xs text-slate-500">{{ $voucherLabel }} مستقل {{ $paymentId ? 'قيد التعديل' : 'جاهز للحفظ' }}</p>
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white">{{ $voucherLabel }}</span>
+                    </div>
 
                     {{-- Voucher number / date --}}
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
                         <div>
-                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                            <label class="mb-2 block text-sm font-black text-slate-800">
                                 رقم السند
                             </label>
 
@@ -192,7 +206,7 @@
                                 type="text"
                                 wire:model="voucherNumber"
                                 readonly
-                                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none"
+                                class="h-14 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-base font-bold text-slate-700 outline-none"
                             />
 
                             @error('voucherNumber')
@@ -203,14 +217,14 @@
                         </div>
 
                         <div>
-                            <label class="mb-2 block text-sm font-semibold text-slate-700">
-                                التاريخ
+                            <label class="mb-2 block text-sm font-black text-slate-800">
+                                التاريخ <span class="text-rose-500">*</span>
                             </label>
 
                             <input
                                 type="date"
                                 wire:model="paymentDate"
-                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                             />
 
                             @error('paymentDate')
@@ -723,7 +737,7 @@
 
                         <div>
 
-                            <label for="voucher-amount" class="mb-2 block text-sm font-semibold text-slate-700">
+                            <label for="voucher-amount" class="mb-2 block text-sm font-black text-slate-800">
                                 المبلغ
                                 <span class="text-rose-500">*</span>
                             </label>
@@ -737,7 +751,7 @@
                                     min="0"
                                     wire:model.live="amount"
                                     inputmode="decimal"
-                                    class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                    class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-xl font-black text-slate-900 outline-none transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                                 />
 
                             </div>
@@ -752,20 +766,20 @@
 
                         <div>
 
-                            <label class="mb-2 block text-sm font-semibold text-slate-700">
+                            <label class="mb-2 block text-sm font-black text-slate-800">
                                 طريقة الدفع
                                 <span class="text-rose-500">*</span>
                             </label>
 
                             <select
                                 wire:model="paymentMethod"
-                                class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                             >
                                 <option value="cash">
                                     نقدي
                                 </option>
 
-                                <option value="bank">
+                                <option value="bank_transfer">
                                     تحويل بنكي
                                 </option>
 
@@ -773,7 +787,7 @@
                                     بطاقة
                                 </option>
 
-                                <option value="check">
+                                <option value="cheque">
                                     شيك
                                 </option>
                             </select>
@@ -791,7 +805,7 @@
                     {{-- Balance preview --}}
                     @if($selectedParty)
 
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-voucher-balance-preview>
+                        <div class="rounded-2xl border border-blue-100 bg-blue-50/60 p-4" data-voucher-balance-preview>
 
                             {{-- الرصيد الحالي وقيمة السند أولاً --}}
                             <div class="flex items-center justify-between text-xs">
@@ -864,15 +878,15 @@
                     {{-- Notes --}}
                     <div>
 
-                        <label class="mb-2 block text-sm font-semibold text-slate-700">
-                            ملاحظات
+                            <label class="mb-2 block text-sm font-black text-slate-800">
+                                البيان / السبب
                         </label>
 
                         <textarea
                             wire:model="notes"
-                            rows="4"
-                            placeholder="أضف أي ملاحظات مرتبطة بالسند..."
-                            class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                            rows="3"
+                            placeholder="أدخل بيان السند أو سبب العملية..."
+                            class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                         ></textarea>
 
                         @error('notes')
@@ -887,14 +901,14 @@
             </div>
 
             {{-- Footer --}}
-            <div class="shrink-0 border-t border-slate-100 bg-white px-5 py-4 sm:px-6">
+            <div class="shrink-0 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:px-8">
 
                 <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
 
                     <button
                         type="button"
                         wire:click="$set('showForm', false)"
-                        class="w-full rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
                     >
                         إلغاء
                     </button>
@@ -906,11 +920,9 @@
                         wire:target="{{ $saveMethod }}"
                         class="
                             flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3
-                            text-sm font-semibold text-white shadow-sm transition
+                            text-sm font-black text-white shadow-lg shadow-blue-600/20 transition
                             disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto
-                            {{ $isPayment
-                                ? 'bg-indigo-600 hover:bg-indigo-700'
-                                : 'bg-emerald-600 hover:bg-emerald-700' }}
+                            bg-blue-600 hover:bg-blue-700
                         "
                     >
 
@@ -918,7 +930,7 @@
                             wire:loading.remove
                             wire:target="{{ $saveMethod }}"
                         >
-                            {{ $paymentId ? 'حفظ التعديلات' : 'حفظ السند' }}
+                            {{ $paymentId ? 'حفظ التعديلات' : 'حفظ '.$voucherLabel }}
                         </span>
 
                         <span
