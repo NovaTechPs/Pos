@@ -105,7 +105,13 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->set('from', '2026-10-01')->set('to', '2026-10-30')
         ->call('showStatementParty', $this->customer->id)
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
-        ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total');
+        ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total')
+        ->assertSeeHtml('data-statement-filter-panel')
+        ->assertSee(['فلاتر كشف الحساب', 'من تاريخ', 'إلى تاريخ', 'الفرع'])
+        ->assertDontSee('ملاحظات حول طريقة احتساب الكشف')
+        ->assertDontSee('الرصيد المسجل حالياً')
+        ->assertDontSeeHtml('reports-ledger-totals')
+        ->assertDontSeeHtml('reports-ledger-footer');
 
     $html = $component->html();
     preg_match('/<tr data-statement-total>.*?<\/tr>/s', $html, $total);

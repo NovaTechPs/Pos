@@ -3,16 +3,6 @@
     $hasParty = array_key_exists('رصيد أول الفترة', $summary);
     $money = fn ($value): string => number_format((float) $value, 2);
 @endphp
-@if ($definition['notes'])
-    <details class="reports-notes"><summary>ملاحظات حول طريقة احتساب الكشف</summary><div>@foreach ($definition['notes'] as $note)<p wire:key="statement-note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div></details>
-@endif
-@if ($hasParty)
-    <dl class="reports-ledger-totals" aria-label="ملخص كشف الحساب">
-        @foreach (['إجمالي المدين' => 'debit', 'إجمالي الدائن' => 'credit', 'رصيد آخر الفترة' => 'balance'] as $label => $tone)
-            <div class="is-{{ $tone }}"><dt>{{ $label }}</dt><dd dir="ltr">{{ $money($summary[$label]) }}</dd></div>
-        @endforeach
-    </dl>
-@endif
 <div class="reports-table-wrap" x-data="{ selectedRow: null }">
     <table class="reports-statement-table">
         <thead><tr>@foreach ($definition['columns'] as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
@@ -45,17 +35,4 @@
         @endif
     </table>
 </div>
-@if (array_key_exists('فرق المطابقة الحالي', $summary))
-    <dl class="reports-summary-chips"><div><dt>الرصيد المسجل حالياً</dt><dd dir="ltr">{{ $money($summary['الرصيد المسجل حالياً']) }}</dd></div><div><dt>فرق المطابقة الحالي</dt><dd dir="ltr">{{ $money($summary['فرق المطابقة الحالي']) }}</dd></div></dl>
-@endif
 <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد الحركات: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
-@if ($hasParty)
-    <footer class="reports-ledger-footer" aria-label="إجماليات كشف الحساب">
-        <p>عدد الحركات: {{ $rows->total() }}</p>
-        <dl>
-            @foreach (['رصيد آخر الفترة' => 'balance', 'إجمالي الدائن' => 'credit', 'إجمالي المدين' => 'debit'] as $label => $tone)
-                <div class="is-{{ $tone }}"><dt>{{ $label }}</dt><dd dir="ltr">{{ $money($summary[$label]) }}</dd></div>
-            @endforeach
-        </dl>
-    </footer>
-@endif

@@ -476,6 +476,38 @@ new class extends Component {
         @endforeach
     </section>
     @endif
+    @if ($report === 'statement')
+    <form wire:submit="applyFilters" class="reports-filter reports-statement-filter space-y-4" data-statement-filter-panel>
+        <h2 class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب</h2>
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="reports-selected-account">
+                <span>الحساب</span>
+                @if ($statementParty)
+                    <strong>{{ $statementParty->name }}</strong>
+                    <small>{{ $statementParty->code ?: 'بدون رقم حساب' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</small>
+                @else
+                    <strong class="is-empty">اختر حساباً من القائمة</strong>
+                @endif
+                @error('partyId')<p role="alert">{{ $message }}</p>@enderror
+            </div>
+            <flux:input type="date" label="من تاريخ" wire:model="from" />
+            <flux:input type="date" label="إلى تاريخ" wire:model="to" />
+            @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @else
+                <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>
+            @endif
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
+            <flux:button type="button" icon="arrow-path" wire:click="resetFilters">إعادة التعيين</flux:button>
+            <div class="reports-ranges" role="group" aria-label="فترات سريعة">
+                @foreach ($periodRanges as $range => [, , $label])<flux:button type="button" wire:key="statement-range-{{ $range }}" wire:click="setPeriod('{{ $range }}')" :variant="$activeRange === $range ? 'primary' : 'outline'" aria-pressed="{{ $activeRange === $range ? 'true' : 'false' }}">{{ $label }}</flux:button>@endforeach
+            </div>
+        </div>
+        @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
+    </form>
+    @else
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
         <h2 class="reports-section-title"><flux:icon.document-text variant="outline" />{{ $allowed[$report][0] }}</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -544,6 +576,7 @@ new class extends Component {
         </div>
         @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     </form>
+    @endif
     <div wire:loading role="status" class="text-sm text-blue-700 dark:text-blue-300">جارٍ تجهيز التقرير…</div>
     <section class="reports-result">
     <header class="reports-result-heading">

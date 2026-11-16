@@ -463,7 +463,8 @@ test('statement directory starts with all parties and supports keyboard navigati
         ->call('showStatementParty', $this->customer->id)
         ->assertSeeHtml('x-on:keydown.arrow-right.prevent="toParties()"')
         ->assertSeeHtml('data-statement-row tabindex="0"')
-        ->assertSeeHtml('reports-ledger-footer')
+        ->assertSeeHtml('data-statement-filter-panel')
+        ->assertDontSeeHtml('reports-ledger-footer')
         ->assertSee('KEYBOARD-ROW');
 
     $html = $component->html();
