@@ -6,18 +6,24 @@
     <div data-workspace-tabs @if ($shellMain) data-flux-main @endif class="workspace-shell app-shell-main" data-home-url="{{ route(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'admin.dashboard' : 'tenant.dashboard') }}" data-persistence-key="workspace-tabs:{{ auth()->id() }}:{{ session('active_tenant_id') }}:{{ session('active_branch_id') }}" data-initial-title="{{ $title ?? $pageTitle ?? config('app.name') }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
         <div class="workspace-toolbar">
             @if ($shellMain)
-                <flux:sidebar.toggle
-                    data-tenant-desktop-navigation-toggle
-                    class="hidden rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-700 lg:inline-flex dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                <flux:button
+                    variant="subtle"
+                    square
                     icon="bars-3"
+                    data-tenant-navigation-trigger
+                    x-on:click="$dispatch('tenant-navigation-toggle')"
+                    aria-label="فتح القائمة الرئيسية"
+                    class="hidden rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-700 lg:inline-flex dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 />
             @endif
-            <details data-workspace-menu class="workspace-menu">
-                <summary>☰ <span>فتح قسم</span></summary>
-                <div class="workspace-menu-panel">
-                    @include(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'layouts.admin.navigation' : 'layouts.tenant.navigation')
-                </div>
-            </details>
+            @if (! $shellMain)
+                <details data-workspace-menu class="workspace-menu">
+                    <summary>☰ <span>فتح قسم</span></summary>
+                    <div class="workspace-menu-panel">
+                        @include(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'layouts.admin.navigation' : 'layouts.tenant.navigation')
+                    </div>
+                </details>
+            @endif
             <div data-workspace-tab-list class="workspace-tab-list" role="tablist" aria-label="الصفحات المفتوحة"></div>
         </div>
         <div data-workspace-panels class="workspace-panels">

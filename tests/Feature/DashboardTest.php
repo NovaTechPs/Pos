@@ -20,10 +20,12 @@ test('authenticated users can visit the dashboard', function () {
     $response = $this->get(route('tenant.dashboard'));
     $response->assertOk()
         ->assertSee('wire:navigate', false)
+        ->assertSee('data-tenant-navigation-layer', false)
         ->assertSee('data-tenant-navigation-drawer', false)
-        ->assertSee('data-tenant-navigation-toggle', false)
-        ->assertSee('data-tenant-desktop-navigation-toggle', false)
+        ->assertSee('data-tenant-navigation-trigger', false)
         ->assertSee('data-tenant-navigation', false)
+        ->assertSee('x-show="tenantNavigationOpen"', false)
+        ->assertDontSee('data-workspace-menu', false)
         ->assertSee('الرئيسية')
         ->assertSee('العملاء والموردون')
         ->assertSee('المخزون والمنتجات');

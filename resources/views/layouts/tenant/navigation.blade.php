@@ -85,7 +85,7 @@
     ];
 @endphp
 
-<div data-tenant-navigation class="space-y-2 px-1 pb-3">
+<div data-tenant-navigation class="space-y-0.5 px-1 pb-3">
     @foreach ($navigationGroups as $group)
         @php
             $visibleItems = collect($group['items'])->filter(function (array $item) use ($activeBranch): bool {
@@ -116,8 +116,8 @@
         @endphp
 
         @if ($visibleItems->isNotEmpty())
-        <details data-tenant-navigation-group @if ($groupIsCurrent || $loop->first) open @endif class="overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm transition dark:border-zinc-700 dark:bg-zinc-900/80">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 [&::-webkit-details-marker]:hidden dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-white">
+        <details data-tenant-navigation-group @if ($groupIsCurrent || $loop->first) open @endif class="overflow-hidden border-b border-slate-100 last:border-0 dark:border-zinc-800">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 [&::-webkit-details-marker]:hidden dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-white">
                 <span class="flex min-w-0 items-center gap-2.5">
                     <flux:icon :name="$group['icon']" class="size-5 shrink-0 text-blue-600 dark:text-blue-400" />
                     <span class="truncate">{{ __($group['label']) }}</span>
@@ -127,7 +127,7 @@
                 </svg>
             </summary>
 
-            <div class="grid gap-0.5 border-t border-slate-100 px-1.5 py-1.5 dark:border-zinc-800">
+            <div class="grid gap-0.5 px-1 pb-2 pt-1">
                 @foreach ($visibleItems as $item)
                     @if ($item['route'] === 'tenant.store')
                         @if ($activeBranch?->domain)

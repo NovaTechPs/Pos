@@ -4,8 +4,13 @@
         toggleSections() {
             let shell = document;
             try {
-                if (window.top !== window && window.top.document.querySelector('[data-workspace-menu]')) shell = window.top.document;
+                if (window.top !== window && window.top.document.querySelector('[data-tenant-navigation-trigger], [data-workspace-menu]')) shell = window.top.document;
             } catch (error) {}
+            const drawerTrigger = shell.querySelector('[data-tenant-navigation-trigger]');
+            if (drawerTrigger) {
+                drawerTrigger.click();
+                return;
+            }
             const menu = shell.querySelector('[data-workspace-menu]');
             if (!menu) {
                 window.location.assign(@js(route('tenant.dashboard')));

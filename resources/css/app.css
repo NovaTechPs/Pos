@@ -105,6 +105,10 @@
     --color-blue-950: var(--theme-primary-800);
 }
 
+[x-cloak] {
+    display: none !important;
+}
+
 @layer theme {
     .dark {
         --color-accent: var(--theme-primary-500);

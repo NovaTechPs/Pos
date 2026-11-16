@@ -1,11 +1,14 @@
 <flux:header class="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur lg:hidden dark:border-zinc-800 dark:bg-zinc-950/95">
 
-    {{-- Mobile Sidebar Toggle --}}
-    <flux:sidebar.toggle
-        data-tenant-navigation-toggle
+    {{-- Mobile navigation drawer toggle --}}
+    <flux:button
+        variant="subtle"
+        square
+        icon="bars-3"
+        data-tenant-navigation-trigger
+        x-on:click="$dispatch('tenant-navigation-toggle')"
+        aria-label="فتح القائمة الرئيسية"
         class="rounded-xl lg:hidden"
-        icon="bars-2"
-        inset="left"
     />
 
     <a href="{{ route('tenant.dashboard') }}" class="ms-2 inline-flex items-center gap-2 font-extrabold text-slate-800 dark:text-white" wire:navigate aria-label="WaslaPOS">
