@@ -48,7 +48,8 @@
                 <flux:input name="code" label="رمز التحقق بخطوتين (إذا كان مفعّلًا)" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
             @endif
 
-            <flux:checkbox name="remember" :label="__('Remember me')" :checked="old('remember')" />
+            {{-- Ticked by default: shop devices (POS handhelds) must stay signed in after the idle session ends. --}}
+            <flux:checkbox name="remember" :label="__('Remember me')" :checked="old('remember', true)" data-login-remember />
 
             <div class="flex items-center justify-end">
                 <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">

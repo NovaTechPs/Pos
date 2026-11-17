@@ -81,3 +81,16 @@ test('users can logout', function () {
 
     $this->assertGuest();
 });
+
+test('remember me is ticked by default so shop devices stay signed in', function () {
+    $html = $this->get(route('login'))->assertOk()->getContent();
+    preg_match('/<ui-checkbox[^>]*data-login-remember[^>]*>/', $html, $remember);
+
+    expect($remember[0] ?? '')->toContain('checked');
+
+    $user = User::factory()->create();
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password', 'remember' => 'on'])
+        ->assertSessionHasNoErrors();
+
+    expect($user->fresh()->remember_token)->not->toBeNull();
+});
