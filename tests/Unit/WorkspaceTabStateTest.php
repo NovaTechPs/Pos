@@ -317,3 +317,36 @@ test('keys pressed on the workspace shell reach the active page frame', function
 
     expect($process->getOutput())->toContain('WORKSPACE_KEY_FORWARD_OK');
 });
+
+test('a document opened from a statement always gets a new tab and leaves open tabs as they are', function (): void {
+    $script = <<<'JAVASCRIPT'
+    import fs from 'node:fs';
+    import assert from 'node:assert/strict';
+    const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
+    const { WorkspaceTabState, needsOwnDocumentTab } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const base = 'https://pos.example/dashboard';
+    const state = new WorkspaceTabState(base, 'Home');
+    const openInvoices = state.open(base + '/sale-invoices', 'Sales');
+
+    const first = base + '/sale-invoices?invoice=7';
+    assert.equal(needsOwnDocumentTab(state, first, base), true);
+    const firstTab = state.open(first, 'Invoice 7', needsOwnDocumentTab(state, first, base));
+    assert.notEqual(firstTab.id, openInvoices.id, 'The clicked invoice must not reuse the tab of another invoice');
+
+    // Clicking the same document again opens yet another tab and leaves the earlier ones untouched.
+    assert.equal(needsOwnDocumentTab(state, first, base), true);
+    const again = state.open(first, 'Invoice 7', needsOwnDocumentTab(state, first, base));
+    assert.notEqual(again.id, firstTab.id);
+    assert.equal(state.tabs.length, 4);
+
+    // A plain section link still reuses the section tab.
+    assert.equal(needsOwnDocumentTab(state, base + '/sale-invoices', base), false);
+    assert.equal(state.open(base + '/sale-invoices', 'Sales').id, openInvoices.id);
+    JAVASCRIPT;
+
+    $process = new Process(['node', '--input-type=module', '-e', $script], dirname(__DIR__, 2));
+    $process->run();
+
+    expect($process->getErrorOutput())->toBe('');
+    expect($process->isSuccessful())->toBeTrue();
+});

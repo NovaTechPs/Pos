@@ -131,6 +131,16 @@ export function readWorkspaceSnapshot(raw, base) {
     } catch { return null; }
 }
 
+/**
+ * A page asked to open one document (an invoice or voucher from a statement): it always gets a new tab,
+ * so no open tab is closed, reloaded or changed, even one showing the same document.
+ */
+export function needsOwnDocumentTab(state, raw, base) {
+    const url = workspaceUrl(raw, base);
+
+    return Boolean(url && new URL(url).search !== '');
+}
+
 export class WorkspaceTabState {
     constructor(url, title) {
         this.tabs = [{ id: 'initial', url, title }];
@@ -139,7 +149,8 @@ export class WorkspaceTabState {
     }
     open(url, title, forceNew = false) {
         const requestedSection = workspaceSectionKey(url, url);
-        let tab = forceNew ? null : this.tabs.find(existing => workspaceSectionKey(existing.url, url) === requestedSection);
+        let tab = forceNew ? null : (this.tabs.find(existing => existing.url === url)
+            ?? this.tabs.find(existing => workspaceSectionKey(existing.url, url) === requestedSection));
         if (!tab) {
             tab = { id: `page-${++this.sequence}`, url, title };
             this.tabs.push(tab);
@@ -458,7 +469,7 @@ function mountWorkspace(root) {
     const openRequestedPage = event => {
         const {url, title} = event.detail ?? {};
         if (typeof url !== 'string') return;
-        openPage(url, typeof title === 'string' ? title : 'صفحة');
+        openPage(url, typeof title === 'string' ? title : 'صفحة', needsOwnDocumentTab(state, url, window.location.href));
     };
     function intercept(event, base = window.location.href) {
         return interceptWorkspaceNavigation(event, base, openPage);
