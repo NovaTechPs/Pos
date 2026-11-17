@@ -675,6 +675,7 @@ test('parties list and statement rows can be walked with the arrow keys', functi
     Livewire::test('pages::tenant.customers.index')
         ->assertSee('data-party-row="'.$this->customer->id.'"', false)
         ->assertSeeHtml('data-bold-rows')
+        ->assertSeeHtml('data-party-type-badge')
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
         ->call('openStatementModal', $this->customer->id)
         ->assertSee('data-statement-row', false)

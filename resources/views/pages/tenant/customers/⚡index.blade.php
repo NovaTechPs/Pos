@@ -1533,7 +1533,7 @@ new class extends Component {
                         <tr
                             wire:key="party-{{ $party->id }}"
                             tabindex="0" data-nav-row data-party-row="{{ $party->id }}" x-on:keydown.enter.self.prevent="$wire.openStatementModal({{ $party->id }})"
-                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition focus:outline-none focus:bg-indigo-50 dark:focus:bg-indigo-950/30"
+                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition focus:outline-none"
                         >
 
                             <td
@@ -1573,6 +1573,7 @@ new class extends Component {
                                 @if ($party->type === 'customer')
 
                                     <span
+                                        data-party-type-badge
                                         class="bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-1 rounded-md text-xs font-medium"
                                     >
                                         زبون
@@ -1581,6 +1582,7 @@ new class extends Component {
                                 @elseif ($party->type === 'supplier')
 
                                     <span
+                                        data-party-type-badge
                                         class="bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-1 rounded-md text-xs font-medium"
                                     >
                                         مورد
@@ -1589,6 +1591,7 @@ new class extends Component {
                                 @else
 
                                     <span
+                                        data-party-type-badge
                                         class="bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-2 py-1 rounded-md text-xs font-medium"
                                     >
                                         زبون ومورد
