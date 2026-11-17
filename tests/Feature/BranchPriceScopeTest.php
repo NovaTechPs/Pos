@@ -328,3 +328,44 @@ test('the owner sees every branch price row in the product form', function (): v
 
     expect(branchRetailPrice($this->thirdBranch, $this->product))->toBe(35.0);
 });
+
+test('other branch rows change only the retail price and keep their wholesale price', function (): void {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->ownBranch->id, 'is_owner' => true]);
+    $this->actingAs($owner);
+    BranchProduct::query()->where('branch_id', $this->otherBranch->id)->update(['wholesale_price' => 18, 'min_wholesale_quantity' => 6]);
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('edit', $this->product->id)
+        ->assertDontSeeHtml('wire:model="branchPricesInput.'.$this->otherBranch->id.'.wholesale_price"')
+        ->set('branchPricesInput.'.$this->otherBranch->id.'.retail_price', '26')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $row = BranchProduct::query()->where('branch_id', $this->otherBranch->id)->where('product_id', $this->product->id)->first();
+    expect((float) $row->retail_price)->toBe(26.0)
+        ->and((float) $row->wholesale_price)->toBe(18.0)
+        ->and((int) $row->min_wholesale_quantity)->toBe(6);
+});
+
+test('a new product takes the retail price typed for each permitted branch', function (): void {
+    $productsCreate = Permission::query()->create(['name' => 'products.create', 'display_name' => 'Create', 'group' => 'Products']);
+    $this->role->permissions()->attach($productsCreate);
+    grantPriceBranch($this->employee, $this->otherBranch);
+    $this->employee->unsetRelation('role');
+
+    Livewire::test('pages::tenant.products.index')
+        ->call('openCreateModal')
+        ->assertSeeHtml('data-branch-price-row="'.$this->otherBranch->id.'"')
+        ->assertDontSeeHtml('data-branch-price-row="'.$this->thirdBranch->id.'"')
+        ->set('name', 'New branch item')
+        ->set('cost_price', 3)
+        ->set('branchPricesInput.'.$this->ownBranch->id.'.retail_price', '9')
+        ->set('branchPricesInput.'.$this->otherBranch->id.'.retail_price', '11')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $product = Product::query()->where('name', 'New branch item')->sole();
+    expect(branchRetailPrice($this->ownBranch, $product))->toBe(9.0)
+        ->and(branchRetailPrice($this->otherBranch, $product))->toBe(11.0)
+        ->and(branchRetailPrice($this->thirdBranch, $product))->toBe(0.0);
+});

@@ -244,11 +244,12 @@ new class extends Component {
             ];
 
         } else {
-            $rules['branchPricesInput.*.retail_price'] = [
-                'required',
-                'numeric',
-                'min:0',
-            ];
+            foreach (array_keys($this->branchPricesInput) as $priceBranchId) {
+                // The current branch needs a price; other branches may be left empty and keep 0.
+                $rules['branchPricesInput.'.$priceBranchId.'.retail_price'] = (int) $priceBranchId === (int) $this->activeBranchId()
+                    ? ['required', 'numeric', 'min:0']
+                    : ['nullable', 'numeric', 'min:0'];
+            }
 
             $rules['branchPricesInput.*.wholesale_price'] = [
                 'nullable',
@@ -524,11 +525,20 @@ new class extends Component {
             return;
         }
 
+        // The current branch first, then the other branches whose retail price this user may set.
+        $formBranchIds = collect([(int) $this->activeBranchId()])
+            ->merge($this->priceEditableBranchIds())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $branches = DB::table('branches')
             ->where('tenant_id', $tenantId)
-            ->when($this->activeBranchId(), fn ($query) => $query->where('id', $this->activeBranchId()))
-            ->orderBy('name')
-            ->get();
+            ->when($formBranchIds !== [], fn ($query) => $query->whereIn('id', $formBranchIds))
+            ->get()
+            ->sortBy(fn ($branch): int => (int) array_search((int) $branch->id, $formBranchIds, true))
+            ->values();
 
         $this->branchPricesInput = [];
 
@@ -1302,8 +1312,9 @@ new class extends Component {
 
                         $payload = [
                             'retail_price' =>
-                                $branchData['retail_price']
-                                ?? 0,
+                                filled($branchData['retail_price'] ?? null)
+                                ? $branchData['retail_price']
+                                : 0,
 
                             'wholesale_price' =>
                                 filled($branchData['wholesale_price'] ?? null)
@@ -1320,6 +1331,11 @@ new class extends Component {
 
                     if ($branchId === $this->activeBranchId()) {
                         $payload['alert_quantity'] = round((float) $this->alertQuantity, 2);
+                    } elseif (! $this->is_price_unified && array_key_exists($branchId, $this->branchPricesInput)) {
+                        // Other branches are priced here by their retail price only; when editing, the rest stays as it is.
+                        if ($this->isEditing) {
+                            $payload = ['retail_price' => $payload['retail_price'], 'updated_at' => $payload['updated_at']];
+                        }
                     }
 
                     /*
@@ -3223,9 +3239,7 @@ new class extends Component {
 
                         @php
                             // Editing shows the current branch first, then the other branches this user may price.
-                            $formPriceBranchIds = $isEditing
-                                ? collect([(int) $activeBranchId])->merge(collect($priceEditableBranchIds)->filter(fn ($id) => array_key_exists((int) $id, $branchPricesInput)))->unique()->values()->all()
-                                : [(int) $activeBranchId];
+                            $formPriceBranchIds = collect([(int) $activeBranchId])->merge(collect($priceEditableBranchIds)->filter(fn ($id) => array_key_exists((int) $id, $branchPricesInput)))->unique()->values()->all();
                             $priceBranches = $allBranches->whereIn('id', $formPriceBranchIds)->sortBy(fn ($branch) => array_search((int) $branch->id, $formPriceBranchIds, true))->values();
                             $pricesLocked = $isEditing && ! in_array((int) $activeBranchId, $priceEditableBranchIds, true);
                         @endphp
@@ -3297,16 +3311,18 @@ new class extends Component {
                                             <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.retail_price" placeholder="0.00" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.retail_price" />
                                         </div>
+                                        @if ($loop->first)
                                         <div>
-                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة · {{ $branch->name }}</label>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">سعر الجملة</label>
                                             <flux:input size="sm" type="number" step="0.01" min="0" wire:model="branchPricesInput.{{ $branch->id }}.wholesale_price" placeholder="0.00" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.wholesale_price" />
                                         </div>
                                         <div>
-                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة · {{ $branch->name }}</label>
+                                            <label class="mb-1 block text-xs font-semibold text-zinc-600 dark:text-zinc-300">أقل كمية للجملة</label>
                                             <flux:input size="sm" type="number" min="1" wire:model.number="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" placeholder="1" :readonly="$rowLocked" />
                                             <flux:error name="branchPricesInput.{{ $branch->id }}.min_wholesale_quantity" />
                                         </div>
+                                        @endif
                                     </div>
                                 @endforeach
 
