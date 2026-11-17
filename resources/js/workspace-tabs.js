@@ -141,6 +141,19 @@ export function needsOwnDocumentTab(state, raw, base) {
     return Boolean(url && new URL(url).search !== '');
 }
 
+/**
+ * True when the same page was requested less than a second ago, i.e. a duplicate of one click.
+ */
+export function isRepeatedOpenRequest(recent, url, now, windowMs = 1000) {
+    for (const [requestedUrl, at] of recent) {
+        if (now - at > windowMs) recent.delete(requestedUrl);
+    }
+    if (recent.has(url)) return true;
+    recent.set(url, now);
+
+    return false;
+}
+
 export class WorkspaceTabState {
     constructor(url, title) {
         this.tabs = [{ id: 'initial', url, title }];
@@ -466,9 +479,12 @@ function mountWorkspace(root) {
     // Livewire pages inside a workspace iframe cannot use a normal browser
     // navigation when they need to keep their parent page open. They can ask
     // the shell to open a destination through this same internal tab manager.
+    const recentRequests = new Map();
     const openRequestedPage = event => {
         const {url, title} = event.detail ?? {};
         if (typeof url !== 'string') return;
+        // One click can reach the shell twice; the second copy must not open a duplicate tab.
+        if (isRepeatedOpenRequest(recentRequests, url, performance.now())) return;
         openPage(url, typeof title === 'string' ? title : 'صفحة', needsOwnDocumentTab(state, url, window.location.href));
     };
     function intercept(event, base = window.location.href) {

@@ -323,7 +323,7 @@ test('a document opened from a statement always gets a new tab and leaves open t
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, needsOwnDocumentTab } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, needsOwnDocumentTab, isRepeatedOpenRequest } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard';
     const state = new WorkspaceTabState(base, 'Home');
     const openInvoices = state.open(base + '/sale-invoices', 'Sales');
@@ -338,6 +338,13 @@ test('a document opened from a statement always gets a new tab and leaves open t
     const again = state.open(first, 'Invoice 7', needsOwnDocumentTab(state, first, base));
     assert.notEqual(again.id, firstTab.id);
     assert.equal(state.tabs.length, 4);
+
+    // The same request arriving twice from one click is ignored; a later deliberate click is not.
+    const recent = new Map();
+    assert.equal(isRepeatedOpenRequest(recent, first, 1000), false);
+    assert.equal(isRepeatedOpenRequest(recent, first, 1200), true);
+    assert.equal(isRepeatedOpenRequest(recent, base + '/receipts?voucher=3', 1250), false);
+    assert.equal(isRepeatedOpenRequest(recent, first, 2600), false);
 
     // A plain section link still reuses the section tab.
     assert.equal(needsOwnDocumentTab(state, base + '/sale-invoices', base), false);
