@@ -1525,7 +1525,7 @@ new class extends Component {
 
                 <tbody
                     x-data data-party-rows data-bold-rows x-on:statement-closed.window="$nextTick(() => $el.querySelector(`[data-party-row='${$event.detail.id}']`)?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
-                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm [&_td]:font-extrabold! [&_td_div]:font-extrabold! [&_td]:text-[#172554]! [&_td_div]:text-[#172554]! dark:[&_td]:text-blue-200! dark:[&_td_div]:text-blue-200!"
+                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm [&_td]:font-extrabold! [&_td_div]:font-extrabold! [&_td]:text-[#172554] [&_td_div]:text-[#172554] dark:[&_td]:text-blue-200 dark:[&_td_div]:text-blue-200"
                 >
 
                     @forelse ($parties as $party)
@@ -1533,7 +1533,7 @@ new class extends Component {
                         <tr
                             wire:key="party-{{ $party->id }}"
                             tabindex="0" data-nav-row data-party-row="{{ $party->id }}" x-on:keydown.enter.self.prevent="$wire.openStatementModal({{ $party->id }})"
-                            class="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition focus:outline-none"
+                            class="group hover:bg-gray-50/50 transition focus:bg-[#123b86]! focus:shadow-[inset_0_0_0_2px_#0c2f70] focus:outline-none focus:[&>td]:text-white! focus:[&>td_*:not([data-party-type-badge])]:text-white! dark:hover:bg-gray-700/50"
                         >
 
                             <td
@@ -1574,7 +1574,7 @@ new class extends Component {
 
                                     <span
                                         data-party-type-badge
-                                        class="bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-1 rounded-md text-xs font-medium"
+                                        class="bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 group-focus:bg-white! group-focus:text-[#123b86]! rounded-md dark:bg-blue-900/40 dark:text-blue-300"
                                     >
                                         زبون
                                     </span>
@@ -1583,7 +1583,7 @@ new class extends Component {
 
                                     <span
                                         data-party-type-badge
-                                        class="bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-1 rounded-md text-xs font-medium"
+                                        class="bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 group-focus:bg-white! group-focus:text-[#123b86]! rounded-md dark:bg-amber-900/40 dark:text-amber-300"
                                     >
                                         مورد
                                     </span>
@@ -1592,7 +1592,7 @@ new class extends Component {
 
                                     <span
                                         data-party-type-badge
-                                        class="bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-2 py-1 rounded-md text-xs font-medium"
+                                        class="bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700 group-focus:bg-white! group-focus:text-[#123b86]! rounded-md dark:bg-purple-900/40 dark:text-purple-300"
                                     >
                                         زبون ومورد
                                     </span>
