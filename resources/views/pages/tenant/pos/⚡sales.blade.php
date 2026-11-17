@@ -2140,7 +2140,16 @@ new class extends Component {
             return;
         }
 
-        $quantity = round((float) str_replace(',', '.', (string) $qty), 3);
+        $typedQuantity = trim(str_replace(',', '.', (string) $qty));
+        if (! is_numeric($typedQuantity) || ! is_finite((float) $typedQuantity)) {
+            // A mistyped number (for example «12+») keeps the item instead of removing it.
+            $this->errorMessage = 'الرقم المدخل خاطئ.';
+            $this->dispatch('pos-restore-cart-field', lineKey: $lineKey, field: 'quantity');
+
+            return;
+        }
+
+        $quantity = round((float) $typedQuantity, 3);
         if (abs($quantity) < 0.000001) {
             $this->removeFromCart($lineKey);
             return;

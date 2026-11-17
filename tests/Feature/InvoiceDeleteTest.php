@@ -100,3 +100,45 @@ test('staff without the delete permission cannot delete invoices', function (): 
 
     expect($order->fresh()->trashed())->toBeFalse();
 });
+
+test('receipts linked to a saved invoice are added and edited from the invoice itself', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون السند', 'type' => 'customer', 'current_balance' => 0]);
+
+    Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectCustomer', $customer->id)
+        ->call('selectProduct', $this->product->id)
+        ->set('selectedQuantity', 10)
+        ->call('commitRowToCart')
+        ->call('saveInvoice');
+    $order = Order::query()->sole();
+    expect((float) $customer->fresh()->current_balance)->toBe(100.0);
+
+    $page = Livewire::test('pages::tenant.sales.invoices')
+        ->call('loadOrder', $order)
+        ->assertSeeHtml('data-invoice-receipts')
+        ->call('openInvoiceReceipt')
+        ->assertSet('showSettlementModal', true)
+        ->assertSet('settlementAmount', '100')
+        ->set('settlementAmount', '40')
+        ->call('saveSettlementVoucher')
+        ->assertSet('showSettlementModal', false)
+        ->assertSet('currentOrderId', $order->id);
+
+    $receipt = Payment::query()->sole();
+    expect((float) $receipt->amount)->toBe(40.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(40.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(60.0);
+
+    $page->call('openInvoiceReceipt', $receipt->id)
+        ->assertSet('editingSettlementId', $receipt->id)
+        ->assertSet('settlementAmount', '40.00')
+        ->assertSeeHtml('data-invoice-receipt-list')
+        ->set('settlementAmount', '70')
+        ->call('saveSettlementVoucher')
+        ->assertSet('currentOrderId', $order->id);
+
+    expect(Payment::query()->count())->toBe(1)
+        ->and((float) $receipt->fresh()->amount)->toBe(70.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(70.0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(30.0);
+});

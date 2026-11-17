@@ -304,7 +304,8 @@
                                 <input type="number" step="0.01" min="0.01"
                                     value="{{ $isReturnMode ? abs((float) $item['quantity']) : $item['quantity'] }}" data-pos-field="quantity"
                                     data-product-id="{{ $item['id'] }}" data-line-key="{{ $lineKey }}" data-row-index="{{ $loop->index }}"
-                                    wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.value)" @disabled($invoiceLocked)
+                                    wire:change="updateCartField('{{ $lineKey }}', 'quantity', $event.target.validity.badInput ? 'invalid' : $event.target.value)" @disabled($invoiceLocked)
+                                    x-on:pos-restore-cart-field.window="if ($event.detail.lineKey === $el.dataset.lineKey && $event.detail.field === 'quantity') { $el.value = $el.defaultValue; $el.select(); }"
                                     class="pos-cart-field w-16 border-0 bg-transparent px-1 py-1.5 text-center font-mono font-black text-slate-900 outline-none focus:ring-0"
                                     inputmode="decimal" autocomplete="off">
                                 <button type="button" data-pos-quantity-step="down" @disabled($invoiceLocked || $displayQuantity <= 1)

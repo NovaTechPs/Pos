@@ -53,6 +53,12 @@ new class extends Component {
 
     public bool $showSettlementModal = false;
 
+    /** Receipt voucher of the open invoice being edited in the settlement window; null adds a new one. */
+    public ?int $editingSettlementId = null;
+
+    /** The settlement window was opened from a saved invoice, so closing it keeps that invoice open. */
+    public bool $settlementStaysOnInvoice = false;
+
     public string $invoiceNumber = '';
 
     public string $invoiceDate = '';
@@ -1462,13 +1468,52 @@ new class extends Component {
         $this->settlementAmount = (string) max(0, (float) $order->total - (float) $order->delivery_fee - $receiptsTotal);
         $this->settlementMethod = 'cash';
         $this->settlementNotes = '';
+        $this->editingSettlementId = null;
+        $this->settlementStaysOnInvoice = false;
         $this->resetValidation('settlementNotes');
+        $this->showSettlementModal = true;
+    }
+
+    /**
+     * Opens the receipt vouchers of the saved invoice: a new one, or one of its linked receipts to edit.
+     */
+    public function openInvoiceReceipt(?int $paymentId = null): void
+    {
+        $this->authorize($paymentId ? 'accounting.receipt.edit' : 'accounting.receipt.create');
+
+        $tenantId = $this->tenantId();
+        $order = $this->currentOrderId
+            ? Order::query()->where('tenant_id', $tenantId)->find($this->currentOrderId)
+            : null;
+        if (! $order || ! $order->customer_id || $order->type === 'return') {
+            $this->errorMessage = 'افتح فاتورة محفوظة مرتبطة بزبون لإضافة سند قبض لها.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
+        $receipts = (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount');
+        $this->editingSettlementId = null;
+        $this->settlementAmount = (string) max(0, round((float) $order->total - (float) $order->delivery_fee - $receipts, 2));
+        $this->settlementMethod = 'cash';
+        $this->settlementNotes = '';
+
+        if ($paymentId) {
+            $payment = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->findOrFail($paymentId);
+            $this->editingSettlementId = $payment->id;
+            $this->settlementAmount = number_format((float) $payment->amount, 2, '.', '');
+            $this->settlementMethod = $payment->payment_method ?: 'cash';
+            $this->settlementNotes = (string) $payment->notes;
+        }
+
+        $this->settlementStaysOnInvoice = true;
+        $this->resetValidation(['settlementAmount', 'settlementNotes', 'settlementMethod']);
         $this->showSettlementModal = true;
     }
 
     public function saveSettlementVoucher(): void
     {
-        $this->authorize('accounting.receipt.create');
+        $this->authorize($this->editingSettlementId ? 'accounting.receipt.edit' : 'accounting.receipt.create');
 
         $validated = $this->validate([
             'settlementAmount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:999999999'],
@@ -1486,22 +1531,38 @@ new class extends Component {
             $customer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($order->customer_id);
             $amount = round((float) $validated['settlementAmount'], 2);
 
-            Payment::query()->create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $order->branch_id,
-                'shift_id' => $order->shift_id,
-                'created_by' => auth()->id(),
-                'party_id' => $customer->id,
-                'type' => 'receipt',
-                'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
-                'amount' => $amount,
-                'payment_method' => $validated['settlementMethod'],
-                'order_id' => $order->id,
-                'notes' => trim($validated['settlementNotes'] ?? '') !== ''
-                    ? trim($validated['settlementNotes'])
-                    : 'سند قبض مرتبط بفاتورة المبيعات '.$order->invoice_number,
-                'payment_date' => now(),
-            ]);
+            if ($this->editingSettlementId) {
+                $payment = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')
+                    ->lockForUpdate()->findOrFail($this->editingSettlementId);
+                $oldAmount = (float) $payment->amount;
+                $payment->update([
+                    'amount' => $amount,
+                    'payment_method' => $validated['settlementMethod'],
+                    'notes' => trim($validated['settlementNotes'] ?? '') !== ''
+                        ? trim($validated['settlementNotes'])
+                        : 'سند قبض مرتبط بفاتورة المبيعات '.$order->invoice_number,
+                ]);
+                // Only the difference moves the customer's balance.
+                $balanceChange = $amount - $oldAmount;
+            } else {
+                Payment::query()->create([
+                    'tenant_id' => $tenantId,
+                    'branch_id' => $order->branch_id,
+                    'shift_id' => $order->shift_id,
+                    'created_by' => auth()->id(),
+                    'party_id' => $customer->id,
+                    'type' => 'receipt',
+                    'voucher_number' => 'RCV-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)),
+                    'amount' => $amount,
+                    'payment_method' => $validated['settlementMethod'],
+                    'order_id' => $order->id,
+                    'notes' => trim($validated['settlementNotes'] ?? '') !== ''
+                        ? trim($validated['settlementNotes'])
+                        : 'سند قبض مرتبط بفاتورة المبيعات '.$order->invoice_number,
+                    'payment_date' => now(),
+                ]);
+                $balanceChange = $amount;
+            }
 
             $receiptsTotal = (float) Payment::query()
                 ->where('tenant_id', $tenantId)
@@ -1514,20 +1575,43 @@ new class extends Component {
                 'payment_status' => $paidAmount >= (float) $order->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid'),
             ]);
 
-            app(\App\Services\PartyBalance::class)->applySale($customer, -($amount));
+            if (abs($balanceChange) >= 0.005) {
+                app(\App\Services\PartyBalance::class)->applySale($customer, -$balanceChange);
+            }
         });
 
-        $this->showSettlementModal = false;
-        $this->startNewInvoice(false);
-        $this->dispatch('toast', type: 'success', message: 'تم حفظ سند القبض وربطه بفاتورة المبيعات.');
+        $wasEditing = $this->editingSettlementId !== null;
+        if ($this->settlementStaysOnInvoice) {
+            // Back to the same invoice, with its updated payments.
+            $this->settlementStaysOnInvoice = false;
+            $this->editingSettlementId = null;
+            $this->showSettlementModal = false;
+            $order = Order::query()->where('tenant_id', $this->tenantId())->with('items.product')->find($this->currentOrderId);
+            if ($order) {
+                $this->loadOrder($order);
+            }
+        } else {
+            $this->showSettlementModal = false;
+            $this->startNewInvoice(false);
+        }
+        $this->dispatch('toast', type: 'success', message: $wasEditing ? 'تم تعديل سند القبض المرتبط بالفاتورة.' : 'تم حفظ سند القبض وربطه بفاتورة المبيعات.');
     }
 
     /** The settlement voucher only opens right after saving, so closing it moves on to a new invoice too. */
     public function updatedShowSettlementModal(bool $isOpen): void
     {
-        if (! $isOpen) {
-            $this->startNewInvoice(false);
+        if ($isOpen) {
+            return;
         }
+
+        $this->editingSettlementId = null;
+        if ($this->settlementStaysOnInvoice) {
+            $this->settlementStaysOnInvoice = false;
+
+            return;
+        }
+
+        $this->startNewInvoice(false);
     }
 
     public function saveAndPrint(): void
@@ -2167,6 +2251,10 @@ new class extends Component {
         }
 
         return $this->view([
+            'invoiceReceipts' => $tenantId && $this->currentOrderId
+                ? Payment::query()->where('tenant_id', $tenantId)->where('order_id', $this->currentOrderId)->where('type', 'receipt')
+                    ->orderBy('id')->get(['id', 'voucher_number', 'amount', 'payment_method', 'payment_date', 'created_at'])
+                : collect(),
             'cartProductNumbers' => $tenantId && $this->cart !== []
                 ? Product::query()->where('tenant_id', $tenantId)->whereIn('id', array_column($this->cart, 'id'))->pluck('product_number', 'id')->filter()->all()
                 : [],
@@ -2307,6 +2395,14 @@ new class extends Component {
                         <flux:icon.plus-circle class="size-5 text-blue-600" /> جديد <span class="text-xs text-slate-400">(Shift+F2)</span>
                     </button>
 
+                    @if ($currentOrderId && $selectedCustomerId && $currentOrderType !== 'return')
+                        @can('accounting.receipt.view')
+                            <button type="button" data-invoice-receipts wire:click="openInvoiceReceipt" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-50">
+                                <flux:icon.receipt-percent class="size-4" /> سندات القبض ({{ $invoiceReceipts->count() }})
+                            </button>
+                        @endcan
+                    @endif
+
                     @can('accounting.receipt.create')
                         <button type="button" wire:click="saveInvoice(false, true)" wire:loading.attr="disabled" wire:target="saveInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
                             <flux:icon.banknotes class="size-4" /> {{ $currentOrderId ? 'حفظ التعديل وتسديد' : 'حفظ وتسديد' }}
@@ -2327,7 +2423,25 @@ new class extends Component {
         @if ($showSettlementModal)
             <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" x-data x-trap.inert.noscroll="true" x-on:keydown.escape.window="$wire.set('showSettlementModal', false)">
                 <section role="dialog" aria-modal="true" aria-labelledby="sales-settlement-title" class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" dir="rtl">
-                    <h2 id="sales-settlement-title" class="text-lg font-black text-slate-900">سند قبض للفاتورة {{ $invoiceNumber }}</h2>
+                    <h2 id="sales-settlement-title" class="text-lg font-black text-slate-900">{{ $editingSettlementId ? 'تعديل سند قبض للفاتورة' : 'سند قبض للفاتورة' }} {{ $invoiceNumber }}</h2>
+                    @if ($settlementStaysOnInvoice && $invoiceReceipts->isNotEmpty())
+                        <div data-invoice-receipt-list class="mt-3 max-h-40 overflow-y-auto rounded-xl border border-slate-200">
+                            @foreach ($invoiceReceipts as $receipt)
+                                <div wire:key="invoice-receipt-{{ $receipt->id }}" class="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-0 {{ $editingSettlementId === $receipt->id ? 'bg-emerald-50' : '' }}">
+                                    <span class="font-bold text-slate-800">سند قبض #{{ $receipt->voucher_number }}</span>
+                                    <span class="font-mono font-black text-emerald-700">{{ number_format((float) $receipt->amount, 2) }}</span>
+                                    @can('accounting.receipt.edit')
+                                        <button type="button" wire:click="openInvoiceReceipt({{ $receipt->id }})" class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">تعديل</button>
+                                    @endcan
+                                </div>
+                            @endforeach
+                        </div>
+                        @if ($editingSettlementId)
+                            @can('accounting.receipt.create')
+                                <button type="button" wire:click="openInvoiceReceipt" class="mt-2 text-xs font-bold text-emerald-700 hover:underline">+ سند قبض جديد بدلاً من التعديل</button>
+                            @endcan
+                        @endif
+                    @endif
                     <p class="mt-1 text-sm leading-6 text-slate-500">سيُحفظ المبلغ كاملًا كسند قبض مرتبط بهذه الفاتورة، حتى لو تجاوز إجماليها أو رصيد العميل.</p>
                     <label class="mt-4 block text-sm font-bold text-slate-700">مبلغ السند
                         <input type="number" min="0.01" step="0.01" wire:model="settlementAmount" autofocus class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black outline-none focus:border-emerald-400 focus:bg-white">
@@ -2343,7 +2457,7 @@ new class extends Component {
                         </select>
                     </label>
                     <div class="mt-5 grid grid-cols-2 gap-2">
-                        <button type="button" wire:click="saveSettlementVoucher" wire:loading.attr="disabled" wire:target="saveSettlementVoucher" class="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-50">حفظ سند القبض</button>
+                        <button type="button" wire:click="saveSettlementVoucher" wire:loading.attr="disabled" wire:target="saveSettlementVoucher" class="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-50">{{ $editingSettlementId ? 'حفظ تعديل السند' : 'حفظ سند القبض' }}</button>
                         <button type="button" wire:click="$set('showSettlementModal', false)" class="rounded-xl border border-slate-200 px-4 py-3 font-black text-slate-700">إلغاء</button>
                     </div>
                 </section>

@@ -154,3 +154,23 @@ test('exhausting local stock shows zero locally and the remaining shared quantit
     $xpath = new DOMXPath($dom);
     expect((float) $xpath->query('//*[@data-pos-shared-remaining]')->item(0)->getAttribute('data-shared-quantity'))->toBe(8.0);
 });
+
+test('a mistyped quantity keeps the item and says the number is wrong', function (): void {
+    $component = Livewire::test('pages::tenant.pos.sales')->call('selectInlineProduct', $this->product->id);
+    $key = array_key_first($component->get('cart'));
+
+    foreach (['12+', 'invalid', ''] as $typed) {
+        $component->set('errorMessage', null)
+            ->call('updateCartField', $key, 'quantity', $typed)
+            ->assertSet('errorMessage', 'الرقم المدخل خاطئ.')
+            ->assertDispatched('pos-restore-cart-field', lineKey: $key, field: 'quantity');
+        expect($component->get('cart'))->toHaveKey($key)
+            ->and((float) $component->get("cart.$key.quantity"))->toBe(1.0);
+    }
+
+    $component->assertSeeHtml('x-on:pos-restore-cart-field.window');
+
+    // Typing 0 still removes the item on purpose.
+    $component->call('updateCartField', $key, 'quantity', '0');
+    expect($component->get('cart'))->not->toHaveKey($key);
+});
