@@ -1525,7 +1525,7 @@ new class extends Component {
 
                 <tbody
                     x-data data-party-rows data-bold-rows x-on:statement-closed.window="$nextTick(() => $el.querySelector(`[data-party-row='${$event.detail.id}']`)?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
-                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm [&_td]:font-bold! [&_td_div]:font-bold! [&_td]:text-gray-900! dark:[&_td]:text-white!"
+                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm [&_td]:font-bold! [&_td_div]:font-bold! [&_td]:text-[#1e40af]! [&_td_div]:text-[#1e40af]! dark:[&_td]:text-blue-200! dark:[&_td_div]:text-blue-200!"
                 >
 
                     @forelse ($parties as $party)
