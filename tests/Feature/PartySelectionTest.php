@@ -58,7 +58,7 @@ test('web cross role vouchers restore balances on edit and delete', function (st
         ->set('voucherNumber', 'CROSS-1')->set('paymentDate', '2026-11-01')->set('paymentMethod', 'cash')->set('amount', 20)->call($save)->assertHasNoErrors();
     expect((float) $party->fresh()->current_balance)->toBe(120.0);
     $id = Payment::query()->sole()->id;
-    $component->call('edit', $id)->set('amount', 30)->call($save)->assertHasNoErrors();
+    $component->call('editVoucherNow', $id)->set('amount', 30)->call($save)->assertHasNoErrors();
     expect((float) $party->fresh()->current_balance)->toBe(130.0);
     $component->call('confirmDelete', $id)->call('delete');
     expect((float) $party->fresh()->current_balance)->toBe(100.0);

@@ -164,6 +164,11 @@
                         <flux:icon.magnifying-glass class="size-4" /> استعلام
                     </button>
                 </form>
+                @if ($paymentId && $voucherLocked)
+                    <button type="button" data-voucher-unlock wire:click="unlockVoucher" class="inline-flex h-9 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-bold text-amber-800 shadow-sm hover:bg-amber-100">
+                        <flux:icon.pencil-square class="size-4" /> تعديل
+                    </button>
+                @endif
                 @if ($paymentId)
                     <button type="button" wire:click="print({{ $paymentId }})" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
                         <flux:icon.printer class="size-4" /> طباعة
@@ -180,6 +185,7 @@
                 <form
                     wire:submit="{{ $saveMethod }}"
                     id="{{ $formId }}"
+                    @if ($voucherLocked && $paymentId) inert data-voucher-locked @endif
                     class="space-y-3 p-4 sm:px-6 sm:py-4"
                 >
 
@@ -913,6 +919,9 @@
                         إلغاء
                     </button>
 
+                    @if ($voucherLocked && $paymentId)
+                        <span class="text-xs font-bold text-amber-700">السند محفوظ للعرض. اضغط «تعديل» بالأعلى لتغييره.</span>
+                    @else
                     <button
                         type="submit"
                         form="{{ $formId }}"
@@ -963,6 +972,7 @@
                         </span>
 
                     </button>
+                    @endif
 
                 </div>
             </div>

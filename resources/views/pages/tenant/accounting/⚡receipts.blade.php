@@ -343,6 +343,7 @@ new class extends Component {
 
         $this->voucherNumber = $this->generateVoucherNumber();
 
+        $this->voucherLocked = false;
         $this->showForm = true;
 
     }
@@ -453,6 +454,7 @@ new class extends Component {
 
         $this->partySearch = '';
 
+        $this->voucherLocked = true;
         $this->showForm = true;
 
     }
@@ -492,6 +494,10 @@ new class extends Component {
     public function saveReceipt(): void
 
     {
+        if ($this->refuseLockedVoucher()) {
+            return;
+        }
+
         if (!$this->canChangeVoucher($this->paymentId)) {
             return;
         }

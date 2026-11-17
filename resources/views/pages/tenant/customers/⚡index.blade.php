@@ -405,79 +405,13 @@ new class extends Component {
     */
 
     /**
-     * حذف الطرف.
-     *
-     * لا نسمح بالحذف إذا كان لديه حركات مالية.
+     * Customers and suppliers are never deleted, so their statements and history stay complete;
+     * a party that is no longer used is deactivated instead.
      */
     public function deleteParty(int $id): void
     {
-        $this->authorize('customers.delete');
-        $tenantId = $this->getTenantId();
-
-        if (!$tenantId) {
-            session()->flash(
-                'error',
-                'تعذر تحديد المتجر الحالي.'
-            );
-
-            return;
-        }
-
-        $party = Party::query()
-            ->where('tenant_id', $tenantId)
-            ->find($id);
-
-        if (!$party) {
-            return;
-        }
-
-        /*
-         * لا نحذف طرفًا لديه رصيد حالي.
-         */
-        if ((float) $party->current_balance != 0.0) {
-            session()->flash(
-                'error',
-                'لا يمكن حذف الطرف لأن لديه رصيدًا ماليًا قائمًا.'
-            );
-
-            return;
-        }
-
-        /*
-         * لا نحذف طرفًا لديه فواتير.
-         */
-        $hasOrders = false;
-
-        if (method_exists($party, 'orders')) {
-            $hasOrders = $party->orders()->exists();
-        }
-
-        /*
-         * لا نحذف طرفًا لديه دفعات / سندات.
-         */
-        $hasPayments = false;
-
-        if (method_exists($party, 'payments')) {
-            $hasPayments = $party->payments()->exists();
-        }
-
-        if ($hasOrders || $hasPayments) {
-            session()->flash(
-                'error',
-                'لا يمكن حذف الطرف لأنه مرتبط بحركات مالية سابقة. يمكنك تعطيله بدلًا من حذفه.'
-            );
-
-            return;
-        }
-
-        $party->delete();
-
-        session()->flash(
-            'message',
-            'تم حذف الطرف بنجاح.'
-        );
+        session()->flash('error', 'لا يمكن حذف الزبون أو المورد. يمكنك تعطيله بدلاً من الحذف.');
     }
-
 
     /**
      * تعطيل الطرف بدل حذفه.
@@ -1714,17 +1648,6 @@ new class extends Component {
                                     </button>
 
 
-                                    {{-- Delete --}}
-
-                                    <button
-                                        type="button"
-                                        wire:click="deleteParty({{ $party->id }})"
-                                        wire:confirm="سيتم حذف الطرف فقط إذا لم يكن مرتبطًا بأي حركة مالية. هل تريد المتابعة؟"
-                                        class="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-                                        title="حذف"
-                                    >
-                                        🗑️
-                                    </button>
 
                                 </div>
 

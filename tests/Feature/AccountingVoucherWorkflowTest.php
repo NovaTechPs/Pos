@@ -158,7 +158,7 @@ test('POS payments stay in the accounting ledger but are not shown as separate r
     expect($component->get('items')->total())->toBe(1)
         ->and((int) $component->get('items')->first()->id)->toBe($manualReceipt->id);
 
-    $component->call('edit', $posPayment->id)
+    $component->call('editVoucherNow', $posPayment->id)
         ->assertSet('showForm', true)
         ->assertNotDispatched('toast');
 
@@ -202,6 +202,11 @@ test('legacy POS receipt linked to an anonymous invoice can be edited without ch
     Livewire::withQueryParams(['voucher' => $receipt->id])
         ->test('pages::tenant.accounting.receipts')
         ->assertSet('showForm', true)
+        // A voucher opened from a link is view-only until «تعديل».
+        ->assertSet('voucherLocked', true)
+        ->call('saveReceipt')
+        ->assertSet('showForm', true)
+        ->call('unlockVoucher')
         ->set('amount', '45')
         ->call('saveReceipt')
         ->assertHasNoErrors()
@@ -248,7 +253,7 @@ test('legacy POS receipt without a party can be corrected by assigning a custome
     ]);
 
     Livewire::test('pages::tenant.accounting.receipts')
-        ->call('edit', $receipt->id)
+        ->call('editVoucherNow', $receipt->id)
         ->call('selectParty', $customer->id)
         ->set('amount', '45')
         ->call('saveReceipt')
@@ -296,9 +301,9 @@ test('linked receipt vouchers can be edited and deleted while keeping the invoic
     ]);
 
     $component = Livewire::test('pages::tenant.accounting.receipts')
-        ->assertSee('wire:click="edit('.$receipt->id.')"', false)
+        ->assertSee('wire:click="editVoucherNow('.$receipt->id.')"', false)
         ->assertSee('wire:click="confirmDelete('.$receipt->id.')"', false)
-        ->call('edit', $receipt->id)
+        ->call('editVoucherNow', $receipt->id)
         ->set('amount', '40')
         ->call('saveReceipt')
         ->assertHasNoErrors()
@@ -347,7 +352,7 @@ test('editing a linked receipt with another customer shows a validation error in
     ]);
 
     Livewire::test('pages::tenant.accounting.receipts')
-        ->call('edit', $receipt->id)
+        ->call('editVoucherNow', $receipt->id)
         ->call('selectParty', $otherCustomer->id)
         ->set('amount', '40')
         ->call('saveReceipt')
@@ -513,3 +518,37 @@ test('voucher balance preview lists current balance and amount before the balanc
     expect($positions)->not->toContain(false)
         ->and($positions)->toBe(collect($positions)->sort()->values()->all());
 })->with([['receipts', 'customer'], ['payment', 'supplier']]);
+
+test('a saved voucher opened from the archive is edited after pressing «تعديل»', function (string $page, string $save, string $type, string $voucherType): void {
+    $branch = Branch::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'Edit branch']);
+    $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'طرف السند', 'type' => $type, 'is_active' => true, 'current_balance' => 0]);
+    $voucher = Payment::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $branch->id, 'party_id' => $party->id, 'created_by' => $this->user->id,
+        'type' => $voucherType, 'voucher_number' => 'EDIT-'.$voucherType, 'payment_date' => now(), 'payment_method' => 'cash', 'amount' => 20,
+    ]);
+    $before = (float) $party->fresh()->current_balance;
+
+    foreach (['link', 'previous', 'search'] as $way) {
+        $component = $way === 'link'
+            ? Livewire::withQueryParams(['voucher' => $voucher->id])->test('pages::tenant.accounting.'.$page)
+            : Livewire::test('pages::tenant.accounting.'.$page);
+        if ($way === 'previous') {
+            $component->call('previousVoucher');
+        } elseif ($way === 'search') {
+            $component->set('voucherArchiveSearch', $voucher->voucher_number)->call('searchVoucherArchive');
+        }
+
+        $component->assertSet('paymentId', $voucher->id)->assertSet('voucherLocked', true)
+            ->assertSeeHtml('data-voucher-unlock')->assertSeeHtml('data-voucher-locked')
+            ->call('unlockVoucher')->assertSet('voucherLocked', false)
+            ->assertDontSeeHtml('data-voucher-locked')
+            ->set('amount', '35')->call($save)->assertHasNoErrors();
+
+        expect((float) $voucher->fresh()->amount)->toBe(35.0);
+        $voucher->update(['amount' => 20]);
+        $party->update(['current_balance' => $before]);
+    }
+})->with([
+    ['receipts', 'saveReceipt', 'customer', 'receipt'],
+    ['payment', 'savePayment', 'supplier', 'payment'],
+]);

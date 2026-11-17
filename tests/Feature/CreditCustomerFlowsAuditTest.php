@@ -96,10 +96,10 @@ test('receipt vouchers: standalone, linked to an invoice, edited, moved and dele
     expectBalanced($this, $this->customer, 200.0, 'receipt 60 linked to the invoice');
 
     $standalone = Payment::query()->where('amount', 40)->sole();
-    Livewire::test('pages::tenant.accounting.receipts')->call('edit', $standalone->id)->set('amount', '25')->call('saveReceipt')->assertHasNoErrors();
+    Livewire::test('pages::tenant.accounting.receipts')->call('editVoucherNow', $standalone->id)->set('amount', '25')->call('saveReceipt')->assertHasNoErrors();
     expectBalanced($this, $this->customer, 215.0, 'standalone receipt edited to 25');
 
-    Livewire::test('pages::tenant.accounting.receipts')->call('edit', $standalone->id)->set('partyId', $this->second->id)->call('saveReceipt')->assertHasNoErrors();
+    Livewire::test('pages::tenant.accounting.receipts')->call('editVoucherNow', $standalone->id)->set('partyId', $this->second->id)->call('saveReceipt')->assertHasNoErrors();
     expectBalanced($this, $this->customer, 240.0, 'receipt moved away');
     expectBalanced($this, $this->second, -25.0, 'receipt moved to the second customer');
 

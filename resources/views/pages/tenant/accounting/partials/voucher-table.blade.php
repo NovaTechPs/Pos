@@ -107,7 +107,7 @@
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-center gap-1.5">
                                         @if (!$item->purchase_return_id && $item->order?->type !== 'return')
-                                            <button type="button" wire:click="edit({{ $item->id }})" title="تعديل" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"><flux:icon name="pencil-square" class="size-4" /></button>
+                                            <button type="button" wire:click="editVoucherNow({{ $item->id }})" title="تعديل" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"><flux:icon name="pencil-square" class="size-4" /></button>
                                         @endif
                                         <a href="{{ route('tenant.vouchers.pdf', ['type' => $item->type, 'paymentId' => $item->id]) }}" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200">PDF</a>
                                         <button type="button" wire:click="print({{ $item->id }})" title="طباعة السند" aria-label="طباعة السند" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100"><flux:icon name="printer" class="size-4" /></button>

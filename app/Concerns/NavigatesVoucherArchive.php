@@ -13,6 +13,34 @@ trait NavigatesVoucherArchive
 {
     public string $voucherArchiveSearch = '';
 
+    /** A saved voucher opens for viewing only; «تعديل» unlocks its fields, like a saved invoice. */
+    public bool $voucherLocked = false;
+
+    public function unlockVoucher(): void
+    {
+        if ($this->paymentId) {
+            $this->voucherLocked = false;
+        }
+    }
+
+    /** Opens a saved voucher ready to edit (the edit button of the vouchers list). */
+    public function editVoucherNow(int $id): void
+    {
+        $this->edit($id);
+        $this->voucherLocked = false;
+    }
+
+    /** True, with a message, while a saved voucher is still view-only. */
+    protected function refuseLockedVoucher(): bool
+    {
+        if (! $this->voucherLocked || ! $this->paymentId) {
+            return false;
+        }
+        $this->dispatch('toast', type: 'error', message: 'اضغط «تعديل» أولاً لتعديل السند.');
+
+        return true;
+    }
+
     abstract protected function getTenantId(): ?int;
 
     abstract public function edit(int $id): void;

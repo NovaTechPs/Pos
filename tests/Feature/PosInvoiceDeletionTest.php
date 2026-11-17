@@ -146,3 +146,20 @@ test('delete button stays visible disabled on a new invoice and becomes availabl
     $restricted = Livewire::test('pages::tenant.pos.sales')->assertSee('بدون صلاحية الحذف');
     expect($readButton($restricted->html())->hasAttribute('disabled'))->toBeTrue();
 });
+
+test('a deleted POS invoice says it was deleted when opened or searched again', function (): void {
+    $number = $this->order->invoice_number;
+    $this->pos->call('loadInvoice', $this->order->id)->call('deleteInvoice')
+        ->assertSet('errorMessage', null)
+        ->assertDispatched('toast', type: 'success', message: 'تم حذف الفاتورة '.$number.'.');
+
+    $this->pos->call('loadInvoice', $this->order->id)
+        ->assertSet('currentInvoiceId', null)
+        ->assertSet('errorMessage', 'الفاتورة '.$number.' محذوفة ولا يمكن فتحها.');
+
+    $this->pos->set('searchInvoiceQuery', $number)->call('searchInvoice')
+        ->assertSet('currentInvoiceId', null)
+        ->assertSet('errorMessage', 'الفاتورة '.$number.' محذوفة.');
+
+    $this->pos->call('previousInvoice')->assertSet('currentInvoiceId', null);
+});

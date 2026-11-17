@@ -676,6 +676,8 @@ test('parties list and statement rows can be walked with the arrow keys', functi
         ->assertSee('data-party-row="'.$this->customer->id.'"', false)
         ->assertSeeHtml('data-bold-rows')
         ->assertSeeHtml('data-party-type-badge')
+        ->assertSeeHtml('focus:[&>td_*:not([data-party-type-badge])]:text-white!')
+        ->assertSeeHtml('group-focus:bg-white!')
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
         ->call('openStatementModal', $this->customer->id)
         ->assertSee('data-statement-row', false)
@@ -756,4 +758,13 @@ test('the parties list can show every party on one page', function (): void {
 
     $all = Livewire::test('pages::tenant.customers.index')->set('perPage', 0);
     expect(substr_count($all->html(), 'data-party-row="'))->toBe(Party::query()->where('tenant_id', $this->tenant->id)->count());
+});
+
+test('customers and suppliers cannot be deleted, only deactivated', function (): void {
+    Livewire::test('pages::tenant.customers.index')
+        ->assertDontSeeHtml('wire:click="deleteParty(')
+        ->assertSeeHtml('title="تعطيل"')
+        ->call('deleteParty', $this->customer->id);
+
+    expect(Party::query()->whereKey($this->customer->id)->exists())->toBeTrue();
 });

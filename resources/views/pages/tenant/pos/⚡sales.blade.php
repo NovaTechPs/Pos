@@ -1496,7 +1496,7 @@ new class extends Component {
             return;
         }
         $order = Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
-            ->where('type', 'return')->whereNull('original_order_id')->whereNull('customer_id')
+            ->where('type', 'return')->whereNull('original_order_id')
             ->where('invoice_number', 'like', 'RET-CASH-%')->with('items.product')->findOrFail($orderId);
         $shift = Shift::query()->where('tenant_id', $this->tenantId())->find($order->shift_id);
         if (! $shift || $shift->status !== 'open' || (int) $shift->opened_by !== (int) auth()->id()) {
@@ -1572,8 +1572,12 @@ new class extends Component {
         }
         $tenantId = (int) $this->tenantId();
         $branchId = (int) $this->getActiveBranchId();
+        // A return made in the cart for a chosen customer belongs to that customer: what is not paid out in cash
+        // («المصروف») goes to their account.
+        $returnCustomerId = $fromCart && $this->selectedCustomerId ? (int) $this->selectedCustomerId : null;
+        $cashPaidOut = $returnCustomerId ? max(0, round((float) $this->paid_amount, 2)) : null;
 
-        $order = DB::transaction(function () use ($tenantId, $branchId, $returnItems, $reason): Order {
+        $order = DB::transaction(function () use ($tenantId, $branchId, $returnItems, $reason, $returnCustomerId, $cashPaidOut): Order {
             $shift = \App\Services\ApiShiftLedger::activeForWrite($tenantId, $branchId, (int) auth()->id());
             if (! $shift) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['cashReturnQuantity' => 'افتح شيفت قبل تسجيل المرتجع النقدي.']);
@@ -1589,7 +1593,7 @@ new class extends Component {
             if ($this->cashReturnOrderId) {
                 $editingOrder = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
                     ->where('shift_id', $shift->id)->where('type', 'return')->where('status', 'completed')
-                    ->whereNull('customer_id')->whereNull('original_order_id')->where('invoice_number', $this->cashReturnNumber)
+                    ->whereNull('original_order_id')->where('invoice_number', $this->cashReturnNumber)
                     ->where('invoice_number', 'like', 'RET-CASH-%')->lockForUpdate()->findOrFail($this->cashReturnOrderId);
                 foreach ($editingOrder->items()->get() as $oldItem) {
                     $previousCosts[$oldItem->product_id] = (float) $oldItem->cost_price;
@@ -1624,16 +1628,35 @@ new class extends Component {
                 $stockChanges[$product->id] = ($stockChanges[$product->id] ?? 0) + $quantity;
             }
             }
+            $customer = $returnCustomerId
+                ? Party::query()->where('tenant_id', $tenantId)->whereIn('type', ['customer', 'supplier', 'both'])->lockForUpdate()->find($returnCustomerId)
+                : null;
+            if ($returnCustomerId && ! $customer) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['cart' => 'العميل المحدد للمرتجع غير صالح.']);
+            }
+            $refund = $customer ? min($total, (float) $cashPaidOut) : $total;
+            $credit = round($total - $refund, 2);
+
+            // An edited return first takes back what it had put on its previous customer's account.
+            if ($editingOrder?->customer_id) {
+                $previousCredit = round(abs((float) $editingOrder->total) - abs((float) $editingOrder->paid_amount), 2);
+                $previousCustomer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->find($editingOrder->customer_id);
+                if ($previousCustomer && $previousCredit > 0.004) {
+                    app(\App\Services\PartyBalance::class)->applySale($previousCustomer, $previousCredit);
+                }
+            }
+
             $order = $editingOrder ?? new Order;
             $order->fill([
                 'tenant_id' => $tenantId, 'branch_id' => $branchId, 'shift_id' => $shift->id,
-                'created_by' => auth()->id(), 'customer_name' => 'زبون نقدي',
+                'created_by' => auth()->id(), 'customer_id' => $customer?->id, 'customer_name' => $customer?->name ?? 'زبون نقدي',
+                'customer_phone' => $customer?->phone,
                 'invoice_number' => $this->cashReturnNumber, 'invoice_date' => $editingOrder?->invoice_date ?? today(),
                 'type' => 'return', 'source' => 'pos', 'sale_kind' => 'retail', 'status' => 'completed',
                 'subtotal' => -$total, 'total' => -$total, 'tax_amount' => 0,
                 'discount' => 0, 'discount_type' => 'fixed', 'discount_rate' => 0, 'delivery_fee' => 0,
                 'total_cost' => -$totalCost, 'total_profit' => -$total + $totalCost,
-                'paid_amount' => -$total, 'payment_status' => 'paid',
+                'paid_amount' => -$refund, 'payment_status' => $refund >= $total - 0.004 ? 'paid' : ($refund > 0 ? 'partial' : 'unpaid'),
                 'notes' => $reason,
             ]);
             $order->save();
@@ -1650,13 +1673,22 @@ new class extends Component {
                 \App\Services\StockMovementContext::forDocument($order, fn () => $changedStock->increment('stock_quantity', $change));
             }
             $payment = Payment::firstOrNew(['tenant_id' => $tenantId, 'order_id' => $order->id, 'type' => 'payment']);
-            $payment->fill([
-                'tenant_id' => $tenantId, 'branch_id' => $branchId, 'shift_id' => $shift->id,
-                'created_by' => $payment->created_by ?? auth()->id(), 'type' => 'payment', 'voucher_number' => $payment->voucher_number ?? 'REF-'.Str::uuid(),
-                'amount' => $total, 'payment_method' => 'cash', 'payment_date' => $payment->payment_date ?? now(),
-                'order_id' => $order->id, 'notes' => $order->notes,
-            ]);
-            $payment->save();
+            if ($refund > 0.004) {
+                $payment->fill([
+                    'tenant_id' => $tenantId, 'branch_id' => $branchId, 'shift_id' => $shift->id,
+                    'created_by' => $payment->created_by ?? auth()->id(), 'type' => 'payment', 'voucher_number' => $payment->voucher_number ?? 'REF-'.Str::uuid(),
+                    'party_id' => $customer?->id,
+                    'amount' => $refund, 'payment_method' => 'cash', 'payment_date' => $payment->payment_date ?? now(),
+                    'order_id' => $order->id, 'notes' => $order->notes,
+                ]);
+                $payment->save();
+            } elseif ($payment->exists) {
+                $payment->delete();
+            }
+
+            if ($customer && $credit > 0.004) {
+                app(\App\Services\PartyBalance::class)->applySale($customer, -$credit);
+            }
             $this->queueSaleForSync($order, $shift);
 
             return $order;
@@ -1668,7 +1700,11 @@ new class extends Component {
             $this->loadInvoice((int) $order->id);
         }
         $this->loadQuickProducts(true);
-        $this->successMessage = ($this->cashReturnOrderId ? 'تم تعديل المرتجع وتحديث المخزون والمصروف النقدي إلى ' : 'تم تسجيل المرتجع النقدي وصرف ').number_format(abs((float) $order->total), 2).' للزبون.';
+        $this->successMessage = $order->customer_id
+            ? 'تم حفظ مرتجع '.$order->customer_name.' بقيمة '.number_format(abs((float) $order->total), 2)
+                .'؛ صُرف نقداً '.number_format(abs((float) $order->paid_amount), 2)
+                .' وخُصم من حسابه '.number_format(abs((float) $order->total) - abs((float) $order->paid_amount), 2).'.'
+            : ($this->cashReturnOrderId ? 'تم تعديل المرتجع وتحديث المخزون والمصروف النقدي إلى ' : 'تم تسجيل المرتجع النقدي وصرف ').number_format(abs((float) $order->total), 2).' للزبون.';
         if (config('branch-sync.mode') === 'edge') {
             $this->successMessage .= ' محفوظ محليًا وبانتظار المزامنة.';
         }
@@ -2528,7 +2564,12 @@ new class extends Component {
             ->first();
 
         if (!$invoice) {
-            $this->errorMessage = "لم يتم العثور على فاتورة مطابقة: {$query}";
+            $deleted = $this->onlyOwnInvoices(Order::onlyTrashed())
+                ->where('tenant_id', $tenantId)->where('branch_id', $branchId)->whereIn('type', ['pos', 'return'])
+                ->where('invoice_number', $query)->value('invoice_number');
+            $this->errorMessage = $deleted !== null
+                ? 'الفاتورة '.$deleted.' محذوفة.'
+                : "لم يتم العثور على فاتورة مطابقة: {$query}";
             return;
         }
 
@@ -2546,7 +2587,10 @@ new class extends Component {
             ->find($invoiceId);
 
         if (!$invoice) {
-            $this->errorMessage = 'لم يتم العثور على الفاتورة المطلوبة.';
+            $deletedNumber = $this->deletedInvoiceNumber($invoiceId);
+            $this->errorMessage = $deletedNumber !== null
+                ? 'الفاتورة '.$deletedNumber.' محذوفة ولا يمكن فتحها.'
+                : 'لم يتم العثور على الفاتورة المطلوبة.';
             return;
         }
 
@@ -2678,7 +2722,7 @@ new class extends Component {
                     $order->customer_id ? (int) $order->customer_id : null, app(\App\Services\PartyBalance::class)->saleOutstanding($order), null, 0);
                 $order->delete();
             });
-        } catch (\RuntimeException $exception) {
+        } catch (\RuntimeException|\DomainException $exception) {
             $this->errorMessage = $exception->getMessage();
             return;
         }
@@ -2688,6 +2732,18 @@ new class extends Component {
         $this->loadHeldInvoices();
         $this->loadQuickProducts();
         $this->successMessage = "تم حذف الفاتورة {$invoice->invoice_number} وإعادة مخزونها. لن تظهر في قوائم الفواتير.";
+        $this->dispatch('toast', type: 'success', message: 'تم حذف الفاتورة '.$invoice->invoice_number.'.');
+    }
+
+    /** The number of a deleted POS invoice or return of this branch, or null when it was never deleted. */
+    private function deletedInvoiceNumber(int $invoiceId): ?string
+    {
+        return $this->onlyOwnInvoices(Order::onlyTrashed())
+            ->where('tenant_id', $this->tenantId())
+            ->where('branch_id', $this->getActiveBranchId())
+            ->whereIn('type', ['pos', 'return'])
+            ->whereKey($invoiceId)
+            ->value('invoice_number');
     }
 
     /**

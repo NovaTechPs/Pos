@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\BranchSyncOperation;
 use App\Models\Order;
+use App\Models\Party;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Shift;
@@ -195,4 +196,38 @@ test('return quantities display as positive while refund accounting stays negati
         ->and((float) $this->stock->fresh()->stock_quantity)->toBe(49.0);
     $component->call('editLoadedInvoice');
     $assertQuantity(44.0);
+});
+
+test('a POS return for a chosen customer is saved under the customer and credited to their account', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون المرتجع', 'type' => 'customer', 'current_balance' => 50]);
+
+    $component = Livewire::test('pages::tenant.pos.sales')->call('toggleReturnMode')
+        ->call('selectCustomer', $customer->id)
+        ->call('selectInlineProduct', $this->product->id)
+        ->call('checkout')->assertHasNoErrors();
+
+    $order = Order::query()->sole();
+    expect($order->type)->toBe('return')
+        ->and((int) $order->customer_id)->toBe($customer->id)
+        ->and($order->customer_name)->toBe('زبون المرتجع')
+        ->and((float) $order->total)->toBe(-10.0)
+        ->and((float) $order->paid_amount)->toBe(0.0)
+        ->and(Payment::query()->count())->toBe(0)
+        ->and((float) $customer->fresh()->current_balance)->toBe(40.0)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(6.0)
+        ->and(ApiShiftLedger::summary($this->shift)['expected_cash'])->toBe(100.0);
+
+    // Editing it with part paid out in cash moves only the rest to the account.
+    $component->call('editLoadedInvoice')->assertSet('cashReturnOrderId', $order->id);
+    $key = array_key_first($component->get('cart'));
+    $component->call('updateCartField', $key, 'quantity', 3)->set('paid_amount', 12)
+        ->call('checkout')->assertHasNoErrors();
+
+    expect(Order::query()->count())->toBe(1)
+        ->and((float) $order->fresh()->total)->toBe(-30.0)
+        ->and((float) $order->fresh()->paid_amount)->toBe(-12.0)
+        ->and((float) Payment::query()->sole()->amount)->toBe(12.0)
+        ->and((int) Payment::query()->sole()->party_id)->toBe($customer->id)
+        ->and((float) $customer->fresh()->current_balance)->toBe(32.0)
+        ->and(ApiShiftLedger::summary($this->shift)['expected_cash'])->toBe(88.0);
 });

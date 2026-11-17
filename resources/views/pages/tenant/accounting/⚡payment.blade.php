@@ -196,6 +196,7 @@ new class extends Component
     {
         $this->resetForm();
         $this->voucherNumber = $this->generateVoucherNumber();
+        $this->voucherLocked = false;
         $this->showForm = true;
     }
 
@@ -242,6 +243,7 @@ new class extends Component
         $this->amount = (string) $payment->amount;
         $this->notes = $payment->notes ?? '';
         $this->partySearch = '';
+        $this->voucherLocked = true;
         $this->showForm = true;
     }
 
@@ -267,6 +269,10 @@ new class extends Component
 
     public function savePayment(): void
     {
+        if ($this->refuseLockedVoucher()) {
+            return;
+        }
+
         if (!$this->canChangeVoucher($this->paymentId)) {
             return;
         }
