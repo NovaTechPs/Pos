@@ -164,3 +164,45 @@ test('stock voucher line defaults to the product cost and stores an edited cost 
         ->and((float) $item->unit_cost)->toBe(9.75)
         ->and((float) $this->stock->fresh()->stock_quantity)->toBe(13.5);
 });
+
+test('stock voucher history filters past vouchers and opens one for editing', function (): void {
+    $stockIn = StockVoucher::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'voucher_number' => 'SIN-HISTORY-001',
+        'type' => 'in',
+    ]);
+    $stockIn->items()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_id' => $this->product->id,
+        'quantity' => 3,
+        'unit_cost' => 4,
+    ]);
+
+    $stockOut = StockVoucher::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'voucher_number' => 'SOUT-HISTORY-001',
+        'type' => 'out',
+    ]);
+    $stockOut->items()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_id' => $this->product->id,
+        'quantity' => 1,
+        'unit_cost' => 4,
+    ]);
+
+    $component = Livewire::test('pages::tenant.stock-vouchers.index')
+        ->assertSee('سجل سندات الإدخال والإخراج')
+        ->assertSee('فتح وتعديل')
+        ->assertSee('SIN-HISTORY-001')
+        ->assertSee('SOUT-HISTORY-001')
+        ->set('historyType', 'out')
+        ->assertSee('SOUT-HISTORY-001')
+        ->assertDontSee('SIN-HISTORY-001')
+        ->set('historySearch', 'HISTORY-001')
+        ->call('editVoucher', $stockOut->id)
+        ->assertSet('editingVoucherId', $stockOut->id)
+        ->assertSet('editingVoucherNumber', 'SOUT-HISTORY-001')
+        ->assertSet('lines.0.quantity', 1.0);
+});
