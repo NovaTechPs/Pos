@@ -227,7 +227,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main dir="rtl" class="min-h-[calc(100vh-4rem)] bg-slate-100 p-3 sm:p-4 lg:p-6">
+<flux:main data-search-nav dir="rtl" class="min-h-[calc(100vh-4rem)] bg-slate-100 p-3 sm:p-4 lg:p-6">
     <div class="mx-auto max-w-[1500px] space-y-5">
 
         {{-- Header --}}
@@ -290,7 +290,7 @@ new class extends Component {
                         <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
                         <input
                             type="text"
-                            wire:model.live.debounce.250ms="search"
+                            data-search-input wire:model.live.debounce.250ms="search"
                             placeholder="ابحث باسم التصنيف أو الكود أو الوصف..."
                             class="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-4 pr-10 text-sm font-semibold outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white"
                         >
@@ -351,7 +351,7 @@ new class extends Component {
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($categories as $category)
-                            <tr wire:key="category-row-{{ $category->id }}" class="transition hover:bg-slate-50">
+                            <tr data-search-option wire:key="category-row-{{ $category->id }}" class="transition hover:bg-slate-50">
                                 <td class="px-5 py-4">
                                     <span class="inline-flex h-9 min-w-9 items-center justify-center rounded-xl bg-slate-100 px-2 font-mono text-sm font-black text-slate-700">
                                         {{ $category->sort_order }}
@@ -389,7 +389,7 @@ new class extends Component {
                                 </td>
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-end gap-2">
-                                        <button type="button" wire:click="edit({{ $category->id }})" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50">تعديل</button>
+                                        <button type="button" data-search-open wire:click="edit({{ $category->id }})" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50">تعديل</button>
                                         <button type="button" wire:click="delete({{ $category->id }})" wire:confirm="هل أنت متأكد من نقل هذا التصنيف إلى سلة المهملات؟" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100">حذف</button>
                                     </div>
                                 </td>
@@ -413,7 +413,7 @@ new class extends Component {
             {{-- Mobile --}}
             <div class="divide-y divide-slate-100 lg:hidden">
                 @forelse ($categories as $category)
-                    <div wire:key="mobile-category-{{ $category->id }}" class="p-4">
+                    <div data-search-option wire:key="mobile-category-{{ $category->id }}" class="p-4">
                         <div class="flex items-start gap-3">
                             <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 font-black text-indigo-700">
                                 {{ mb_substr($category->name, 0, 1) }}
@@ -443,7 +443,7 @@ new class extends Component {
                                 </div>
 
                                 <div class="mt-3 grid grid-cols-2 gap-2">
-                                    <button type="button" wire:click="edit({{ $category->id }})" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700">تعديل</button>
+                                    <button type="button" data-search-open wire:click="edit({{ $category->id }})" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700">تعديل</button>
                                     <button type="button" wire:click="delete({{ $category->id }})" wire:confirm="هل أنت متأكد من نقل هذا التصنيف إلى سلة المهملات؟" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700">حذف</button>
                                 </div>
                             </div>

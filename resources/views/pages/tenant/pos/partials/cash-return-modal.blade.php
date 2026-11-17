@@ -5,16 +5,18 @@
             <p role="alert" class="text-sm font-bold text-rose-700">{{ $errorMessage }}</p>
         @endif
         <flux:text>للزبون النقدي دون حساب أو فاتورة أصلية. أدخل السعر الذي دفعه الزبون، وحدد حالة الصنف.</flux:text>
+        <div data-search-nav class="space-y-4">
         <flux:input wire:model.live.debounce.300ms="cashReturnSearch" label="الصنف أو الباركود" placeholder="ابحث عن الصنف المرتجع" />
         @if ($cashReturnSearch !== '' && !$cashReturnProductId)
             <div class="max-h-48 overflow-y-auto rounded-xl border border-slate-200">
                 @forelse ($this->cashReturnProducts as $product)
-                    <button type="button" wire:key="cash-return-product-{{ $product->id }}" wire:click="selectCashReturnProduct({{ $product->id }})" class="block w-full px-3 py-3 text-right text-sm hover:bg-slate-50">{{ $product->name }}</button>
+                    <button type="button" data-search-option wire:key="cash-return-product-{{ $product->id }}" wire:click="selectCashReturnProduct({{ $product->id }})" class="block w-full px-3 py-3 text-right text-sm hover:bg-slate-50">{{ $product->name }}</button>
                 @empty
                     <p class="p-3 text-sm text-slate-500">لا توجد أصناف مطابقة في الفرع.</p>
                 @endforelse
             </div>
         @endif
+        </div>
         @if ($cashReturnProductId)
             <flux:button type="button" size="sm" wire:click="$set('cashReturnProductId', null)">تغيير الصنف</flux:button>
         @endif

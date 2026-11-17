@@ -121,7 +121,7 @@ new class extends Component
                 @if ($customers->isNotEmpty())
                     <div class="absolute z-20 mt-1 w-full divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900">
                         @foreach ($customers as $customer)
-                            <button type="button" data-customer-result wire:key="add-customer-{{ $customer->id }}" wire:click="addCustomer({{ $customer->id }})" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm outline-none hover:bg-indigo-50 focus:bg-indigo-100 focus:ring-2 focus:ring-inset focus:ring-indigo-500 dark:hover:bg-slate-800 dark:focus:bg-slate-800">
+                            <button type="button" data-customer-result data-search-option wire:key="add-customer-{{ $customer->id }}" wire:click="addCustomer({{ $customer->id }})" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm outline-none hover:bg-indigo-50 focus:bg-indigo-100 focus:ring-2 focus:ring-inset focus:ring-indigo-500 dark:hover:bg-slate-800 dark:focus:bg-slate-800">
                                 <span class="font-bold">{{ $customer->name }}</span><span class="font-mono text-xs text-slate-500">{{ $customer->phone }}</span>
                             </button>
                         @endforeach

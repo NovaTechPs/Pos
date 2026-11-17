@@ -584,7 +584,7 @@ new class extends Component
 
 ?>
 
-<flux:main class="space-y-6">
+<flux:main data-search-nav class="space-y-6">
 
     <div
         dir="rtl"
@@ -842,7 +842,7 @@ new class extends Component
                 <div class="w-full sm:max-w-md">
 
                     <flux:input
-                        wire:model.live.debounce.300ms="searchRole"
+                        data-search-input wire:model.live.debounce.300ms="searchRole"
                         icon="magnifying-glass"
                         placeholder="ابحث عن دور أو وصف..."
                     />
@@ -896,7 +896,7 @@ new class extends Component
 
                         @forelse ($roles as $role)
 
-                            <flux:table.row
+                            <flux:table.row data-search-option
                                 wire:key="role-row-{{ $role->id }}"
                             >
 
@@ -991,7 +991,7 @@ new class extends Component
                                             variant="ghost"
                                             size="sm"
                                             icon="pencil-square"
-                                            wire:click="edit({{ $role->id }})"
+                                            data-search-open wire:click="edit({{ $role->id }})"
                                             title="تعديل الدور"
                                         />
 

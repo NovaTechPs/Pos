@@ -1532,7 +1532,7 @@ new class extends Component {
     {{-- ============================================================
          MAIN
     ============================================================ --}}
-    <main class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <main data-search-nav class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
 
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px] lg:items-start">
 
@@ -1587,7 +1587,7 @@ new class extends Component {
 
                             <input
                                 type="search"
-                                wire:model.live.debounce.350ms="search"
+                                data-search-input wire:model.live.debounce.350ms="search"
                                 placeholder="ابحث باسم المنتج أو الباركود..."
                                 autocomplete="off"
                                 class="h-12 w-full rounded-2xl border border-zinc-200 bg-zinc-50 pr-12 pl-12 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 focus:bg-white focus:ring-4 focus:ring-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:border-zinc-500 dark:focus:bg-zinc-800 dark:focus:ring-zinc-800"
@@ -1835,7 +1835,7 @@ new class extends Component {
 
                             @endphp
 
-                            <article
+                            <article data-search-option
                                 wire:key="product-{{ $product->id }}"
                                 class="group overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
                             >
@@ -1934,7 +1934,7 @@ new class extends Component {
 
                                                     <button
                                                         type="button"
-                                                        wire:click="updateQuantity({{ $product->id }}, {{ min(99, $cartQuantity + 1) }})"
+                                                        data-search-open wire:click="updateQuantity({{ $product->id }}, {{ min(99, $cartQuantity + 1) }})"
                                                         class="flex size-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white hover:text-zinc-900 dark:hover:bg-zinc-700 dark:hover:text-white"
                                                     >
 
@@ -1951,7 +1951,7 @@ new class extends Component {
 
                                                 <button
                                                     type="button"
-                                                    wire:click="addToCart({{ $product->id }})"
+                                                    data-search-open wire:click="addToCart({{ $product->id }})"
                                                     wire:loading.attr="disabled"
                                                     wire:target="addToCart({{ $product->id }})"
                                                     class="flex size-9 items-center justify-center rounded-xl bg-zinc-900 text-white transition hover:bg-zinc-700 active:scale-95 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"

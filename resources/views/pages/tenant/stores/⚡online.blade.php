@@ -538,7 +538,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="space-y-6">
+<flux:main data-search-nav class="space-y-6">
 
     <div
         class="mx-auto max-w-7xl space-y-6 p-4 sm:p-6"
@@ -778,7 +778,7 @@ new class extends Component {
                 <div class="min-w-0 flex-1">
 
                     <flux:input
-                        wire:model.live.debounce.300ms="search"
+                        data-search-input wire:model.live.debounce.300ms="search"
                         placeholder="ابحث باسم الزبون، الهاتف، العنوان أو رقم الفاتورة..."
                         icon="magnifying-glass"
                     />
@@ -942,7 +942,7 @@ new class extends Component {
 
                         @forelse($orders as $order)
 
-                            <tr class="transition hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
+                            <tr data-search-option class="transition hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
 
                                 {{-- Order --}}
                                 <td class="px-4 py-4">
@@ -1090,7 +1090,7 @@ new class extends Component {
                                             size="xs"
                                             variant="subtle"
                                             icon="eye"
-                                            wire:click="viewOrder({{ $order->id }})"
+                                            data-search-open wire:click="viewOrder({{ $order->id }})"
                                         >
                                             معاينة
                                         </flux:button>
@@ -1186,7 +1186,7 @@ new class extends Component {
 
             @foreach($orders as $order)
 
-                <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                <div data-search-option class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
 
                     <div class="flex items-start justify-between gap-3">
 
@@ -1282,7 +1282,7 @@ new class extends Component {
                             size="sm"
                             variant="subtle"
                             icon="eye"
-                            wire:click="viewOrder({{ $order->id }})"
+                            data-search-open wire:click="viewOrder({{ $order->id }})"
                             class="flex-1"
                         >
                             معاينة

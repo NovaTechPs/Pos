@@ -70,5 +70,5 @@ test('search highlights use dark blue with white text including focused results 
 
     expect($css)
         ->toContain('body .search-result-active *', 'body [data-pos-product]:focus *', 'body [data-stock-voucher-product-result]:focus *')
-        ->toContain('background-color: #1e40af !important;', 'color: #ffffff !important;');
+        ->toContain('background-color: #123b86 !important;', 'color: #ffffff !important;');
 });

@@ -597,7 +597,7 @@ new class extends Component
 
 ?>
 
-<flux:main class="space-y-6">
+<flux:main data-search-nav class="space-y-6">
 
     {{-- ============================================================
         HEADER
@@ -822,7 +822,7 @@ new class extends Component
             <div class="min-w-0 flex-1">
 
                 <flux:input
-                    wire:model.live.debounce.350ms="search"
+                    data-search-input wire:model.live.debounce.350ms="search"
                     icon="magnifying-glass"
                     placeholder="ابحث باسم الموقع أو الامتداد أو الهاتف أو العنوان..."
                 />
@@ -938,7 +938,7 @@ new class extends Component
 
                 @forelse ($branches as $branch)
 
-                    <flux:table.row
+                    <flux:table.row data-search-option
                         wire:key="branch-{{ $branch->id }}"
                     >
 
@@ -1129,7 +1129,7 @@ new class extends Component
                                     variant="ghost"
                                     size="sm"
                                     icon="pencil-square"
-                                    wire:click="edit({{ $branch->id }})"
+                                    data-search-open wire:click="edit({{ $branch->id }})"
                                     wire:loading.attr="disabled"
                                     wire:target="edit({{ $branch->id }})"
                                     title="تعديل الموقع"

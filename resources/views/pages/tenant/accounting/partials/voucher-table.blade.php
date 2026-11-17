@@ -14,7 +14,7 @@
     ];
 @endphp
 
-<div data-voucher-workspace class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8" dir="rtl">
+<div data-voucher-workspace data-search-nav class="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8" dir="rtl">
     <header class="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-7 lg:flex-row lg:items-center lg:justify-between">
         <div class="min-w-0">
             <div class="mb-2 flex items-center gap-2 text-xs font-bold text-slate-400">
@@ -40,7 +40,7 @@
                 <span class="mb-1.5 block text-xs font-bold text-slate-600">بحث سريع</span>
                 <span class="relative block">
                     <flux:icon name="magnifying-glass" class="pointer-events-none absolute end-3 top-1/2 size-5 -translate-y-1/2 text-blue-600" />
-                    <input type="search" wire:model.live.debounce.300ms="tableSearch" placeholder="ابحث برقم السند أو اسم {{ $partyLabel }} أو الهاتف..." class="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-4 pe-11 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50">
+                    <input type="search" data-search-input wire:model.live.debounce.300ms="tableSearch" placeholder="ابحث برقم السند أو اسم {{ $partyLabel }} أو الهاتف..." class="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-4 pe-11 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50">
                 </span>
             </label>
             <label class="block">
@@ -92,7 +92,7 @@
                                 $method = $methodLabels[$item->payment_method] ?? ($item->payment_method ?: '-');
                                 $linkedDocument = $item->order_id ? ($item->linked_invoice_number ?? ('#'.$item->order_id)) : ($item->purchase_id ? 'فاتورة مشتريات #'.$item->purchase_id : 'سند مستقل');
                             @endphp
-                            <tr wire:key="{{ $mode }}-voucher-{{ $item->id }}" class="group transition hover:bg-blue-50/40">
+                            <tr data-search-option wire:key="{{ $mode }}-voucher-{{ $item->id }}" class="group transition hover:bg-blue-50/40">
                                 <td class="px-5 py-4 align-top"><p class="font-mono text-sm font-black text-slate-900" dir="ltr">{{ $item->voucher_number }}</p><p class="mt-1 text-xs font-medium text-slate-400">{{ $linkedDocument }}</p></td>
                                 <td class="px-5 py-4">
                                     <div class="flex min-w-[180px] items-center gap-3">
@@ -107,7 +107,7 @@
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-center gap-1.5">
                                         @if (!$item->purchase_return_id && $item->order?->type !== 'return')
-                                            <button type="button" wire:click="editVoucherNow({{ $item->id }})" title="تعديل" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"><flux:icon name="pencil-square" class="size-4" /></button>
+                                            <button type="button" data-search-open wire:click="editVoucherNow({{ $item->id }})" title="تعديل" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"><flux:icon name="pencil-square" class="size-4" /></button>
                                         @endif
                                         <a href="{{ route('tenant.vouchers.pdf', ['type' => $item->type, 'paymentId' => $item->id]) }}" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200">PDF</a>
                                         <button type="button" wire:click="print({{ $item->id }})" title="طباعة السند" aria-label="طباعة السند" class="inline-flex size-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100"><flux:icon name="printer" class="size-4" /></button>

@@ -2535,7 +2535,7 @@ new class extends Component {
                 {{-- Products --}}
                 {{-- ===================================================== --}}
 
-                <section class="flex min-h-0 flex-col gap-3 xl:col-span-7">
+                <section data-search-nav class="flex min-h-0 flex-col gap-3 xl:col-span-7">
 
                     {{-- Search --}}
                     <div
@@ -2603,7 +2603,7 @@ new class extends Component {
                                         : (float) ($bp?->stock_quantity ?? 0);
                                 @endphp
 
-                                <button type="button" wire:click="addToCart({{ $product->id }})"
+                                <button type="button" data-search-option wire:click="addToCart({{ $product->id }})"
                                     @disabled(!$bp || (!$allowNegativeStock && $stock <= 0))
                                     class="group rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-right transition hover:-translate-y-0.5 hover:border-indigo-400 hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:bg-zinc-900">
 
@@ -2735,7 +2735,7 @@ new class extends Component {
                             {{-- Customer --}}
                             {{-- ================================================= --}}
 
-                            <div class="relative" x-data="{ open: @entangle('showCustomerDropdown') }">
+                            <div data-search-nav class="relative" x-data="{ open: @entangle('showCustomerDropdown') }">
 
                                 <div class="mb-1 flex items-center justify-between">
                                     <label class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
@@ -2774,7 +2774,7 @@ new class extends Component {
                                         class="absolute inset-x-0 top-full z-40 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
 
                                         @if ($customerSearch === '')
-                                            <button type="button" wire:click="clearCustomer"
+                                            <button type="button" data-search-option wire:click="clearCustomer"
                                                 class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
                                                 <span>
                                                     زبون عابر
@@ -2788,7 +2788,7 @@ new class extends Component {
 
 
                                         @forelse ($customers as $customer)
-                                            <button type="button" wire:click="selectCustomer({{ $customer->id }})"
+                                            <button type="button" data-search-option wire:click="selectCustomer({{ $customer->id }})"
                                                 class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right transition hover:bg-indigo-50 dark:border-zinc-800 dark:hover:bg-indigo-950/30">
 
                                                 <div>
@@ -3486,7 +3486,7 @@ new class extends Component {
                 </div>
 
                 <div class="space-y-4 p-4">
-                    <div class="relative" x-data="{ receiptPartyOpen: false }"
+                    <div data-search-nav class="relative" x-data="{ receiptPartyOpen: false }"
                         x-on:click.outside="receiptPartyOpen = false; $wire.closeReceiptPartyDropdown()">
                         <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
                             العميل
@@ -3508,7 +3508,7 @@ new class extends Component {
                             <div x-show="receiptPartyOpen" x-cloak
                                 class="absolute inset-x-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
                                 @forelse ($this->receiptPartyResults as $party)
-                                    <button type="button" wire:click="selectReceiptParty({{ $party->id }})"
+                                    <button type="button" data-search-option wire:click="selectReceiptParty({{ $party->id }})"
                                         class="flex w-full items-center justify-between border-b border-zinc-100 px-3 py-3 text-right hover:bg-indigo-50 dark:border-zinc-800 dark:hover:bg-indigo-950/30">
                                         <div>
                                             <div class="text-sm font-bold text-zinc-800 dark:text-zinc-100">

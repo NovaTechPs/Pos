@@ -618,7 +618,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="space-y-6">
+<flux:main data-search-nav class="space-y-6">
     <div
         class="mx-auto max-w-7xl space-y-6 p-4 sm:p-6"
         dir="rtl"
@@ -802,7 +802,7 @@ new class extends Component {
                 <div class="xl:col-span-2">
 
                     <flux:input
-                        wire:model.live.debounce.300ms="search"
+                        data-search-input wire:model.live.debounce.300ms="search"
                         placeholder="رقم الفاتورة، اسم العميل أو الهاتف..."
                         icon="magnifying-glass"
                     />
@@ -994,7 +994,7 @@ new class extends Component {
                                 $remaining = max(0, $total - $paid);
                             @endphp
 
-                            <tr class="transition hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
+                            <tr data-search-option class="transition hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
 
                                 {{-- Invoice --}}
                                 <td class="p-4">
@@ -1098,7 +1098,7 @@ new class extends Component {
                                         size="xs"
                                         variant="subtle"
                                         icon="eye"
-                                        wire:click="viewOrder({{ $order->id }})"
+                                        data-search-open wire:click="viewOrder({{ $order->id }})"
                                         wire:loading.attr="disabled"
                                         wire:target="viewOrder({{ $order->id }})"
                                     >
@@ -1178,7 +1178,7 @@ new class extends Component {
                     $remaining = max(0, $total - $paid);
                 @endphp
 
-                <flux:card class="space-y-4">
+                <flux:card data-search-option class="space-y-4">
 
                     {{-- Top --}}
                     <div class="flex items-start justify-between gap-3">
@@ -1296,7 +1296,7 @@ new class extends Component {
                             size="sm"
                             variant="subtle"
                             icon="eye"
-                            wire:click="viewOrder({{ $order->id }})"
+                            data-search-open wire:click="viewOrder({{ $order->id }})"
                             wire:loading.attr="disabled"
                         >
                             عرض التفاصيل

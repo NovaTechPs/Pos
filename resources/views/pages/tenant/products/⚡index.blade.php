@@ -2206,7 +2206,7 @@ new class extends Component {
 };
 ?>
 
-<flux:main class="space-y-6" dir="rtl">
+<flux:main data-search-nav class="space-y-6" dir="rtl">
     @if (!$posEmbedded)
 
     {{-- ================================================================
@@ -2421,7 +2421,7 @@ new class extends Component {
             <div class="lg:col-span-6">
 
                 <flux:input
-                    wire:model.live.debounce.300ms="search"
+                    data-search-input wire:model.live.debounce.300ms="search"
                     placeholder="ابحث برقم الصنف أو الاسم أو الباركود..."
                     icon="magnifying-glass"
                 />
@@ -2562,7 +2562,7 @@ new class extends Component {
                             $priceData = $branchPrices[$product->id] ?? null;
                         @endphp
 
-                        <tr
+                        <tr data-search-option
                             wire:click="edit({{ $product->id }})"
                             class="cursor-pointer transition hover:bg-indigo-50/70 dark:hover:bg-indigo-950/20"
                         >
@@ -2907,7 +2907,7 @@ new class extends Component {
                 $priceData = $branchPrices[$product->id] ?? null;
             @endphp
 
-            <div
+            <div data-search-option
                 wire:click="edit({{ $product->id }})"
                 class="cursor-pointer rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-900 dark:hover:bg-indigo-950/20"
             >

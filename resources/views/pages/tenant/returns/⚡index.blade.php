@@ -1207,7 +1207,7 @@ new class extends Component
                         <input id="return-date" type="date" wire:model="invoiceDate" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                     </div>
 
-                    <div class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" x-data="{ partyOpen: true }" x-on:click.outside="partyOpen = false" x-on:keydown.escape.stop="partyOpen = false">
+                    <div data-search-nav class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" x-data="{ partyOpen: true }" x-on:click.outside="partyOpen = false" x-on:keydown.escape.stop="partyOpen = false">
                         <label for="return-party-search" class="mb-1 block text-xs font-bold text-slate-700">{{ $partyLabel }}</label>
                         @if ($selectedPartyId)
                             <div class="flex h-10 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3">
@@ -1227,7 +1227,7 @@ new class extends Component
                                 <div x-show="partyOpen" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
                                     <div class="max-h-64 overflow-y-auto p-1.5">
                                         @forelse ($partyResults as $party)
-                                            <button type="button" wire:key="return-party-{{ $party['id'] }}" wire:click="selectParty({{ $party['id'] }})" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-right transition hover:bg-slate-50">
+                                            <button type="button" data-search-option wire:key="return-party-{{ $party['id'] }}" wire:click="selectParty({{ $party['id'] }})" class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-right transition hover:bg-slate-50">
                                                 <div class="min-w-0">
                                                     <div class="truncate text-sm font-black text-slate-800">{{ $party['name'] }}</div>
                                                     <div class="mt-0.5 text-[11px] font-semibold text-slate-400">{{ $party['phone'] ?: 'بدون هاتف' }}</div>

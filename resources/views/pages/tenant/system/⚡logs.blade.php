@@ -319,7 +319,7 @@ new class extends Component
     }
 };
 ?>
-<flux:main >
+<flux:main data-search-nav >
 
 <div dir="rtl" class="p-4 sm:p-6">
 
@@ -376,7 +376,7 @@ new class extends Component
 
                 <input
                     type="text"
-                    wire:model.live.debounce.400ms="search"
+                    data-search-input wire:model.live.debounce.400ms="search"
                     placeholder="ابحث بالمستخدم أو رقم السجل..."
                     class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
@@ -595,7 +595,7 @@ new class extends Component
 
                     @forelse($this->logs as $log)
 
-                        <tr
+                        <tr data-search-option
                             wire:key="audit-log-{{ $log->id }}"
                             class="hover:bg-gray-50"
                         >
@@ -693,7 +693,7 @@ new class extends Component
 
                                 <button
                                     type="button"
-                                    wire:click="showDetails({{ $log->id }})"
+                                    data-search-open wire:click="showDetails({{ $log->id }})"
                                     class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
                                 >
 

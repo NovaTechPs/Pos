@@ -718,7 +718,7 @@
     };
     ?>
 
-    <div class="p-6 space-y-6">
+    <div data-search-nav class="p-6 space-y-6">
         <!-- Header -->
         <div class="flex items-center justify-between border-b pb-4 dark:border-gray-700">
             <div>
@@ -799,7 +799,7 @@
         @if (in_array($activeTab, ['employees', 'attendance', 'departures', 'leaves', 'advances'], true))
             <div class="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900">
                 @if ($activeTab === 'employees')
-                    <label class="min-w-[200px] flex-1 text-xs">بحث الموظفين<input wire:model.live.debounce.300ms="employeeSearchFilter" placeholder="الاسم أو رقم الموظف أو الهاتف" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"></label>
+                    <label class="min-w-[200px] flex-1 text-xs">بحث الموظفين<input data-search-input wire:model.live.debounce.300ms="employeeSearchFilter" placeholder="الاسم أو رقم الموظف أو الهاتف" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"></label>
                     <label class="text-xs">الحالة<select wire:model.live="employeeStatusFilter" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"><option value="">الكل</option><option value="active">نشط</option><option value="inactive">غير نشط</option></select></label>
                 @else
                     <label class="min-w-[200px] flex-1 text-xs">الموظف<select wire:model.live="employeeListFilter" class="mt-1 w-full rounded-lg border border-zinc-200 bg-white p-2 text-sm dark:bg-zinc-800"><option value="">كل الموظفين</option>@foreach ($allEmployees as $filterEmployee)<option value="{{ $filterEmployee->id }}">{{ $filterEmployee->first_name }} {{ $filterEmployee->last_name }}</option>@endforeach</select></label>
@@ -833,7 +833,7 @@
                         </thead>
                         <tbody class="divide-y dark:divide-gray-700">
                             @forelse($employees as $emp)
-                                <tr>
+                                <tr data-search-option>
                                     <td class="p-3 font-mono">{{ $emp->employee_code }}</td>
                                     <td class="p-3 font-medium">{{ $emp->first_name }} {{ $emp->last_name }}</td>
                                     <td class="p-3">{{ $emp->phone ?? '-' }}</td>
@@ -846,7 +846,7 @@
                                         @endif
                                     </td>
                                     <td class="p-3">{{ $emp->hire_date }}</td>
-                                    <td class="p-3"><flux:button size="sm" wire:click="openEmployeeTerms({{ $emp->id }})">الراتب والدوام والخدمة</flux:button>
+                                    <td class="p-3"><flux:button size="sm" data-search-open wire:click="openEmployeeTerms({{ $emp->id }})">الراتب والدوام والخدمة</flux:button>
                                     @if ($emp->terminated_at)<span class="text-xs text-rose-600">انتهت الخدمة {{ $emp->terminated_at }}</span>@endif</td>
                                 </tr>
                             @empty

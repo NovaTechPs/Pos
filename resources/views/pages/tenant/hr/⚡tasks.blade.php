@@ -356,7 +356,7 @@ new #[Title('Employee Tasks')] class extends Component
 };
 ?>
 
-<div class="mx-auto max-w-6xl space-y-6" dir="rtl">
+<div data-search-nav class="mx-auto max-w-6xl space-y-6" dir="rtl">
     <header class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div class="flex items-start gap-4">
             <span class="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
@@ -397,7 +397,7 @@ new #[Title('Employee Tasks')] class extends Component
     @if ($view === 'recurring' && $this->canManage)
         <section class="space-y-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <div class="grid gap-3 sm:grid-cols-2">
-                <flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="ابحث في عنوان المهمة" />
+                <flux:input data-search-input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="ابحث في عنوان المهمة" />
                 <flux:select wire:model.live="employeeFilter">
                     <option value="">كل الموظفين</option>
                     @foreach ($this->employees as $employee)
@@ -408,7 +408,7 @@ new #[Title('Employee Tasks')] class extends Component
 
             <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                 @forelse ($this->recurringTasks as $recurringTask)
-                    <article wire:key="recurring-{{ $recurringTask->id }}" class="flex flex-wrap items-start justify-between gap-3 py-4">
+                    <article data-search-option wire:key="recurring-{{ $recurringTask->id }}" class="flex flex-wrap items-start justify-between gap-3 py-4">
                         <div class="min-w-0 flex-1 space-y-1.5">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 @class(['text-base font-black text-zinc-900 dark:text-white', 'opacity-50' => ! $recurringTask->is_active])>{{ $recurringTask->title }}</h3>
@@ -429,7 +429,7 @@ new #[Title('Employee Tasks')] class extends Component
                             <flux:button size="sm" variant="ghost" wire:click="toggleRecurring({{ $recurringTask->id }})">
                                 {{ $recurringTask->is_active ? 'إيقاف' : 'تفعيل' }}
                             </flux:button>
-                            <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editRecurring({{ $recurringTask->id }})" aria-label="تعديل المهمة المتكررة" />
+                            <flux:button size="sm" variant="ghost" icon="pencil-square" data-search-open wire:click="editRecurring({{ $recurringTask->id }})" aria-label="تعديل المهمة المتكررة" />
                             <flux:button size="sm" variant="ghost" icon="trash" class="text-rose-500!" wire:click="deleteRecurring({{ $recurringTask->id }})" wire:confirm="حذف هذه المهمة المتكررة؟ المهام التي أُنشئت منها سابقاً تبقى." aria-label="حذف المهمة المتكررة" />
                         </div>
                     </article>
@@ -460,7 +460,7 @@ new #[Title('Employee Tasks')] class extends Component
 
         <section class="space-y-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <flux:input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="ابحث في عنوان المهمة أو تفاصيلها" />
+                <flux:input data-search-input type="search" icon="magnifying-glass" wire:model.live.debounce.300ms="search" placeholder="ابحث في عنوان المهمة أو تفاصيلها" />
                 <flux:select wire:model.live="statusFilter">
                     <option value="open">المفتوحة</option>
                     <option value="overdue">المتأخرة</option>
@@ -496,7 +496,7 @@ new #[Title('Employee Tasks')] class extends Component
                         $isClosed = in_array($task->status, ['completed', 'cancelled'], true);
                         $doneSteps = $task->steps->filter->isCompleted()->count();
                     @endphp
-                    <article wire:key="task-{{ $task->id }}" class="flex flex-wrap items-start justify-between gap-3 py-4">
+                    <article data-search-option wire:key="task-{{ $task->id }}" class="flex flex-wrap items-start justify-between gap-3 py-4">
                         <div class="min-w-0 flex-1 space-y-2">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 @class(['text-base font-black text-zinc-900 dark:text-white', 'line-through opacity-60' => $isClosed])>{{ $task->title }}</h3>
@@ -571,7 +571,7 @@ new #[Title('Employee Tasks')] class extends Component
                                 @if (! $isClosed)
                                     <flux:button size="sm" variant="ghost" wire:click="setStatus({{ $task->id }}, 'cancelled')">إلغاء</flux:button>
                                 @endif
-                                <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="edit({{ $task->id }})" aria-label="تعديل المهمة" />
+                                <flux:button size="sm" variant="ghost" icon="pencil-square" data-search-open wire:click="edit({{ $task->id }})" aria-label="تعديل المهمة" />
                                 <flux:button size="sm" variant="ghost" icon="trash" class="text-rose-500!" wire:click="delete({{ $task->id }})" wire:confirm="حذف هذه المهمة نهائيًا؟" aria-label="حذف المهمة" />
                             @endif
                         </div>

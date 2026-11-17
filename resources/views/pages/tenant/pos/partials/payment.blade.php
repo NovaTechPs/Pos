@@ -787,7 +787,7 @@
 
                             <button
                                 type="button"
-                                data-pos-customer-result
+                                data-pos-customer-result data-search-option
                                 wire:key="pos-customer-result-{{ $customer->id }}"
                                 wire:click="selectCustomer({{ $customer->id }})"
                                 x-on:keydown.arrow-down.prevent.stop="move(1)"
@@ -1092,7 +1092,7 @@
                                     wire:click="selectDeliveryCompany({{ $company->id }})"
                                     x-on:click="deliveryCompaniesOpen = false"
                                     x-on:mouseenter="activeDeliveryCompanyIndex = {{ $loop->index }}"
-                                    x-bind:class="activeDeliveryCompanyIndex === {{ $loop->index }} ? 'bg-blue-100 text-blue-800' : ''"
+                                    x-bind:class="activeDeliveryCompanyIndex === {{ $loop->index }} ? 'search-result-active' : ''"
                                     @class(['flex w-full justify-between px-3 py-2 text-right text-sm hover:bg-blue-50', 'bg-blue-50 font-black text-blue-700' => $deliveryCompanyId === $company->id])
                                 ><span>{{ $company->name }}</span><span dir="ltr" class="text-slate-500">{{ $company->phone }}</span></button>
                             @empty

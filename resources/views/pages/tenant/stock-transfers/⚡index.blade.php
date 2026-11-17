@@ -1127,7 +1127,7 @@ return new class extends Component {
 
 ?>
 
-<flux:main class="space-y-6">
+<flux:main data-search-nav class="space-y-6">
 
   <div dir="rtl" class="min-h-screen space-y-6 p-4 md:p-6">
     {{-- Header --}}
@@ -1186,7 +1186,7 @@ return new class extends Component {
                     <label class="mb-1 block text-xs font-black text-zinc-600">بحث</label>
                     <input
                         type="text"
-                        wire:model.live.debounce.300ms="listSearch"
+                        data-search-input wire:model.live.debounce.300ms="listSearch"
                         placeholder="بحث برقم التحويل أو الفرع..."
                         class="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-bold outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                     >
@@ -1230,7 +1230,7 @@ return new class extends Component {
                 </thead>
                 <tbody class="divide-y divide-zinc-100">
                     @forelse ($transfers as $transfer)
-                        <tr wire:key="transfer-{{ $transfer->id }}" class="transition hover:bg-zinc-50">
+                        <tr data-search-option wire:key="transfer-{{ $transfer->id }}" class="transition hover:bg-zinc-50">
                             <td class="px-4 py-4 font-black text-zinc-900">{{ $transfer->transfer_number }}</td>
                             <td class="px-4 py-4 font-bold text-zinc-700">{{ $transfer->fromBranch?->name ?? '—' }}</td>
                             <td class="px-4 py-4 font-bold text-zinc-700">{{ $transfer->toBranch?->name ?? '—' }}</td>
@@ -1247,7 +1247,7 @@ return new class extends Component {
                             </td>
                             <td class="px-4 py-4">
                                 <div class="flex flex-wrap gap-2">
-                                    <button type="button" wire:click="showTransfer({{ $transfer->id }})" class="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-black text-zinc-700 hover:bg-zinc-100">عرض</button>
+                                    <button type="button" data-search-open wire:click="showTransfer({{ $transfer->id }})" class="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-black text-zinc-700 hover:bg-zinc-100">عرض</button>
 
                                     @if ($transfer->status === 'pending')
                                         <button type="button" wire:click="approve({{ $transfer->id }})" wire:confirm="هل تريد اعتماد التحويل ونقل المخزون؟" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">اعتماد</button>
@@ -1291,7 +1291,7 @@ return new class extends Component {
                 </div>
 
                 <div class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-5">
-                    <div class="space-y-5 border-b border-zinc-200 p-5 lg:col-span-3 lg:border-b-0 lg:border-l">
+                    <div data-search-nav class="space-y-5 border-b border-zinc-200 p-5 lg:col-span-3 lg:border-b-0 lg:border-l">
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div>
                                 <label class="mb-1 block text-xs font-black text-zinc-600">الفرع المصدر</label>
@@ -1323,7 +1323,7 @@ return new class extends Component {
                             <div class="max-h-72 overflow-y-auto divide-y divide-zinc-100">
                                 @forelse ($products as $product)
                                     @php($branchProduct = $product->branchProducts->first())
-                                    <button type="button" wire:click="addProduct({{ $product->id }})" class="flex w-full items-center justify-between gap-3 px-4 py-3 text-right hover:bg-indigo-50">
+                                    <button type="button" data-search-option wire:click="addProduct({{ $product->id }})" class="flex w-full items-center justify-between gap-3 px-4 py-3 text-right hover:bg-indigo-50">
                                         <div class="min-w-0">
                                             <div class="truncate text-sm font-black text-zinc-900">{{ $product->name }}</div>
                                             <div class="mt-1 text-xs text-zinc-500">الباركود: {{ $product->barcodes->first()?->barcode ?? '—' }}</div>
