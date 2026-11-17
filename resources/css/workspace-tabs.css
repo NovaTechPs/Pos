@@ -1,8 +1,9 @@
 @media screen {
     [data-flux-sidebar] [data-flux-sidebar-item][data-current] {
-        background-color: #1d4ed8 !important;
-        border-color: #1d4ed8 !important;
+        background-color: #123b86 !important;
+        border-color: #123b86 !important;
         color: #fff !important;
+        box-shadow: 0 5px 12px rgba(18, 59, 134, 0.18);
     }
 
     [data-flux-sidebar] [data-flux-sidebar-item][data-current] svg {
@@ -10,8 +11,8 @@
     }
 
     [data-flux-sidebar] details:has([data-flux-sidebar-item][data-current]) > summary {
-        background-color: #dbeafe;
-        color: #1e40af;
+        background-color: #e8f0ff;
+        color: #123b86;
     }
 
     [data-flux-sidebar] details:has([data-flux-sidebar-item][data-current]) > summary svg {
