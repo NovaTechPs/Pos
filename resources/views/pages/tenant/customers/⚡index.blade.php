@@ -1263,7 +1263,11 @@ new class extends Component {
             'balance_asc' => $query->orderBy('current_balance')->orderBy('id'),
             default => $query->latest('id'),
         };
-        $parties = $query->paginate(in_array($this->perPage, [10, 25, 50], true) ? $this->perPage : 10);
+        // 0 = «الكل»: one page holding every matching party.
+        $pageSize = $this->perPage === 0
+            ? max(1, (clone $query)->count())
+            : (in_array($this->perPage, [10, 25, 50, 100], true) ? $this->perPage : 10);
+        $parties = $query->paginate($pageSize);
 
 
         return $this->view([
@@ -1433,6 +1437,14 @@ new class extends Component {
                             50 لكل صفحة
                         </option>
 
+                        <option value="100">
+                            100 لكل صفحة
+                        </option>
+
+                        <option value="0">
+                            الكل
+                        </option>
+
                     </select>
 
                 </div>
@@ -1512,8 +1524,8 @@ new class extends Component {
 
 
                 <tbody
-                    x-data data-party-rows x-on:statement-closed.window="$nextTick(() => $el.querySelector(`[data-party-row='${$event.detail.id}']`)?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
-                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm"
+                    x-data data-party-rows data-bold-rows x-on:statement-closed.window="$nextTick(() => $el.querySelector(`[data-party-row='${$event.detail.id}']`)?.focus())" x-on:keydown.arrow-down.prevent="(rows => rows[Math.min(rows.length - 1, rows.indexOf(document.activeElement) + 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])" x-on:keydown.arrow-up.prevent="(rows => rows[Math.max(0, rows.indexOf(document.activeElement) - 1)]?.focus())([...$el.querySelectorAll('[data-nav-row]')])"
+                    class="divide-y divide-gray-100 dark:divide-gray-700 text-xs sm:text-sm [&_td]:font-bold! [&_td_div]:font-bold! [&_td]:text-gray-900! dark:[&_td]:text-white!"
                 >
 
                     @forelse ($parties as $party)

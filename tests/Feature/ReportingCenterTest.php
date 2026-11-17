@@ -674,6 +674,7 @@ test('parties list and statement rows can be walked with the arrow keys', functi
     ($this->makeOrder)(['invoice_number' => 'ARROW-ORDER']);
     Livewire::test('pages::tenant.customers.index')
         ->assertSee('data-party-row="'.$this->customer->id.'"', false)
+        ->assertSeeHtml('data-bold-rows')
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
         ->call('openStatementModal', $this->customer->id)
         ->assertSee('data-statement-row', false)
@@ -742,4 +743,16 @@ test('statement purchase returns open loaded on the purchase returns page', func
     Livewire::test('pages::tenant.reports.center')->call('openStatementDocument', 4, $return->id)
         ->assertDispatched('open-statement-document', url: $url, title: 'مردود مشتريات OPEN-PRET');
     $this->get($url)->assertOk()->assertSee('OPEN-PRET');
+});
+
+test('the parties list can show every party on one page', function (): void {
+    foreach (range(1, 12) as $index) {
+        Party::create(['tenant_id' => $this->tenant->id, 'name' => 'طرف القائمة '.$index, 'type' => 'customer']);
+    }
+
+    $paged = Livewire::test('pages::tenant.customers.index')->assertSeeHtml('<option value="0">');
+    expect(substr_count($paged->html(), 'data-party-row="'))->toBe(10);
+
+    $all = Livewire::test('pages::tenant.customers.index')->set('perPage', 0);
+    expect(substr_count($all->html(), 'data-party-row="'))->toBe(Party::query()->where('tenant_id', $this->tenant->id)->count());
 });
