@@ -46,6 +46,7 @@ test('voucher pages use the financial voucher workspace and centered creation fo
         ->call('openCreate')
         ->assertSeeHtml('data-voucher-form')
         ->assertSeeHtml('data-voucher-mode')
+        ->assertDontSeeHtml('h-14 w-full')
         ->assertSeeHtml('value="bank_transfer"')
         ->assertSeeHtml('value="cheque"');
 

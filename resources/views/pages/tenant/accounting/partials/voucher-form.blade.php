@@ -36,7 +36,7 @@
         x-data="{ open: @entangle('showForm') }"
         x-cloak
         data-voucher-form
-        class="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6"
+        class="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-4"
     >
 
         {{-- Backdrop --}}
@@ -60,7 +60,7 @@
         >
 
             {{-- Header --}}
-            <div class="shrink-0 border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
+            <div class="shrink-0 border-b border-slate-200 bg-white px-5 py-3 sm:px-6">
                 <div class="flex items-start justify-between gap-4">
 
                     <div>
@@ -149,7 +149,7 @@
             </div>
 
             {{-- Archive: browse saved vouchers like the invoice archive --}}
-            <div data-voucher-archive class="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-2.5 sm:px-8">
+            <div data-voucher-archive class="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-2 sm:px-6">
                 <div class="inline-flex h-9 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
                     <button type="button" wire:click="previousVoucher" wire:loading.attr="disabled" wire:target="previousVoucher,nextVoucher" title="السند السابق" class="inline-flex items-center gap-1 px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
                         <flux:icon.chevron-right class="size-4" /> السابق
@@ -180,25 +180,25 @@
                 <form
                     wire:submit="{{ $saveMethod }}"
                     id="{{ $formId }}"
-                    class="space-y-5 p-5 sm:p-8"
+                    class="space-y-3 p-4 sm:px-6 sm:py-4"
                 >
 
-                    <div data-voucher-mode class="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div data-voucher-mode class="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-1.5">
                         <div class="flex items-center gap-3">
-                            <span class="inline-flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white"><flux:icon name="document-text" class="size-5" /></span>
+                            <span class="inline-flex size-7 items-center justify-center rounded-lg bg-blue-600 text-white"><flux:icon name="document-text" class="size-4" /></span>
                             <div>
                                 <p class="text-sm font-black text-slate-900">نوع السند <span class="text-rose-500">*</span></p>
                                 <p class="text-xs text-slate-500">{{ $voucherLabel }} مستقل {{ $paymentId ? 'قيد التعديل' : 'جاهز للحفظ' }}</p>
                             </div>
                         </div>
-                        <span class="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white">{{ $voucherLabel }}</span>
+                        <span class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-black text-white">{{ $voucherLabel }}</span>
                     </div>
 
                     {{-- Voucher number / date --}}
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 
                         <div>
-                            <label class="mb-2 block text-sm font-black text-slate-800">
+                            <label class="mb-1 block text-sm font-black text-slate-800">
                                 رقم السند
                             </label>
 
@@ -206,7 +206,7 @@
                                 type="text"
                                 wire:model="voucherNumber"
                                 readonly
-                                class="h-14 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-base font-bold text-slate-700 outline-none"
+                                class="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-base font-bold text-slate-700 outline-none"
                             />
 
                             @error('voucherNumber')
@@ -217,14 +217,14 @@
                         </div>
 
                         <div>
-                            <label class="mb-2 block text-sm font-black text-slate-800">
+                            <label class="mb-1 block text-sm font-black text-slate-800">
                                 التاريخ <span class="text-rose-500">*</span>
                             </label>
 
                             <input
                                 type="date"
                                 wire:model="paymentDate"
-                                class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
+                                class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                             />
 
                             @error('paymentDate')
@@ -249,7 +249,7 @@
                             {{-- Selected party --}}
                             <div class="overflow-hidden rounded-2xl border border-{{ $accent }}-200 bg-{{ $accent }}-50/60">
 
-                                <div class="flex items-start justify-between gap-3 p-4">
+                                <div class="flex items-start justify-between gap-3 px-4 py-2.5">
 
                                     <div class="flex min-w-0 items-center gap-3">
 
@@ -479,7 +479,7 @@
                                     x-on:keydown.space.prevent="openList()"
                                     :aria-expanded="open"
                                     aria-haspopup="listbox"
-                                    class="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-start text-sm text-slate-600 outline-none transition hover:border-{{ $accent }}-300 focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
+                                    class="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2 text-start text-sm text-slate-600 outline-none transition hover:border-{{ $accent }}-300 focus:border-{{ $accent }}-500 focus:ring-2 focus:ring-{{ $accent }}-100"
                                 >
 
                                     <span class="flex items-center gap-3">
@@ -733,7 +733,7 @@
                     </div>
 
                     {{-- Amount / payment method --}}
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 
                         <div>
 
@@ -751,7 +751,7 @@
                                     min="0"
                                     wire:model.live="amount"
                                     inputmode="decimal"
-                                    class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-xl font-black text-slate-900 outline-none transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
+                                    class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-xl font-black text-slate-900 outline-none transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                                 />
 
                             </div>
@@ -766,14 +766,14 @@
 
                         <div>
 
-                            <label class="mb-2 block text-sm font-black text-slate-800">
+                            <label class="mb-1 block text-sm font-black text-slate-800">
                                 طريقة الدفع
                                 <span class="text-rose-500">*</span>
                             </label>
 
                             <select
                                 wire:model="paymentMethod"
-                                class="h-14 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
+                                class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                             >
                                 <option value="cash">
                                     نقدي
@@ -805,7 +805,7 @@
                     {{-- Balance preview --}}
                     @if($selectedParty)
 
-                        <div class="rounded-2xl border border-blue-100 bg-blue-50/60 p-4" data-voucher-balance-preview>
+                        <div class="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-2.5" data-voucher-balance-preview>
 
                             {{-- الرصيد الحالي وقيمة السند أولاً --}}
                             <div class="flex items-center justify-between text-xs">
@@ -838,10 +838,10 @@
 
                             </div>
 
-                            <div class="mt-3 h-px bg-slate-200"></div>
+                            <div class="mt-2 h-px bg-slate-200"></div>
 
                             {{-- ملخص الرصيد بعد العملية في الأسفل --}}
-                            <div class="mt-3 flex items-center justify-between gap-4">
+                            <div class="mt-2 flex items-center justify-between gap-4">
 
                                 <div>
                                     <p class="text-xs font-medium text-slate-500">
@@ -878,13 +878,13 @@
                     {{-- Notes --}}
                     <div>
 
-                            <label class="mb-2 block text-sm font-black text-slate-800">
+                            <label class="mb-1 block text-sm font-black text-slate-800">
                                 البيان / السبب
                         </label>
 
                         <textarea
                             wire:model="notes"
-                            rows="3"
+                            rows="2"
                             placeholder="أدخل بيان السند أو سبب العملية..."
                             class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                         ></textarea>
@@ -901,7 +901,7 @@
             </div>
 
             {{-- Footer --}}
-            <div class="shrink-0 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:px-8">
+            <div class="shrink-0 border-t border-slate-200 bg-slate-50/70 px-5 py-2.5 sm:px-6">
 
                 <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
 
