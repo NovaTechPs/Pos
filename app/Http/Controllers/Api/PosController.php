@@ -37,7 +37,9 @@ class PosController extends Controller
         ]);
         $user = $request->user();
         $query = Order::query()->where('tenant_id', $user->tenant_id)
-            ->where('branch_id', $validated['branch_id'])->where('type', 'pos')->where('status', 'completed')
+            ->where('branch_id', $validated['branch_id'])
+            // Every sale shares one number sequence, so the archive walks POS, web and wholesale invoices alike.
+            ->whereIn('type', ['pos', 'wholesale', 'online'])->where('status', 'completed')
             ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id));
         if (! empty($validated['search'])) {
             $search = $validated['search'];
@@ -62,6 +64,8 @@ class PosController extends Controller
         $order->unsetRelation('payments');
         $order->setAttribute('linked_receipt', $receipt);
         $order->setAttribute('payment_method', $receipt?->payment_method ?? 'cash');
+        // Only point-of-sale invoices are edited or deleted from the POS app; the rest from the sales invoice page.
+        $order->setAttribute('editable_in_pos', $order->type === 'pos');
 
         return response()->json(['order' => $order]);
     }

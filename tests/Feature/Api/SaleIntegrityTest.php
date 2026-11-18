@@ -378,6 +378,15 @@ test('invoice navigation searches and moves in both directions within the branch
     $this->getJson($base.'&search='.$one['invoice_number'])->assertOk()->assertJsonPath('order.id', $one['id']);
 });
 
+test('invoice navigation also walks web and wholesale sales invoices, marking which ones the POS can edit', function (): void {
+    $pos = $this->postJson('/api/pos/orders', $this->payload)->assertCreated()->json('order');
+    $web = Order::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'invoice_number' => 'WEB-SALE-1',
+        'type' => 'wholesale', 'status' => 'completed', 'subtotal' => 15, 'total' => 15, 'paid_amount' => 0]);
+    $base = '/api/pos/invoices?branch_id='.$this->branch->id;
+    $this->getJson($base)->assertOk()->assertJsonPath('order.id', $web->id)->assertJsonPath('order.editable_in_pos', false);
+    $this->getJson($base.'&before='.$web->id)->assertOk()->assertJsonPath('order.id', $pos['id'])->assertJsonPath('order.editable_in_pos', true);
+});
+
 test('deleting an invoice restores stock and removes its payment only once', function (): void {
     $order = $this->postJson('/api/pos/orders', $this->payload)->assertCreated()->json('order');
     $this->deleteJson('/api/pos/invoices/'.$order['id'])->assertOk();
