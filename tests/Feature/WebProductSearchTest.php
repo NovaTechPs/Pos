@@ -104,6 +104,19 @@ test('invoice search can replace a selected product without leaving stale prices
         ->assertViewHas('productResults', fn ($results): bool => $results->pluck('id')->all() === [$this->product->id]);
 })->with(['sales', 'purchases']);
 
+test('invoice Enter never selects the first partial search result automatically', function (string $page): void {
+    $html = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set('rowSearch', '23')
+        ->assertSet('selectedProductId', null)
+        ->html();
+
+    if ($page === 'sales') {
+        expect($html)->not->toContain('products[0]?.click()');
+    } else {
+        expect($html)->not->toContain("this.visibleResults('[data-product-result]')[0]?.querySelector('button')?.click()");
+    }
+})->with(['sales', 'purchases']);
+
 test('invoice keyboard ignores hidden suggestions and cleans up repeated work', function (): void {
     $script = <<<'JS'
     const fs = require('node:fs');

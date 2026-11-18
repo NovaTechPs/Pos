@@ -3332,14 +3332,13 @@ new class extends Component {
                                 return;
                             }
 
-                            // Barcode scanners usually send Enter. Exact code match
-                            // adds one unit, or increments an existing cart line.
+                            // Enter selects only an exact product number or barcode.
+                            // A partial search must be explicitly chosen with arrows or a click.
                             const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value, true);
                             if (barcodeMatched) {
                                 this.productIndex = -1;
                                 return;
                             }
-                            this.visibleResults('[data-product-result]')[0]?.querySelector('button')?.click();
                             return;
                         }
                     }

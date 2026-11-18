@@ -3553,8 +3553,6 @@ new class extends Component {
                         const products = this.productResults();
                         if (this.productIndex >= 0 && products[this.productIndex]) {
                             products[this.productIndex].click();
-                        } else {
-                            products[0]?.click();
                         }
                     });
                     return;
