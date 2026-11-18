@@ -1407,7 +1407,7 @@ new class extends Component
 
                                     data-barcode="{{ $selectedBarcode }}"
 
-                        style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; overflow: visible;"
+                        style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;"
 
                                 >
 
@@ -1557,9 +1557,21 @@ new class extends Component
                         format: 'CODE128', width: 1.2, height: 36,
                         displayValue: true, textPosition: 'bottom',
                         fontSize: 15, textMargin: 3, margin: 5,
+                        marginLeft: 12, marginRight: 12,
                         background: '#fff', lineColor: '#000'
                     });
+                    this.fitBarcode(svg);
+                    svg.style.height = 'auto';
                 } catch (error) { console.error('Barcode preview error:', error); }
+            },
+            fitBarcode(svg) {
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                svg.style.maxWidth = '100%';
+                svg.style.maxHeight = '100%';
+                svg.style.display = 'block';
+                svg.style.direction = 'ltr';
             },
             refreshPreview() {
                 if (!document.getElementById('preview-barcode-wrapper')) return;
@@ -1586,8 +1598,10 @@ new class extends Component
                         format: 'CODE128', width: 1.5, height: 40,
                         displayValue: true, textPosition: 'bottom',
                         font: 'Arial', fontSize: 16, textMargin: 4,
-                        margin: 7, background: '#fff', lineColor: '#000'
+                        margin: 7, marginLeft: 15, marginRight: 15,
+                        background: '#fff', lineColor: '#000'
                     });
+                    this.fitBarcode(svg);
                 } catch (err) { alert('الباركود غير صالح للطباعة: ' + err.message); return; }
                 const barcodeSvg = new XMLSerializer().serializeToString(svg);
                 const name = this.escapeHtml(data.name || '');

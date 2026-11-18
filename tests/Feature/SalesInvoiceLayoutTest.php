@@ -2,6 +2,7 @@
 
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Order;
 use App\Models\Party;
 use App\Models\Product;
 use App\Models\Tenant;
@@ -15,6 +16,34 @@ beforeEach(function (): void {
     $this->actingAs($this->user)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
     $this->product = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'الصنف', 'cost_price' => 2]);
     BranchProduct::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 50, 'retail_price' => 10, 'wholesale_price' => 10]);
+});
+
+test('existing wholesale sales are searchable and editable in sales invoices', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Wholesale customer', 'type' => 'customer']);
+    $order = Order::create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'created_by' => $this->user->id,
+        'customer_id' => $customer->id,
+        'invoice_number' => 'WHOLESALE-EXISTING-1',
+        'type' => 'wholesale',
+        'sale_kind' => 'wholesale',
+        'status' => 'completed',
+        'subtotal' => 10,
+        'total' => 10,
+        'paid_amount' => 0,
+        'payment_status' => 'unpaid',
+    ]);
+
+    Livewire::test('pages::tenant.sales.invoices')
+        ->set('showInvoiceSearch', true)
+        ->assertSee($order->invoice_number)
+        ->set('searchInvoiceQuery', $order->invoice_number)
+        ->call('searchInvoice')
+        ->assertSet('currentOrderId', $order->id)
+        ->assertSet('selectedCustomerId', $customer->id)
+        ->call('editLoadedInvoice')
+        ->assertSet('invoiceEditMode', true);
 });
 
 test('the entry row discount is applied to the added sales line and then reset', function (): void {

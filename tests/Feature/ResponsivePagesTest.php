@@ -89,7 +89,8 @@ test('tenant sidebar groups invoice links inside a collapsible invoice section',
 
     expect($invoiceSection)->not->toBeNull()
         ->and($invoiceSection->getElementsByTagName('a')->length)->toBeGreaterThanOrEqual(6)
-        ->and($response->getContent())->toContain(route('tenant.sale-invoices'), route('tenant.purchase-invoices'), __('Sales Invoices'), __('Purchase Invoices'));
+        ->and($response->getContent())->toContain(route('tenant.sale-invoices'), route('tenant.purchase-invoices'), __('Sales Invoices'), __('Purchase Invoices'))
+        ->not->toContain('href="'.route('tenant.wholesale-sales').'"');
 });
 
 test('point of sale keeps notes outside payment and offers one copy action for a saved invoice', function (): void {

@@ -52,7 +52,6 @@
                 ['permission' => 'pos.view', 'route' => 'tenant.pos', 'label' => 'POS', 'icon' => 'calculator'],
                 ['permission' => 'sales_invoices.view', 'route' => 'tenant.sale-invoices', 'label' => 'Sales Invoices', 'icon' => 'document-text'],
                 ['permission' => 'returns.view', 'route' => 'tenant.sales-returns', 'label' => 'Sales Returns', 'icon' => 'arrow-uturn-left'],
-                ['permission' => 'wholesale_sales.view', 'route' => 'tenant.wholesale-sales', 'label' => 'Wholesale Sales', 'icon' => 'building-office'],
                 ['permission' => 'purchases.view', 'route' => 'tenant.purchase-invoices', 'label' => 'Purchase Invoices', 'icon' => 'arrow-down-tray'],
                 ['permission' => 'returns.view', 'route' => 'tenant.purchase-returns', 'label' => 'Purchase Returns', 'icon' => 'arrow-uturn-left'],
                 ['permission' => 'store.orders.view', 'route' => 'tenant.online-orders', 'label' => 'Online Orders', 'icon' => 'shopping-cart'],
@@ -141,11 +140,7 @@
                         @endif
                     @else
                         <flux:sidebar.item class="rounded-xl" :icon="$item['icon']" :href="route($item['route'])" :current="request()->routeIs($item['route'])" wire:navigate>
-                            @if ($item['route'] === 'tenant.wholesale-sales' && str_contains((string) request()->userAgent(), 'Android'))
-                                {{ __('Sales') }}
-                            @else
-                                {{ __($item['label']) }}
-                            @endif
+                            {{ __($item['label']) }}
                         </flux:sidebar.item>
                     @endif
                 @endforeach
