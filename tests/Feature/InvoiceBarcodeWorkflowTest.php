@@ -67,6 +67,39 @@ test('invoice product search matches the full product number and its middle', fu
     ['purchases', 'EM-10'],
 ]);
 
+test('invoice Enter selects a generated item number from its short numeric suffix', function (string $page, string $action): void {
+    $shortNumberProduct = Product::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_number' => 'i0000034',
+        'name' => 'صنف الرقم المختصر',
+        'cost_price' => 6.5,
+    ]);
+    BranchProduct::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'branch_id' => $this->branch->id,
+        'product_id' => $shortNumberProduct->id,
+        'stock_quantity' => 9,
+        'retail_price' => 12,
+        'wholesale_price' => 10,
+    ]);
+
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set('rowSearch', '34')
+        ->assertSet('selectedProductId', null)
+        ->call($action, '34', true)
+        ->assertReturned(true)
+        ->assertSet('selectedProductId', $shortNumberProduct->id)
+        ->assertSet('selectedProductName', 'صنف الرقم المختصر')
+        ->assertDispatched('focus-quantity');
+
+    if ($page === 'purchases') {
+        expect($component->get('cart'))->toBeEmpty();
+    }
+})->with([
+    ['sales', 'selectProductByBarcode'],
+    ['purchases', 'scanBarcodeToCart'],
+]);
+
 test('purchase invoice scanner loads barcode details and Enter progression commits the row', function (): void {
     $component = Livewire::test('pages::tenant.purchases.invoices')
         ->call('selectProductByBarcode', '1234567890123')

@@ -645,7 +645,7 @@ new class extends Component {
         $this->dispatch('focus-quantity');
     }
 
-    public function selectProductByBarcode(string $barcode): bool
+    public function selectProductByBarcode(string $barcode, bool $allowShortProductNumber = false): bool
     {
         if (! $this->ensureInvoiceEditable()) {
             return false;
@@ -669,12 +669,49 @@ new class extends Component {
             ->value('id');
 
         if (! $productId) {
-            return false;
+            $shortProductNumbers = $allowShortProductNumber ? $this->shortGeneratedProductNumbers($barcode) : [];
+
+            if ($shortProductNumbers !== []) {
+                $matchingProductIds = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereIn('product_number', $shortProductNumbers)
+                    ->limit(2)
+                    ->pluck('id');
+
+                $productId = $matchingProductIds->count() === 1 ? $matchingProductIds->first() : null;
+            }
+
+            if (! $productId) {
+                return false;
+            }
         }
 
         $this->selectProduct((int) $productId);
 
         return true;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function shortGeneratedProductNumbers(string $value): array
+    {
+        $digits = strtr(trim($value), [
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        ]);
+
+        if (preg_match('/^\d{1,8}$/', $digits) !== 1) {
+            return [];
+        }
+
+        $number = ltrim($digits, '0') ?: '0';
+
+        return collect(range(strlen($number), 8))
+            ->map(fn (int $length): string => 'i'.str_pad($number, $length, '0', STR_PAD_LEFT))
+            ->all();
     }
 
     public function updatedRowSearch(string $value): void
@@ -3507,7 +3544,7 @@ new class extends Component {
 
                 if (key === 'Enter') {
                     event.preventDefault();
-                    this.$wire.selectProductByBarcode(target.value).then((barcodeMatched) => {
+                    this.$wire.selectProductByBarcode(target.value, true).then((barcodeMatched) => {
                         if (barcodeMatched) {
                             this.productIndex = -1;
                             return;

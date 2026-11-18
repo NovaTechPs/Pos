@@ -453,7 +453,7 @@ new class extends Component {
         }
     }
 
-    public function selectProductByBarcode(string $barcode): bool
+    public function selectProductByBarcode(string $barcode, bool $allowShortProductNumber = false): bool
     {
         if (! $this->ensureInvoiceEditable()) {
             return false;
@@ -477,7 +477,21 @@ new class extends Component {
             ->value('id');
 
         if (! $productId) {
-            return false;
+            $shortProductNumbers = $allowShortProductNumber ? $this->shortGeneratedProductNumbers($barcode) : [];
+
+            if ($shortProductNumbers !== []) {
+                $matchingProductIds = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereIn('product_number', $shortProductNumbers)
+                    ->limit(2)
+                    ->pluck('id');
+
+                $productId = $matchingProductIds->count() === 1 ? $matchingProductIds->first() : null;
+            }
+
+            if (! $productId) {
+                return false;
+            }
         }
 
         $this->selectProduct((int) $productId);
@@ -485,7 +499,30 @@ new class extends Component {
         return true;
     }
 
-    public function scanBarcodeToCart(string $barcode): bool
+    /**
+     * @return array<int, string>
+     */
+    private function shortGeneratedProductNumbers(string $value): array
+    {
+        $digits = strtr(trim($value), [
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        ]);
+
+        if (preg_match('/^\d{1,8}$/', $digits) !== 1) {
+            return [];
+        }
+
+        $number = ltrim($digits, '0') ?: '0';
+
+        return collect(range(strlen($number), 8))
+            ->map(fn (int $length): string => 'i'.str_pad($number, $length, '0', STR_PAD_LEFT))
+            ->all();
+    }
+
+    public function scanBarcodeToCart(string $barcode, bool $allowShortProductNumber = false): bool
     {
         if (! $this->ensureInvoiceEditable()) return false;
         $tenantId = $this->tenantId();
@@ -494,7 +531,7 @@ new class extends Component {
 
         // A scan only fills the entry row and moves to the quantity; the line is added
         // after the quantity and cost are confirmed, like a product picked by name.
-        if ($this->selectProductByBarcode($barcode)) {
+        if ($this->selectProductByBarcode($barcode, $allowShortProductNumber)) {
             return true;
         }
 
@@ -3297,7 +3334,7 @@ new class extends Component {
 
                             // Barcode scanners usually send Enter. Exact code match
                             // adds one unit, or increments an existing cart line.
-                            const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value);
+                            const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value, true);
                             if (barcodeMatched) {
                                 this.productIndex = -1;
                                 return;
