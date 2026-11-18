@@ -37,6 +37,9 @@ new class extends Component {
 
     public string $rowSearch = '';
 
+    /** الرقم أو الباركود الذي يُدخل مباشرةً لاختيار الصنف. */
+    public string $productLookup = '';
+
     public ?int $selectedProductId = null;
 
     #[\Livewire\Attributes\Locked]
@@ -240,6 +243,7 @@ new class extends Component {
         $this->selectedPurchasePrice = 0;
         $this->selectedRetailPrice = 0;
         $this->selectedStock = 0;
+        $this->productLookup = '';
         $this->rowSearch = '';
     }
 
@@ -285,6 +289,7 @@ new class extends Component {
         $this->selectedSupplierId = null;
         $this->supplierSearch = '';
 
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->selectedProductId = null;
         $this->selectedProductName = '';
@@ -413,6 +418,7 @@ new class extends Component {
         $this->selectedQuantity = $this->editingCartKey !== null
             ? (float) ($this->cart[$this->editingCartKey]['quantity'] ?? 1)
             : 1.0;
+        $this->productLookup = (string) ($product->product_number ?? '');
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
@@ -442,6 +448,7 @@ new class extends Component {
         if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
             $this->selectedProductId = null;
             $this->selectedProductName = '';
+            $this->productLookup = '';
             $this->selectedPurchasePrice = 0;
             $this->selectedRetailPrice = 0;
             $this->selectedStock = 0;
@@ -642,6 +649,7 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->editingCartKey = null;
         $this->errorMessage = null;
@@ -683,6 +691,7 @@ new class extends Component {
         $this->selectedStock = 0.0;
         $this->selectedQuantity = (float) $this->cart[$cartKey]['quantity'];
         $this->selectedBonus = (float) ($this->cart[$cartKey]['bonus'] ?? 0);
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->errorMessage = null;
         $this->dispatch('focus-product-search');
@@ -699,6 +708,7 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->dispatch('focus-product-search');
     }
@@ -1796,6 +1806,7 @@ new class extends Component {
         $this->selectedBonus = 0.0;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
 
         $this->successMessage = "تم تحميل فاتورة المشتريات {$purchase->reference_number}.";
@@ -2628,24 +2639,44 @@ new class extends Component {
                     <tfoot class="sticky bottom-0 z-20">
                         <tr data-invoice-entry-row class="bg-blue-50 [&>td]:shadow-[inset_0_2px_0_0_#93c5fd]">
                             <td class="px-2 py-2 text-center">
-                                <button type="button" x-on:click="$refs.productSearch?.focus(); $refs.productSearch?.select()" @disabled($productSearchLocked) title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500 disabled:opacity-40">
+                                <button type="button" x-on:click="$refs.productLookup?.focus(); $refs.productLookup?.select()" @disabled($productSearchLocked) title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500 disabled:opacity-40">
                                     <flux:icon.plus class="size-5" />
                                 </button>
                             </td>
 
-                            <td colspan="2" class="px-2 py-2">
+                            <td class="px-2 py-2">
+                                <div class="relative">
+                                    <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-500" />
+                                    <input
+                                        id="product-code-input"
+                                        x-ref="productLookup"
+                                        type="text"
+                                        wire:model.live.debounce.120ms="productLookup"
+                                        maxlength="100"
+                                        autocomplete="off"
+                                        dir="ltr"
+                                        inputmode="text"
+                                        aria-label="رقم الصنف أو الباركود"
+                                        placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً' : 'الرقم أو الباركود' }}"
+                                        @disabled($productSearchLocked)
+                                        class="h-9 w-full rounded-md border border-blue-300 bg-white px-3 pr-8 text-center text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                    />
+                                </div>
+                            </td>
+
+                            <td class="px-2 py-2">
                                 <div class="relative">
                                     <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-5 -translate-y-1/2 text-slate-500" />
                                     <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: null })" class="absolute left-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                                     <input
-                                        id="product-search-input"
+                                        id="product-name-input"
                                         x-ref="productSearch"
                                         type="text"
                                         wire:model.live.debounce.120ms="rowSearch"
                                         maxlength="120" x-on:input="productSearchOpen = true; updateSearchDirection($event.target)" x-on:focus="productSearchOpen = true; updateSearchDirection($event.target)" @disabled($productSearchLocked)
                                         autocomplete="off"
-                                        aria-label="رقم الصنف / الباركود / اسم الصنف"
-                                        placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'رقم الصنف / الباركود / اسم الصنف ثم Enter...' }}"
+                                        aria-label="اسم الصنف"
+                                        placeholder="{{ $productSearchLocked ? 'اضغط تعديل أولاً للبحث عن صنف' : 'اسم الصنف ثم Enter...' }}"
                                         class="h-9 w-full rounded-md border border-blue-300 bg-white pl-24 pr-10 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
                                     />
                                 </div>
@@ -3144,7 +3175,7 @@ new class extends Component {
         },
 
         productInput() {
-            return this.$el.querySelector('#product-search-input');
+            return this.$el.querySelector('#product-code-input');
         },
 
         purchaseGridInput(row, column) {
@@ -3308,7 +3339,7 @@ new class extends Component {
                             return;
                         }
 
-                        if (target?.matches?.('#product-search-input')) {
+                        if (target?.matches?.('#product-name-input')) {
                             event.preventDefault();
                             this.moveProduct(key === 'ArrowDown' ? 1 : -1);
                             return;
@@ -3322,7 +3353,16 @@ new class extends Component {
                             return;
                         }
 
-                        if (target?.matches?.('#product-search-input')) {
+                        if (target?.matches?.('#product-code-input')) {
+                            event.preventDefault();
+                            const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value, true);
+                            if (barcodeMatched) {
+                                this.productIndex = -1;
+                            }
+                            return;
+                        }
+
+                        if (target?.matches?.('#product-name-input')) {
                             event.preventDefault();
                             // If user navigated with arrows, choose the highlighted result first.
                             const results = this.visibleResults('[data-product-result]');

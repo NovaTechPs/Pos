@@ -87,6 +87,9 @@ new class extends Component {
 
     public string $rowSearch = '';
 
+    /** الرقم أو الباركود الذي يُدخل مباشرةً لاختيار الصنف. */
+    public string $productLookup = '';
+
     public ?int $selectedProductId = null;
 
     #[\Livewire\Attributes\Locked]
@@ -309,6 +312,7 @@ new class extends Component {
         $this->selectedPrice = 0;
         $this->selectedCost = 0;
         $this->selectedStock = 0;
+        $this->productLookup = '';
         $this->rowSearch = '';
     }
 
@@ -372,6 +376,7 @@ new class extends Component {
         $this->selectedCustomerId = null;
         $this->customerSearch = '';
 
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->selectedProductId = null;
         $this->selectedProductName = '';
@@ -639,6 +644,7 @@ new class extends Component {
         $this->selectedBonus = $this->editingCartKey !== null
             ? (float) ($this->cart[$this->editingCartKey]['bonus'] ?? 0)
             : 0.0;
+        $this->productLookup = (string) ($product->product_number ?? '');
         $this->rowSearch = $product->name;
         $this->errorMessage = null;
 
@@ -727,6 +733,7 @@ new class extends Component {
         if ($this->selectedProductId && trim($value) !== $this->selectedProductName) {
             $this->selectedProductId = null;
             $this->selectedProductName = '';
+            $this->productLookup = '';
             $this->selectedPrice = 0;
             $this->selectedCost = 0;
             $this->selectedStock = 0;
@@ -795,6 +802,7 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->editingCartKey = null;
         $this->replacingCartKey = null;
@@ -917,6 +925,7 @@ new class extends Component {
         $this->selectedQuantity = 1.0;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->dispatch('focus-product-search');
     }
@@ -1838,6 +1847,7 @@ new class extends Component {
         $this->selectedQuantity = 1;
         $this->selectedDiscount = 0.0;
         $this->selectedBonus = 0.0;
+        $this->productLookup = '';
         $this->rowSearch = '';
         $this->successMessage = $order->type === 'pos'
             ? "تم تحميل فاتورة نقطة البيع {$order->invoice_number}، والتحصيل والشيفت مرتبطان بسند القبض."
@@ -2851,24 +2861,43 @@ new class extends Component {
                     <tfoot class="sticky bottom-0 z-20">
                         <tr data-invoice-entry-row class="bg-blue-50 [&>td]:shadow-[inset_0_2px_0_0_#93c5fd]">
                             <td class="px-2 py-2 text-center">
-                                <button type="button" x-on:click="$refs.productSearch?.focus(); $refs.productSearch?.select()" title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500">
+                                <button type="button" x-on:click="$refs.productLookup?.focus(); $refs.productLookup?.select()" title="إضافة صنف (F9)" aria-label="إضافة صنف" class="inline-flex size-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-500">
                                     <flux:icon.plus class="size-5" />
                                 </button>
                             </td>
 
-                            <td colspan="2" class="px-2 py-2">
+                            <td class="px-2 py-2">
+                                <div class="relative">
+                                    <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-500" />
+                                    <input
+                                        id="product-code-input"
+                                        x-ref="productLookup"
+                                        type="text"
+                                        wire:model.live.debounce.120ms="productLookup"
+                                        maxlength="100"
+                                        autocomplete="off"
+                                        dir="ltr"
+                                        inputmode="text"
+                                        aria-label="رقم الصنف أو الباركود"
+                                        placeholder="الرقم أو الباركود"
+                                        class="h-9 w-full rounded-md border border-blue-300 bg-white px-3 pr-8 text-center text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                    />
+                                </div>
+                            </td>
+
+                            <td class="px-2 py-2">
                                 <div class="relative">
                                     <flux:icon.magnifying-glass class="pointer-events-none absolute right-3 top-1/2 z-10 size-5 -translate-y-1/2 text-slate-500" />
                                     <button type="button" x-ref="priceHistoryTrigger" data-entry-price-history aria-label="أسعار الصنف والتكلفة (F2)" title="أسعار الصنف والتكلفة (F2)" @disabled(!$selectedProductId) x-on:click.stop="$dispatch('open-product-price-history', { productId: {{ $selectedProductId ?? 'null' }}, customerId: {{ $selectedCustomerId ?? 'null' }} })" class="absolute left-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">الأسعار F2</button>
                                     <input
-                                        id="product-search-input"
+                                        id="product-name-input"
                                         x-ref="productSearch"
                                         type="text"
                                         wire:model.live.debounce.120ms="rowSearch"
                                         maxlength="120" x-on:input="productIndex = -1; productSearchOpen = true; updateSearchDirection($event.target); $nextTick(() => refreshResultClasses())" x-on:focus="productSearchOpen = true; updateSearchDirection($event.target)"
                                         autocomplete="off"
-                                        aria-label="رقم الصنف / الباركود / اسم الصنف"
-                                        placeholder="رقم الصنف / الباركود / اسم الصنف ثم Enter..."
+                                        aria-label="اسم الصنف"
+                                        placeholder="اسم الصنف ثم Enter..."
                                         class="h-9 w-full rounded-md border border-blue-300 bg-white pl-24 pr-10 text-sm font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                     />
                                 </div>
@@ -3187,7 +3216,7 @@ new class extends Component {
             setTimeout(() => this.fitToViewport(), 300);
 
             this.$nextTick(() => setTimeout(() => {
-                const input = this.$el.querySelector('#customer-search-input') ?? this.$el.querySelector('#product-search-input');
+                const input = this.$el.querySelector('#customer-search-input') ?? this.$el.querySelector('#product-code-input');
                 if (this.$el.isConnected) input?.focus({ preventScroll: true });
             }, 120));
 
@@ -3195,7 +3224,7 @@ new class extends Component {
 
             Livewire.on('focus-product-search', () => {
                 this.$nextTick(() => requestAnimationFrame(() => {
-                    const input = this.$el.querySelector('#product-search-input');
+                    const input = this.$el.querySelector('#product-code-input');
                     if (!input || !this.$el.contains(input)) return;
 
                     input.focus({ preventScroll: true });
@@ -3403,8 +3432,8 @@ new class extends Component {
                     target.focus();
                     target.select();
                 } else if (direction > 0) {
-                    this.entryRef('productSearch')?.focus();
-                    this.entryRef('productSearch')?.select();
+                    this.entryRef('productLookup')?.focus();
+                    this.entryRef('productLookup')?.select();
                 }
 
                 return;
@@ -3437,8 +3466,8 @@ new class extends Component {
                 nextRow.focus();
                 nextRow.select();
             } else {
-                this.entryRef('productSearch')?.focus();
-                this.entryRef('productSearch')?.select();
+                this.entryRef('productLookup')?.focus();
+                this.entryRef('productLookup')?.select();
             }
         },
 
@@ -3502,7 +3531,7 @@ new class extends Component {
 
             if (key === 'F9') {
                 event.preventDefault();
-                const input = this.$el.querySelector('#product-search-input');
+                const input = this.$el.querySelector('#product-code-input');
                 input?.focus({ preventScroll: true });
                 input?.select();
                 return;
@@ -3526,10 +3555,21 @@ new class extends Component {
                 return;
             }
 
-            const productInput = target?.matches?.('#product-search-input') ?? false;
+            const productCodeInput = target?.matches?.('#product-code-input') ?? false;
+            const productNameInput = target?.matches?.('#product-name-input') ?? false;
             const customerInput = target?.matches?.('#customer-search-input') ?? false;
 
-            if (productInput) {
+            if (productCodeInput && key === 'Enter') {
+                event.preventDefault();
+                this.$wire.selectProductByBarcode(target.value, true).then((barcodeMatched) => {
+                    if (barcodeMatched) {
+                        this.productIndex = -1;
+                    }
+                });
+                return;
+            }
+
+            if (productNameInput) {
                 if (key === 'ArrowDown') {
                     event.preventDefault();
                     this.moveResult('product', 1);
@@ -3618,8 +3658,8 @@ new class extends Component {
             if (!this.isTypingElement(target)) {
                 if (key === 'ArrowDown') {
                     event.preventDefault();
-                    this.entryRef('productSearch')?.focus();
-                    this.entryRef('productSearch')?.select();
+                    this.entryRef('productLookup')?.focus();
+                    this.entryRef('productLookup')?.select();
                 }
             }
         }

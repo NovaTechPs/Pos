@@ -155,7 +155,7 @@ test('invoice keyboard ignores hidden suggestions and cleans up repeated work', 
             assert(!source.includes('x-init="init()"'), 'Alpine already calls init automatically');
             const rows = [0, 1, 2, 3].map(() => ({ scrollIntoView() {} }));
             state.productResults = () => rows;
-            const target = { matches: selector => selector === '#product-search-input', closest: () => null };
+            const target = { matches: selector => selector === '#product-name-input', closest: () => null };
             const press = key => listeners.filter(({ options }) => !options.signal.aborted)
                 .forEach(({ callback }) => callback({ key, target, preventDefault() {} }));
             press('ArrowDown');

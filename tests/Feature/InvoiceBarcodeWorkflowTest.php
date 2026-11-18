@@ -100,6 +100,19 @@ test('invoice Enter selects a generated item number from its short numeric suffi
     ['purchases', 'scanBarcodeToCart'],
 ]);
 
+test('invoice entry separates the product code lookup from the product name search', function (string $page): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->assertSet('productLookup', 'ITEM-100')
+        ->assertSet('rowSearch', 'صنف تجريبي');
+
+    expect($component->html())
+        ->toContain('id="product-code-input"')
+        ->toContain('wire:model.live.debounce.120ms="productLookup"')
+        ->toContain('id="product-name-input"')
+        ->toContain('wire:model.live.debounce.120ms="rowSearch"');
+})->with(['sales', 'purchases']);
+
 test('purchase invoice scanner loads barcode details and Enter progression commits the row', function (): void {
     $component = Livewire::test('pages::tenant.purchases.invoices')
         ->call('selectProductByBarcode', '1234567890123')
