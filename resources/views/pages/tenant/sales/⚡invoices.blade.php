@@ -680,7 +680,7 @@ new class extends Component {
             if ($shortProductNumbers !== []) {
                 $matchingProductIds = Product::query()
                     ->where('tenant_id', $tenantId)
-                    ->whereIn('product_number', $shortProductNumbers)
+                    ->whereIn(DB::raw('LOWER(product_number)'), $shortProductNumbers)
                     ->limit(2)
                     ->pluck('id');
 

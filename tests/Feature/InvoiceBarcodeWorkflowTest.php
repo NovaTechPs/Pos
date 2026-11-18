@@ -67,10 +67,10 @@ test('invoice product search matches the full product number and its middle', fu
     ['purchases', 'EM-10'],
 ]);
 
-test('invoice Enter selects a generated item number from its short numeric suffix', function (string $page, string $action): void {
+test('invoice Enter selects a generated item number from its short numeric suffix regardless of I casing', function (string $page, string $action): void {
     $shortNumberProduct = Product::query()->create([
         'tenant_id' => $this->tenant->id,
-        'product_number' => 'i0000034',
+        'product_number' => 'I00000001',
         'name' => 'صنف الرقم المختصر',
         'cost_price' => 6.5,
     ]);
@@ -84,9 +84,9 @@ test('invoice Enter selects a generated item number from its short numeric suffi
     ]);
 
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
-        ->set('rowSearch', '34')
+        ->set('productLookup', '1')
         ->assertSet('selectedProductId', null)
-        ->call($action, '34', true)
+        ->call($action, '1', true)
         ->assertReturned(true)
         ->assertSet('selectedProductId', $shortNumberProduct->id)
         ->assertSet('selectedProductName', 'صنف الرقم المختصر')
