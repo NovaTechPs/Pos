@@ -96,10 +96,11 @@ test('reset filters clears the party and returns to this month', function (): vo
 });
 
 test('statement shows opening balance, linked documents and a totals row', function (): void {
+    $receiptNotes = 'دفعة على الفاتورة رقم: SAL-20261105160837-873 — تمت معالجته تلقائياً كسند قبض';
     ($this->makeOrder)(['invoice_number' => 'CTR-OPEN', 'total' => 40, 'created_at' => '2026-09-20 12:00:00']);
     ($this->makeOrder)(['invoice_number' => 'CTR-SALE', 'total' => 300]);
     Payment::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $this->customer->id, 'type' => 'receipt',
-        'voucher_number' => 'CTR-RCPT', 'amount' => 120, 'payment_method' => 'cash', 'payment_date' => '2026-10-20 12:00:00']);
+        'voucher_number' => 'CTR-RCPT', 'amount' => 120, 'payment_method' => 'cash', 'payment_date' => '2026-10-20 12:00:00', 'notes' => $receiptNotes]);
 
     $component = Livewire::test('pages::tenant.reports.center')->set('report', 'statement')
         ->set('from', '2026-10-01')->set('to', '2026-10-30')
@@ -121,6 +122,7 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->assertSeeHtml('$wire.$commit()');
 
     $html = $component->html();
+    expect($html)->toContain('<td class="reports-statement-notes">'.$receiptNotes.'</td>');
     preg_match('/<tr data-statement-total>.*?<\/tr>/s', $html, $total);
     expect($total[0])->toContain('300.00', '120.00', '320.00');
     preg_match('/<tr data-statement-opening>.*?<\/tr>/s', $html, $opening);
