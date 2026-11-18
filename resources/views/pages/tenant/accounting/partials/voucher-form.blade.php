@@ -922,6 +922,19 @@
                     @if ($voucherLocked && $paymentId)
                         <span class="text-xs font-bold text-amber-700">السند محفوظ للعرض. اضغط «تعديل» بالأعلى لتغييره.</span>
                     @else
+                    @if (!$isPayment && $paymentId)
+                        @can('accounting.receipt.delete')
+                            <button
+                                type="button"
+                                data-voucher-delete
+                                wire:click="confirmDelete({{ $paymentId }})"
+                                wire:loading.attr="disabled"
+                                class="w-full rounded-xl bg-rose-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-60 sm:w-auto"
+                            >
+                                حذف السند
+                            </button>
+                        @endcan
+                    @endif
                     <button
                         type="submit"
                         form="{{ $formId }}"

@@ -822,6 +822,10 @@ new class extends Component {
 
         $this->showDeleteModal = false;
 
+        if ($this->paymentId === $this->deleteId) {
+            $this->resetForm();
+        }
+
         $this->deleteId = null;
 
         $this->dispatch(

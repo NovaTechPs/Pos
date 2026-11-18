@@ -18,6 +18,53 @@ beforeEach(function (): void {
     $this->actingAs($this->user)->withSession(['active_tenant_id' => $this->tenant->id]);
 });
 
+test('a receipt opened from a voucher link can be deleted after unlocking its form', function (string $partyType): void {
+    $party = Party::query()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Receipt account',
+        'type' => $partyType,
+        'is_active' => true,
+        'current_balance' => 100,
+    ]);
+
+    Livewire::test('pages::tenant.accounting.receipts')
+        ->call('openCreate')
+        ->assertDontSeeHtml('data-voucher-delete')
+        ->call('selectParty', $party->id)
+        ->set('amount', '25')
+        ->call('saveReceipt')
+        ->assertHasNoErrors();
+
+    $receipt = Payment::query()->sole();
+    $balanceBeforeDeletion = (float) $party->fresh()->current_balance;
+
+    $component = Livewire::withQueryParams(['voucher' => $receipt->id])
+        ->test('pages::tenant.accounting.receipts')
+        ->assertSet('showForm', true)
+        ->assertSet('voucherLocked', true)
+        ->assertDontSeeHtml('data-voucher-delete')
+        ->call('unlockVoucher')
+        ->assertSeeHtml('data-voucher-delete')
+        ->call('confirmDelete', $receipt->id)
+        ->assertSet('showDeleteModal', true)
+        ->set('showDeleteModal', false)
+        ->assertSet('showForm', true);
+
+    expect($receipt->fresh()->trashed())->toBeFalse()
+        ->and((float) $party->fresh()->current_balance)->toBe($balanceBeforeDeletion);
+
+    $component->call('confirmDelete', $receipt->id)
+        ->call('delete')
+        ->assertSet('showDeleteModal', false)
+        ->assertSet('showForm', false)
+        ->assertSet('paymentId', null)
+        ->assertSet('deleteId', null)
+        ->assertDispatched('toast');
+
+    expect(Payment::withTrashed()->findOrFail($receipt->id)->trashed())->toBeTrue()
+        ->and((float) $party->fresh()->current_balance)->toBe(100.0);
+})->with(['customer', 'supplier']);
+
 test('voucher amount is a plain numeric field and accepts decimal amounts', function (string $page, string $action, string $type): void {
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'الحساب', 'type' => $type, 'is_active' => true]);
     $component = Livewire::test('pages::tenant.accounting.'.$page)->call('openCreate');
