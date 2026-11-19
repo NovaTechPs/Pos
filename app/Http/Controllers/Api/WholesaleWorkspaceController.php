@@ -29,9 +29,7 @@ class WholesaleWorkspaceController extends Controller
         $user = $request->user();
         $parties = Party::query()->where('tenant_id', $user->tenant_id)
             ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
-            ->when($user->branch_id && ! $user->isTenantOwner(), function ($query) use ($user): void {
-                $query->where(fn ($branch) => $branch->where('branch_id', $user->branch_id)->orWhereNull('branch_id'));
-            })->orderBy('name')->get();
+            ->orderBy('name')->get();
 
         return response()->json(['parties' => $parties]);
     }
@@ -79,9 +77,6 @@ class WholesaleWorkspaceController extends Controller
                 $customer = Party::query()->where('tenant_id', $tenantId)
                     ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
-            }
-            if ($customer?->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
-                abort_unless((int) $customer->branch_id === (int) $user->branch_id, 404);
             }
 
             $items = [];
@@ -277,7 +272,6 @@ class WholesaleWorkspaceController extends Controller
             $parties = Party::query()->where('tenant_id', $user->tenant_id)->whereIn('id', $partyIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $customer = $parties->get((int) $data['customer_id']);
             abort_unless($customer && $customer->is_active && in_array($customer->type, ['customer', 'supplier', 'both'], true), 404);
-            abort_unless(! $user->branch_id || $user->isTenantOwner() || ! $customer->branch_id || $customer->branch_id === $user->branch_id, 404);
 
             $oldCustomer = $locked->customer_id ? $parties->get((int) $locked->customer_id) : null;
             $oldReceived = round((float) $receipts->sum('amount'), 2);
@@ -365,7 +359,7 @@ class WholesaleWorkspaceController extends Controller
         $tenantId = $request->user()->tenant_id;
         Product::where('tenant_id', $tenantId)->whereKey($data['product_id'])->firstOrFail();
         $customer = Party::where('tenant_id', $tenantId)->whereIn('type', ['customer', 'supplier', 'both'])->whereKey($data['customer_id'])->firstOrFail();
-        abort_unless(! $request->user()->branch_id || $request->user()->isTenantOwner() || ! $customer->branch_id || $customer->branch_id === $request->user()->branch_id, 404);
+
         $items = OrderItem::where('tenant_id', $tenantId)->where('product_id', $data['product_id'])
             ->whereHas('order', fn ($q) => $q->where('tenant_id', $tenantId)->where('branch_id', $data['branch_id'])->where('customer_id', $customer->id)->where('type', 'wholesale')->where('status', 'completed'))
             ->latest('created_at')->limit(10)->get(['unit_price', 'quantity', 'created_at', 'order_id']);
@@ -451,7 +445,7 @@ class WholesaleWorkspaceController extends Controller
                 }
             }
             $party = Party::where('tenant_id', $user->tenant_id)->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)->lockForUpdate()->whereKey($data['customer_id'])->firstOrFail();
-            abort_unless(! $user->branch_id || $user->isTenantOwner() || ! $party->branch_id || $party->branch_id === $user->branch_id, 404);
+
             $previous = (float) $party->current_balance;
             $number = $data['voucher_number'] ?? $payment->voucher_number ?? 'RCP-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5));
             if (Payment::where('tenant_id', $user->tenant_id)->where('voucher_number', $number)->when($payment, fn ($q) => $q->where('id', '!=', $payment->id))->exists()) {

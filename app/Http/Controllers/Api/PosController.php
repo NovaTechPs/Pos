@@ -310,9 +310,6 @@ class PosController extends Controller
         if ($request->filled('customer_id')) {
             $customer = Party::query()->where('tenant_id', $tenantId)
                 ->whereIn('type', ['customer', 'supplier', 'both'])->findOrFail($request->integer('customer_id'));
-            if ($customer->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
-                abort_unless((int) $customer->branch_id === (int) $user->branch_id, 404);
-            }
             $branchId = $customer->branch_id ?: $branchId;
         }
         abort_unless(! $branchId || Branch::query()->where('tenant_id', $tenantId)->whereKey($branchId)->exists(), 404);
@@ -437,9 +434,6 @@ class PosController extends Controller
                 $customer = Party::query()->where('tenant_id', $tenantId)
                     ->whereIn('type', ['customer', 'supplier', 'both'])->where('is_active', true)
                     ->lockForUpdate()->whereKey((int) $validated['customer_id'])->firstOrFail();
-            }
-            if ($customer?->branch_id && $user->branch_id && ! $user->isTenantOwner()) {
-                abort_unless((int) $customer->branch_id === (int) $user->branch_id, 404);
             }
 
             $items = [];
