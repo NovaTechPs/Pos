@@ -550,7 +550,7 @@ test('voucher printing rejects other tenants and voucher types', function (strin
     ['payment', 'payment', false],
 ]);
 
-test('voucher balance preview lists current balance and amount before the balance summary', function (string $page, string $type): void {
+test('a new voucher shows the party balance before and after it only once', function (string $page, string $type): void {
     $party = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'أيمن السدر', 'type' => $type, 'current_balance' => 5723]);
 
     $html = Livewire::test('pages::tenant.accounting.'.$page)
@@ -559,11 +559,9 @@ test('voucher balance preview lists current balance and amount before the balanc
         ->set('amount', 500)
         ->html();
 
-    $preview = substr($html, strpos($html, 'data-voucher-balance-preview'));
-    $positions = array_map(fn (string $text): int|false => mb_strpos($preview, $text), ['الرصيد الحالي', '5,723.00', 'قيمة السند', '500.00', 'ملخص الرصيد', 'أيمن السدر', 'بعد العملية', '5,223.00']);
-
-    expect($positions)->not->toContain(false)
-        ->and($positions)->toBe(collect($positions)->sort()->values()->all());
+    expect($html)->not->toContain('data-voucher-balance-preview', 'ملخص الرصيد', 'بعد العملية')
+        ->and(substr_count($html, '5,723.00'))->toBe(1)
+        ->and(substr_count($html, '5,223.00'))->toBe(1);
 })->with([['receipts', 'customer'], ['payment', 'supplier']]);
 
 test('a saved voucher opened from the archive is edited after pressing «تعديل»', function (string $page, string $save, string $type, string $voucherType): void {
