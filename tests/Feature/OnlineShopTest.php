@@ -152,7 +152,11 @@ test('staff open a shop account for a customer and change it later', function ()
         ->and(Auth::guard('customer')->validate(['tenant_id' => $this->tenant->id, 'phone' => '0596555444', 'password' => 'Shop-Pass-1']))->toBeTrue();
     Livewire::test('pages::shop.login', ['shop' => 'fanous'])->set('phone', '0596555444')->set('password', 'Shop-Pass-1')->call('login')->assertHasErrors('phone');
 
-    $this->get(route('tenant.customer'))->assertOk()->assertSee('data-shop-account-button', false);
+    $html = $this->get(route('tenant.customer'))->assertOk()->getContent();
+    preg_match_all('/data-party-action="(\w+)"/', $html, $actions);
+
+    expect(array_values(array_unique($actions[1])))->toBe(['edit', 'deactivate'])
+        ->and($html)->not->toContain('data-shop-account-button', 'data-telegram-link-button', 'title="كشف حساب"');
 });
 
 test('staff review a shop order and turn it into a sales invoice that moves stock and the customer balance', function (): void {

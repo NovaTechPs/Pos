@@ -1552,48 +1552,11 @@ new class extends Component {
                                     class="flex justify-center items-center gap-2"
                                 >
 
-                                    {{-- Statement --}}
-
-                                    <button
-                                        type="button"
-                                        wire:click="openStatementModal({{ $party->id }})"
-                                        class="p-1.5 rounded-md text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition"
-                                        title="كشف حساب"
-                                    >
-                                        📜
-                                    </button>
-
-
-                                    {{-- Online shop account --}}
-
-                                    @if ($party->type !== 'supplier')
-                                        @can('customers.edit')
-                                            <button
-                                                type="button"
-                                                x-on:click="$dispatch('open-shop-account', { partyId: {{ $party->id }} })"
-                                                class="p-1.5 rounded-md text-gray-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition"
-                                                title="حساب المتجر الإلكتروني"
-                                                data-shop-account-button
-                                            >
-                                                🛒
-                                            </button>
-                                            <button
-                                                type="button"
-                                                x-on:click="$dispatch('open-telegram-link', { partyId: {{ $party->id }} })"
-                                                class="p-1.5 rounded-md text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"
-                                                title="إرسال الفواتير عبر تيليجرام"
-                                                data-telegram-link-button
-                                            >
-                                                ✈️
-                                            </button>
-                                        @endcan
-                                    @endif
-
-
                                     {{-- Edit --}}
 
                                     <button
                                         type="button"
+                                        data-party-action="edit"
                                         wire:click="editParty({{ $party->id }})"
                                         class="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
                                         title="تعديل"
@@ -1606,6 +1569,7 @@ new class extends Component {
 
                                     <button
                                         type="button"
+                                        data-party-action="deactivate"
                                         wire:click="deactivateParty({{ $party->id }})"
                                         wire:confirm="هل أنت متأكد من تعطيل هذا الطرف؟ لن يظهر ضمن الأطراف النشطة."
                                         class="p-1.5 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
