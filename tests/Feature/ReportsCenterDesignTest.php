@@ -64,6 +64,10 @@ test('report center shows the designed header tabs cards and quick ranges with r
         ->assertSee(['عدد الحركات', 'إجمالي المبيعات', 'إجمالي المشتريات', 'إجمالي الأرباح', '₪ 300.00'])
         ->assertSee(['اليوم', 'أمس', 'هذا الشهر', 'الشهر السابق', 'آخر 30 يوم', 'إعادة التعيين'])
         ->assertSeeHtml('aria-pressed="true"')
+        ->assertSeeHtml('data-report-filter-toggle')
+        ->assertSeeHtml('reports-data-scroll')
+        ->assertSeeHtml('class="reports-notes"')
+        ->assertSee('طي / عرض الفلاتر')
         ->call('setPeriod', 'last-30')
         ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');
 });
@@ -108,6 +112,7 @@ test('statement shows opening balance, linked documents and a totals row', funct
         ->assertSee(['رصيد افتتاحي', 'CTR-SALE', 'CTR-RCPT', 'الإجمالي'])
         ->assertSeeHtml('data-statement-opening')->assertSeeHtml('data-statement-total')
         ->assertSeeHtml('data-statement-scroll')
+        ->assertSeeHtml('data-report-filter-toggle')
         ->assertDontSeeHtml('data-statement-closing')
         ->assertDontSee('الرصيد في نهاية الفترة')
         ->assertDontSeeHtml('data-statement-result-end')

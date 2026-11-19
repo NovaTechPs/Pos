@@ -38,3 +38,63 @@
 /* Statement view: compact header, filters and result heading so the ledger fits the screen. */
 .reports-center:has(.reports-workspace.is-statement){padding:12px!important}.reports-center:has(.is-statement) .reports-header{margin-bottom:10px}.reports-center:has(.is-statement) .reports-title-icon{width:40px;height:40px;border-radius:12px}.reports-center:has(.is-statement) .reports-title-icon svg{width:22px;height:22px}.reports-center:has(.is-statement) .reports-header p{font-size:11px}
 .reports-workspace.is-statement .reports-filter,.reports-workspace.is-statement .reports-result{padding:12px}.reports-workspace.is-statement .reports-filter.space-y-4>:not(:last-child){margin-bottom:10px}.reports-workspace.is-statement .reports-filter.space-y-4>*+*{margin-top:0}.reports-workspace.is-statement .reports-section-title{margin-bottom:0;font-size:14px}.reports-workspace.is-statement .reports-result-heading{margin-bottom:8px}.reports-workspace.is-statement .reports-result-heading h2{margin-bottom:2px}.reports-workspace.is-statement .reports-selected-account{padding:6px 10px}.reports-workspace.is-statement .reports-content{gap:10px}.reports-workspace.is-statement .reports-result{margin-bottom:0}.reports-workspace.is-statement [data-statement-ledger]{gap:8px}.reports-workspace.is-statement [data-statement-ledger].space-y-4>*+*{margin-top:8px}.reports-statement-pages{margin-top:8px}
+
+/* Compact report workspace with collapsible filters and independently scrolling results. */
+.reports-center{padding:12px!important}
+.reports-header{gap:10px;margin-bottom:10px}
+.reports-header p{font-size:11px}
+.reports-title-icon{width:36px;height:36px;border-radius:10px}
+.reports-title-icon svg{width:20px;height:20px}
+.reports-workspace{gap:10px;grid-template-columns:190px minmax(0,1fr)}
+.reports-content{gap:8px}
+.reports-center .reports-filter,.reports-result{padding:10px}
+.reports-metrics{gap:8px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.reports-metrics article{min-height:52px;padding:8px 12px;gap:8px;border-radius:10px}
+.reports-metrics p{font-size:10px;margin-bottom:2px}
+.reports-metrics strong{font-size:16px}
+.reports-metric-icon .shop-icon{width:22px;height:22px}
+.reports-filter-details>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;margin:0;font-size:13px}
+.reports-filter-details>summary::-webkit-details-marker{display:none}
+.reports-filter-details>summary::before{content:'+';font-size:18px;width:14px;text-align:center}
+.reports-filter-details[open]>summary::before{content:'−'}
+.reports-filter-hint{margin-inline-start:auto;font-size:10px;font-weight:500;color:#64748b}
+.reports-filter-fields{display:grid;gap:8px;padding-top:8px}
+.reports-filter-fields>.grid{gap:8px}
+.reports-filter-fields input,.reports-filter-fields select{min-height:32px;height:32px;font-size:12px}
+.reports-center [data-flux-button]{min-height:32px;height:32px;padding-inline:10px;font-size:12px}
+.reports-center .reports-result-heading{margin-bottom:8px}
+.reports-result-heading h2{font-size:13px;margin-bottom:2px}
+.reports-summary-chips{gap:6px;margin-top:6px}
+.reports-summary-chips div{padding:5px 8px}
+.reports-summary-chips dd{font-size:12px}
+.reports-result th,.reports-result td{padding:8px;font-size:12px}
+.reports-data-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;max-height:55dvh}
+.reports-data-scroll thead th{position:sticky;top:0;z-index:1;background:#edf1fc}
+.dark .reports-data-scroll thead th{background:#202e45}
+.reports-notes{margin-bottom:6px;border-radius:8px;background:#fffbeb;color:#78350f;font-size:11px;padding:6px 10px}
+.reports-notes summary{cursor:pointer;font-weight:700}
+.reports-notes>div{padding-top:5px;max-height:80px;overflow:auto}
+.dark .reports-notes{background:#451a03;color:#fef3c7}
+.reports-menu-group-toggle{padding:9px 6px;font-size:12px}
+.reports-menu-item{padding:7px;min-height:32px;font-size:11px}
+.reports-account-directory{padding:10px}
+.reports-account-directory h2{font-size:14px;margin:0 0 10px}
+.reports-account-row{padding:9px 6px}
+.reports-account-row small{margin-top:2px}
+@media screen and (min-width:1201px) and (min-height:650px){
+    .reports-center{height:calc(100dvh - 76px);min-height:0;display:flex;flex-direction:column;overflow:hidden}
+    .reports-header{flex-shrink:0}
+    .reports-workspace{flex:1;min-height:0;align-items:stretch}
+    .reports-menu{position:static;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+    .reports-content{min-height:0;overflow-y:auto}
+    .reports-metrics,.reports-filter{flex-shrink:0}
+    .reports-result{display:flex;flex-direction:column;flex:1;min-height:180px;gap:6px}
+    .reports-result-heading,.reports-notes{flex-shrink:0}
+    .reports-data-scroll{flex:1;max-height:none}
+    .reports-result>[data-statement-ledger]{flex:1;min-height:0;display:flex;flex-direction:column}
+    .reports-workspace.is-statement .reports-table-wrap{flex:1;min-height:0;max-height:none}
+    .reports-account-directory{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+    .reports-workspace.is-statement .reports-account-list{flex:1;min-height:100px;max-height:none}
+    .reports-account-pagination{flex-shrink:0;padding-top:6px;margin-top:6px}
+    .reports-statement-placeholder{min-height:140px;flex:1;padding:12px}
+}

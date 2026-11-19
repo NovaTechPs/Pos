@@ -498,7 +498,7 @@ new class extends Component {
     @endif
     @if ($report === 'statement')
     <form wire:submit="applyFilters" class="reports-filter reports-statement-filter space-y-4" data-statement-filter-panel>
-        <h2 class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب</h2>
+        <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div class="reports-selected-account">
                 <span>الحساب</span>
@@ -525,11 +525,12 @@ new class extends Component {
                 @foreach ($periodRanges as $range => [, , $label])<flux:button type="button" wire:key="statement-range-{{ $range }}" wire:click="setPeriod('{{ $range }}')" :variant="$activeRange === $range ? 'primary' : 'outline'" aria-pressed="{{ $activeRange === $range ? 'true' : 'false' }}">{{ $label }}</flux:button>@endforeach
             </div>
         </div>
+        </div></details>
         @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     </form>
     @else
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
-        <h2 class="reports-section-title"><flux:icon.document-text variant="outline" />{{ $allowed[$report][0] }}</h2>
+        <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر التقرير<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
@@ -594,6 +595,7 @@ new class extends Component {
                 @foreach ($periodRanges as $range => [, , $label])<flux:button type="button" wire:key="range-{{ $range }}" wire:click="setPeriod('{{ $range }}')" :variant="$activeRange === $range ? 'primary' : 'outline'" aria-pressed="{{ $activeRange === $range ? 'true' : 'false' }}">{{ $label }}</flux:button>@endforeach
             </div>
         </div>
+        </div></details>
         @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
     </form>
     @endif
@@ -616,8 +618,8 @@ new class extends Component {
             <div class="reports-statement-placeholder" data-statement-pending><flux:icon.document-text variant="outline" /><h3>اختر الحساب ثم اعرض الكشف</h3><p>اضغط على الحساب أو Enter أو «عرض التقرير» لعرض حركاته.</p></div>
         @endif
     @else
-    @if ($definition['notes'])<div class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div>@endif
-    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+    @if ($definition['notes'])<details class="reports-notes"><summary>ملاحظات التقرير</summary><div>@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div></details>@endif
+    <div class="reports-data-scroll overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700" tabindex="0" role="region" aria-label="نتائج التقرير">
         <table class="w-full whitespace-nowrap text-right text-sm">
             <thead class="bg-slate-100 dark:bg-slate-800"><tr>@foreach ($definition['columns'] as $label)<th class="p-3">{{ $label }}</th>@endforeach</tr></thead>
             <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">@if (in_array($report, ['product-history', 'pos-invoices'], true) && $key === 'reference' && auth()->user()->can($row->invoice_type === 'purchase' ? 'purchases.view' : (in_array($row->invoice_type, ['pos', 'return']) ? 'pos.view' : 'sales_invoices.view')))<a class="font-bold text-indigo-600 dark:text-indigo-400" @if ($report !== 'pos-invoices') target="_blank" rel="noopener" @endif href="{{ route($row->invoice_type === 'purchase' ? 'tenant.purchase-invoices' : (in_array($row->invoice_type, ['pos', 'return']) ? 'tenant.pos' : 'tenant.sale-invoices'), ['invoice' => $row->invoice_id]) }}">{{ $row->reference }}@if ($report !== 'pos-invoices') ↗@endif</a>@elseif ($report === 'sales' && $key === 'day')<a class="font-bold text-indigo-600 dark:text-indigo-400" title="فواتير هذا اليوم" href="{{ route('tenant.reports', ['report' => 'pos-invoices', 'from' => $row->day, 'to' => $row->day] + ($branchId ? ['branch_id' => $branchId] : [])) }}">{{ $row->day }}</a>@else {{ ReportingService::formatCell($key, $row->{$key} ?? null) }} @endif</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
