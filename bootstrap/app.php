@@ -8,11 +8,13 @@ use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\OpenDesktopPagesFromCentral;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
+use App\Services\MissingPermissionMessage;
 use App\Services\SystemErrorLog;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 $application = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -51,6 +53,14 @@ $application = Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        // The apps show the server message as it is: say in Arabic which permission is missing.
+        $exceptions->render(function (AccessDeniedHttpException $exception, Request $request) {
+            if (! $request->is('api/*') || $exception->getMessage() !== 'This action is unauthorized.') {
+                return null;
+            }
+
+            return response()->json(['message' => MissingPermissionMessage::for($request)], 403);
+        });
     })->create();
 
 $desktopStoragePath = getenv('APP_STORAGE_PATH');

@@ -250,3 +250,18 @@ test('staff can receive from tenant parties across branches but cannot change th
     $this->postJson('/api/wholesale/receipts', array_replace($payload, ['customer_id' => $foreign->id, 'operation_uuid' => (string) Str::uuid()]))->assertNotFound();
     expect(Payment::count())->toBe(1);
 })->with(['customer', 'supplier', 'both']);
+
+test('a standalone receipt without the receipt permission is refused with an Arabic message naming it', function () {
+    Permission::create(['name' => 'accounting.receipt.create', 'display_name' => 'إضافة سند قبض', 'group' => 'المحاسبة']);
+    $role = Role::create(['tenant_id' => 1, 'name' => 'Rep']);
+    $role->permissions()->attach(Permission::create(['name' => 'wholesale_sales.view', 'display_name' => 'Wholesale', 'group' => 'Wholesale'])->id);
+    $rep = User::factory()->create(['tenant_id' => 1, 'type' => 'tenant_user', 'is_owner' => false, 'is_active' => true, 'role_id' => $role->id, 'branch_id' => $this->branch->id]);
+    $this->actingAs($rep);
+
+    $this->postJson('/api/wholesale/receipts', ['branch_id' => $this->branch->id, 'customer_id' => $this->party->id, 'amount' => 1200,
+        'payment_date' => '2026-11-18', 'payment_method' => 'cash', 'operation_uuid' => (string) Str::uuid()])
+        ->assertForbidden()
+        ->assertJsonPath('message', 'لا تملك صلاحية «إضافة سند قبض». اطلب من صاحب المتجر إضافتها لدورك من «الأدوار والصلاحيات».');
+
+    expect(Payment::count())->toBe(0);
+});
