@@ -38,7 +38,7 @@ test('arrow keys and enter move between offer fields and into search results', f
         constructor(name, tag = 'input', type = 'text') { this.name = name; this.tag = tag; this.type = type; this.focused = 0; this.selected = 0; }
         getClientRects() { return this.hidden ? [] : [{}]; }
         closest(selector) { if (selector === '[data-arrow-nav]') return container; return null; }
-        matches(selector) { return this.tag === 'button' && selector.includes('button'); }
+        matches(selector) { return this.tag === 'textarea' ? selector === 'textarea' : this.tag === 'button' && selector.includes('button'); }
         focus() { this.focused++; focused = this; }
         select() { this.selected++; }
     }
@@ -67,6 +67,14 @@ test('arrow keys and enter move between offer fields and into search results', f
     fields[1].hidden = true;
     press(fields[0], 'ArrowDown');
     assert.equal(focused, fields[2], 'hidden results are skipped');
+    const notes = new FakeElement('notes', 'textarea');
+    fields.splice(3, 0, notes);
+    press(fields[2], 'Enter');
+    assert.equal(focused, notes, 'notes join the navigation order');
+    assert.equal(press(notes, 'ArrowDown').defaultPrevented, false, 'arrows keep editing multiline notes');
+    assert.equal(press(notes, 'Enter', { shiftKey: true }).defaultPrevented, false, 'Shift Enter inserts a line');
+    press(notes, 'Enter');
+    assert.equal(focused, fields[4], 'Enter leaves the notes field');
     console.log('OFFER_ARROW_NAV_OK');
     JAVASCRIPT;
 

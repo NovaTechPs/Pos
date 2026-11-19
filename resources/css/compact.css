@@ -1,0 +1,63 @@
+/* Shared desktop density; preserve touch targets and printed document sizing. */
+@media screen and (min-width: 768px) {
+    body.app-responsive[data-workspace-context] {
+        font-size: 0.875rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(main, .app-shell-main, dialog, .fixed.inset-0) :is(.p-6, .p-8) {
+        padding: 1rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(main, .app-shell-main, dialog, .fixed.inset-0) :is(.gap-6, .gap-8) {
+        gap: 1rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(main, .app-shell-main, dialog, .fixed.inset-0) :is(h1, h2).text-2xl {
+        font-size: 1.25rem;
+        line-height: 1.75rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(main, .app-shell-main, dialog, .fixed.inset-0) :is(.space-y-6, .space-y-8) > :not(:last-child) {
+        margin-block-end: 1rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(input, select):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']):not([type='color']):not([type='hidden']) {
+        height: 2.25rem;
+        min-height: 2.25rem;
+        padding-block: 0.375rem;
+        font-size: 0.875rem;
+    }
+
+    body.app-responsive[data-workspace-context] textarea {
+        padding-block: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(dialog, .fixed.inset-0) button:not([role='switch']):not([role='checkbox']) {
+        padding-block: 0.5rem;
+    }
+
+    body.app-responsive[data-workspace-context] :where(table:not(.pos-cart-table)) :is(th, td) {
+        padding-block: 0.5rem;
+    }
+}
+
+@media screen {
+    [data-voucher-compact] {
+        border-radius: 1rem;
+        max-height: calc(100dvh - 2rem);
+    }
+
+    [data-voucher-compact] > .shrink-0 {
+        padding-inline: 1rem;
+        padding-block: 0.625rem;
+    }
+
+    [data-voucher-compact] [data-voucher-balance-preview] {
+        padding: 0.625rem 0.75rem;
+    }
+
+    [data-voucher-compact] label {
+        margin-bottom: 0.25rem;
+    }
+}

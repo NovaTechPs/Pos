@@ -97,7 +97,7 @@ test('voucher pages use the financial voucher workspace and centered creation fo
         ->assertSeeHtml('value="bank_transfer"')
         ->assertSeeHtml('value="cheque"');
 
-    expect($page->html())->toContain('max-w-6xl')->toContain('إنشاء '.$title);
+    expect($page->html())->toContain('max-w-3xl')->toContain('data-voucher-compact')->toContain('إنشاء '.$title);
 })->with([
     ['receipts', 'سند قبض'],
     ['payment', 'سند صرف'],

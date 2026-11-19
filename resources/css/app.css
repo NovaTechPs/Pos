@@ -4,6 +4,7 @@
 @import './shop.css';
 @import './reports.css';
 @import './customer-statement.css';
+@import './compact.css';
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 

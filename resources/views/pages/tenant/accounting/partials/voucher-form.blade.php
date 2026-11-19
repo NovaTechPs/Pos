@@ -49,8 +49,8 @@
 
         {{-- Drawer --}}
         <div
-            class="relative flex max-h-full w-full {{ $paymentId ? 'max-w-3xl' : 'max-w-6xl' }} flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
-            @if ($paymentId) data-voucher-compact @endif
+            class="relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+            data-voucher-compact
             x-show="open"
             x-transition:enter="transform transition ease-out duration-200"
             x-transition:enter-start="scale-95 opacity-0"
@@ -111,7 +111,7 @@
                             </div>
 
                             <div>
-                                <h2 class="{{ $paymentId ? 'text-lg' : 'text-xl sm:text-2xl' }} font-black text-slate-950">
+                                <h2 class="text-lg font-black text-slate-950">
                                     {{ $paymentId ? 'تعديل ' : 'إنشاء ' }}{{ $voucherLabel }}
                                 </h2>
 
@@ -189,7 +189,7 @@
                     wire:submit="{{ $saveMethod }}"
                     id="{{ $formId }}"
                     @if ($voucherLocked && $paymentId) inert data-voucher-locked @endif
-                    class="{{ $paymentId ? 'space-y-2 p-3 sm:px-4' : 'space-y-3 p-4 sm:px-6 sm:py-4' }}"
+                    class="space-y-2 p-3 sm:px-4"
                 >
 
                     @if (!$paymentId)
@@ -615,8 +615,7 @@
                                                 role="option"
                                                 :aria-selected="activeIndex === {{ $loop->index }}"
                                                 wire:key="{{ $formId }}-party-option-{{ $party->id }}"
-                                                wire:click="selectParty({{ $party->id }})"
-                                                x-on:click="closeList()"
+                                                x-on:click="await $wire.selectParty({{ $party->id }}); closeList(); $nextTick(() => document.getElementById('{{ $formId }}')?.querySelector('#voucher-amount')?.focus())"
                                                 x-on:mouseenter="activeIndex = {{ $loop->index }}"
                                                 x-bind:class="activeIndex === {{ $loop->index }}
                                                     ? 'search-result-active border-s-4 border-blue-800'
@@ -757,6 +756,7 @@
 
                                 <input
                                     id="voucher-amount"
+                                    data-enter-next="[data-voucher-notes]"
                                     type="number"
                                     step="0.01"
                                     min="0"
@@ -895,6 +895,7 @@
 
                         <textarea
                             wire:model="notes"
+                            data-voucher-notes
                             rows="{{ $paymentId ? 1 : 2 }}"
                             placeholder="أدخل بيان السند أو سبب العملية..."
                             class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"

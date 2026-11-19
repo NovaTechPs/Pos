@@ -10,6 +10,7 @@
 const FIELD_SELECTOR = [
     'input:not([type="hidden"]):not([disabled])',
     'select:not([disabled])',
+    'textarea:not([disabled])',
     '[data-arrow-nav-item]:not([disabled])',
 ].join(', ');
 
@@ -37,7 +38,8 @@ document.addEventListener('keydown', (event) => {
     if (!(event.target instanceof HTMLElement)) return;
 
     const container = event.target.closest('[data-arrow-nav]');
-    if (!container || event.target.closest('textarea, [contenteditable="true"]')) return;
+    if (!container || event.target.closest('[contenteditable="true"]')) return;
+    if (event.key !== 'Enter' && event.target.matches('textarea')) return;
 
     const isButton = event.target.matches('button, [role="button"]');
     if (event.key === 'Enter' && isButton) return;
