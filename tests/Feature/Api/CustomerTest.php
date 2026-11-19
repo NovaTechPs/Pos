@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Branch;
 use App\Models\Party;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,4 +56,49 @@ test('can create and list suppliers without exposing another tenant', function (
 
     $this->actingAs($user)->postJson('/api/suppliers', ['name' => 'مورد جديد'])
         ->assertCreated()->assertJsonPath('supplier.type', 'supplier');
+});
+
+test('employee customer search includes every active party in the same tenant', function () {
+    $ownBranch = Branch::query()->create(['tenant_id' => 1, 'name' => 'Own branch']);
+    $otherBranch = Branch::query()->create(['tenant_id' => 1, 'name' => 'Other branch']);
+    $role = Role::query()->create(['tenant_id' => 1, 'name' => 'Cashier']);
+    $permission = Permission::query()->firstOrCreate(
+        ['name' => 'customers.view'],
+        ['display_name' => 'View customers', 'group' => 'test'],
+    );
+    $role->permissions()->attach($permission);
+    $user = User::factory()->create([
+        'tenant_id' => 1,
+        'branch_id' => $ownBranch->id,
+        'role_id' => $role->id,
+        'type' => 'tenant_user',
+        'is_owner' => false,
+        'is_active' => true,
+    ]);
+    $otherBranchParty = Party::query()->create([
+        'tenant_id' => 1,
+        'branch_id' => $otherBranch->id,
+        'name' => 'ستوب ستوك',
+        'type' => 'customer',
+        'is_active' => true,
+    ]);
+    Party::query()->create([
+        'tenant_id' => 1,
+        'name' => 'Inactive party',
+        'type' => 'customer',
+        'is_active' => false,
+    ]);
+    Tenant::query()->create(['id' => 2, 'name' => 'Other tenant', 'is_active' => true]);
+    Party::query()->create([
+        'tenant_id' => 2,
+        'name' => 'Outside tenant',
+        'type' => 'customer',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)->getJson('/api/customers')
+        ->assertOk()
+        ->assertJsonFragment(['id' => $otherBranchParty->id, 'name' => 'ستوب ستوك'])
+        ->assertJsonMissing(['name' => 'Inactive party'])
+        ->assertJsonMissing(['name' => 'Outside tenant']);
 });

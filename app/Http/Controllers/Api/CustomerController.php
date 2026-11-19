@@ -27,11 +27,6 @@ class CustomerController extends Controller
         $customers = Party::where('tenant_id', $tenantId)
             ->whereIn('type', ['customer', 'supplier', 'both'])
             ->where('is_active', true)
-            ->when($user->branch_id && ! $user->isTenantOwner(), function ($query) use ($user): void {
-                $query->where(function ($branchQuery) use ($user): void {
-                    $branchQuery->where('branch_id', $user->branch_id)->orWhereNull('branch_id');
-                });
-            })
             ->orderBy('name')
             ->get();
 
