@@ -1458,8 +1458,9 @@ new class extends Component
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F9</kbd> الصنف</span>
         </div>
     </div>
-    <livewire:product-history />
-    <livewire:product-price-history-modal />
+    {{-- Fixed keys keep these child components attached across the page re-renders. --}}
+    <livewire:product-history :key="'returns-product-history-singleton'" />
+    <livewire:product-price-history-modal :key="'returns-price-history-singleton'" />
 </flux:main>
 
 @script

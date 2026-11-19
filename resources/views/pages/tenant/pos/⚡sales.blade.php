@@ -5107,7 +5107,7 @@ new class extends Component {
         </div>
     </div>
     <div dir="rtl" class="pos-workspace bg-slate-100 font-sans select-none">
-        <livewire:product-history />
+        <livewire:product-history :key="'pos-product-history-singleton'" />
         <livewire:product-price-history-modal :key="'pos-price-history-singleton'" />
 
         <div x-data="{

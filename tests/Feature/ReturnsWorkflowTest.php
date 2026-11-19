@@ -378,3 +378,15 @@ test('the store settings page turns returns without history on', function (): vo
 
     expect(TenantSetting::getBool($tenant->id, 'returns_without_history'))->toBeTrue();
 });
+
+test('the returns page keeps its product history and price history windows under fixed keys', function (): void {
+    $source = (string) file_get_contents(resource_path('views/pages/tenant/returns/⚡index.blade.php'));
+
+    expect($source)->toContain(
+        '<livewire:product-history :key="\'returns-product-history-singleton\'" />',
+        '<livewire:product-price-history-modal :key="\'returns-price-history-singleton\'" />',
+    );
+
+    extract(editableReturnFixture('sale'));
+    $component->set('kind', 'purchase')->assertOk()->set('kind', 'sale')->assertOk();
+});
