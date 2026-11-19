@@ -361,8 +361,8 @@ class WholesaleWorkspaceController extends Controller
         $customer = Party::where('tenant_id', $tenantId)->whereIn('type', ['customer', 'supplier', 'both'])->whereKey($data['customer_id'])->firstOrFail();
 
         $items = OrderItem::where('tenant_id', $tenantId)->where('product_id', $data['product_id'])
-            ->whereHas('order', fn ($q) => $q->where('tenant_id', $tenantId)->where('branch_id', $data['branch_id'])->where('customer_id', $customer->id)->where('type', 'wholesale')->where('status', 'completed'))
-            ->latest('created_at')->limit(10)->get(['unit_price', 'quantity', 'created_at', 'order_id']);
+            ->whereHas('order', fn ($q) => $q->where('tenant_id', $tenantId)->where('customer_id', $customer->id)->where('type', '!=', 'return')->where('status', 'completed'))
+            ->latest('created_at')->latest('id')->limit(10)->get(['unit_price', 'quantity', 'created_at', 'order_id']);
 
         return response()->json(['history' => $items]);
     }

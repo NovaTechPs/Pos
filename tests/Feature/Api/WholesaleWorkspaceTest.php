@@ -265,3 +265,50 @@ test('a standalone receipt without the receipt permission is refused with an Ara
 
     expect(Payment::count())->toBe(0);
 });
+
+test('customer price history spans branches and sellers while excluding unrelated sales', function (string $type): void {
+    $otherBranch = Branch::create(['tenant_id' => 1, 'name' => 'Other sales branch']);
+    $seller = User::factory()->create(['tenant_id' => 1, 'branch_id' => $otherBranch->id]);
+    $role = Role::create(['tenant_id' => 1, 'name' => 'Price reader']);
+    $role->permissions()->attach(Permission::firstOrCreate(['name' => 'wholesale_sales.view'], ['display_name' => 'Wholesale', 'group' => 'Sales']));
+    $this->user->update(['is_owner' => false, 'branch_id' => $this->branch->id, 'role_id' => $role->id]);
+    $this->actingAs($this->user->fresh());
+    $otherCustomer = Party::create(['tenant_id' => 1, 'name' => 'Another customer', 'type' => 'customer']);
+    $otherProduct = Product::create(['tenant_id' => 1, 'name' => 'Another product']);
+    Tenant::create(['id' => 2, 'name' => 'Foreign', 'is_active' => true]);
+    $foreignCustomer = Party::create(['tenant_id' => 2, 'name' => 'Foreign customer', 'type' => 'customer']);
+    $foreignProduct = Product::create(['tenant_id' => 2, 'name' => 'Foreign product']);
+
+    $createSale = function (array $orderAttributes = [], array $itemAttributes = []): Order {
+        $order = Order::create(array_replace([
+            'tenant_id' => 1, 'branch_id' => $this->branch->id, 'created_by' => $this->user->id,
+            'customer_id' => $this->party->id, 'invoice_number' => (string) Str::uuid(),
+            'type' => 'wholesale', 'status' => 'completed', 'subtotal' => 10, 'total' => 10,
+        ], $orderAttributes));
+        $order->items()->create(array_replace([
+            'tenant_id' => $order->tenant_id, 'product_id' => $this->product->id,
+            'quantity' => 1, 'unit_price' => 10, 'total_price' => 10,
+            'created_at' => '2026-11-18 12:00:00',
+        ], $itemAttributes));
+
+        return $order;
+    };
+    $older = $createSale([], ['created_at' => '2026-11-17 12:00:00']);
+    $latest = $createSale(['branch_id' => $otherBranch->id, 'created_by' => $seller->id, 'type' => $type], ['unit_price' => 17]);
+    $createSale(['customer_id' => $otherCustomer->id]);
+    $createSale([], ['product_id' => $otherProduct->id]);
+    $createSale(['type' => 'return']);
+    $createSale(['status' => 'pending']);
+    $createSale(['status' => 'cancelled']);
+    $createSale()->delete();
+    $foreignBranch = Branch::create(['tenant_id' => 2, 'name' => 'Foreign branch']);
+    $foreignSeller = User::factory()->create(['tenant_id' => 2, 'branch_id' => $foreignBranch->id]);
+    $createSale(['tenant_id' => 2, 'branch_id' => $foreignBranch->id, 'created_by' => $foreignSeller->id, 'customer_id' => $foreignCustomer->id], ['product_id' => $foreignProduct->id]);
+
+    $query = '?branch_id='.$this->branch->id.'&customer_id='.$this->party->id.'&product_id='.$this->product->id;
+    $response = $this->getJson('/api/wholesale/price-history'.$query)->assertOk()->assertJsonCount(2, 'history')
+        ->assertJsonPath('history.0.order_id', $latest->id)->assertJsonPath('history.1.order_id', $older->id);
+    expect((float) $response->json('history.0.unit_price'))->toBe(17.0);
+    $this->getJson('/api/wholesale/price-history?branch_id='.$this->branch->id.'&customer_id='.$foreignCustomer->id.'&product_id='.$this->product->id)->assertNotFound();
+    $this->getJson('/api/wholesale/price-history?branch_id='.$this->branch->id.'&customer_id='.$this->party->id.'&product_id='.$foreignProduct->id)->assertNotFound();
+})->with(['wholesale', 'pos', 'online']);
