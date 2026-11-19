@@ -49,7 +49,6 @@ new class extends Component {
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
-        $this->forgetOverview();
     }
 
     #[Url]
@@ -73,11 +72,6 @@ new class extends Component {
     public string $statementBalanceFilter = 'all';
     #[Locked]
     public ?string $appliedStatementSignature = null;
-    #[Locked]
-    public ?string $overviewSignature = null;
-    /** @var array{sales: ?float, purchases: ?float, profit: ?float} */
-    #[Locked]
-    public array $cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
     public string $productSearch = '';
     /** @var array{title: string, reference: string, date: string, party: string, amount: float, status: string, notes: string}|null */
 
@@ -135,7 +129,6 @@ new class extends Component {
 
         $this->branchId = $branchId;
         $this->resetPage();
-        $this->forgetOverview();
     }
 
     public function filters(): array
@@ -150,7 +143,6 @@ new class extends Component {
     {
         $this->resetErrorBag();
         $this->resetPage();
-        $this->forgetOverview();
         if ($this->report === 'statement') {
             $this->appliedStatementSignature = null;
             $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
@@ -305,29 +297,6 @@ new class extends Component {
     {
         [$this->from, $this->to] = $this->periodRanges()[$range] ?? [$this->from, $this->to];
         $this->resetPage();
-        $this->forgetOverview();
-    }
-
-    private function forgetOverview(): void
-    {
-        $this->overviewSignature = null;
-        $this->cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
-    }
-
-    /** @return array{sales: ?float, purchases: ?float, profit: ?float} */
-    private function overview(ReportingService $service): array
-    {
-        $signature = hash('sha256', json_encode([$service->tenantId, $service->branchId, $this->from, $this->to, auth()->id()], JSON_THROW_ON_ERROR));
-        if ($this->overviewSignature !== $signature) {
-            try {
-                $this->cachedOverview = $service->overview(['from' => $this->from, 'to' => $this->to]);
-            } catch (ValidationException) {
-                $this->cachedOverview = ['sales' => null, 'purchases' => null, 'profit' => null];
-            }
-            $this->overviewSignature = $signature;
-        }
-
-        return $this->cachedOverview;
     }
 
     public function exportCsv(): mixed
@@ -404,10 +373,9 @@ new class extends Component {
                 if (isset($entries[$this->report])) { $activeGroup = $group; }
             }
         }
-        $overview = $this->overview($service);
         $periodRanges = $this->periodRanges();
         $activeRange = collect($periodRanges)->search(fn (array $range): bool => $range[0] === $this->from && $range[1] === $this->to);
-        return $this->view(['statementReady' => $statementReady, 'statementParty' => $statementParty, 'overview' => $overview, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        return $this->view(['statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -486,16 +454,6 @@ new class extends Component {
     </aside>
     @endif
     <div class="reports-content">
-    @if ($report !== 'statement')
-    <section class="reports-metrics" aria-label="ملخص الفترة">
-        <article data-metric="movements"><span class="reports-metric-icon"><flux:icon.arrows-right-left variant="outline" /></span><div><p>عدد الحركات</p><strong>{{ number_format($rows->total()) }}</strong></div></article>
-        @foreach (['sales' => ['إجمالي المبيعات', 'shopping-bag'], 'purchases' => ['إجمالي المشتريات', 'shopping-cart'], 'profit' => ['إجمالي الأرباح', 'trophy']] as $metric => [$label, $icon])
-            @if ($overview[$metric] !== null)
-                <article wire:key="report-metric-{{ $metric }}" data-metric="{{ $metric }}"><span class="reports-metric-icon"><flux:icon :name="$icon" variant="outline" /></span><div><p>{{ $label }}</p><strong dir="ltr">₪ {{ number_format($overview[$metric], 2) }}</strong></div></article>
-            @endif
-        @endforeach
-    </section>
-    @endif
     @if ($report === 'statement')
     <form wire:submit="applyFilters" class="reports-filter reports-statement-filter space-y-4" data-statement-filter-panel>
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
@@ -518,7 +476,7 @@ new class extends Component {
                 <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>
             @endif
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div class="reports-filter-actions flex flex-wrap gap-2">
             <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
             <flux:button type="button" icon="arrow-path" wire:click="resetFilters">إعادة التعيين</flux:button>
             <div class="reports-ranges" role="group" aria-label="فترات سريعة">
@@ -550,7 +508,7 @@ new class extends Component {
             </div>
         @endif
         @if (in_array($report, ['product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring']))
-            <div class="relative" x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
+            <div class="reports-filter-wide relative" x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-product]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
                 <div class="flex items-end gap-2">
                     <flux:input label="الصنف" wire:model.live.debounce.250ms="productSearch" x-on:focus="open = true" x-on:input="open = true; active = 0" autocomplete="off" placeholder="ابحث بالاسم أو رقم الصنف أو الباركود" />
                     <flux:button type="button" wire:click="clearReportProduct">كل الأصناف</flux:button>
@@ -588,7 +546,7 @@ new class extends Component {
             </flux:select>
         @endif
         @if ($report === 'inventory')<flux:select label="حالة المخزون" wire:model="stockFilter"><option value="all">الكل</option><option value="low">أقل من حد التنبيه</option><option value="zero">نافد</option><option value="negative">رصيد سالب</option></flux:select>@endif
-        <div class="flex flex-wrap gap-2">
+        <div class="reports-filter-actions flex flex-wrap gap-2">
             <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
             <flux:button type="button" icon="arrow-path" wire:click="resetFilters">إعادة التعيين</flux:button>
             <div class="reports-ranges" role="group" aria-label="فترات سريعة">

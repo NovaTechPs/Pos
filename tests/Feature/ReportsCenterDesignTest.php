@@ -55,13 +55,14 @@ test('overview hides figures the user may not see and the page shows only allowe
         ->assertSee('الحسابات')->assertDontSeeHtml('selectReportGroup(\'المبيعات\')');
 });
 
-test('report center shows the designed header tabs cards and quick ranges with real totals', function (): void {
+test('report center shows the header, compact filters and quick ranges without the period cards', function (): void {
     ($this->makeOrder)(['created_at' => now()->toDateTimeString()]);
 
     Livewire::test('pages::tenant.reports.center')->call('selectReport', 'sales')
         ->assertSee(['مركز التقارير', 'طباعة التقرير', 'تصدير PDF', 'تصدير Excel', 'التحليلات السابقة'])
         ->assertSee(['الحسابات', 'المبيعات', 'المشتريات', 'المخزون', 'الموظفون', 'المالية'])
-        ->assertSee(['عدد الحركات', 'إجمالي المبيعات', 'إجمالي المشتريات', 'إجمالي الأرباح', '₪ 300.00'])
+        ->assertDontSeeHtml('reports-metrics')->assertDontSee(['عدد الحركات', 'إجمالي المشتريات', 'إجمالي الأرباح'])
+        ->assertSeeHtml('reports-filter-actions')
         ->assertSee(['اليوم', 'أمس', 'هذا الشهر', 'الشهر السابق', 'آخر 30 يوم', 'إعادة التعيين'])
         ->assertSeeHtml('aria-pressed="true"')
         ->assertSeeHtml('data-report-filter-toggle')
@@ -194,4 +195,9 @@ test('reports export as a PDF download with the report rows', function (): void 
 
     expect($response->streamedContent())->toStartWith('%PDF')
         ->and($response->headers->get('Content-Disposition'))->toContain(rawurlencode('كشف حساب '.$this->customer->name.' 2026-10-01 - 2026-10-30.pdf'));
+});
+
+test('report filters flow in one compact grid with small fields', function (): void {
+    expect(file_get_contents(resource_path('css/reports.css')))
+        ->toContain('.reports-filter-fields>.grid{display:contents}', '.reports-filter-fields>.reports-filter-actions{grid-column:1/-1', '.reports-filter-fields [data-flux-control]{height:30px!important');
 });

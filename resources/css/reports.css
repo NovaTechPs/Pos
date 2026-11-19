@@ -98,3 +98,14 @@
     .reports-account-pagination{flex-shrink:0;padding-top:6px;margin-top:6px}
     .reports-statement-placeholder{min-height:140px;flex:1;padding:12px}
 }
+
+/* One compact grid for every report's filters: fields flow side by side, the actions take a full row. */
+.reports-filter-fields{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 8px;align-items:end}
+.reports-filter-fields>.grid{display:contents}
+.reports-filter-fields>.reports-filter-actions{grid-column:1/-1;gap:6px}
+.reports-filter-fields>.reports-filter-wide{grid-column:span 2}
+.reports-filter-fields [data-flux-label]{margin-bottom:3px!important;font-size:11px}
+.reports-filter-fields [data-flux-control]{height:30px!important;min-height:30px!important;padding-block:0!important;font-size:12px!important}
+.reports-filter-fields [data-flux-field]{min-width:0}
+.reports-filter-fields .reports-selected-account,.reports-filter-fields .reports-locked-branch{padding:4px 8px}
+.reports-ranges{gap:4px}
