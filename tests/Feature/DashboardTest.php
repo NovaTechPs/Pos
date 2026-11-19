@@ -27,7 +27,7 @@ test('authenticated users can visit the dashboard', function () {
         ->assertSee('collapsible="true"', false)
         ->assertDontSee('data-workspace-menu', false)
         ->assertSee('الرئيسية')
-        ->assertSee('العملاء والموردون')
+        ->assertSee('الزباين والموردون')
         ->assertSee('المخزون والمنتجات');
 
     $branchNavigationLink = preg_match(

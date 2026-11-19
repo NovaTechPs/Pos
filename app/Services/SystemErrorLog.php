@@ -104,6 +104,6 @@ class SystemErrorLog
             }
         }
 
-        return implode("\n", array_unique($details)) ?: 'تفاصيل الرسالة محجوبة لحماية بيانات العملاء. راجع سجل الخادم الأصلي.';
+        return implode("\n", array_unique($details)) ?: 'تفاصيل الرسالة محجوبة لحماية بيانات الزباين. راجع سجل الخادم الأصلي.';
     }
 }

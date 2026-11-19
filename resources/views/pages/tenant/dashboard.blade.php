@@ -40,7 +40,7 @@
                         <h2 class="text-sm font-black">⚠ {{ $balanceCheck['count'] }} {{ $balanceCheck['count'] === 1 ? 'طرف رصيده' : 'أطراف أرصدتها' }} لا {{ $balanceCheck['count'] === 1 ? 'يطابق' : 'تطابق' }} كشف الحساب</h2>
                         <p class="mt-1 text-xs leading-6">
                             الفحص الأسبوعي · آخر فحص {{ \Illuminate\Support\Carbon::parse($balanceCheck['checked_at'])->locale('ar')->diffForHumans() }}.
-                            لم يُعدَّل أي رصيد تلقائياً: افتح كشف الحساب لكل طرف وراجعه، ثم استخدم «تسوية الرصيد» من صفحة العملاء إن كان الكشف صحيحاً.
+                            لم يُعدَّل أي رصيد تلقائياً: افتح كشف الحساب لكل طرف وراجعه، ثم استخدم «تسوية الرصيد» من صفحة الزباين إن كان الكشف صحيحاً.
                         </p>
                         <ul class="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
                             @foreach (array_slice($balanceCheck['differences'], 0, 10) as $difference)

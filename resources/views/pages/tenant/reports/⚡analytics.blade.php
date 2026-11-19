@@ -336,7 +336,7 @@ new class extends Component {
             fputcsv($handle, [
                 'رقم الفاتورة',
                 'التاريخ',
-                'العميل',
+                'الزبون',
                 'الهاتف',
                 'المجموع الفرعي',
                 'الخصم',
@@ -608,7 +608,7 @@ new class extends Component {
                     ->whereNull('parties.deleted_at');
             })
             ->select('orders.customer_id')
-            ->selectRaw("COALESCE(parties.name, MAX(orders.customer_name), 'عميل محذوف') as name")
+            ->selectRaw("COALESCE(parties.name, MAX(orders.customer_name), 'زبون محذوف') as name")
             ->selectRaw('COUNT(*) as invoices_count')
             ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END) as net_sales")
             ->selectRaw("SUM(CASE WHEN orders.type = 'return' THEN -ABS(orders.paid_amount) ELSE orders.paid_amount END) as net_paid")
@@ -862,7 +862,7 @@ new class extends Component {
                     <input
                         type="text"
                         wire:model.live.debounce.350ms="search"
-                        placeholder="رقم الفاتورة، اسم العميل أو الهاتف..."
+                        placeholder="رقم الفاتورة، اسم الزبون أو الهاتف..."
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pe-10 ps-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white"
                     >
                 </div>
@@ -1272,18 +1272,18 @@ new class extends Component {
         <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b border-slate-100 p-4">
-                    <h3 class="text-sm font-black text-slate-900">تقرير العملاء / Customer report</h3>
+                    <h3 class="text-sm font-black text-slate-900">تقرير الزباين / Customer report</h3>
                     <p class="mt-1 text-[10px] font-semibold text-slate-400">صافي الفواتير بعد المرتجعات ضمن الفترة والفرع المحددين / Net invoices after returns for the selected period and branch.</p>
                 </div>
                 <div class="overflow-x-auto">
                     <div class="app-table-scroll" role="region" aria-label="جدول البيانات — اسحب لعرض بقية الأعمدة" tabindex="0">
                     <table class="min-w-full text-right text-xs">
-                        <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">العميل / Customer</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">صافي المبيعات / Net sales</th><th class="px-4 py-3">صافي المقبوض / Net received</th></tr></thead>
+                        <thead class="bg-slate-50 text-[10px] font-black text-slate-500"><tr><th class="px-4 py-3">الزبون / Customer</th><th class="px-4 py-3">الفواتير / Invoices</th><th class="px-4 py-3">صافي المبيعات / Net sales</th><th class="px-4 py-3">صافي المقبوض / Net received</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
                             @forelse($topCustomers as $customer)
                                 <tr><td class="px-4 py-3 font-bold text-slate-800">{{ $customer->name }}</td><td class="px-4 py-3">{{ number_format((int) $customer->invoices_count) }}</td><td class="px-4 py-3 font-mono font-black">₪ {{ number_format((float) $customer->net_sales, 2) }}</td><td class="px-4 py-3 font-mono">₪ {{ number_format((float) $customer->net_paid, 2) }}</td></tr>
                             @empty
-                                <tr><td colspan="4" class="p-6 text-center text-slate-400">لا توجد فواتير مرتبطة بعملاء خلال هذه الفترة / No customer invoices in this period.</td></tr>
+                                <tr><td colspan="4" class="p-6 text-center text-slate-400">لا توجد فواتير مرتبطة بزباين خلال هذه الفترة / No customer invoices in this period.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -1375,7 +1375,7 @@ new class extends Component {
                 <thead class="border-b border-slate-200 bg-slate-50 text-[10px] font-black text-slate-500">
                     <tr>
                         <th class="px-4 py-3">الفاتورة</th>
-                        <th class="px-4 py-3">العميل</th>
+                        <th class="px-4 py-3">الزبون</th>
                         <th class="px-4 py-3">التاريخ</th>
                         <th class="px-4 py-3 text-center">الأصناف</th>
                         <th class="px-4 py-3">الإجمالي</th>
@@ -1495,7 +1495,7 @@ new class extends Component {
                 <div class="overflow-y-auto p-4 sm:p-5">
                     <div class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4">
                         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <div class="text-[10px] font-black text-slate-400">العميل</div>
+                            <div class="text-[10px] font-black text-slate-400">الزبون</div>
                             <div class="mt-1 font-black text-slate-800">{{ $selectedOrder->customer_name ?: 'زبون عام' }}</div>
                             @if($selectedOrder->customer_phone)
                                 <div class="mt-0.5 font-mono text-[10px] text-slate-400">{{ $selectedOrder->customer_phone }}</div>

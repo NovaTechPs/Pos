@@ -27,6 +27,9 @@ test('navigation labels including receipts are translated in Arabic', function (
     $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id])
         ->get(route('tenant.dashboard'))->assertOk()
         ->assertSee('سندات القبض')
+        ->assertSee('الزباين والموردون')
+        ->assertDontSeeHtml('href="'.route('tenant.customer-orders').'"')
+        ->assertDontSee('العملاء')
         ->assertSee('الطلبات الإلكترونية')
         ->assertSee('أسعار الصرف')
         ->assertDontSee('Receipts')
@@ -34,6 +37,11 @@ test('navigation labels including receipts are translated in Arabic', function (
 });
 
 test('authentication and validation errors use Arabic before rendering a view', function (): void {
+    expect(__('Customers'))->toBe('الزباين')
+        ->and(__('validation.attributes.customer_id'))->toBe('الزبون')
+        ->and(__('Permission Group: العملاء'))->toBe('الزباين')
+        ->and(__('إضافة عميل'))->toBe('إضافة زبون');
+
     $this->post(route('login.store'), ['email' => '', 'password' => ''])
         ->assertSessionHasErrors(['email' => 'حقل البريد الإلكتروني مطلوب.', 'password' => 'حقل كلمة المرور مطلوب.']);
 

@@ -296,7 +296,7 @@ new class extends Component {
             ->find($customerId);
 
         if (!$customer) {
-            session()->flash('error', 'العميل المحدد غير صالح.');
+            session()->flash('error', 'الزبون المحدد غير صالح.');
             return;
         }
 
@@ -896,7 +896,7 @@ new class extends Component {
                         ->find($this->selectedCustomerId);
 
                     if (!$customer) {
-                        throw new \RuntimeException('العميل المحدد غير صالح.');
+                        throw new \RuntimeException('الزبون المحدد غير صالح.');
                     }
                 }
 
@@ -1203,7 +1203,7 @@ new class extends Component {
 
         $this->selectedHistoryItem = [
             'product_name' => $product?->name ?? 'منتج غير موجود',
-            'customer_name' => $customer?->name ?? 'لم يتم اختيار عميل',
+            'customer_name' => $customer?->name ?? 'لم يتم اختيار زبون',
             'history' => $history,
             'has_history' => !empty($history),
         ];
@@ -1294,7 +1294,7 @@ new class extends Component {
                 ->find($this->selectedCustomerId);
 
             if (!$customer) {
-                session()->flash('error', 'العميل المحدد غير صالح.');
+                session()->flash('error', 'الزبون المحدد غير صالح.');
 
                 return;
             }
@@ -1510,7 +1510,7 @@ new class extends Component {
                         ->first();
 
                     if (!$customer) {
-                        throw new \RuntimeException('تعذر قفل سجل العميل أثناء حفظ الفاتورة.');
+                        throw new \RuntimeException('تعذر قفل سجل الزبون أثناء حفظ الفاتورة.');
                     }
 
                     $previousBalance = $this->customerBalance($customer);
@@ -1760,7 +1760,7 @@ new class extends Component {
 
                     'previous_balance' => $previousBalance,
 
-                    // الرصيد النهائي للعميل بعد تسجيل الدفعة.
+                    // الرصيد النهائي للزبون بعد تسجيل الدفعة.
                     'current_balance' => $currentBalance,
 
                     'has_customer' => (bool) $customer,
@@ -2000,7 +2000,7 @@ new class extends Component {
         $this->receiptNotes = '';
         $this->receiptVoucherNumber = $this->generateReceiptVoucherNumber();
 
-        // إذا كان هناك عميل محدد في الفاتورة، نختاره تلقائياً في سند القبض.
+        // إذا كان هناك زبون محدد في الفاتورة، نختاره تلقائياً في سند القبض.
         $this->receiptPartyId = $this->selectedCustomerId;
 
         $this->receiptPartySearch = '';
@@ -2040,7 +2040,7 @@ new class extends Component {
             ->find($partyId);
 
         if (!$party) {
-            session()->flash('error', 'العميل المحدد غير صالح.');
+            session()->flash('error', 'الزبون المحدد غير صالح.');
             return;
         }
 
@@ -2059,7 +2059,7 @@ new class extends Component {
 
         $search = trim($this->receiptPartySearch);
 
-        // عند فتح القائمة بدون كتابة، اعرض أول العملاء مباشرة.
+        // عند فتح القائمة بدون كتابة، اعرض أول الزباين مباشرة.
         return Party::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
@@ -2082,7 +2082,7 @@ new class extends Component {
     public function updatedReceiptPartySearch(): void
     {
         // لا نفتح القائمة بسبب الكتابة وحدها؛ فتحها يتم عند التركيز/الضغط على الحقل.
-        // وإذا تغيّر النص بعد اختيار عميل نلغي الاختيار.
+        // وإذا تغيّر النص بعد اختيار زبون نلغي الاختيار.
 
         if ($this->receiptPartyId) {
             $selected = Party::query()->where('tenant_id', $this->tenantId())->find($this->receiptPartyId);
@@ -2230,7 +2230,7 @@ new class extends Component {
                     ->find($validated['receiptPartyId']);
 
                 if (!$party) {
-                    throw new \RuntimeException('العميل المحدد غير صالح.');
+                    throw new \RuntimeException('الزبون المحدد غير صالح.');
                 }
 
                 $amount = round((float) $validated['receiptAmount'], 2);
@@ -2352,7 +2352,7 @@ new class extends Component {
             return rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
         };
 
-        $partyName = $party?->name ?: $this->receiptPartySearch ?: 'العميل';
+        $partyName = $party?->name ?: $this->receiptPartySearch ?: 'الزبون';
         $phone = $this->normalizePhone($party?->phone);
         $paymentDate = $receipt->payment_date
             ? \Carbon\Carbon::parse($receipt->payment_date)->format('Y-m-d')
@@ -2739,7 +2739,7 @@ new class extends Component {
 
                                 <div class="mb-1 flex items-center justify-between">
                                     <label class="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                                        العميل
+                                        الزبون
                                     </label>
 
                                     @if ($selectedCustomerId)
@@ -2755,7 +2755,7 @@ new class extends Component {
 
                                     <input type="text" wire:model.live.debounce.300ms="customerSearch"
                                         wire:focus="openCustomerDropdown"
-                                        placeholder="ابحث عن العميل بالاسم أو الهاتف..."
+                                        placeholder="ابحث عن الزبون بالاسم أو الهاتف..."
                                         class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
 
                                     @if ($selectedCustomerId)
@@ -2813,7 +2813,7 @@ new class extends Component {
                                         @empty
 
                                             <div class="px-4 py-8 text-center text-sm text-zinc-400">
-                                                لا يوجد عملاء مطابقون.
+                                                لا يوجد زباين مطابقون.
                                             </div>
                                         @endforelse
 
@@ -2864,7 +2864,7 @@ new class extends Component {
 
                                                     <button type="button"
                                                         wire:click="showLastPrice({{ $id }})"
-                                                        title="سجل أسعار هذا العميل"
+                                                        title="سجل أسعار هذا الزبون"
                                                         class="rounded-md p-1 text-indigo-500 transition hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/30">
                                                         <flux:icon name="clock" class="size-3.5" />
                                                     </button>
@@ -3143,7 +3143,7 @@ new class extends Component {
                                 <input type="checkbox" wire:model.live="sendWhatsapp"
                                     class="rounded border-zinc-300 text-indigo-600" />
 
-                                فتح واتساب للعميل بعد الحفظ إذا كان لديه رقم
+                                فتح واتساب للزبون بعد الحفظ إذا كان لديه رقم
 
                             </label>
 
@@ -3434,9 +3434,9 @@ new class extends Component {
                     @else
                         <div class="rounded-xl bg-zinc-50 py-10 text-center text-sm text-zinc-400 dark:bg-zinc-800/50">
                             @if (!$selectedCustomerId)
-                                اختر العميل أولاً لعرض أسعار البيع السابقة.
+                                اختر الزبون أولاً لعرض أسعار البيع السابقة.
                             @else
-                                لا يوجد بيع سابق لهذا الصنف مع هذا العميل.
+                                لا يوجد بيع سابق لهذا الصنف مع هذا الزبون.
                             @endif
                         </div>
 
@@ -3467,7 +3467,7 @@ new class extends Component {
                                 سند قبض
                             </div>
                             <div class="mt-0.5 text-xs text-zinc-500">
-                                تسجيل مبلغ مقبوض من العميل وتخفيض رصيده.
+                                تسجيل مبلغ مقبوض من الزبون وتخفيض رصيده.
                             </div>
                         </div>
 
@@ -3489,12 +3489,12 @@ new class extends Component {
                     <div data-search-nav class="relative" x-data="{ receiptPartyOpen: false }"
                         x-on:click.outside="receiptPartyOpen = false; $wire.closeReceiptPartyDropdown()">
                         <label class="mb-1 block text-xs font-bold text-zinc-600 dark:text-zinc-300">
-                            العميل
+                            الزبون
                         </label>
 
                         <input type="text" wire:model.live.debounce.250ms="receiptPartySearch"
                             wire:focus="openReceiptPartyDropdown" x-on:focus="receiptPartyOpen = true"
-                            x-on:click="receiptPartyOpen = true" placeholder="ابحث عن العميل بالاسم أو الهاتف..."
+                            x-on:click="receiptPartyOpen = true" placeholder="ابحث عن الزبون بالاسم أو الهاتف..."
                             class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
 
                         @if ($receiptPartyId)
@@ -3529,7 +3529,7 @@ new class extends Component {
                                     </button>
                                 @empty
                                     <div class="px-4 py-6 text-center text-sm text-zinc-400">
-                                        لا يوجد عملاء مطابقون.
+                                        لا يوجد زباين مطابقون.
                                     </div>
                                 @endforelse
                             </div>
@@ -3548,7 +3548,7 @@ new class extends Component {
                                 class="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 dark:border-indigo-900/40 dark:bg-indigo-950/20">
                                 <div class="flex items-center justify-between gap-3">
                                     <span class="text-xs font-bold text-zinc-600 dark:text-zinc-300">
-                                        العميل المحدد
+                                        الزبون المحدد
                                     </span>
                                     <span class="text-sm font-black text-indigo-700 dark:text-indigo-300">
                                         {{ $receiptParty->name }}
@@ -3797,7 +3797,7 @@ new class extends Component {
                 text += '=============================\n';
                 text += `رقم السند: ${data.voucher_number || '-'}\n`;
                 text += `التاريخ: ${data.payment_date || '-'}\n`;
-                text += `العميل: ${data.party_name || '-'}\n`;
+                text += `الزبون: ${data.party_name || '-'}\n`;
                 text += '-----------------------------\n';
                 text += `المبلغ: ${money(data.amount)} ₪\n`;
                 text += `الرصيد المتبقي: ${money(data.remaining_balance)} ₪\n`;
@@ -3853,7 +3853,7 @@ new class extends Component {
                     <div class="line"></div>
                     <div class="row"><b>رقم السند</b><span>${data.voucher_number || '-'}</span></div>
                     <div class="row"><b>التاريخ</b><span>${data.payment_date || '-'}</span></div>
-                    <div class="row"><b>العميل</b><span>${data.party_name || '-'}</span></div>
+                    <div class="row"><b>الزبون</b><span>${data.party_name || '-'}</span></div>
                     <div class="line"></div>
                     <div class="amount">${money(data.amount)} ₪</div>
                     <div class="row"><b>الرصيد المتبقي</b><span>${money(data.remaining_balance)} ₪</span></div>
@@ -3926,7 +3926,7 @@ new class extends Component {
                 text += `${inv.store_name || 'المتجر'}\n`;
                 text += `رقم الفاتورة: ${inv.invoice_no || '-'}\n`;
                 text += `التاريخ: ${inv.date || '-'}\n`;
-                text += `العميل: ${inv.customer_name || 'نقدي'}\n`;
+                text += `الزبون: ${inv.customer_name || 'نقدي'}\n`;
                 text += `${line}\n`;
 
                 /* الأصناف */

@@ -146,8 +146,8 @@ test('can store pos order successfully', function () {
 test('retail checkout uses the customer branch price', function () {
     $user = User::factory()->create(['tenant_id' => 1, 'type' => 'tenant_user', 'is_owner' => true, 'is_active' => true]);
     $saleBranch = Branch::create(['name' => 'فرع البيع', 'tenant_id' => 1]);
-    $customerBranch = Branch::create(['name' => 'فرع العميل', 'tenant_id' => 1]);
-    $customer = Party::create(['name' => 'عميل الفرع', 'tenant_id' => 1, 'branch_id' => $customerBranch->id, 'type' => 'customer']);
+    $customerBranch = Branch::create(['name' => 'فرع الزبون', 'tenant_id' => 1]);
+    $customer = Party::create(['name' => 'زبون الفرع', 'tenant_id' => 1, 'branch_id' => $customerBranch->id, 'type' => 'customer']);
     $product = Product::create(['name' => 'صنف', 'tenant_id' => 1]);
     BranchProduct::create(['tenant_id' => 1, 'branch_id' => $saleBranch->id, 'product_id' => $product->id, 'stock_quantity' => 10, 'retail_price' => 10]);
     BranchProduct::create(['tenant_id' => 1, 'branch_id' => $customerBranch->id, 'product_id' => $product->id, 'stock_quantity' => 0, 'retail_price' => 15]);

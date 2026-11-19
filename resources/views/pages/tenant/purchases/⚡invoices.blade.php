@@ -2495,7 +2495,7 @@ new class extends Component {
                 </div>
 
                 <div class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" data-invoice-search-group x-data="{ partySearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) partySearchOpen = false" x-on:click.outside="partySearchOpen = false" x-on:keydown.escape.stop="partySearchOpen = false">
-                    <label for="supplier-search-input" class="mb-1 block text-xs font-bold text-slate-700">العميل / المورد</label>
+                    <label for="supplier-search-input" class="mb-1 block text-xs font-bold text-slate-700">الزبون / المورد</label>
                     @if ($selectedSupplier)
                         <div class="flex h-10 items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3">
                             <flux:icon.building-storefront class="size-4 shrink-0 text-indigo-700" />
@@ -2508,7 +2508,7 @@ new class extends Component {
                     @else
                         <div class="relative">
                             <flux:icon.building-storefront class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                            <input id="supplier-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم العميل أو المورد أو الهاتف..." autocomplete="off" class="h-10 w-full rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                            <input id="supplier-search-input" x-on:focus="partySearchOpen = true" x-on:input="partySearchOpen = true" x-ref="supplierSearch" type="text" wire:model.live.debounce.180ms="supplierSearch" placeholder="ابحث باسم الزبون أو المورد أو الهاتف..." autocomplete="off" class="h-10 w-full rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                         </div>
                         @if (trim($supplierSearch) !== '')
                             <div data-invoice-search-results x-cloak x-show="partySearchOpen" x-on:click="partySearchOpen = false" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">

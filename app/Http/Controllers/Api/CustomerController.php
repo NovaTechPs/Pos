@@ -75,7 +75,7 @@ class CustomerController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'تم إضافة العميل بنجاح',
+            'message' => 'تم إضافة الزبون بنجاح',
             $type => $customer,
         ], 201);
     }

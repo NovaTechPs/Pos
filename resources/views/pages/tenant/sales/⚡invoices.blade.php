@@ -420,7 +420,7 @@ new class extends Component {
 
     /*
     |--------------------------------------------------------------------------
-    | العميل
+    | الزبون
     |--------------------------------------------------------------------------
     */
 
@@ -440,7 +440,7 @@ new class extends Component {
             ->find($customerId);
 
         if (!$customer) {
-            $this->errorMessage = 'العميل المحدد غير صالح.';
+            $this->errorMessage = 'الزبون المحدد غير صالح.';
             return;
         }
 
@@ -1168,7 +1168,7 @@ new class extends Component {
                 ->find($this->selectedCustomerId);
 
             if (!$customer) {
-                $this->errorMessage = 'العميل المحدد غير صالح.';
+                $this->errorMessage = 'الزبون المحدد غير صالح.';
                 $this->dispatch('toast', type: 'error', message: $this->errorMessage);
                 return;
             }
@@ -2489,7 +2489,7 @@ new class extends Component {
                             @endcan
                         @endif
                     @endif
-                    <p class="mt-1 text-sm leading-6 text-slate-500">سيُحفظ المبلغ كاملًا كسند قبض مرتبط بهذه الفاتورة، حتى لو تجاوز إجماليها أو رصيد العميل.</p>
+                    <p class="mt-1 text-sm leading-6 text-slate-500">سيُحفظ المبلغ كاملًا كسند قبض مرتبط بهذه الفاتورة، حتى لو تجاوز إجماليها أو رصيد الزبون.</p>
                     <label class="mt-4 block text-sm font-bold text-slate-700">مبلغ السند
                         <input type="number" min="0.01" step="0.01" wire:model="settlementAmount" autofocus class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-lg font-black outline-none focus:border-emerald-400 focus:bg-white">
                     </label>
@@ -2610,9 +2610,9 @@ new class extends Component {
                     />
                 </div>
 
-                {{-- العميل --}}
+                {{-- الزبون --}}
                 <div class="relative {{ $showBranchField ? 'xl:col-span-4' : 'xl:col-span-6' }}" data-invoice-search-group x-data="{ partySearchOpen: false }" x-on:focusout="if (!$el.contains($event.relatedTarget)) partySearchOpen = false" x-on:click.outside="partySearchOpen = false" x-on:keydown.escape.stop="partySearchOpen = false">
-                    <label for="customer-search-input" class="mb-1 block text-xs font-bold text-slate-700">العميل / المورد</label>
+                    <label for="customer-search-input" class="mb-1 block text-xs font-bold text-slate-700">الزبون / المورد</label>
 
                     @if ($selectedCustomer)
                         <div class="flex h-10 items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3">
@@ -2621,7 +2621,7 @@ new class extends Component {
                                 <span class="font-black text-emerald-900">{{ $selectedCustomer->name }}</span>
                                 <span class="mr-1 text-xs font-semibold text-emerald-700">{{ $selectedCustomer->phone ?: 'بدون هاتف' }}</span>
                             </div>
-                            <button type="button" wire:click="clearCustomer" title="تغيير العميل" class="shrink-0 rounded-md px-2 py-1 text-xs font-black text-emerald-800 hover:bg-emerald-100">تغيير</button>
+                            <button type="button" wire:click="clearCustomer" title="تغيير الزبون" class="shrink-0 rounded-md px-2 py-1 text-xs font-black text-emerald-800 hover:bg-emerald-100">تغيير</button>
                         </div>
                     @else
                         <div class="relative">
@@ -2631,7 +2631,7 @@ new class extends Component {
                                 x-ref="customerSearch"
                                 type="text"
                                 wire:model.live.debounce.180ms="customerSearch"
-                                placeholder="ابحث باسم العميل أو المورد أو الهاتف..."
+                                placeholder="ابحث باسم الزبون أو المورد أو الهاتف..."
                                 autocomplete="off"
                                 class="h-10 w-full rounded-lg border border-slate-300 bg-white pl-3 pr-9 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                             />
@@ -3138,7 +3138,7 @@ new class extends Component {
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Shift+F2</kbd> جديد</span>
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F2</kbd> الأسعار</span>
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F7</kbd> استعلام</span>
-            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F8</kbd> سعر الزبون السابق / العميل</span>
+            <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F8</kbd> سعر الزبون السابق / الزبون</span>
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">F9</kbd> الصنف</span>
             <span><kbd class="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 font-mono text-white">Esc</kbd> إغلاق القوائم</span>
         </div>

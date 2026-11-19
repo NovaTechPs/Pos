@@ -171,7 +171,7 @@ return [
         'notes' => 'الملاحظات',
         'date' => 'التاريخ',
         'branch_id' => 'الفرع',
-        'customer_id' => 'العميل',
+        'customer_id' => 'الزبون',
         'supplier_id' => 'المورد',
         'product_id' => 'الصنف',
         'cart' => 'أصناف الفاتورة',

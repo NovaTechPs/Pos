@@ -232,7 +232,7 @@ test('shop sales report includes only walk-in point-of-sale invoices and returns
         ->and((float) $rows->sole()->sales)->toBe(80.0)
         ->and((float) $rows->sole()->returns)->toBe(10.0)
         ->and((float) $rows->sole()->net)->toBe(70.0)
-        ->and($report['notes'][0])->toContain('غير المرتبطة بعميل أو مورد مسجل');
+        ->and($report['notes'][0])->toContain('غير المرتبطة بزبون أو مورد مسجل');
 });
 
 test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {

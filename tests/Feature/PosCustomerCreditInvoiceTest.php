@@ -149,7 +149,7 @@ test('delivery notes are saved on the invoice while the delivery fee stays out o
         ->set('selectedCustomerId', $customer->id)
         ->set('deliveryCompanyId', $deliveryCompany->id)
         ->set('delivery_fee', 5)
-        ->set('deliveryCustomerName', 'عميل التوصيل')
+        ->set('deliveryCustomerName', 'زبون التوصيل')
         ->set('deliveryCustomerPhone', '0599999999')
         ->set('deliveryCustomerAddress', 'عنوان التوصيل')
         ->set('deliveryNotes', 'اتصل قبل الوصول')

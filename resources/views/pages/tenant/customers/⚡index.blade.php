@@ -1233,7 +1233,7 @@ new class extends Component {
                     <h1
                         class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white"
                     >
-                        إدارة الأطراف
+                        الزباين والموردون
                     </h1>
 
                     <span
@@ -1247,7 +1247,7 @@ new class extends Component {
                 <p
                     class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1"
                 >
-                    إدارة العملاء والموردين والأطراف التجارية
+                    قائمة الزباين والموردين
                 </p>
 
             </div>
@@ -1388,11 +1388,10 @@ new class extends Component {
         </div>
 
 
-        <div class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 dark:border-gray-700 dark:bg-gray-800">
-            <label class="text-xs">نوع الطرف<select wire:model.live="typeFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">الكل</option><option value="customer">عميل</option><option value="supplier">مورد</option><option value="both">عميل ومورد</option></select></label>
+        <div class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 dark:border-gray-700 dark:bg-gray-800">
+            <label class="text-xs">نوع الطرف<select wire:model.live="typeFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">الكل</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></select></label>
             <label class="text-xs">الحالة<select wire:model.live="statusFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">كل الحالات</option><option value="active">نشط</option><option value="inactive">غير نشط</option></select></label>
-            <label class="text-xs">الرصيد<select wire:model.live="balanceFilter" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="">كل الأرصدة</option><option value="debit">مدين</option><option value="credit">دائن</option><option value="settled">رصيد صفر</option></select></label>
-            <label class="text-xs">الترتيب<select wire:model.live="sort" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="latest">الأحدث</option><option value="name">الاسم</option><option value="balance_desc">الرصيد من الأعلى</option><option value="balance_asc">الرصيد من الأقل</option></select></label>
+            <label class="text-xs">الترتيب<select wire:model.live="sort" class="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm dark:bg-gray-700"><option value="latest">الأحدث</option><option value="name">الاسم</option></select></label>
             <button type="button" wire:click="clearFilters" class="self-end rounded-lg border border-gray-200 p-2 text-sm">مسح الفلاتر</button>
         </div>
 
@@ -1421,7 +1420,7 @@ new class extends Component {
                         </th>
 
                         <th class="p-3 sm:p-4">
-                            رمز العميل
+                            رمز الزبون
                         </th>
 
                         <th class="p-3 sm:p-4">
@@ -1438,14 +1437,6 @@ new class extends Component {
 
                         <th class="p-3 sm:p-4 hidden sm:table-cell">
                             العنوان
-                        </th>
-
-                        <th class="p-3 sm:p-4">
-                            الافتتاحي
-                        </th>
-
-                        <th class="p-3 sm:p-4">
-                            الحالي
                         </th>
 
                         <th class="p-3 sm:p-4 text-center">
@@ -1551,30 +1542,6 @@ new class extends Component {
                             </td>
 
 
-                            {{-- Opening Balance --}}
-
-                            <td
-                                class="p-3 sm:p-4 font-medium text-gray-800 dark:text-white whitespace-nowrap"
-                            >
-                                {{ number_format((float) $party->opening_balance, 2) }}
-                            </td>
-
-
-                            {{-- Current Balance --}}
-
-                            <td
-                                class="p-3 sm:p-4 font-bold whitespace-nowrap"
-                            >
-
-                                <span
-                                    class="{{ $this->balanceClass((float) $party->current_balance) }}"
-                                >
-                                    {{ number_format((float) $party->current_balance, 2) }}
-                                </span>
-
-                            </td>
-
-
                             {{-- Actions --}}
 
                             <td
@@ -1660,7 +1627,7 @@ new class extends Component {
                         <tr>
 
                             <td
-                                colspan="9"
+                                colspan="7"
                                 class="p-12 text-center"
                             >
 

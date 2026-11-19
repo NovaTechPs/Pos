@@ -475,10 +475,10 @@ class PosController extends Controller
             $received = round((float) $validated['paid_amount'], 2);
             $paid = min($total, $received);
             if ($received > $total + 0.005 && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لحفظ الدفعة الزائدة كرَصيد له.']);
             }
             if ($paid < $total && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لتسجيل المبلغ المتبقي على الحساب.']);
             }
             $previousBalance = (float) ($customer->current_balance ?? 0);
             $order = Order::create([
@@ -635,7 +635,7 @@ class PosController extends Controller
                     ? $branchProduct
                     : $customerPrices->get($product->id);
                 if (! $customerBranchProduct) {
-                    throw ValidationException::withMessages(['items' => "المنتج {$product->name} غير مسعّر في فرع العميل."]);
+                    throw ValidationException::withMessages(['items' => "المنتج {$product->name} غير مسعّر في فرع الزبون."]);
                 }
                 $standardPrice = (float) $customerBranchProduct->retail_price;
                 $isGift = (bool) ($item['is_gift'] ?? false);
@@ -676,10 +676,10 @@ class PosController extends Controller
             $received = round((float) ($validated['paid_amount'] ?? $total), 2);
             $paid = min($total, $received);
             if ($received > $total + 0.005 && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لحفظ الدفعة الزائدة كرَصيد له.']);
             }
             if ($paid < $total && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لتسجيل المبلغ المتبقي على الحساب.']);
             }
 
             $order = $editing ?? $held ?? new Order;

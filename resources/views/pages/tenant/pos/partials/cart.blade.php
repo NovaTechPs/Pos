@@ -447,7 +447,7 @@
                     <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-black text-emerald-700">✓</span>
                     <div>
                         <div class="text-[11px] font-black text-emerald-800">تم تطبيق عرض على الفاتورة</div>
-                        <div class="text-[9px] font-bold text-emerald-600">هذا المبلغ تم توفيره للعميل من عروض الكمية</div>
+                        <div class="text-[9px] font-bold text-emerald-600">هذا المبلغ تم توفيره للزبون من عروض الكمية</div>
                     </div>
                 </div>
                 <div class="shrink-0 text-left">

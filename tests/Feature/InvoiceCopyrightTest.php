@@ -46,7 +46,7 @@ test('invoice PDF prints the amount received and the customer balance after an o
     expect($html)->toContain('166.50')->not->toContain('190.00')
         ->toContain($arabic->utf8Glyphs('المجموع', 150, false, true))
         ->toContain($arabic->utf8Glyphs('دفعة', 150, false, true))
-        ->not->toContain($arabic->utf8Glyphs('المبلغ المستلم من العميل', 150, false, true))
+        ->not->toContain($arabic->utf8Glyphs('المبلغ المستلم من الزبون', 150, false, true))
         ->not->toContain($arabic->utf8Glyphs('المتبقي من الفاتورة', 150, false, true))
         ->not->toContain($arabic->utf8Glyphs('رصيد سابق', 150, false, true));
 });

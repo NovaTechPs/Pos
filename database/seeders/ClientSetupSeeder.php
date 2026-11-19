@@ -43,7 +43,7 @@ class ClientSetupSeeder extends Seeder
 
         DB::transaction(function () use ($data): void {
             $this->call(PermissionSeeder::class);
-            $plan = Plan::query()->firstOrCreate(['slug' => $data['plan_slug']], ['name' => 'خطة العميل', 'price' => 30]);
+            $plan = Plan::query()->firstOrCreate(['slug' => $data['plan_slug']], ['name' => 'خطة الزبون', 'price' => 30]);
             foreach (['pos_system' => '1', 'products_limit' => '-1'] as $key => $value) {
                 PlanFeature::query()->firstOrCreate(['plan_id' => $plan->id, 'feature_key' => $key], ['value' => $value]);
             }

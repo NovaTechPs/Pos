@@ -127,10 +127,10 @@ class WholesaleWorkspaceController extends Controller
             $received = round((float) $validated['paid_amount'], 2);
             $paid = min($total, $received);
             if ($received > $total + 0.005 && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لحفظ الدفعة الزائدة كرَصيد له.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لحفظ الدفعة الزائدة كرَصيد له.']);
             }
             if ($paid < $total && ! $customer) {
-                throw ValidationException::withMessages(['customer_id' => 'اختر عميلاً لتسجيل المبلغ المتبقي على الحساب.']);
+                throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لتسجيل المبلغ المتبقي على الحساب.']);
             }
             $previousBalance = (float) ($customer->current_balance ?? 0);
             $order = $editing ?? new Order;

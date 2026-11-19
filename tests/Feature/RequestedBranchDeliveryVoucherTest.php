@@ -81,7 +81,7 @@ test('delivery details use invoice recipient fields and keep customer records ma
 });
 
 test('customers suppliers and mixed accounts can all be selected as delivery companies', function (): void {
-    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'عميل التوصيل', 'type' => 'customer', 'is_active' => true]);
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون التوصيل', 'type' => 'customer', 'is_active' => true]);
     $supplier = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'مورد التوصيل', 'type' => 'supplier', 'is_active' => true]);
     $both = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'حساب مشترك', 'type' => 'both', 'is_active' => true]);
 
@@ -90,15 +90,15 @@ test('customers suppliers and mixed accounts can all be selected as delivery com
 
     expect($options)->toBe([]);
 
-    $component->set('deliveryCompanySearch', 'عميل')
+    $component->set('deliveryCompanySearch', 'زبون')
         ->assertSee('x-on:keydown.arrow-down.prevent', false)
         ->assertSee('x-on:keydown.arrow-up.prevent', false)
         ->assertSee('x-on:keydown.enter.prevent', false);
     expect($component->get('deliveryCompanies')->pluck('id')->all())->toBe([$customer->id]);
     $component->call('selectDeliveryCompany', $customer->id)
         ->assertSet('deliveryCompanyId', $customer->id)
-        ->assertSet('deliveryCompanySearch', 'عميل التوصيل')
-        ->assertSee('value="عميل التوصيل"', false)
+        ->assertSet('deliveryCompanySearch', 'زبون التوصيل')
+        ->assertSee('value="زبون التوصيل"', false)
         ->assertSee('bg-blue-50', false);
 
     $component->set('deliveryCustomerName', 'مستلم')

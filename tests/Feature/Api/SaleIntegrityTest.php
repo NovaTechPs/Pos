@@ -303,14 +303,14 @@ test('report dates are validated and filter sales consistently', function (): vo
 
 test('paid and gift lines of one product keep separate prices stock and gift identity', function (): void {
     $payload = array_replace($this->payload, [
-        'notes' => 'هدية للعميل',
+        'notes' => 'هدية للزبون',
         'items' => [
             ['product_id' => $this->product->id, 'quantity' => 2, 'price' => 10],
             ['product_id' => $this->product->id, 'quantity' => 1, 'price' => 99, 'is_gift' => true],
         ],
     ]);
     $sale = $this->postJson('/api/pos/orders', $payload)->assertCreated()
-        ->assertJsonPath('order.notes', 'هدية للعميل')
+        ->assertJsonPath('order.notes', 'هدية للزبون')
         ->assertJsonPath('order.items.1.is_gift', true)->json('order');
     expect((float) $sale['items'][1]['unit_price'])->toBe(0.0)
         ->and((float) $sale['total'])->toBe(20.0)

@@ -293,7 +293,7 @@ new class extends Component
                 'تفاصيل الفاتورة',
 
             'Party' =>
-                'العميل / المورد',
+                'الزبون / المورد',
 
             'Payment' =>
                 'السند',
@@ -450,7 +450,7 @@ new class extends Component
                     </option>
 
                     <option value="Party">
-                        العملاء والموردين
+                        الزباين والموردين
                     </option>
 
                     <option value="Payment">

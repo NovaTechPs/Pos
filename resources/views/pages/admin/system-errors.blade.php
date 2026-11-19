@@ -6,7 +6,7 @@
                 <flux:text class="mt-2">لإدارة المنصة فقط. آخر 50 خطأ من نهاية الملف المحدد، والأحدث أولًا.</flux:text>
             </div>
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-                تُعرض أنواع الاستثناءات وأماكنها فقط. تُحجب نصوص الطلبات والاستعلامات والرسائل الحرة لحماية كلمات المرور وبيانات العملاء.
+                تُعرض أنواع الاستثناءات وأماكنها فقط. تُحجب نصوص الطلبات والاستعلامات والرسائل الحرة لحماية كلمات المرور وبيانات الزباين.
                 الأوقات بتوقيت الخادم: {{ config('app.timezone') }}. تُسجّل الأخطاء الجديدة أيضًا في ملف diagnostics حتى لو كان السجل الرئيسي موجّهًا إلى مخرجات الاستضافة.
             </div>
             <form method="GET" action="{{ route('admin.system-errors') }}" class="flex flex-wrap items-end gap-3">

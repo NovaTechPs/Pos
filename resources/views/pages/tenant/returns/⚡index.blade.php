@@ -230,7 +230,7 @@ new class extends Component
             ->where('is_active', true)->find($partyId);
 
         if (! $party) {
-            $this->errorMessage = 'العميل أو المورد المحدد غير صالح.';
+            $this->errorMessage = 'الزبون أو المورد المحدد غير صالح.';
 
             return;
         }
@@ -346,7 +346,7 @@ new class extends Component
     {
         $this->errorMessage = null;
         if (! $this->selectedPartyId) {
-            $this->errorMessage = 'اختر العميل أو المورد أولاً.';
+            $this->errorMessage = 'اختر الزبون أو المورد أولاً.';
 
             return;
         }
@@ -465,7 +465,7 @@ new class extends Component
         $branchId = $this->branchId();
 
         if (! $this->selectedPartyId || ! $branchId) {
-            $this->errorMessage = 'اختر العميل أو المورد وحدد الفرع أولاً.';
+            $this->errorMessage = 'اختر الزبون أو المورد وحدد الفرع أولاً.';
 
             return;
         }
@@ -837,7 +837,7 @@ new class extends Component
                 foreach ($this->lines as $line) {
                     $product = Product::query()->where('tenant_id', $tenantId)->findOrFail($line['id']);
                     if ((float) $line['quantity'] + (float) ($line['bonus'] ?? 0) > $this->remainingQuantity($product->id, $party->id) + 0.00001) {
-                        throw new DomainException('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل أو المورد سابقاً.');
+                        throw new DomainException('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا الزبون أو المورد سابقاً.');
                     }
                     $cost += (float) $product->cost_price * ((float) $line['quantity'] + (float) ($line['bonus'] ?? 0));
                 }
@@ -1018,7 +1018,7 @@ new class extends Component
 
 @php
     $isSale = $kind === 'sale';
-    $partyLabel = $isSale ? 'العميل' : 'المورد';
+    $partyLabel = $isSale ? 'الزبون' : 'المورد';
     $viewOnly = $currentReturnId && ! $editing;
     $showBranchField = ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin();
     $returnQuantity = collect($lines)->sum(fn ($line) => (float) $line['quantity']);
@@ -1214,7 +1214,7 @@ new class extends Component
                                 <flux:icon.user class="size-4 shrink-0 text-emerald-700" />
                                 <div class="min-w-0 flex-1 truncate text-sm">
                                     <span class="font-black text-emerald-900">{{ $selectedPartyName }}</span>
-                                    <span class="mr-1 text-xs font-semibold text-emerald-700">{{ $selectedParty?->phone ?: ($isSale ? 'فاتورة مرتبطة بحساب العميل' : 'فاتورة مرتبطة بحساب المورد') }}</span>
+                                    <span class="mr-1 text-xs font-semibold text-emerald-700">{{ $selectedParty?->phone ?: ($isSale ? 'فاتورة مرتبطة بحساب الزبون' : 'فاتورة مرتبطة بحساب المورد') }}</span>
                                 </div>
                                 <button type="button" wire:click="clearParty" title="تغيير {{ $partyLabel }}" class="shrink-0 rounded-md px-2 py-1 text-xs font-black text-emerald-800 hover:bg-emerald-100">تغيير</button>
                             </div>
@@ -1391,7 +1391,7 @@ new class extends Component
                         <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات
                     </label>
                     <textarea id="return-notes" wire:model="notes" rows="3" placeholder="سبب المردود أو أي ملاحظة على الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
-                    <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'العميل ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
+                    <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 xl:grid-cols-1">
@@ -1423,7 +1423,7 @@ new class extends Component
                                 <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                             </label>
                         @endif
-                        <label class="text-xs font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للعميل' : 'الدفعة المستردة من المورد' }}
+                        <label class="text-xs font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}
                             <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                         </label>
                         <label class="text-xs font-bold text-slate-600">طريقة الدفع

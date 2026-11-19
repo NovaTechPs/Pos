@@ -28,7 +28,7 @@ test('analytics report includes sales purchases customers suppliers and low stoc
     ]);
     $customer = Party::query()->create([
         'tenant_id' => $tenant->id,
-        'name' => 'عميل التقرير',
+        'name' => 'زبون التقرير',
         'type' => 'customer',
         'current_balance' => 70,
     ]);
@@ -101,10 +101,10 @@ test('analytics report includes sales purchases customers suppliers and low stoc
 
     Livewire::actingAs($user)
         ->test('pages::tenant.reports.analytics')
-        ->assertSee('عميل التقرير')
+        ->assertSee('زبون التقرير')
         ->assertSee('مورد التقرير')
         ->assertSee('صنف منخفض المخزون')
-        ->assertSee('تقرير العملاء')
+        ->assertSee('تقرير الزباين')
         ->assertSee('تقرير الموردين')
         ->assertSee('إجمالي المشتريات');
 });

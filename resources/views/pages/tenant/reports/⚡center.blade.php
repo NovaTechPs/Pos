@@ -462,7 +462,7 @@ new class extends Component {
     </aside>
     @if ($report === 'statement')
     <aside class="reports-account-directory" data-statement-directory>
-        <h2><flux:icon.user-group variant="outline" />قائمة العملاء</h2>
+        <h2><flux:icon.user-group variant="outline" />قائمة الزباين</h2>
         <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
         <div class="reports-account-types" role="group" aria-label="نوع الحساب">
             @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)

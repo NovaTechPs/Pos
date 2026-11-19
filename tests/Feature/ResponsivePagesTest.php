@@ -40,7 +40,7 @@ beforeEach(function (): void {
     $product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'صنف تجريبي باسم طويل للتأكد من عدم خروج البيانات عن حدود الشاشة', 'product_number' => 'I00000001', 'category_id' => $category->id, 'cost_price' => 5, 'show_in_website' => true]);
     BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $product->id, 'stock_quantity' => 20, 'retail_price' => 10, 'wholesale_price' => 8]);
     ProductBarcode::query()->create(['tenant_id' => $this->tenant->id, 'product_id' => $product->id, 'barcode' => '1234567890123']);
-    Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'عميل تجريبي باسم طويل لاختبار القوائم والجداول', 'type' => 'both', 'current_balance' => 50, 'is_active' => true]);
+    Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'زبون تجريبي باسم طويل لاختبار القوائم والجداول', 'type' => 'both', 'current_balance' => 50, 'is_active' => true]);
     Employee::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'employee_code' => 'E001', 'first_name' => 'موظف', 'last_name' => 'تجريبي', 'is_active' => true, 'hire_date' => today()]);
 });
 
@@ -100,10 +100,10 @@ test('point of sale keeps notes outside payment and offers one copy action for a
     for ($index = 0; $index < 5; $index++) {
         $component->call('selectInlineProduct', $product->id);
     }
-    $component->set('notes', 'ملاحظة العميل');
+    $component->set('notes', 'ملاحظة الزبون');
     captureResponsivePreview('pos-filled', $this->get('/dashboard/pos')->assertOk()->getContent());
     $component->set('paid_amount', 50)->call('checkoutAndPrint');
-    $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة العميل')
+    $component->call('loadInvoice', Order::query()->sole()->id)->assertSet('notes', 'ملاحظة الزبون')
         ->assertDontSee('data-pos-mobile-section-nav', false)
         ->assertSet('successMessage', null)
         ->assertSee('عرض فاتورة محفوظة — للقراءة فقط')

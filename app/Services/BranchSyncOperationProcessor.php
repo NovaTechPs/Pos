@@ -249,7 +249,7 @@ class BranchSyncOperationProcessor
                 ->first();
 
             if (! $party) {
-                throw new RuntimeException('العميل غير موجود في قاعدة البيانات المركزية.');
+                throw new RuntimeException('الزبون غير موجود في قاعدة البيانات المركزية.');
             }
         }
 

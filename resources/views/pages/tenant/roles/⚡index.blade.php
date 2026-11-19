@@ -1462,7 +1462,7 @@ new class extends Component
                                                            dark:text-zinc-200"
                                                 >
                                                     {{ app()->getLocale() === 'ar'
-                                                        ? $permission->display_name
+                                                        ? __($permission->display_name)
                                                         : \Illuminate\Support\Str::headline(str_replace('.', ' ', $permission->name)) }}
                                                 </div>
 

@@ -4,7 +4,7 @@
     $accent = 'blue';
 
     $voucherLabel = $isPayment ? 'سند صرف' : 'سند قبض';
-    $partyLabel = $isPayment ? 'المورد / الجهة' : 'العميل / الجهة';
+    $partyLabel = $isPayment ? 'المورد / الجهة' : 'الزبون / الجهة';
 
     $selectedParty = $selectedParty ?? null;
     $partyResults = $partyResults ?? collect();
@@ -23,7 +23,7 @@
 
     $balanceLabel = $isPayment
         ? 'رصيد المورد الحالي'
-        : 'رصيد العميل الحالي';
+        : 'رصيد الزبون الحالي';
 
     $balanceAfterLabel = $isPayment
         ? 'الرصيد بعد سند الصرف'
@@ -49,7 +49,8 @@
 
         {{-- Drawer --}}
         <div
-            class="relative flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+            class="relative flex max-h-full w-full {{ $paymentId ? 'max-w-3xl' : 'max-w-6xl' }} flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+            @if ($paymentId) data-voucher-compact @endif
             x-show="open"
             x-transition:enter="transform transition ease-out duration-200"
             x-transition:enter-start="scale-95 opacity-0"
@@ -110,15 +111,17 @@
                             </div>
 
                             <div>
-                                <h2 class="text-xl font-black text-slate-950 sm:text-2xl">
+                                <h2 class="{{ $paymentId ? 'text-lg' : 'text-xl sm:text-2xl' }} font-black text-slate-950">
                                     {{ $paymentId ? 'تعديل ' : 'إنشاء ' }}{{ $voucherLabel }}
                                 </h2>
 
+                                @if (!$paymentId)
                                 <p class="mt-0.5 text-xs text-slate-500">
                                     {{ $isPayment
                                         ? 'سجّل دفعة للمورد أو الجهة مع تحديث الرصيد تلقائياً.'
-                                        : 'سجّل قبضاً من العميل أو الجهة مع تحديث الرصيد تلقائياً.' }}
+                                        : 'سجّل قبضاً من الزبون أو الجهة مع تحديث الرصيد تلقائياً.' }}
                                 </p>
+                                @endif
                             </div>
 
                         </div>
@@ -186,9 +189,10 @@
                     wire:submit="{{ $saveMethod }}"
                     id="{{ $formId }}"
                     @if ($voucherLocked && $paymentId) inert data-voucher-locked @endif
-                    class="space-y-3 p-4 sm:px-6 sm:py-4"
+                    class="{{ $paymentId ? 'space-y-2 p-3 sm:px-4' : 'space-y-3 p-4 sm:px-6 sm:py-4' }}"
                 >
 
+                    @if (!$paymentId)
                     <div data-voucher-mode class="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-1.5">
                         <div class="flex items-center gap-3">
                             <span class="inline-flex size-7 items-center justify-center rounded-lg bg-blue-600 text-white"><flux:icon name="document-text" class="size-4" /></span>
@@ -199,6 +203,7 @@
                         </div>
                         <span class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-black text-white">{{ $voucherLabel }}</span>
                     </div>
+                    @endif
 
                     {{-- Voucher number / date --}}
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -809,7 +814,7 @@
                     </div>
 
                     {{-- Balance preview --}}
-                    @if($selectedParty)
+                    @if($selectedParty && !$paymentId)
 
                         <div class="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-2.5" data-voucher-balance-preview>
 
@@ -890,7 +895,7 @@
 
                         <textarea
                             wire:model="notes"
-                            rows="2"
+                            rows="{{ $paymentId ? 1 : 2 }}"
                             placeholder="أدخل بيان السند أو سبب العملية..."
                             class="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-{{ $accent }}-500 focus:ring-4 focus:ring-{{ $accent }}-100"
                         ></textarea>

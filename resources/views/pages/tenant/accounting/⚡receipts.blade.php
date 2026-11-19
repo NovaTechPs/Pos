@@ -593,14 +593,14 @@ new class extends Component {
 
                     if ($linkedOrder?->type === 'return' || $partyDoesNotMatchInvoice) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
-                            'partyId' => 'لا يمكن تغيير العميل في سند قبض مرتبط بفاتورة.',
+                            'partyId' => 'لا يمكن تغيير الزبون في سند قبض مرتبط بفاتورة.',
                         ]);
                     }
                 }
 
                 /*
 
-                 * نفس العميل
+                 * نفس الزبون
 
                  */
 
@@ -610,7 +610,7 @@ new class extends Component {
 
                 /*
 
-                 * تغيير العميل
+                 * تغيير الزبون
 
                  */
 
@@ -626,7 +626,7 @@ new class extends Component {
 
                     /*
 
-                     * إعادة تأثير السند القديم للعميل القديم
+                     * إعادة تأثير السند القديم للزبون القديم
 
                      */
 
@@ -634,7 +634,7 @@ new class extends Component {
 
                     /*
 
-                     * تطبيق السند الجديد على العميل الجديد
+                     * تطبيق السند الجديد على الزبون الجديد
 
                      */
 
@@ -702,7 +702,7 @@ new class extends Component {
                     $order = Order::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($this->orderId);
                     if ($order->type === 'return' || (int) $order->customer_id !== (int) $newParty->id) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
-                            'partyId' => 'اختر العميل المسجل على الفاتورة المرتبطة بسند القبض.',
+                            'partyId' => 'اختر الزبون المسجل على الفاتورة المرتبطة بسند القبض.',
                         ]);
                     }
                     $paidAmount = min((float) $order->total, (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount') + (float) $order->delivery_fee);
@@ -711,7 +711,7 @@ new class extends Component {
 
                 /*
 
-                 * سند القبض يقلل رصيد العميل
+                 * سند القبض يقلل رصيد الزبون
 
                  */
 
@@ -808,7 +808,7 @@ new class extends Component {
 
             /*
 
-             * إعادة قيمة سند القبض إلى رصيد العميل
+             * إعادة قيمة سند القبض إلى رصيد الزبون
 
              */
 
@@ -913,7 +913,7 @@ new class extends Component {
 
                 type: 'error',
 
-                message: 'لا يوجد رقم هاتف لهذا العميل.'
+                message: 'لا يوجد رقم هاتف لهذا الزبون.'
 
             );
 
@@ -927,7 +927,7 @@ new class extends Component {
 
             'رقم السند: ' . $receipt->voucher_number,
 
-            'العميل: ' . ($receipt->party?->name ?? '-'),
+            'الزبون: ' . ($receipt->party?->name ?? '-'),
 
             'المبلغ: ' . number_format((float) $receipt->amount, 2),
 
@@ -1052,7 +1052,7 @@ new class extends Component {
 
                     'title' => 'سندات القبض',
 
-                    'subtitle' => 'إدارة المقبوضات من العملاء وتحديث أرصدتهم.',
+                    'subtitle' => 'إدارة المقبوضات من الزباين وتحديث أرصدتهم.',
 
                     'items' => $receipts,
 
@@ -1082,7 +1082,7 @@ new class extends Component {
 
                 'partyResults' => $this->partyResults,
 
-                'partyLabel' => 'العميل / المورد',
+                'partyLabel' => 'الزبون / المورد',
 
                 'saveMethod' => 'saveReceipt',
 
@@ -1110,7 +1110,7 @@ new class extends Component {
 
                         هل أنت متأكد من حذف هذا السند؟
 
-                        سيتم إعادة قيمة السند إلى رصيد العميل.
+                        سيتم إعادة قيمة السند إلى رصيد الزبون.
 
                     </p>
 

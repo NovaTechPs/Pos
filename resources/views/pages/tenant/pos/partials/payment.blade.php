@@ -6,7 +6,7 @@
     - المبلغ المدفوع
     - الباقي / المتبقي
     - طرق الدفع
-    - العميل
+    - الزبون
     - لوحة أرقام
     - حفظ / حفظ وطباعة / فاتورة جديدة
     - PDF
@@ -18,7 +18,7 @@
 
     /*
     |--------------------------------------------------------------------------
-    | العميل ورقم الهاتف لواتساب
+    | الزبون ورقم الهاتف لواتساب
     |--------------------------------------------------------------------------
     */
 
@@ -548,7 +548,7 @@
 
 
         {{-- =========================================================
-             العميل
+             الزبون
         ========================================================== --}}
 
         <div data-pos-customer-notes class="md:order-2 lg:order-1 rounded-xl border border-slate-200 bg-slate-50 p-2 lg:col-span-4">
@@ -564,7 +564,7 @@
 
                 <span class="pos-customer-label text-[10px] font-black text-slate-800">
                     <flux:icon.user class="pos-tile-icon size-5" />
-                    العميل
+                    الزبون
                 </span>
 
 
@@ -614,7 +614,7 @@
 
                     <div class="truncate text-xs font-black text-indigo-800">
 
-                        {{ $selectedCustomer?->name ?? 'العميل المحدد' }}
+                        {{ $selectedCustomer?->name ?? 'الزبون المحدد' }}
 
                     </div>
 
@@ -648,7 +648,7 @@
                 >
 
                     <span class="pos-customer-desktop-label">👤 إضافة زبون للفاتورة</span>
-                    <span class="pos-customer-placeholder">اختر عميلاً…</span>
+                    <span class="pos-customer-placeholder">اختر زبوناً…</span>
                     <flux:icon.chevron-down class="pos-customer-chevron size-4" />
 
                 </button>
@@ -656,7 +656,7 @@
             @endif
 
             @can('customers.create')
-                <a href="{{ route('tenant.customer') }}" target="_blank" rel="noopener" data-pos-add-customer aria-label="إضافة عميل جديد" title="إضافة عميل جديد"
+                <a href="{{ route('tenant.customer') }}" target="_blank" rel="noopener" data-pos-add-customer aria-label="إضافة زبون جديد" title="إضافة زبون جديد"
                     class="pos-add-customer">
                     <flux:icon.user-plus class="size-5" />
                 </a>
@@ -706,7 +706,7 @@
 
 
     {{-- =========================================================
-         نافذة اختيار العميل
+         نافذة اختيار الزبون
     ========================================================== --}}
 
     @if ($showCustomerModal)

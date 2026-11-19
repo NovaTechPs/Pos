@@ -7,7 +7,7 @@ const printPages = [
     ['/dashboard/purchase-invoices', 'فواتير المشتريات'],
     ['/dashboard/wholesale-sales', 'مبيعات الجملة'],
     ['/dashboard/wholesale-invoices', 'فواتير الجملة'],
-    ['/dashboard/customer', 'كشوف حساب العملاء والموردين'],
+    ['/dashboard/customer', 'كشوف حساب الزباين والموردين'],
     ['/dashboard/analytics', 'تقارير المبيعات'],
     ['/dashboard/daily-settlement', 'التسوية اليومية'],
     ['/dashboard/payment', 'سندات الصرف'],

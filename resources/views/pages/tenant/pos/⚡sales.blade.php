@@ -1632,7 +1632,7 @@ new class extends Component {
                 ? Party::query()->where('tenant_id', $tenantId)->whereIn('type', ['customer', 'supplier', 'both'])->lockForUpdate()->find($returnCustomerId)
                 : null;
             if ($returnCustomerId && ! $customer) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['cart' => 'العميل المحدد للمرتجع غير صالح.']);
+                throw \Illuminate\Validation\ValidationException::withMessages(['cart' => 'الزبون المحدد للمرتجع غير صالح.']);
             }
             $refund = $customer ? min($total, (float) $cashPaidOut) : $total;
             $credit = round($total - $refund, 2);
@@ -2859,7 +2859,7 @@ new class extends Component {
 
         $remoteIds = $this->refreshRemoteCatalog('customers', ['ids' => [$customerId]]);
         if ($remoteIds !== null && !in_array($customerId, $remoteIds, true)) {
-            $this->errorMessage = 'العميل لم يعد متاحاً على السيرفر في الفرع الحالي.';
+            $this->errorMessage = 'الزبون لم يعد متاحاً على السيرفر في الفرع الحالي.';
             return;
         }
         $customer = Party::query()
@@ -2869,7 +2869,7 @@ new class extends Component {
             ->find($customerId);
 
         if (!$customer) {
-            $this->errorMessage = 'العميل المحدد غير صالح.';
+            $this->errorMessage = 'الزبون المحدد غير صالح.';
             return;
         }
 
@@ -3577,7 +3577,7 @@ new class extends Component {
         if ($this->selectedCustomerId) {
             $customers = $this->refreshRemoteCatalog('customers', ['ids' => [$this->selectedCustomerId]]);
             if ($customers !== null && !in_array($this->selectedCustomerId, $customers, true)) {
-                $this->errorMessage = 'العميل لم يعد متاحاً على السيرفر. اختر عميلاً آخر.';
+                $this->errorMessage = 'الزبون لم يعد متاحاً على السيرفر. اختر زبوناً آخر.';
                 return false;
             }
         }
@@ -3675,7 +3675,7 @@ new class extends Component {
                 ->find($this->selectedCustomerId);
 
             if (!$customer) {
-                $this->errorMessage = 'العميل المحدد غير موجود أو غير نشط.';
+                $this->errorMessage = 'الزبون المحدد غير موجود أو غير نشط.';
                 return null;
             }
         }

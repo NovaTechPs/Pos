@@ -59,7 +59,7 @@ class BackfillLegacySalesReceipts extends Command
             }
         }
 
-        $this->info("تم إنشاء {$created} سند قبض تاريخي. لم يتم تعديل paid_amount أو رصيد أي عميل.");
+        $this->info("تم إنشاء {$created} سند قبض تاريخي. لم يتم تعديل paid_amount أو رصيد أي زبون.");
 
         return self::SUCCESS;
     }

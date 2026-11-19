@@ -803,7 +803,7 @@ new class extends Component {
 
                     <flux:input
                         data-search-input wire:model.live.debounce.300ms="search"
-                        placeholder="رقم الفاتورة، اسم العميل أو الهاتف..."
+                        placeholder="رقم الفاتورة، اسم الزبون أو الهاتف..."
                         icon="magnifying-glass"
                     />
 
@@ -948,7 +948,7 @@ new class extends Component {
                             </th>
 
                             <th class="whitespace-nowrap p-4">
-                                العميل
+                                الزبون
                             </th>
 
                             <th class="whitespace-nowrap p-4">
@@ -1224,7 +1224,7 @@ new class extends Component {
                     <div class="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/50">
 
                         <div class="text-xs text-zinc-500">
-                            العميل
+                            الزبون
                         </div>
 
                         <div class="mt-1 font-semibold">
@@ -1408,7 +1408,7 @@ new class extends Component {
                     <flux:card class="md:col-span-2">
 
                         <div class="text-xs text-zinc-500">
-                            العميل
+                            الزبون
                         </div>
 
                         <div class="mt-1 text-lg font-bold">
@@ -1701,11 +1701,11 @@ new class extends Component {
 
                             <div>
                                 <div class="font-bold">
-                                    رصيد العميل
+                                    رصيد الزبون
                                 </div>
 
                                 <div class="mt-1 text-xs text-zinc-500">
-                                    ملخص حركات العميل المرتبطة بهذه الحسابات.
+                                    ملخص حركات الزبون المرتبطة بهذه الحسابات.
                                 </div>
                             </div>
 
@@ -1788,7 +1788,7 @@ new class extends Component {
                             <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
 
                                 <span class="text-zinc-500">
-                                    الرصيد المسجل في حساب العميل
+                                    الرصيد المسجل في حساب الزبون
                                 </span>
 
                                 <strong class="text-lg">

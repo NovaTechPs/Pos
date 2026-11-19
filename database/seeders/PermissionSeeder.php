@@ -220,28 +220,28 @@ class PermissionSeeder extends Seeder
             */
             [
                 'name' => 'customers.view',
-                'display_name' => 'عرض العملاء',
-                'group' => 'العملاء',
+                'display_name' => 'عرض الزباين',
+                'group' => 'الزباين',
             ],
             [
                 'name' => 'customers.create',
-                'display_name' => 'إضافة عميل',
-                'group' => 'العملاء',
+                'display_name' => 'إضافة زبون',
+                'group' => 'الزباين',
             ],
             [
                 'name' => 'customers.edit',
-                'display_name' => 'تعديل العميل',
-                'group' => 'العملاء',
+                'display_name' => 'تعديل الزبون',
+                'group' => 'الزباين',
             ],
             [
                 'name' => 'customers.delete',
-                'display_name' => 'حذف العميل',
-                'group' => 'العملاء',
+                'display_name' => 'حذف الزبون',
+                'group' => 'الزباين',
             ],
             [
                 'name' => 'customers.statement',
-                'display_name' => 'عرض كشف حساب العميل',
-                'group' => 'العملاء',
+                'display_name' => 'عرض كشف حساب الزبون',
+                'group' => 'الزباين',
             ],
 
             /*

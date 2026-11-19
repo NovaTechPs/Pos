@@ -389,7 +389,7 @@ class ReportingService
             ->groupByRaw('DATE(orders.created_at)')->orderBy('day');
         $totals = DB::query()->fromSub(clone $query, 'daily_totals')->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(net),0) as net')->first();
 
-        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['فواتير البيع المكتملة غير المرتبطة بعميل أو مورد مسجل فقط؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي. صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
+        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['فواتير البيع المكتملة غير المرتبطة بزبون أو مورد مسجل فقط؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي. صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
     }
 
     /**

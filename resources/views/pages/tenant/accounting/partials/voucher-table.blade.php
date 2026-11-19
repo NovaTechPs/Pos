@@ -1,9 +1,9 @@
 @php
     $isPayment = $mode === 'payment';
-    $partyLabel = $isPayment ? 'المورد / الجهة' : 'العميل / الجهة';
+    $partyLabel = $isPayment ? 'المورد / الجهة' : 'الزبون / الجهة';
     $voucherLabel = $isPayment ? 'سند صرف' : 'سند قبض';
     $emptyTitle = $isPayment ? 'لا توجد سندات صرف' : 'لا توجد سندات قبض';
-    $emptyDescription = $isPayment ? 'أنشئ أول سند صرف لتظهر حركات الموردين والجهات هنا.' : 'أنشئ أول سند قبض لتظهر المقبوضات وحركات العملاء هنا.';
+    $emptyDescription = $isPayment ? 'أنشئ أول سند صرف لتظهر حركات الموردين والجهات هنا.' : 'أنشئ أول سند قبض لتظهر المقبوضات وحركات الزباين هنا.';
     $methodLabels = [
         'cash' => 'نقدي',
         'card' => 'بطاقة',

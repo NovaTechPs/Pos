@@ -97,7 +97,7 @@ test('invoice prints show only total, discount, payment, previous and new balanc
         expect($html)->toContain($arabic->utf8Glyphs($label, 150, false, true));
     }
     expect($summary)->toContain('110.00', '10.00', '40.00', '90.00', '150.00');
-    foreach (['العميل', 'الإجمالي النهائي', 'المتبقي من الفاتورة', 'عدد الأصناف', 'إجمالي الكمية', 'شكراً لتعاملكم معنا'] as $removed) {
+    foreach (['الزبون', 'الإجمالي النهائي', 'المتبقي من الفاتورة', 'عدد الأصناف', 'إجمالي الكمية', 'شكراً لتعاملكم معنا'] as $removed) {
         expect($html)->not->toContain($arabic->utf8Glyphs($removed, 150, false, true));
     }
 

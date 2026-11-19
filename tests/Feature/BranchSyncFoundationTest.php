@@ -461,7 +461,7 @@ test('central branch sync preserves gift marker price and stock movement', funct
 test('customer credit sales sync separately from shifts while payments retain the originating shift', function (float $paid, string $status): void {
     [$tenant, $branch] = branchSyncFixtures();
     $payload = branchSyncSalePayload($tenant, $branch, 'CREDIT-100');
-    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل آجل', 'type' => 'customer', 'is_active' => true]);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'زبون آجل', 'type' => 'customer', 'is_active' => true]);
     $payload['order']['customer_id'] = $customer->id;
     $payload['order']['customer_name'] = $customer->name;
     $payload['order']['type'] = 'wholesale';

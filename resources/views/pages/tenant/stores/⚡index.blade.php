@@ -1061,7 +1061,7 @@ new class extends Component {
             "\n";
 
         $message .=
-            "العميل: " .
+            "الزبون: " .
             trim($this->customer_name) .
             "\n";
 

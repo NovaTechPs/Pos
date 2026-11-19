@@ -583,7 +583,7 @@ new class extends Component
             'showForm' => $showForm,
             'selectedParty' => $this->selectedParty,
             'partyResults' => $this->partyResults,
-            'partyLabel' => 'العميل / المورد',
+            'partyLabel' => 'الزبون / المورد',
             'saveMethod' => 'savePayment',
             'paymentId' => $paymentId,
             'amount' => $amount,

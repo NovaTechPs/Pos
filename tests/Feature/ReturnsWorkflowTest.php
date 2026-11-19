@@ -41,16 +41,16 @@ test('sales and purchase returns have separate invoice pages', function (): void
         ->assertOk()
         ->assertSee('فاتورة مردود مبيعات')
         ->assertDontSee('return-balance-summary', false)
-        ->assertSee('العميل')
+        ->assertSee('الزبون')
         ->assertSee('الأسعار F2')
-        ->assertSee('اختر العميل أولاً')
+        ->assertSee('اختر الزبون أولاً')
         ->assertSee(route('tenant.sales-returns'))
         ->assertSee(route('tenant.purchase-returns'))
         ->assertSee(__('Sales Returns'))
         ->assertSee(__('Purchase Returns'))
         ->assertDontSee('Return type');
 
-    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل الملخص', 'type' => 'customer']);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'زبون الملخص', 'type' => 'customer']);
     Livewire::actingAs($user)->test('pages::tenant.returns.index')
         ->call('selectParty', $customer->id)
         ->assertSee('return-balance-summary', false)
@@ -66,9 +66,9 @@ test('sales and purchase returns have separate invoice pages', function (): void
 });
 
 test('a delayed party search update keeps the selected customer enabled for item entry', function (): void {
-    $tenant = Tenant::query()->create(['name' => 'متجر اختيار العميل']);
+    $tenant = Tenant::query()->create(['name' => 'متجر اختيار الزبون']);
     $user = returnsTestUser($tenant);
-    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل الاختبار', 'type' => 'customer']);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'زبون الاختبار', 'type' => 'customer']);
     $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
 
     Livewire::test('pages::tenant.returns.index')
@@ -77,14 +77,14 @@ test('a delayed party search update keeps the selected customer enabled for item
         ->set('partySearch', $customer->name)
         ->assertSet('selectedPartyId', $customer->id)
         ->assertSet('selectedPartyName', $customer->name)
-        ->assertDontSee('اختر العميل أولاً لتفعيل إضافة الأصناف.');
+        ->assertDontSee('اختر الزبون أولاً لتفعيل إضافة الأصناف.');
 });
 
 test('sales return is account-based, uses the customer last sale price, and tracks aggregate return limits', function (string $partyType, float $balance): void {
     $tenant = Tenant::query()->create(['name' => 'متجر مرتجعات المبيعات']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
     $user = returnsTestUser($tenant);
-    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'عميل المرتجع', 'type' => $partyType]);
+    $customer = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'زبون المرتجع', 'type' => $partyType]);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'منتج', 'cost_price' => 5]);
     ProductBarcode::query()->create(['tenant_id' => $tenant->id, 'product_id' => $product->id, 'barcode' => 'RET-SKU-1']);
     $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
@@ -118,7 +118,7 @@ test('sales return is account-based, uses the customer last sale price, and trac
 
     $component->call('startNewReturn')->call('selectParty', $customer->id)
         ->call('addProduct', $product->id)->set('lines.0.quantity', 2)->call('saveReturn')
-        ->assertSee('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا العميل');
+        ->assertSee('كمية المرتجع تتجاوز الكمية التي تعامل بها هذا الزبون');
 })->with([['customer', -20.0], ['supplier', 20.0]]);
 
 test('purchase return is supplier-based, uses last supplier cost, updates stock and statement', function (): void {

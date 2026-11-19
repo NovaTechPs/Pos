@@ -14,7 +14,7 @@ beforeEach(function (): void {
 test('can create receipt voucher', function () {
     $user = User::factory()->create(['tenant_id' => 1, 'type' => 'tenant_user', 'is_owner' => true, 'is_active' => true]);
     $branch = Branch::create(['name' => 'Main', 'tenant_id' => 1]);
-    $customer = Party::create(['name' => 'عميل تجريبي', 'tenant_id' => 1, 'type' => 'customer']);
+    $customer = Party::create(['name' => 'زبون تجريبي', 'tenant_id' => 1, 'type' => 'customer']);
 
     $response = $this->actingAs($user)->postJson('/api/vouchers/receipts', [
         'branch_id' => $branch->id,

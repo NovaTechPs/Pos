@@ -586,6 +586,11 @@ test('a saved voucher opened from the archive is edited after pressing «تعد�
         }
 
         $component->assertSet('paymentId', $voucher->id)->assertSet('voucherLocked', true)
+            ->assertSeeHtml('data-voucher-compact')
+            ->assertSeeHtml('max-w-3xl')
+            ->assertDontSeeHtml('data-voucher-mode')
+            ->assertDontSeeHtml('data-voucher-balance-preview')
+            ->assertSeeHtml('rows="1"')
             ->assertSeeHtml('data-voucher-unlock')->assertSeeHtml('data-voucher-locked')
             ->call('unlockVoucher')->assertSet('voucherLocked', false)
             ->assertDontSeeHtml('data-voucher-locked')

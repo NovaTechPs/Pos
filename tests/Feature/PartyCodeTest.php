@@ -46,12 +46,37 @@ test('customers can be found by code in the livewire listing', function (): void
     Party::create(['tenant_id' => $tenant->id, 'name' => 'Excluded']);
     $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
     Livewire::test('pages::tenant.customers.index')
-        ->assertSee('رمز العميل')
+        ->assertSee('رمز الزبون')
         ->assertSeeHtml('data-party-code="12345"')
         ->set('search', '12345')
         ->assertViewHas('parties', fn ($parties): bool => $parties->modelKeys() === [$customer->id])
         ->assertSee('12345');
 });
+
+test('the party directory hides balances and does not allow deleting customers or suppliers', function (string $type): void {
+    $tenant = Tenant::create(['name' => 'Directory']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'is_owner' => true]);
+    $party = Party::create([
+        'tenant_id' => $tenant->id, 'name' => 'Directory party', 'type' => $type,
+        'opening_balance' => 1234.56, 'current_balance' => 7890.12,
+    ]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id]);
+
+    Livewire::test('pages::tenant.customers.index')
+        ->assertSee($party->name)
+        ->assertSee('الزباين والموردون')
+        ->assertDontSeeHtml('wire:model.live="balanceFilter"')
+        ->assertDontSee('الافتتاحي')
+        ->assertDontSee('الحالي')
+        ->assertDontSee('1,234.56')
+        ->assertDontSee('7,890.12')
+        ->assertDontSeeHtml('wire:click="deleteParty(')
+        ->call('deleteParty', $party->id);
+
+    expect($party->fresh()->trashed())->toBeFalse()
+        ->and((float) $party->fresh()->opening_balance)->toBe(1234.56)
+        ->and((float) $party->fresh()->current_balance)->toBe(7890.12);
+})->with(['customer', 'supplier']);
 
 test('party code generation preserves legacy text codes and ignores them in numeric sequences', function (): void {
     $tenant = Tenant::create(['name' => 'Mixed codes']);
