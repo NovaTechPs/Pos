@@ -43,9 +43,31 @@ new class extends Component {
         $this->selectReport(array_key_first($reports));
     }
 
+    /**
+     * The paid amount of every sales (source 1) and purchase (source 3) invoice among the statement rows.
+     *
+     * @param  array<int, object>  $rows
+     * @return array<string, float>
+     */
+    private function invoicePaidAmounts(array $rows): array
+    {
+        $tenantId = $this->service()->tenantId;
+        $ids = fn (int $source): array => collect($rows)->filter(fn (object $row): bool => (int) ($row->source_order ?? 0) === $source && ($row->description ?? '') !== 'مردود مبيعات')->pluck('source_id')->map(fn ($id): int => (int) $id)->unique()->values()->all();
+        $paid = [];
+        foreach ([1 => Order::query(), 3 => Purchase::query()] as $source => $query) {
+            if (($sourceIds = $ids($source)) !== []) {
+                foreach ($query->where('tenant_id', $tenantId)->whereKey($sourceIds)->pluck('paid_amount', 'id') as $id => $amount) {
+                    $paid[$source.':'.$id] = (float) $amount;
+                }
+            }
+        }
+
+        return $paid;
+    }
+
     public function resetFilters(): void
     {
-        $this->reset('partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'appliedStatementSignature', 'productSearch');
+        $this->reset('partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -70,6 +92,8 @@ new class extends Component {
     public string $partySearch = '';
     public string $statementPartyType = 'all';
     public string $statementBalanceFilter = 'all';
+    /** Shows how much of each invoice in the statement has been paid. */
+    public bool $showInvoicePaid = false;
     #[Locked]
     public ?string $appliedStatementSignature = null;
     public string $productSearch = '';
@@ -375,7 +399,9 @@ new class extends Component {
         }
         $periodRanges = $this->periodRanges();
         $activeRange = collect($periodRanges)->search(fn (array $range): bool => $range[0] === $this->from && $range[1] === $this->to);
-        return $this->view(['statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $definition['query']->paginate(30), 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        $rows = $definition['query']->paginate(30);
+        $invoicePaid = $this->report === 'statement' && $this->showInvoicePaid ? $this->invoicePaidAmounts($rows->items()) : [];
+        return $this->view(['invoicePaid' => $invoicePaid, 'statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $rows, 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -475,6 +501,7 @@ new class extends Component {
             @else
                 <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>
             @endif
+            <label class="reports-invoice-paid-toggle" data-statement-invoice-paid-toggle><input type="checkbox" wire:model.live="showInvoicePaid" /><span>المدفوع من الفاتورة</span></label>
         </div>
         <div class="reports-filter-actions flex flex-wrap gap-2">
             <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>

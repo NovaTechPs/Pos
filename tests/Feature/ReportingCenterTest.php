@@ -766,3 +766,21 @@ test('customers and suppliers cannot be deleted, only deactivated', function ():
 
     expect(Party::query()->whereKey($this->customer->id)->exists())->toBeTrue();
 });
+
+test('the statement shows the paid part of each invoice only when «المدفوع من الفاتورة» is ticked', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'PAID-PART-01', 'total' => 300, 'paid_amount' => 120]);
+    ($this->makeOrder)(['invoice_number' => 'PAID-PART-RETURN', 'type' => 'return', 'total' => -50, 'paid_amount' => 0]);
+
+    Livewire::test('pages::tenant.reports.center')->call('showStatementParty', $this->customer->id)
+        ->assertSeeHtml('data-statement-invoice-paid-toggle')
+        ->assertSee('PAID-PART-01')->assertDontSeeHtml('data-statement-invoice-paid>')
+        ->set('showInvoicePaid', true)
+        ->assertSeeHtml('data-statement-invoice-paid>(مدفوع 120.00)')
+        ->assertSeeHtmlInOrder(['PAID-PART-01', 'فاتورة مبيعات', '(مدفوع 120.00)'])
+        ->call('resetFilters')->assertSet('showInvoicePaid', false);
+
+    Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'PAID-PURCHASE', 'total' => 400, 'paid_amount' => 150, 'created_at' => now()]);
+
+    Livewire::test('pages::tenant.reports.center')->set('showInvoicePaid', true)->call('showStatementParty', $this->supplier->id)
+        ->assertSeeHtmlInOrder(['PAID-PURCHASE', 'فاتورة مشتريات', '(مدفوع 150.00)']);
+});
