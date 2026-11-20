@@ -1550,6 +1550,27 @@ new class extends Component {
         $this->showOfferModal = true;
     }
 
+    /**
+     * Offers of the product being edited that have not ended yet, in the branches whose prices the user may change.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, ProductOffer>
+     */
+    public function currentProductOffers(): \Illuminate\Database\Eloquent\Collection
+    {
+        if (! $this->isEditing || ! $this->product_id || ($branchIds = $this->priceEditableBranchIds()) === []) {
+            return new \Illuminate\Database\Eloquent\Collection;
+        }
+
+        return ProductOffer::query()
+            ->where('tenant_id', $this->tenantId())
+            ->where('product_id', $this->product_id)
+            ->whereIn('branch_id', $branchIds)
+            ->where(fn ($query) => $query->whereNull('end_at')->orWhere('end_at', '>=', now()))
+            ->with('branch:id,name')
+            ->orderBy('start_at')
+            ->get();
+    }
+
     public function editOffer(int $offerId): void
     {
         $tenantId = $this->tenantId();
@@ -1752,6 +1773,10 @@ new class extends Component {
             ], ['retail_price' => $this->offerRetailPrice]);
             Product::query()->where('tenant_id', $tenantId)->whereKey($this->offerProductId)->update(['is_price_unified' => false]);
         });
+
+        if ($this->posEmbedded) {
+            Flux::toast(text: session()->pull('message', 'تم حفظ العرض.'), duration: 4000, variant: 'success');
+        }
 
         $this->closeOfferModal();
     }
@@ -3488,7 +3513,24 @@ new class extends Component {
                         <section data-product-new-offer data-arrow-nav class="rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
 
                             <div class="text-sm font-semibold">{{ $isEditing ? 'إضافة عرض جديد لهذا الصنف' : 'إضافة عرض لهذا الصنف مباشرة' }}</div>
-                            <div class="mt-0.5 text-[11px] text-zinc-500">اترك الحقول فارغة إذا لا تريد عرضاً.{{ $isEditing ? ' العروض الحالية تُعدّل من صفحة العروض.' : '' }}</div>
+                            <div class="mt-0.5 text-[11px] text-zinc-500">اترك الحقول فارغة إذا لا تريد عرضاً.{{ $isEditing ? ' لتعديل عرض حالي اضغط «تعديل» بجانبه.' : '' }}</div>
+
+                            @if ($isEditing)
+                                @php($currentOffers = $this->currentProductOffers())
+                                @if ($currentOffers->isNotEmpty())
+                                    <div data-product-current-offers class="mt-2 divide-y divide-amber-100 overflow-hidden rounded-lg border border-amber-200 bg-white text-xs dark:divide-amber-900/40 dark:border-amber-900/60 dark:bg-zinc-900">
+                                        @foreach ($currentOffers as $currentOffer)
+                                            <div wire:key="product-current-offer-{{ $currentOffer->id }}" class="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                                                <div class="min-w-0">
+                                                    <span class="font-bold">{{ rtrim(rtrim(number_format((float) $currentOffer->offer_quantity, 3, '.', ''), '0'), '.') }} بـ {{ number_format((float) $currentOffer->offer_price, 2) }}</span>
+                                                    <span class="text-zinc-500">· {{ $currentOffer->branch?->name }} · {{ $currentOffer->end_at ? 'حتى '.$currentOffer->end_at->format('Y-m-d') : 'بدون نهاية' }}{{ $currentOffer->is_active ? '' : ' · متوقف' }}</span>
+                                                </div>
+                                                <button type="button" data-product-offer-edit wire:click="editOffer({{ $currentOffer->id }})" class="shrink-0 rounded-md border border-amber-300 px-2 py-1 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-300">تعديل</button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            @endif
 
                             <div class="mt-2 grid grid-cols-2 gap-2">
                                 <div>
