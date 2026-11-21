@@ -270,6 +270,9 @@ test('horizontal report layout collapses the account picker and keeps balances a
         ->assertSeeHtml('reports-category-tabs')
         ->assertSeeHtml('reports-report-tabs')
         ->assertSeeHtml('aria-controls="report-account-picker"')
+        ->assertSeeHtml('reports-account-dropdown')
+        ->assertSeeHtml('reports-account-trigger is-open')
+        ->assertSeeHtml('x-on:click.outside')
         ->assertDontSeeHtml('reports-balance-cards')
         ->call('showStatementParty', $this->customer->id)
         ->assertSet('showAccountDirectory', false)
@@ -279,7 +282,7 @@ test('horizontal report layout collapses the account picker and keeps balances a
         ->assertSeeHtml('columnFilters.event_date')
         ->assertSeeHtml('reports-result-footer');
 
-    expect($component->html())->toMatch('/id="report-account-picker"\s+hidden/');
+    expect($component->html())->toMatch('/id="report-account-picker"\s+class="reports-account-panel"\s+hidden/');
 
     $summary = $component->viewData('definition')['summary'];
     expect((float) $summary['رصيد أول الفترة'])->toBe(100.0)

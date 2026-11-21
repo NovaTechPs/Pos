@@ -468,12 +468,15 @@ new class extends Component {
         </nav>
     </details>
     @if ($report === 'statement')
-    <aside class="reports-account-directory" data-statement-directory>
-        <div class="reports-directory-heading">
-            <div><h2><flux:icon.user-group variant="outline" />كشف حساب / زبون / مورد</h2><p>{{ $statementParty?->name ?? 'اختر الحساب لعرض الحركات والأرصدة' }}</p></div>
-            <flux:button type="button" variant="primary" icon="users" wire:click="$toggle('showAccountDirectory')" aria-controls="report-account-picker" aria-expanded="{{ $showAccountDirectory ? 'true' : 'false' }}">{{ $showAccountDirectory ? 'طي قائمة الحسابات' : 'اختيار زبون / مورد' }}</flux:button>
-        </div>
-        <div id="report-account-picker" @if (! $showAccountDirectory) hidden @endif>
+    <aside class="reports-account-directory reports-account-dropdown" data-statement-directory x-on:click.outside="if ($wire.showAccountDirectory) { $wire.set('showAccountDirectory', false) }" x-on:keydown.escape="if ($wire.showAccountDirectory) { $wire.set('showAccountDirectory', false); $el.querySelector('.reports-account-trigger')?.focus() }">
+        <button type="button" class="reports-account-trigger {{ $showAccountDirectory ? 'is-open' : '' }}" wire:click="$toggle('showAccountDirectory')" aria-haspopup="listbox" aria-controls="report-account-picker" aria-expanded="{{ $showAccountDirectory ? 'true' : 'false' }}">
+            <flux:icon.user-group variant="outline" />
+            <span class="reports-account-trigger-text"><small>كشف حساب زبون / مورد</small><strong>{{ $statementParty?->name ?? 'اختر الحساب لعرض الحركات والأرصدة' }}</strong></span>
+            @if ($statementParty)<b class="reports-party-balance {{ (float) $statementParty->current_balance < 0 ? 'is-negative' : 'is-positive' }}" dir="ltr">{{ number_format((float) $statementParty->current_balance, 2) }}</b>@endif
+            <span class="reports-account-trigger-hint">{{ $showAccountDirectory ? 'طي قائمة الحسابات' : 'اختيار زبون / مورد' }}</span>
+            <flux:icon.chevron-down variant="outline" class="reports-account-trigger-chevron" />
+        </button>
+        <div id="report-account-picker" class="reports-account-panel" @if (! $showAccountDirectory) hidden @endif>
         <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
         <div class="reports-directory-tools"><div class="reports-account-types" role="group" aria-label="نوع الحساب">
             @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
