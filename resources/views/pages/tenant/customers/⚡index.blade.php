@@ -1298,6 +1298,10 @@ new class extends Component {
         @endif
 
 
+        {{-- List and statement side by side: picking a customer shows their statement next to the list on wide screens. --}}
+        <div data-customers-workspace @class(['customers-workspace', 'has-statement' => $showStatementModal && $selectedPartyForStatement])>
+        <div class="customers-list-pane space-y-6">
+
         {{-- =========================================================
             SEARCH / FILTER
         ========================================================== --}}
@@ -1415,7 +1419,7 @@ new class extends Component {
                         class="bg-gray-50 dark:bg-gray-700 border-b border-gray-100 dark:border-gray-600 text-xs font-semibold text-gray-500 dark:text-gray-300"
                     >
 
-                        <th class="p-3 sm:p-4">
+                        <th data-party-extra class="p-3 sm:p-4">
                             #
                         </th>
 
@@ -1427,19 +1431,19 @@ new class extends Component {
                             الطرف
                         </th>
 
-                        <th class="p-3 sm:p-4">
+                        <th data-party-extra class="p-3 sm:p-4">
                             النوع
                         </th>
 
-                        <th class="p-3 sm:p-4">
+                        <th data-party-extra class="p-3 sm:p-4">
                             الهاتف
                         </th>
 
-                        <th class="p-3 sm:p-4 hidden sm:table-cell">
+                        <th data-party-extra class="p-3 sm:p-4 hidden sm:table-cell">
                             العنوان
                         </th>
 
-                        <th class="p-3 sm:p-4 text-center">
+                        <th data-party-extra class="p-3 sm:p-4 text-center">
                             الإجراءات
                         </th>
 
@@ -1457,11 +1461,11 @@ new class extends Component {
 
                         <tr
                             wire:key="party-{{ $party->id }}"
-                            tabindex="0" data-nav-row data-party-row="{{ $party->id }}" x-on:keydown.enter.self.prevent="$wire.openStatementModal({{ $party->id }})"
+                            tabindex="0" data-nav-row data-party-row="{{ $party->id }}" x-on:keydown.enter.self.prevent="$wire.openStatementModal({{ $party->id }})" x-on:click="if (! $event.target.closest('button, a, input, select')) $wire.openStatementModal({{ $party->id }})" @if ($showStatementModal && $selectedPartyForStatement?->id === $party->id) data-statement-party-active @endif
                             class="group hover:bg-gray-50/50 transition focus:bg-[#123b86]! focus:shadow-[inset_0_0_0_2px_#0c2f70] focus:outline-none focus:[&>td]:text-white! focus:[&>td_*:not([data-party-type-badge])]:text-white! dark:hover:bg-gray-700/50"
                         >
 
-                            <td
+                            <td data-party-extra
                                 class="p-3 sm:p-4 text-gray-400"
                             >
                                 {{ $parties->firstItem() + $loop->index }}
@@ -1493,7 +1497,7 @@ new class extends Component {
                             </td>
 
 
-                            <td class="p-3 sm:p-4 whitespace-nowrap">
+                            <td data-party-extra class="p-3 sm:p-4 whitespace-nowrap">
 
                                 @if ($party->type === 'customer')
 
@@ -1527,7 +1531,7 @@ new class extends Component {
                             </td>
 
 
-                            <td
+                            <td data-party-extra
                                 class="p-3 sm:p-4 text-gray-600 dark:text-gray-300 whitespace-nowrap"
                                 dir="ltr"
                             >
@@ -1535,7 +1539,7 @@ new class extends Component {
                             </td>
 
 
-                            <td
+                            <td data-party-extra
                                 class="p-3 sm:p-4 text-gray-700 dark:text-gray-300 font-medium hidden sm:table-cell"
                             >
                                 {{ $party->address ?? '-' }}
@@ -1544,7 +1548,7 @@ new class extends Component {
 
                             {{-- Actions --}}
 
-                            <td
+                            <td data-party-extra
                                 class="p-3 sm:p-4 text-center whitespace-nowrap"
                             >
 
@@ -1639,346 +1643,7 @@ new class extends Component {
 
         @endif
 
-
-        {{-- =========================================================
-            CREATE / EDIT MODAL
-        ========================================================== --}}
-
-        @if ($showModal)
-
-            <div
-                class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
-                wire:key="party-form-modal"
-            >
-
-                <div
-                    class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col"
-                >
-
-                    {{-- Header --}}
-
-                    <div
-                        class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700"
-                    >
-
-                        <div>
-
-                            <h3
-                                class="text-base sm:text-lg font-bold text-gray-800 dark:text-white"
-                            >
-                                {{ $partyId ? 'تعديل بيانات الطرف' : 'إضافة طرف جديد' }}
-                            </h3>
-
-                            <p
-                                class="text-[11px] text-gray-400 mt-1"
-                            >
-                                {{ $partyId
-                                    ? 'تعديل البيانات الأساسية فقط.'
-                                    : 'أدخل بيانات الطرف والرصيد الافتتاحي.' }}
-                            </p>
-
-                        </div>
-
-
-                        <button
-                            type="button"
-                            wire:click="closeModal"
-                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold leading-none"
-                        >
-                            &times;
-                        </button>
-
-                    </div>
-
-
-                    {{-- Form --}}
-
-                    <form
-                        wire:submit="save"
-                        class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1"
-                    >
-
-                        {{-- Name --}}
-
-                        <div>
-
-                            <label
-                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                            >
-                                الاسم الكامل
-                                <span class="text-red-500">*</span>
-                            </label>
-
-                            <input
-                                type="text"
-                                wire:model="name"
-                                autofocus
-                                class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                            >
-
-                            @error('name')
-
-                                <span class="text-red-500 text-xs mt-1 block">
-                                    {{ $message }}
-                                </span>
-
-                            @enderror
-
-                        </div>
-
-
-                        {{-- Type + Phone --}}
-
-                        <div
-                            class="grid grid-cols-1 sm:grid-cols-2 gap-4"
-                        >
-
-                            <div>
-
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                                >
-                                    نوع الطرف
-                                    <span class="text-red-500">*</span>
-                                </label>
-
-                                <select
-                                    wire:model="type"
-                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none bg-white"
-                                >
-
-                                    <option value="customer">
-                                        زبون
-                                    </option>
-
-                                    <option value="supplier">
-                                        مورد
-                                    </option>
-
-                                    <option value="both">
-                                        زبون ومورد
-                                    </option>
-
-                                </select>
-
-                                @error('type')
-
-                                    <span class="text-red-500 text-xs mt-1 block">
-                                        {{ $message }}
-                                    </span>
-
-                                @enderror
-
-                            </div>
-
-
-                            <div>
-
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                                >
-                                    رقم الهاتف
-                                </label>
-
-                                <input
-                                    type="text"
-                                    wire:model="phone"
-                                    dir="ltr"
-                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                                >
-
-                                @error('phone')
-
-                                    <span class="text-red-500 text-xs mt-1 block">
-                                        {{ $message }}
-                                    </span>
-
-                                @enderror
-
-                            </div>
-
-                        </div>
-
-
-                        {{-- Email + Tax --}}
-
-                        <div
-                            class="grid grid-cols-1 sm:grid-cols-2 gap-4"
-                        >
-
-                            <div>
-
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                                >
-                                    البريد الإلكتروني
-                                </label>
-
-                                <input
-                                    type="email"
-                                    wire:model="email"
-                                    dir="ltr"
-                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                                >
-
-                                @error('email')
-
-                                    <span class="text-red-500 text-xs mt-1 block">
-                                        {{ $message }}
-                                    </span>
-
-                                @enderror
-
-                            </div>
-
-
-                            <div>
-
-                                <label
-                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                                >
-                                    الرقم الضريبي
-                                </label>
-
-                                <input
-                                    type="text"
-                                    wire:model="tax_number"
-                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                                >
-
-                                @error('tax_number')
-
-                                    <span class="text-red-500 text-xs mt-1 block">
-                                        {{ $message }}
-                                    </span>
-
-                                @enderror
-
-                            </div>
-
-                        </div>
-
-
-                        {{-- Address --}}
-
-                        <div>
-
-                            <label
-                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                            >
-                                الموقع / العنوان
-                            </label>
-
-                            <input
-                                type="text"
-                                wire:model="address"
-                                placeholder="مثال: نابلس - شارع سفيان"
-                                class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                            >
-
-                            @error('address')
-
-                                <span class="text-red-500 text-xs mt-1 block">
-                                    {{ $message }}
-                                </span>
-
-                            @enderror
-
-                        </div>
-
-
-                        {{-- Opening Balance --}}
-
-                        <div>
-
-                            <label
-                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
-                            >
-                                الرصيد الافتتاحي
-                            </label>
-
-
-                                <div class="relative">
-
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        wire:model="opening_balance"
-                                        placeholder="0.00"
-                                        dir="ltr"
-                                        class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 pl-16 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
-                                    >
-
-                                    <span
-                                        class="absolute left-3 top-2.5 text-xs text-gray-400"
-                                    >
-                                        شيكل
-                                    </span>
-
-                                </div>
-
-                                <p
-                                    class="text-[11px] text-gray-500 dark:text-gray-400 mt-1"
-                                >
-                                    @if ($partyId)
-                                        عند تغيير الرصيد الافتتاحي يتحرك الرصيد الحالي بنفس الفرق.
-                                    @else
-                                        عند إنشاء الطرف سيبدأ الرصيد الحالي بنفس قيمة الرصيد الافتتاحي.
-                                    @endif
-                                </p>
-
-                                @error('opening_balance')
-
-                                    <span class="text-red-500 text-xs mt-1 block">
-                                        {{ $message }}
-                                    </span>
-
-                                @enderror
-
-                        </div>
-
-
-                        {{-- Footer --}}
-
-                        <div
-                            class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
-                        >
-
-                            <button
-                                type="button"
-                                wire:click="closeModal"
-                                class="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                            >
-                                إلغاء
-                            </button>
-
-
-                            <button
-                                type="submit"
-                                wire:loading.attr="disabled"
-                                class="px-5 py-2 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
-                            >
-
-                                <span wire:loading.remove wire:target="save">
-                                    {{ $partyId ? 'تحديث البيانات' : 'حفظ البيانات' }}
-                                </span>
-
-                                <span wire:loading wire:target="save">
-                                    جاري الحفظ...
-                                </span>
-
-                            </button>
-
-                        </div>
-
-                    </form>
-
-                </div>
-
-            </div>
-
-        @endif
-
+        </div>
 
         {{-- =========================================================
             STATEMENT MODAL
@@ -2472,6 +2137,350 @@ new class extends Component {
             </div>
 
         @endif
+
+        </div>
+
+
+        {{-- =========================================================
+            CREATE / EDIT MODAL
+        ========================================================== --}}
+
+        @if ($showModal)
+
+            <div
+                class="app-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+                wire:key="party-form-modal"
+            >
+
+                <div
+                    class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-xl my-auto overflow-hidden border border-gray-100 dark:border-gray-700 max-h-[90vh] flex flex-col"
+                >
+
+                    {{-- Header --}}
+
+                    <div
+                        class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-100 dark:border-gray-700"
+                    >
+
+                        <div>
+
+                            <h3
+                                class="text-base sm:text-lg font-bold text-gray-800 dark:text-white"
+                            >
+                                {{ $partyId ? 'تعديل بيانات الطرف' : 'إضافة طرف جديد' }}
+                            </h3>
+
+                            <p
+                                class="text-[11px] text-gray-400 mt-1"
+                            >
+                                {{ $partyId
+                                    ? 'تعديل البيانات الأساسية فقط.'
+                                    : 'أدخل بيانات الطرف والرصيد الافتتاحي.' }}
+                            </p>
+
+                        </div>
+
+
+                        <button
+                            type="button"
+                            wire:click="closeModal"
+                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold leading-none"
+                        >
+                            &times;
+                        </button>
+
+                    </div>
+
+
+                    {{-- Form --}}
+
+                    <form
+                        wire:submit="save"
+                        class="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1"
+                    >
+
+                        {{-- Name --}}
+
+                        <div>
+
+                            <label
+                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                            >
+                                الاسم الكامل
+                                <span class="text-red-500">*</span>
+                            </label>
+
+                            <input
+                                type="text"
+                                wire:model="name"
+                                autofocus
+                                class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                            >
+
+                            @error('name')
+
+                                <span class="text-red-500 text-xs mt-1 block">
+                                    {{ $message }}
+                                </span>
+
+                            @enderror
+
+                        </div>
+
+
+                        {{-- Type + Phone --}}
+
+                        <div
+                            class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                        >
+
+                            <div>
+
+                                <label
+                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                                >
+                                    نوع الطرف
+                                    <span class="text-red-500">*</span>
+                                </label>
+
+                                <select
+                                    wire:model="type"
+                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none bg-white"
+                                >
+
+                                    <option value="customer">
+                                        زبون
+                                    </option>
+
+                                    <option value="supplier">
+                                        مورد
+                                    </option>
+
+                                    <option value="both">
+                                        زبون ومورد
+                                    </option>
+
+                                </select>
+
+                                @error('type')
+
+                                    <span class="text-red-500 text-xs mt-1 block">
+                                        {{ $message }}
+                                    </span>
+
+                                @enderror
+
+                            </div>
+
+
+                            <div>
+
+                                <label
+                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                                >
+                                    رقم الهاتف
+                                </label>
+
+                                <input
+                                    type="text"
+                                    wire:model="phone"
+                                    dir="ltr"
+                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                                >
+
+                                @error('phone')
+
+                                    <span class="text-red-500 text-xs mt-1 block">
+                                        {{ $message }}
+                                    </span>
+
+                                @enderror
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- Email + Tax --}}
+
+                        <div
+                            class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                        >
+
+                            <div>
+
+                                <label
+                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                                >
+                                    البريد الإلكتروني
+                                </label>
+
+                                <input
+                                    type="email"
+                                    wire:model="email"
+                                    dir="ltr"
+                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                                >
+
+                                @error('email')
+
+                                    <span class="text-red-500 text-xs mt-1 block">
+                                        {{ $message }}
+                                    </span>
+
+                                @enderror
+
+                            </div>
+
+
+                            <div>
+
+                                <label
+                                    class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                                >
+                                    الرقم الضريبي
+                                </label>
+
+                                <input
+                                    type="text"
+                                    wire:model="tax_number"
+                                    class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                                >
+
+                                @error('tax_number')
+
+                                    <span class="text-red-500 text-xs mt-1 block">
+                                        {{ $message }}
+                                    </span>
+
+                                @enderror
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- Address --}}
+
+                        <div>
+
+                            <label
+                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                            >
+                                الموقع / العنوان
+                            </label>
+
+                            <input
+                                type="text"
+                                wire:model="address"
+                                placeholder="مثال: نابلس - شارع سفيان"
+                                class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                            >
+
+                            @error('address')
+
+                                <span class="text-red-500 text-xs mt-1 block">
+                                    {{ $message }}
+                                </span>
+
+                            @enderror
+
+                        </div>
+
+
+                        {{-- Opening Balance --}}
+
+                        <div>
+
+                            <label
+                                class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1"
+                            >
+                                الرصيد الافتتاحي
+                            </label>
+
+
+                                <div class="relative">
+
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        wire:model="opening_balance"
+                                        placeholder="0.00"
+                                        dir="ltr"
+                                        class="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg p-2.5 pl-16 text-sm focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-600 focus:outline-none"
+                                    >
+
+                                    <span
+                                        class="absolute left-3 top-2.5 text-xs text-gray-400"
+                                    >
+                                        شيكل
+                                    </span>
+
+                                </div>
+
+                                <p
+                                    class="text-[11px] text-gray-500 dark:text-gray-400 mt-1"
+                                >
+                                    @if ($partyId)
+                                        عند تغيير الرصيد الافتتاحي يتحرك الرصيد الحالي بنفس الفرق.
+                                    @else
+                                        عند إنشاء الطرف سيبدأ الرصيد الحالي بنفس قيمة الرصيد الافتتاحي.
+                                    @endif
+                                </p>
+
+                                @error('opening_balance')
+
+                                    <span class="text-red-500 text-xs mt-1 block">
+                                        {{ $message }}
+                                    </span>
+
+                                @enderror
+
+                        </div>
+
+
+                        {{-- Footer --}}
+
+                        <div
+                            class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
+                        >
+
+                            <button
+                                type="button"
+                                wire:click="closeModal"
+                                class="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                            >
+                                إلغاء
+                            </button>
+
+
+                            <button
+                                type="submit"
+                                wire:loading.attr="disabled"
+                                class="px-5 py-2 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+
+                                <span wire:loading.remove wire:target="save">
+                                    {{ $partyId ? 'تحديث البيانات' : 'حفظ البيانات' }}
+                                </span>
+
+                                <span wire:loading wire:target="save">
+                                    جاري الحفظ...
+                                </span>
+
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        @endif
+
+
 
     </div>
 
