@@ -116,3 +116,109 @@
 .reports-invoice-paid{display:inline-block;font-size:11px;font-weight:700;color:#047857;white-space:nowrap}
 .dark .reports-invoice-paid{color:#6ee7b7}
 .reports-column-filter{display:flex;flex-direction:column;gap:7px;min-width:80px}.reports-column-filter input{width:100%;min-width:0;border:1px solid #c9d6ed;border-radius:6px;background:#fff;color:#243454;padding:6px 8px;font-size:12px;font-weight:400}.reports-column-filter input:focus{outline:2px solid #4f7bff;outline-offset:1px}.reports-column-search-status{padding:8px 12px;font-size:11px;color:#64748b}.reports-column-search-status button{color:#1543e0;font-weight:700;margin-inline-end:12px}.dark .reports-column-filter input{background:#172033;border-color:#405371;color:#e2e8f0}.dark .reports-column-search-status,.dark .reports-column-search-status button{color:#b5ceff}
+
+/* Horizontal report navigation and the expandable account picker. */
+.reports-center.reports-redesign {
+    height: auto;
+    min-height: calc(100dvh - 76px);
+    display: block;
+    overflow: visible;
+    padding: 20px !important;
+    background: radial-gradient(ellipse at top right, #eaf0ff 0, transparent 45%), #f7f9ff;
+}
+.reports-redesign .reports-header { position: relative; justify-content: center; align-items: center; margin-bottom: 12px; }
+.reports-redesign .reports-title { flex-direction: row-reverse; text-align: center; }
+.reports-redesign .reports-title-icon { background: transparent; color: #1460ff; box-shadow: none; }
+.reports-redesign .reports-title h1 { font-size: 24px; }
+.reports-redesign .reports-legacy-link { position: absolute; inset-inline-end: 0; }
+.reports-redesign .reports-workspace,
+.reports-redesign .reports-workspace.is-statement { display: flex; flex-direction: column; align-items: stretch; gap: 10px; max-width: 1480px; margin-inline: auto; }
+.reports-redesign .reports-workspace>* { width: 100%; min-width: 0; }
+.reports-category-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; }
+.reports-category-tab, .reports-report-tab { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 7px; border: 1px solid #e2e9f7; border-radius: 10px; padding: 12px 10px; color: #34476b; background: linear-gradient(180deg, #fff, #f8faff); font-size: 12px; font-weight: 750; cursor: pointer; transition: background .15s, border-color .15s; }
+.reports-category-tab { min-height: 60px; padding: 8px; box-shadow: 0 2px 4px #1d49a509; }
+.reports-category-tab svg { width: 24px; height: 24px; }
+.reports-category-tab:hover, .reports-report-tab:hover { background: #edf3ff; border-color: #acc3ff; }
+.reports-category-tab.is-active, .reports-report-tab.is-active { color: #fff; background: #1554f6; border-color: #1554f6; box-shadow: 0 3px 8px #1554f625; }
+.reports-category-tab:focus-visible, .reports-report-tab:focus-visible { outline: 2px solid #1554f6; outline-offset: 3px; }
+.reports-subnavigation { border: 1px solid #dce6fa; border-radius: 12px; background: #fff; padding: 10px; box-shadow: 0 3px 6px #1d49a509; }
+.reports-subnavigation>summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; color: #233b6d; font-size: 13px; font-weight: 800; }
+.reports-subnavigation>summary::-webkit-details-marker { display: none; }
+.reports-subnavigation>summary svg { width: 22px; height: 22px; padding: 3px; border-radius: 5px; background: #edf3ff; color: #1554f6; }
+.reports-subnavigation:not([open])>summary svg { transform: rotate(180deg); }
+.reports-report-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 8px; padding-top: 10px; }
+.reports-report-tab { min-height: 64px; padding: 8px; line-height: 1.6; }
+.reports-report-tab svg { width: 22px; height: 22px; flex: none; }
+.reports-redesign .reports-account-directory { display: block; overflow: visible; padding: 10px 14px; border-radius: 12px; }
+.reports-directory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reports-redesign .reports-directory-heading h2 { margin: 0; font-size: 16px; }
+.reports-directory-heading p { margin-top: 4px; color: #63749a; font-size: 12px; }
+#report-account-picker { margin-top: 12px; }
+#report-account-picker[hidden] { display: none; }
+.reports-directory-tools { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+.reports-directory-tools .reports-account-types { flex: 1; margin: 0; max-width: 520px; }
+.reports-directory-tools>select, .reports-directory-tools>[data-flux-select] { max-width: 190px; margin-inline-start: auto; }
+.reports-redesign .reports-account-types button { padding: 6px 10px; }
+.reports-redesign .reports-directory-hint { margin: 8px 0; }
+.reports-redesign .reports-account-labels { padding: 6px 10px; }
+.reports-redesign .reports-workspace.is-statement .reports-account-list { max-height: 230px; min-height: 0; border-radius: 8px; }
+.reports-redesign .reports-account-row { padding: 8px 12px; border-radius: 0; }
+.reports-redesign .reports-account-row:nth-child(even) { background: #f8faff; }
+.reports-redesign .reports-account-row.is-selected { background: #e2eaff; box-shadow: inset -3px 0 #1554f6; }
+.reports-party-balance { border-radius: 20px; padding: 3px 10px; min-width: 78px; text-align: center; }
+.reports-party-balance.is-positive { background: #e2f7e9; color: #18733a; }
+.reports-party-balance.is-negative { background: #ffe6e6; color: #b4232c; }
+.reports-redesign .reports-account-end { padding-top: 9px; }
+.reports-redesign .reports-content { overflow: visible; gap: 12px; }
+.reports-redesign .reports-filter, .reports-redesign .reports-result { padding: 14px; border-radius: 12px; box-shadow: 0 2px 5px #1d49a508; }
+.reports-redesign .reports-result { display: block; min-height: 0; }
+.reports-redesign .reports-filter-fields { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; padding-top: 12px; }
+.reports-redesign .reports-filter-fields>.reports-filter-wide { grid-column: 1 / -1; }
+.reports-redesign .reports-result-heading h2 { font-size: 16px; }
+.reports-redesign .reports-result-heading p { font-size: 11px; color: #64748b; }
+.reports-balance-summary { margin: 12px 0; }
+.reports-balance-summary>summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; color: #425578; font-size: 12px; font-weight: 700; }
+.reports-balance-summary>summary span { font-size: 10px; font-weight: 400; }
+.reports-balance-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 9px; }
+.reports-balance-card { padding: 11px 14px; border-radius: 9px; }
+.reports-balance-card dt { display: flex; align-items: center; justify-content: space-between; flex-direction: row-reverse; gap: 8px; font-size: 11px; font-weight: 700; }
+.reports-balance-card dt svg { width: 18px; height: 18px; }
+.reports-balance-card dd { margin-top: 5px; text-align: right; font-size: 20px; font-weight: 850; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.reports-balance-card.is-opening { background: #eaf0ff; color: #1847bb; }
+.reports-balance-card.is-debit { background: #e7f8e9; color: #197137; }
+.reports-balance-card.is-credit { background: #fff0ed; color: #b52d29; }
+.reports-balance-card.is-closing { background: #f0eaff; color: #5431ad; }
+.reports-redesign .reports-workspace.is-statement .reports-table-wrap, .reports-redesign .reports-data-scroll { max-height: 58dvh; min-height: 0; }
+.reports-redesign .reports-statement-table tbody tr:nth-child(even) { background: #f8faff; }
+.reports-redesign .reports-statement-table tbody tr:hover { background: #eef3ff; }
+.reports-redesign .reports-statement-table tbody td { padding-block: 10px; }
+.reports-redesign .reports-result-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #e6ecf8; }
+.reports-result-footer>span { font-size: 12px; font-weight: 700; color: #596a89; }
+.dark .reports-center.reports-redesign { background: #101a2c; }
+.dark .reports-category-tab, .dark .reports-report-tab, .dark .reports-subnavigation { background: #19263c; border-color: #30415d; color: #d2def7; }
+.dark .reports-category-tab.is-active, .dark .reports-report-tab.is-active { background: #2054cf; color: white; }
+.dark .reports-subnavigation>summary { color: #d2def7; }
+.dark .reports-redesign .reports-account-row:nth-child(even), .dark .reports-redesign .reports-statement-table tbody tr:nth-child(even) { background: #1b2940; }
+.dark .reports-redesign .reports-account-row.is-selected, .dark .reports-redesign .reports-statement-table tbody tr:hover { background: #233858; }
+.dark .reports-party-balance.is-positive, .dark .reports-balance-card.is-debit { background: #163c2b; color: #9be8b9; }
+.dark .reports-party-balance.is-negative, .dark .reports-balance-card.is-credit { background: #47282d; color: #ffb5b5; }
+.dark .reports-balance-card.is-opening { background: #213764; color: #b4ceff; }
+.dark .reports-balance-card.is-closing { background: #35295b; color: #d4c2ff; }
+.dark .reports-balance-summary>summary, .dark .reports-directory-heading p, .dark .reports-result-footer>span { color: #a7b8d7; }
+.dark .reports-redesign .reports-result-footer { border-color: #30415d; }
+@media (max-width: 760px) {
+    .reports-center.reports-redesign { padding: 10px !important; }
+    .reports-redesign .reports-header { flex-direction: column; gap: 8px; }
+    .reports-redesign .reports-legacy-link { position: static; }
+    .reports-category-tabs { grid-template-columns: repeat(6, minmax(85px, 1fr)); gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+    .reports-category-tab { min-height: 64px; padding: 8px; }
+    .reports-report-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+    .reports-report-tab { flex: 0 0 110px; padding: 8px 5px; font-size: 10px; }
+    .reports-directory-heading { align-items: flex-start; flex-direction: column; }
+    .reports-directory-tools { flex-wrap: wrap; }
+    .reports-directory-tools .reports-account-types { min-width: 100%; }
+    .reports-balance-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .reports-balance-card dd { font-size: 17px; }
+    .reports-redesign .reports-result-footer .reports-actions { width: 100%; }
+    .reports-redesign .reports-filter-fields { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}

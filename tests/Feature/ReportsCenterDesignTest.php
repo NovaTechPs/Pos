@@ -262,3 +262,33 @@ test('every report supports column searches on its result query', function (stri
             ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 0);
     }
 })->with(array_keys(ReportingService::REPORTS));
+
+test('horizontal report layout collapses the account picker and keeps balances and actions available', function (): void {
+    ($this->makeOrder)(['invoice_number' => 'DESIGN-203', 'notes' => 'فاتورة توريد أصناف']);
+    $component = Livewire::test('pages::tenant.reports.center')
+        ->assertSet('showAccountDirectory', true)
+        ->assertSeeHtml('reports-category-tabs')
+        ->assertSeeHtml('reports-report-tabs')
+        ->assertSeeHtml('aria-controls="report-account-picker"')
+        ->assertDontSeeHtml('reports-balance-cards')
+        ->call('showStatementParty', $this->customer->id)
+        ->assertSet('showAccountDirectory', false)
+        ->assertSee(['اختيار زبون / مورد', 'الرصيد السابق', 'إجمالي المدين', 'إجمالي الدائن', 'الرصيد النهائي', 'عدد الحركات'])
+        ->assertSeeHtml('reports-balance-cards')
+        ->assertSeeHtml('columnFilters.notes')
+        ->assertSeeHtml('columnFilters.event_date')
+        ->assertSeeHtml('reports-result-footer');
+
+    expect($component->html())->toMatch('/id="report-account-picker"\s+hidden/');
+
+    $summary = $component->viewData('definition')['summary'];
+    expect((float) $summary['رصيد أول الفترة'])->toBe(100.0)
+        ->and((float) $summary['إجمالي المدين'])->toBe(300.0)
+        ->and((float) $summary['رصيد آخر الفترة'])->toBe(400.0);
+
+    $component->set('showAccountDirectory', true)
+        ->assertSee('طي قائمة الحسابات')
+        ->assertViewHas('statementReady', true)
+        ->call('resetFilters')->assertSet('showAccountDirectory', true)
+        ->assertDontSeeHtml('reports-balance-cards');
+});

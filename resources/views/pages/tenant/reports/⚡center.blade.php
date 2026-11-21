@@ -67,7 +67,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
+        $this->reset('showAccountDirectory', 'columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -83,6 +83,7 @@ new class extends Component {
     public string $search = '';
     /** @var array<string, string> */
     public array $columnFilters = [];
+    public bool $showAccountDirectory = true;
     public string $partyType = 'all';
     public string $balanceSide = 'all';
     public string $stockFilter = 'all';
@@ -174,6 +175,7 @@ new class extends Component {
             $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
             $this->service()->prepare($this->report, $this->filters());
             $this->appliedStatementSignature = $this->statementSignature();
+            $this->showAccountDirectory = false;
             $this->dispatch('statement-shown');
         }
     }
@@ -301,6 +303,7 @@ new class extends Component {
 
     public function updatedReport(): void
     {
+        $this->showAccountDirectory = true;
         $this->columnFilters = [];
         $this->resetPage();
         $this->resetErrorBag();
@@ -424,25 +427,16 @@ new class extends Component {
 };
 ?>
 
-<flux:main dir="rtl" class="reports-center" data-keyboard-tables>
+<flux:main dir="rtl" class="reports-center reports-redesign" data-keyboard-tables>
     @php($groupIcons = ['الحسابات' => 'circle-stack', 'المبيعات' => 'shopping-bag', 'المشتريات' => 'shopping-cart', 'المخزون' => 'cube', 'الموظفون' => 'user-group', 'المالية' => 'chart-bar'])
     <header class="reports-header">
         <div class="reports-title">
             <span class="reports-title-icon" aria-hidden="true"><flux:icon.share variant="outline" /></span>
             <div><flux:heading size="xl">مركز التقارير</flux:heading><flux:text>تقارير شاملة للمبيعات والمشتريات والمخزون والحسابات والموظفين</flux:text></div>
         </div>
-        <div class="reports-actions">
-            <flux:button :href="route('tenant.analytics')" icon="clock" wire:navigate>التحليلات السابقة</flux:button>
-            <flux:button wire:click="exportCsv" icon="table-cells" class="reports-excel" wire:loading.attr="disabled" :disabled="!$valid">تصدير Excel</flux:button>
-            @if ($printUrl)
-                <flux:button :href="$printUrl.'&format=pdf'" icon="document-arrow-down" class="reports-pdf">تصدير PDF</flux:button>
-                <flux:button :href="$printUrl" icon="printer" target="_blank" rel="noopener" variant="primary">طباعة التقرير</flux:button>
-            @endif
-        </div>
+        <flux:button :href="route('tenant.analytics')" icon="clock" wire:navigate class="reports-legacy-link">التحليلات السابقة</flux:button>
     </header>
     <div class="reports-workspace {{ $report === 'statement' ? 'is-statement' : '' }}" x-data="{
-                expandedReportGroup: @js($activeGroup),
-                toggleReportGroup(group) { this.expandedReportGroup = this.expandedReportGroup === group ? null : group },
                 parties() { return [...this.$root.querySelectorAll('[data-statement-party]')] },
                 rows() { return [...this.$root.querySelectorAll('[data-statement-row]')] },
                 move(items, step) {
@@ -453,41 +447,46 @@ new class extends Component {
                     next.scrollIntoView({ block: 'nearest' });
                 },
                 toStatement() { this.rows()[0]?.focus() },
-                toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; if (party) { party.focus() } },
+                async toParties() { await $wire.set('showAccountDirectory', true); this.$nextTick(() => { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; party?.focus() }) },
             }" x-on:statement-shown.window="$nextTick(() => requestAnimationFrame(() => { const row = rows()[0]; if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }) } }))">
-    <aside class="reports-menu" aria-label="اختيار التقرير">
-        @foreach($navigationGroups as $group => $entries)
-            <section wire:key="report-menu-group-{{ $loop->index }}" class="reports-menu-group {{ $activeGroup === $group ? 'is-expanded' : '' }}">
-                <button type="button" x-on:click="toggleReportGroup(@js($group))" x-bind:aria-expanded="expandedReportGroup === @js($group)" class="reports-menu-group-toggle" aria-expanded="{{ $activeGroup === $group ? 'true' : 'false' }}">
-                    <flux:icon :name="$groupIcons[$group]" variant="outline" />
-                    <span>تقارير {{ $group }}</span>
-                    <span x-show="expandedReportGroup === @js($group)"><flux:icon.chevron-up variant="outline" /></span>
-                    <span x-show="expandedReportGroup !== @js($group)"><flux:icon.chevron-down variant="outline" /></span>
-                </button>
-                <div class="reports-menu-items" role="group" aria-label="تقارير {{ $group }}" x-show="expandedReportGroup === @js($group)" @if ($activeGroup !== $group) style="display: none" @endif>
-                    @foreach($entries as $key => $entry)
-                        <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" class="reports-menu-item {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}"><span class="reports-radio" aria-hidden="true"></span>{{ $entry[0] }}</button>
-                    @endforeach
-                </div>
-            </section>
+    <nav class="reports-category-tabs" aria-label="تصنيفات التقارير">
+        @foreach ($navigationGroups as $group => $entries)
+            <button type="button" wire:key="report-category-{{ $loop->index }}" wire:click="selectReportGroup('{{ $group }}')" class="reports-category-tab {{ $activeGroup === $group ? 'is-active' : '' }}" aria-pressed="{{ $activeGroup === $group ? 'true' : 'false' }}">
+                <flux:icon :name="$groupIcons[$group]" variant="outline" /><span>{{ $group }}</span>
+            </button>
         @endforeach
-    </aside>
+    </nav>
+    <details class="reports-subnavigation" open wire:key="report-subnavigation-{{ $activeGroup }}">
+        <summary><span>تقارير {{ $activeGroup }}</span><flux:icon.chevron-down variant="outline" /></summary>
+        <nav class="reports-report-tabs" aria-label="اختيار التقرير">
+            @foreach ($navigationGroups[$activeGroup] ?? [] as $key => $entry)
+                <button type="button" wire:key="report-menu-{{ $key }}" wire:click="selectReport('{{ $key }}')" class="reports-report-tab {{ $report === $key ? 'is-active' : '' }}" aria-current="{{ $report === $key ? 'page' : 'false' }}">
+                    <flux:icon :name="match ($key) { 'statement', 'balances', 'aging' => 'users', 'cashflow', 'daily-cash', 'expenses' => 'banknotes', 'inventory', 'movements', 'movement-summary', 'stagnant', 'expiring', 'product-history' => 'cube', default => 'document-chart-bar' }" variant="outline" />
+                    <span>{{ $entry[0] }}</span>
+                </button>
+            @endforeach
+        </nav>
+    </details>
     @if ($report === 'statement')
     <aside class="reports-account-directory" data-statement-directory>
-        <h2><flux:icon.user-group variant="outline" />قائمة الزباين</h2>
+        <div class="reports-directory-heading">
+            <div><h2><flux:icon.user-group variant="outline" />كشف حساب / زبون / مورد</h2><p>{{ $statementParty?->name ?? 'اختر الحساب لعرض الحركات والأرصدة' }}</p></div>
+            <flux:button type="button" variant="primary" icon="users" wire:click="$toggle('showAccountDirectory')" aria-controls="report-account-picker" aria-expanded="{{ $showAccountDirectory ? 'true' : 'false' }}">{{ $showAccountDirectory ? 'طي قائمة الحسابات' : 'اختيار زبون / مورد' }}</flux:button>
+        </div>
+        <div id="report-account-picker" @if (! $showAccountDirectory) hidden @endif>
         <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
-        <div class="reports-account-types" role="group" aria-label="نوع الحساب">
+        <div class="reports-directory-tools"><div class="reports-account-types" role="group" aria-label="نوع الحساب">
             @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
                 <button type="button" wire:key="statement-party-type-{{ $type }}" wire:click="$set('statementPartyType', '{{ $type }}')" aria-pressed="{{ $statementPartyType === $type ? 'true' : 'false' }}" class="{{ $statementPartyType === $type ? 'is-active' : '' }}">{{ $label }}</button>
             @endforeach
         </div>
         <flux:select aria-label="فلتر رصيد الحساب" wire:model.live="statementBalanceFilter"><option value="all">كل الأرصدة</option><option value="nonzero">رصيد غير صفري</option></flux:select>
-        <p class="reports-directory-hint">دليل الحسابات · ↑ ↓ للتنقل · Enter لعرض الكشف</p>
+        </div><p class="reports-directory-hint">دليل الحسابات · ↑ ↓ للتنقل · Enter لعرض الكشف</p>
         <div class="reports-account-labels"><span>الاسم / رقم الحساب</span><span>الرصيد الحالي</span></div>
         <div class="reports-account-list" x-on:keydown.arrow-down.prevent="move(parties(), 1)" x-on:keydown.arrow-up.prevent="parties().indexOf(document.activeElement) === 0 ? $root.querySelector('input[data-statement-party-search], [data-statement-party-search] input')?.focus() : move(parties(), -1)" x-on:keydown.arrow-left.prevent="toStatement()">
             @forelse ($statementParties as $party)
                 <button type="button" data-statement-party data-search-option data-selected="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" aria-pressed="{{ (int) $partyId === (int) $party->id ? 'true' : 'false' }}" wire:key="statement-party-{{ $party->id }}" wire:click="showStatementParty({{ $party->id }})" wire:keydown.enter.prevent.stop="showStatementParty({{ $party->id }})" class="reports-account-row {{ (int) $partyId === (int) $party->id ? 'is-selected' : '' }}">
-                    <span><strong>{{ $party->name }}</strong><small>{{ $party->code ?: 'بدون رمز' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? $party->type }}</small></span><b dir="ltr">{{ number_format((float) $party->current_balance, 2) }}</b>
+                    <span><strong>{{ $party->name }}</strong><small>{{ $party->code ?: 'بدون رمز' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? $party->type }}</small></span><b class="reports-party-balance {{ (float) $party->current_balance < 0 ? 'is-negative' : 'is-positive' }}" dir="ltr">{{ number_format((float) $party->current_balance, 2) }}</b>
                 </button>
             @empty
                 <p class="reports-empty">لا توجد حسابات مطابقة.</p>
@@ -495,6 +494,7 @@ new class extends Component {
         </div>
         @if ($statementParties->hasPages())<div class="reports-account-pagination">{{ $statementParties->links() }}</div>@endif
         <footer class="reports-account-end" data-statement-directory-end>نهاية قائمة الحسابات</footer>
+        </div>
     </aside>
     @endif
     <div class="reports-content">
@@ -502,16 +502,6 @@ new class extends Component {
     <form wire:submit="applyFilters" class="reports-filter reports-statement-filter space-y-4" data-statement-filter-panel>
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div class="reports-selected-account">
-                <span>الحساب</span>
-                @if ($statementParty)
-                    <strong>{{ $statementParty->name }}</strong>
-                    <small>{{ $statementParty->code ?: 'بدون رقم حساب' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</small>
-                @else
-                    <strong class="is-empty">اختر حساباً من القائمة</strong>
-                @endif
-                @error('partyId')<p role="alert">{{ $message }}</p>@enderror
-            </div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
             @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
@@ -614,6 +604,14 @@ new class extends Component {
     </header>
     @if ($report === 'statement')
         @if ($statementReady)
+            <details class="reports-balance-summary" open>
+                <summary>ملخص الأرصدة <span>طي / عرض الملخص</span></summary>
+                <dl class="reports-balance-cards">
+                    @foreach (['رصيد أول الفترة' => ['الرصيد السابق', 'opening', 'circle-stack'], 'إجمالي المدين' => ['إجمالي المدين', 'debit', 'arrow-down-left'], 'إجمالي الدائن' => ['إجمالي الدائن', 'credit', 'arrow-up-right'], 'رصيد آخر الفترة' => ['الرصيد النهائي', 'closing', 'scale']] as $key => [$label, $tone, $icon])
+                        <div class="reports-balance-card is-{{ $tone }}" wire:key="balance-card-{{ $tone }}"><dt><flux:icon :name="$icon" variant="outline" />{{ $label }}</dt><dd dir="ltr">{{ number_format((float) ($definition['summary'][$key] ?? 0), 2) }}</dd></div>
+                    @endforeach
+                </dl>
+            </details>
             <section data-statement-ledger class="min-w-0 space-y-4" x-on:keydown.arrow-down.prevent="move(rows(), 1)" x-on:keydown.arrow-up.prevent="move(rows(), -1)" x-on:keydown.arrow-right.prevent="toParties()">
                 @include('pages.tenant.reports.partials.statement-result')
             </section>
@@ -630,6 +628,16 @@ new class extends Component {
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
     @endif
+    <footer class="reports-result-footer">
+        <span>{{ $report === 'statement' ? 'عدد الحركات' : 'عدد النتائج' }}: {{ $rows->total() }}</span>
+        <div class="reports-actions">
+            <flux:button wire:click="exportCsv" icon="table-cells" class="reports-excel" wire:loading.attr="disabled" :disabled="!$valid">تصدير Excel</flux:button>
+            @if ($printUrl)
+                <flux:button :href="$printUrl.'&format=pdf'" icon="document-arrow-down" class="reports-pdf">تصدير PDF</flux:button>
+                <flux:button :href="$printUrl" icon="printer" target="_blank" rel="noopener" variant="primary">طباعة التقرير</flux:button>
+            @endif
+        </div>
+    </footer>
     </section>
     </div>
     </div>
