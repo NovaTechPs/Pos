@@ -257,3 +257,19 @@
     .reports-report-tab { flex: 0 0 auto; padding: 5px 10px; font-size: 11px; }
     .reports-account-trigger-hint { display: none; }
 }
+
+/* Customer list inside the dropdown, laid out like the former sidebar directory. */
+.reports-redesign #report-account-picker.reports-account-panel { inset-inline-end: auto; width: min(360px, 100%); padding: 14px; border-radius: 16px; }
+.reports-account-panel>h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 15px; font-weight: 900; }
+.reports-account-panel>h2 svg { width: 22px; height: 22px; color: #1554f6; }
+.reports-account-panel .reports-directory-tools { flex-direction: column; align-items: stretch; gap: 8px; margin-top: 10px; }
+.reports-account-panel .reports-directory-tools .reports-account-types { max-width: none; }
+.reports-redesign .reports-account-panel .reports-account-types button { padding: 9px 3px; border-radius: 9px; }
+.reports-account-panel .reports-directory-tools>select, .reports-account-panel .reports-directory-tools>[data-flux-select] { max-width: none; margin: 0; }
+.reports-redesign .reports-account-panel .reports-account-row { padding: 11px 8px; border-radius: 7px; }
+.reports-redesign .reports-account-panel .reports-account-row:nth-child(even) { background: transparent; }
+.reports-redesign .reports-account-panel .reports-account-row:hover { background: #f0f5ff; }
+.reports-redesign .reports-account-panel .reports-account-row.is-selected { background: #dce7ff; color: #063dcc; box-shadow: inset -3px 0 #124bfa; }
+.reports-account-panel .reports-party-balance { min-width: 0; padding: 0; background: transparent !important; }
+.reports-account-panel .reports-party-balance.is-positive, .reports-account-panel .reports-party-balance.is-negative { color: inherit; }
+.dark .reports-redesign .reports-account-panel .reports-account-row:hover, .dark .reports-redesign .reports-account-panel .reports-account-row.is-selected { background: #233858; color: #b5ceff; }

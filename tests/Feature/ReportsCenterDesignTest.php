@@ -263,26 +263,31 @@ test('every report supports column searches on its result query', function (stri
     }
 })->with(array_keys(ReportingService::REPORTS));
 
-test('horizontal report layout collapses the account picker and keeps balances and actions available', function (): void {
+test('horizontal report layout keeps the account dropdown closed until clicked and drops the balance cards', function (): void {
     ($this->makeOrder)(['invoice_number' => 'DESIGN-203', 'notes' => 'فاتورة توريد أصناف']);
     $component = Livewire::test('pages::tenant.reports.center')
-        ->assertSet('showAccountDirectory', true)
+        ->assertSet('showAccountDirectory', false)
         ->assertSeeHtml('reports-category-tabs')
         ->assertSeeHtml('reports-report-tabs')
         ->assertSeeHtml('aria-controls="report-account-picker"')
         ->assertSeeHtml('reports-account-dropdown')
-        ->assertSeeHtml('reports-account-trigger is-open')
         ->assertSeeHtml('x-on:click.outside')
-        ->assertDontSeeHtml('reports-balance-cards')
+        ->assertSee(['اختيار زبون / مورد', 'قائمة الزباين']);
+
+    expect($component->html())->toMatch('/id="report-account-picker"\s+class="reports-account-panel"\s+hidden/');
+
+    $component->toggle('showAccountDirectory')
+        ->assertSet('showAccountDirectory', true)
+        ->assertSeeHtml('reports-account-trigger is-open')
+        ->assertSee('طي قائمة الحسابات')
         ->call('showStatementParty', $this->customer->id)
         ->assertSet('showAccountDirectory', false)
-        ->assertSee(['اختيار زبون / مورد', 'الرصيد السابق', 'إجمالي المدين', 'إجمالي الدائن', 'الرصيد النهائي', 'عدد الحركات'])
-        ->assertSeeHtml('reports-balance-cards')
+        ->assertSee('عدد الحركات')
+        ->assertDontSeeHtml('reports-balance-cards')
+        ->assertDontSee('ملخص الأرصدة')
         ->assertSeeHtml('columnFilters.notes')
         ->assertSeeHtml('columnFilters.event_date')
         ->assertSeeHtml('reports-result-footer');
-
-    expect($component->html())->toMatch('/id="report-account-picker"\s+class="reports-account-panel"\s+hidden/');
 
     $summary = $component->viewData('definition')['summary'];
     expect((float) $summary['رصيد أول الفترة'])->toBe(100.0)
@@ -290,8 +295,8 @@ test('horizontal report layout collapses the account picker and keeps balances a
         ->and((float) $summary['رصيد آخر الفترة'])->toBe(400.0);
 
     $component->set('showAccountDirectory', true)
-        ->assertSee('طي قائمة الحسابات')
         ->assertViewHas('statementReady', true)
-        ->call('resetFilters')->assertSet('showAccountDirectory', true)
-        ->assertDontSeeHtml('reports-balance-cards');
+        ->call('resetFilters')->assertSet('showAccountDirectory', false)
+        ->set('showAccountDirectory', true)
+        ->call('selectReport', 'balances')->assertSet('showAccountDirectory', false);
 });

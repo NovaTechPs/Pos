@@ -83,7 +83,7 @@ new class extends Component {
     public string $search = '';
     /** @var array<string, string> */
     public array $columnFilters = [];
-    public bool $showAccountDirectory = true;
+    public bool $showAccountDirectory = false;
     public string $partyType = 'all';
     public string $balanceSide = 'all';
     public string $stockFilter = 'all';
@@ -303,7 +303,7 @@ new class extends Component {
 
     public function updatedReport(): void
     {
-        $this->showAccountDirectory = true;
+        $this->showAccountDirectory = false;
         $this->columnFilters = [];
         $this->resetPage();
         $this->resetErrorBag();
@@ -477,6 +477,7 @@ new class extends Component {
             <flux:icon.chevron-down variant="outline" class="reports-account-trigger-chevron" />
         </button>
         <div id="report-account-picker" class="reports-account-panel" @if (! $showAccountDirectory) hidden @endif>
+        <h2><flux:icon.user-group variant="outline" />قائمة الزباين</h2>
         <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
         <div class="reports-directory-tools"><div class="reports-account-types" role="group" aria-label="نوع الحساب">
             @foreach (['all' => 'الكل', 'customer' => 'الزبائن', 'supplier' => 'الموردون'] as $type => $label)
@@ -607,14 +608,6 @@ new class extends Component {
     </header>
     @if ($report === 'statement')
         @if ($statementReady)
-            <details class="reports-balance-summary" open>
-                <summary>ملخص الأرصدة <span>طي / عرض الملخص</span></summary>
-                <dl class="reports-balance-cards">
-                    @foreach (['رصيد أول الفترة' => ['الرصيد السابق', 'opening', 'circle-stack'], 'إجمالي المدين' => ['إجمالي المدين', 'debit', 'arrow-down-left'], 'إجمالي الدائن' => ['إجمالي الدائن', 'credit', 'arrow-up-right'], 'رصيد آخر الفترة' => ['الرصيد النهائي', 'closing', 'scale']] as $key => [$label, $tone, $icon])
-                        <div class="reports-balance-card is-{{ $tone }}" wire:key="balance-card-{{ $tone }}"><dt><flux:icon :name="$icon" variant="outline" />{{ $label }}</dt><dd dir="ltr">{{ number_format((float) ($definition['summary'][$key] ?? 0), 2) }}</dd></div>
-                    @endforeach
-                </dl>
-            </details>
             <section data-statement-ledger class="min-w-0 space-y-4" x-on:keydown.arrow-down.prevent="move(rows(), 1)" x-on:keydown.arrow-up.prevent="move(rows(), -1)" x-on:keydown.arrow-right.prevent="toParties()">
                 @include('pages.tenant.reports.partials.statement-result')
             </section>
