@@ -67,7 +67,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('showAccountDirectory', 'columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
+        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'productView', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -83,13 +83,14 @@ new class extends Component {
     public string $search = '';
     /** @var array<string, string> */
     public array $columnFilters = [];
-    public bool $showAccountDirectory = false;
     public string $partyType = 'all';
     public string $balanceSide = 'all';
     public string $stockFilter = 'all';
     public string $source = '';
     public string $saleKind = '';
     public string $costMethod = 'recorded';
+    #[Url(as: 'product_view')]
+    public string $productView = 'summary';
     public string $voucherType = '';
     public string $paymentMethod = '';
     public string $partySearch = '';
@@ -163,7 +164,13 @@ new class extends Component {
         return ['from' => $this->from, 'to' => $this->to, 'party_id' => $this->partyId, 'product_id' => $this->productId,
             'column_filters' => $this->columnFilters, 'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
             'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod,
-            'voucher_type' => $this->voucherType, 'payment_method' => $this->paymentMethod];
+            'product_view' => $this->productView, 'voucher_type' => $this->voucherType, 'payment_method' => $this->paymentMethod];
+    }
+
+    public function updatedProductView(): void
+    {
+        $this->columnFilters = [];
+        $this->resetPage();
     }
 
     public function applyFilters(): void
@@ -175,7 +182,6 @@ new class extends Component {
             $this->validate(['partyId' => ['required', 'integer', 'min:1']], ['partyId.required' => 'اختر زبوناً أو مورداً أولاً.']);
             $this->service()->prepare($this->report, $this->filters());
             $this->appliedStatementSignature = $this->statementSignature();
-            $this->showAccountDirectory = false;
             $this->dispatch('statement-shown');
         }
     }
@@ -303,7 +309,6 @@ new class extends Component {
 
     public function updatedReport(): void
     {
-        $this->showAccountDirectory = false;
         $this->columnFilters = [];
         $this->resetPage();
         $this->resetErrorBag();
@@ -447,7 +452,7 @@ new class extends Component {
                     next.scrollIntoView({ block: 'nearest' });
                 },
                 toStatement() { this.rows()[0]?.focus() },
-                async toParties() { await $wire.set('showAccountDirectory', true); this.$nextTick(() => { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; party?.focus() }) },
+                toParties() { const parties = this.parties(); const party = parties.find((party) => party.dataset.selected === 'true') ?? parties[0]; party?.focus() },
             }" x-on:statement-shown.window="$nextTick(() => requestAnimationFrame(() => { const row = rows()[0]; if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }) } }))">
     <nav class="reports-category-tabs" aria-label="تصنيفات التقارير">
         @foreach ($navigationGroups as $group => $entries)
@@ -468,15 +473,8 @@ new class extends Component {
         </nav>
     </details>
     @if ($report === 'statement')
-    <aside class="reports-account-directory reports-account-dropdown" data-statement-directory x-on:click.outside="if ($wire.showAccountDirectory) { $wire.set('showAccountDirectory', false) }" x-on:keydown.escape="if ($wire.showAccountDirectory) { $wire.set('showAccountDirectory', false); $el.querySelector('.reports-account-trigger')?.focus() }">
-        <button type="button" class="reports-account-trigger {{ $showAccountDirectory ? 'is-open' : '' }}" wire:click="$toggle('showAccountDirectory')" aria-haspopup="listbox" aria-controls="report-account-picker" aria-expanded="{{ $showAccountDirectory ? 'true' : 'false' }}">
-            <flux:icon.user-group variant="outline" />
-            <span class="reports-account-trigger-text"><small>كشف حساب زبون / مورد</small><strong>{{ $statementParty?->name ?? 'اختر الحساب لعرض الحركات والأرصدة' }}</strong></span>
-            @if ($statementParty)<b class="reports-party-balance {{ (float) $statementParty->current_balance < 0 ? 'is-negative' : 'is-positive' }}" dir="ltr">{{ number_format((float) $statementParty->current_balance, 2) }}</b>@endif
-            <span class="reports-account-trigger-hint">{{ $showAccountDirectory ? 'طي قائمة الحسابات' : 'اختيار زبون / مورد' }}</span>
-            <flux:icon.chevron-down variant="outline" class="reports-account-trigger-chevron" />
-        </button>
-        <div id="report-account-picker" class="reports-account-panel" @if (! $showAccountDirectory) hidden @endif>
+    <aside class="reports-account-directory reports-account-sidebar" data-statement-directory>
+        <div id="report-account-picker" class="reports-account-panel">
         <h2><flux:icon.user-group variant="outline" />قائمة الزباين</h2>
         <flux:input icon="magnifying-glass" aria-label="بحث في الحسابات" data-statement-party-search wire:model.live.debounce.300ms="partySearch" x-on:keydown.arrow-down.prevent="($wire.partySearch === $event.target.value ? Promise.resolve() : ($wire.partySearch = $event.target.value, $wire.$commit())).then(() => $nextTick(() => { const party = parties()[0]; if (party) { party.focus(); party.scrollIntoView({ block: 'nearest' }) } }))" placeholder="بحث بالاسم أو رقم الحساب أو الهاتف…" />
         <div class="reports-directory-tools"><div class="reports-account-types" role="group" aria-label="نوع الحساب">
@@ -506,6 +504,16 @@ new class extends Component {
     <form wire:submit="applyFilters" class="reports-filter reports-statement-filter space-y-4" data-statement-filter-panel>
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر كشف الحساب<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="reports-selected-account">
+                <span>الحساب</span>
+                @if ($statementParty)
+                    <strong>{{ $statementParty->name }}</strong>
+                    <small>{{ $statementParty->code ?: 'بدون رقم حساب' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</small>
+                @else
+                    <strong class="is-empty">اختر حساباً من القائمة</strong>
+                @endif
+                @error('partyId')<p role="alert">{{ $message }}</p>@enderror
+            </div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
             @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
@@ -577,7 +585,13 @@ new class extends Component {
                 <flux:select label="نوع البيع" wire:model="saleKind"><option value="">الكل</option><option value="retail">مفرق</option><option value="wholesale">جملة</option></flux:select>
             </div>
         @endif
-        @if (in_array($report, ['profit', 'product-profit']))
+        @if (in_array($report, ['product-sales', 'product-profit']))
+            <flux:select label="طريقة العرض" wire:model="productView">
+                <option value="summary">إجمالي</option>
+                <option value="detailed">تفصيلي</option>
+            </flux:select>
+        @endif
+        @if (in_array($report, ['profit', 'product-profit']) || ($report === 'product-sales' && auth()->user()->can('reports.profit')))
             <flux:select label="طريقة احتساب تكلفة الصنف" wire:model="costMethod">
                 <option value="recorded">التكلفة المسجلة وقت البيع</option>
                 <option value="latest_purchase">آخر سعر شراء</option>

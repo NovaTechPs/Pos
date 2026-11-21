@@ -92,17 +92,25 @@ test('product reports distinguish damaged returns from usable returns per invoic
     expect((float) $row->returned)->toBe(17.0)
         ->and((float) $row->returned_damaged)->toBe(15.0)
         ->and((float) $row->returned_usable)->toBe(2.0)
-        ->and((float) $definition['summary']['مرتجع تالف'])->toBe(15.0)
-        ->and((float) $definition['summary']['مرتجع سليم'])->toBe(2.0);
+        ->and((float) $definition['summary']['الكمية'])->toBe(-17.0)
+        ->and((float) $definition['summary']['مجموع البيع'])->toBe(-170.0)
+        ->and(array_keys($definition['columns']))->toBe(['product_number', 'name', 'net_quantity', 'unit_price', 'revenue', 'cost_price', 'cost', 'gross_profit'])
+        ->and($definition['columns']['revenue'])->toBe('مجموع البيع')
+        ->and($definition['summary'])->not->toHaveKeys(['الهدايا', 'مرتجع تالف', 'مرتجع سليم']);
 
     Livewire::test('product-history')->call('openHistory', $this->product->id)
         ->assertSee('مرتجع تالف')->assertSee('مرتجع سليم')
         ->assertViewHas('rows', fn ($rows): bool => $rows->count() === 2);
     Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')
         ->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')
-        ->assertSee('مرتجع تالف')->assertSee('مرتجع سليم');
+        ->assertSee('سعر البيع')->assertSee('مجموع البيع')->assertSee('تكلفة القطعة')
+        ->assertSee('إجمالي التكلفة')->assertSee('إجمالي ربح الصنف')
+        ->assertDontSee('كمية الهدايا')->assertDontSee('مرتجع تالف')->assertDontSee('مرتجع سليم')
+        ->assertDontSee('قيمة السطور الصافية')
+        ->call('exportCsv')->assertFileDownloaded('report-product-sales-2026-10-10-2026-10-20.csv');
     $response = $this->get(route('tenant.reports.print', ['report' => 'product-sales'] + $this->filters))->assertSuccessful();
-    expect($response->streamedContent())->toContain('مرتجع تالف', 'مرتجع سليم');
+    expect($response->streamedContent())->toContain('مجموع البيع', 'تكلفة القطعة', 'إجمالي التكلفة', 'إجمالي ربح الصنف')
+        ->not->toContain('كمية الهدايا', 'مرتجع تالف', 'مرتجع سليم', 'قيمة السطور الصافية');
 });
 
 test('product history searches barcodes and rejects products from another tenant', function (): void {
@@ -163,6 +171,77 @@ test('product sales report includes final-day sales and fractional returns but e
     $report = (new ReportingService($this->user))->prepare('product-sales', $this->filters);
     $row = $report['query']->first();
     expect((float) $row->sold)->toBe(4.5)->and((float) $row->returned)->toBe(.5)->and((float) $row->net_quantity)->toBe(4.0)->and((float) $row->revenue)->toBe(160.0);
+});
+
+test('product pricing columns reconcile mixed prices gifts returns and zero net quantities', function (string $report): void {
+    foreach ([[2, 60, 20, false], [1, 60, 25, false], [1, 0, 10, true], [-1, -60, -25, false]] as [$quantity, $revenue, $cost, $gift]) {
+        $order = ($this->makeOrder)(['type' => $quantity < 0 ? 'return' : 'pos']);
+        $order->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id,
+            'quantity' => $quantity, 'unit_price' => $revenue / $quantity, 'total_price' => $revenue,
+            'cost_price' => $cost / $quantity, 'total_cost' => $cost, 'is_gift' => $gift]);
+    }
+    $definition = (new ReportingService($this->user))->prepare($report, $this->filters);
+    $row = $definition['query']->sole();
+    expect(array_values($definition['columns']))->toBe(['رقم الصنف', 'الصنف', 'الكمية', 'سعر البيع', 'مجموع البيع', 'تكلفة القطعة', 'إجمالي التكلفة', 'إجمالي ربح الصنف'])
+        ->and((float) $row->net_quantity)->toBe(3.0)
+        ->and((float) $row->unit_price)->toBe(20.0)
+        ->and((float) $row->revenue)->toBe(60.0)
+        ->and((float) $row->cost_price)->toBe(10.0)
+        ->and((float) $row->cost)->toBe(30.0)
+        ->and((float) $row->gross_profit)->toBe(30.0);
+
+    $return = ($this->makeOrder)(['type' => 'return']);
+    $return->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id,
+        'quantity' => -3, 'unit_price' => 10, 'total_price' => -30, 'cost_price' => 5, 'total_cost' => -15]);
+    $row = (new ReportingService($this->user))->prepare($report, $this->filters)['query']->sole();
+    expect($row->unit_price)->toBeNull()->and($row->cost_price)->toBeNull()
+        ->and((float) $row->revenue)->toBe(30.0)->and((float) $row->cost)->toBe(15.0)
+        ->and((float) $row->gross_profit)->toBe(15.0)
+        ->and(ReportingService::formatCell('unit_price', $row->unit_price))->toBe('—');
+})->with(['product-sales', 'product-profit']);
+
+test('product report detail groups by invoice product and sale price while preserving summary totals', function (string $report, string $method): void {
+    $first = ($this->makeOrder)(['invoice_number' => 'DETAIL-FIRST']);
+    $second = ($this->makeOrder)(['invoice_number' => 'DETAIL-SECOND']);
+    $return = ($this->makeOrder)(['invoice_number' => 'DETAIL-RETURN', 'type' => 'return']);
+    foreach ([[$first, 2, 10, 10], [$first, 1, 10, 5], [$first, 1, 20, 8], [$second, 1, 10, 4], [$return, -0.5, 20, -4]] as [$order, $quantity, $price, $cost]) {
+        $order->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id,
+            'quantity' => $quantity, 'unit_price' => $price, 'total_price' => $quantity * $price,
+            'cost_price' => $cost / $quantity, 'total_cost' => $cost]);
+    }
+    $filters = $this->filters + ['cost_method' => $method];
+    $service = new ReportingService($this->user);
+    $summary = $service->prepare($report, $filters);
+    $summaryRow = $summary['query']->sole();
+    $detail = $service->prepare($report, $filters + ['product_view' => 'detailed']);
+    $rows = $detail['query']->get();
+    expect($rows)->toHaveCount(4)
+        ->and(array_keys($detail['columns']))->toBe(['invoice_number', 'invoice_date', 'product_number', 'name', 'net_quantity', 'unit_price', 'revenue', 'cost_price', 'cost', 'gross_profit'])
+        ->and($detail['summary'])->toBe($summary['summary'])
+        ->and($rows->where('invoice_number', 'DETAIL-FIRST'))->toHaveCount(2);
+    $firstPrice = $rows->first(fn (object $row): bool => $row->order_id === $first->id && (float) $row->unit_price === 10.0);
+    expect((float) $firstPrice->net_quantity)->toBe(3.0)->and((float) $firstPrice->revenue)->toBe(30.0)
+        ->and((float) $firstPrice->cost)->toBe(15.0)->and((float) $firstPrice->gross_profit)->toBe(15.0);
+    foreach (['net_quantity', 'revenue', 'cost', 'gross_profit'] as $column) {
+        expect((float) $rows->sum($column))->toBe((float) $summaryRow->{$column});
+    }
+    expect((float) $summaryRow->net_quantity)->toBe(4.5)
+        ->and((float) $summaryRow->revenue)->toBe(50.0)->and((float) $summaryRow->cost)->toBe(23.0);
+})->with(['product-sales', 'product-profit'])->with(['recorded', 'latest_purchase', 'weighted_average']);
+
+test('product detail selection is shared by screen print export and reset and rejects invalid modes', function (): void {
+    $order = ($this->makeOrder)(['invoice_number' => 'DETAIL-EXPORT']);
+    $order->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id,
+        'quantity' => 2, 'unit_price' => 20, 'total_price' => 40, 'cost_price' => 5, 'total_cost' => 10]);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])
+        ->set('columnFilters', ['invoice_number' => 'old'])->set('productView', 'detailed')->assertSet('columnFilters', [])
+        ->call('applyFilters')->assertSee('DETAIL-EXPORT')->assertSee('تاريخ الفاتورة')->assertSee('product_view=detailed')
+        ->call('exportCsv')->assertFileDownloaded('report-product-sales-2026-10-10-2026-10-20.csv')
+        ->call('resetFilters')->assertSet('productView', 'summary');
+    $response = $this->get(route('tenant.reports.print', ['report' => 'product-sales', 'product_view' => 'detailed'] + $this->filters))->assertSuccessful();
+    expect($response->streamedContent())->toContain('DETAIL-EXPORT', 'تاريخ الفاتورة');
+    expect(fn () => (new ReportingService($this->user))->prepare('product-sales', $this->filters + ['product_view' => 'invalid']))->toThrow(ValidationException::class);
 });
 
 test('profit uses sale-time costs reverses return cost excludes tax and supplier payments and keeps advances separate', function (): void {
@@ -333,7 +412,7 @@ test('search matches saved product barcodes for sales and product options withou
     OrderItem::create(['tenant_id' => $this->tenant->id, 'order_id' => $sale->id, 'product_id' => $this->product->id, 'quantity' => 2.5, 'unit_price' => 40, 'total_price' => 100]);
     $report = (new ReportingService($this->user))->prepare('product-sales', array_replace($this->filters, ['search' => '000123']));
     expect($report['query']->get())->toHaveCount(1);
-    expect((float) $report['summary']['الكمية المباعة'])->toBe(2.5);
+    expect((float) $report['summary']['الكمية'])->toBe(2.5);
     Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')->set('productSearch', '000123')->assertSee('قهوة التقارير')->assertSee('data-report-product')->call('selectReportProduct', $this->product->id)->assertSet('productId', $this->product->id);
 });
 
@@ -343,6 +422,11 @@ test('report permissions are enforced on livewire selection exports and direct p
         $role->permissions()->attach(Permission::create(['name' => $name, 'display_name' => $name, 'group' => 'reports'])->id);
     }
     $staff = User::factory()->create(['tenant_id' => $this->tenant->id, 'role_id' => $role->id, 'branch_id' => $this->branch->id, 'is_owner' => false, 'type' => 'tenant_user']);
+    $definition = (new ReportingService($staff))->prepare('product-sales', $this->filters);
+    expect(array_keys($definition['columns']))->toBe(['product_number', 'name', 'net_quantity', 'unit_price', 'revenue']);
+    Livewire::actingAs($staff)->test('pages::tenant.reports.center')->set('report', 'product-sales')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')
+        ->assertDontSee('تكلفة القطعة')->assertDontSee('إجمالي ربح الصنف')->assertDontSee('طريقة احتساب تكلفة الصنف');
     Livewire::actingAs($staff)->test('pages::tenant.reports.center')->assertSet('report', 'sales')->set('report', 'profit')->assertForbidden();
     $this->actingAs($staff)->get(route('tenant.reports.print', ['report' => 'payroll'] + $this->filters))->assertForbidden();
     $this->get(route('tenant.reports.print', ['report' => 'profit'] + $this->filters))->assertForbidden();
@@ -401,7 +485,7 @@ test('profit costing supports latest purchase and quantity weighted averages thr
     $definition = $service->prepare('product-profit', $filters);
     $row = $definition['query']->sole();
     expect((float) $row->cost)->toBe($expectedCost)->and((float) $row->gross_profit)->toBe(200 - $expectedCost)
-        ->and((float) $definition['summary']['التكلفة'])->toBe($expectedCost);
+        ->and((float) $definition['summary']['إجمالي التكلفة'])->toBe($expectedCost);
     $profit = $service->prepare('profit', $filters)['query']->get()->keyBy('label');
     expect((float) $profit['تكلفة البضاعة بعد عكس تكلفة المردود']->amount)->toBe($expectedCost);
     expect((float) $sale->fresh()->total_cost)->toBe(35.0);
@@ -455,7 +539,7 @@ test('statement directory starts with all parties and supports keyboard navigati
         ->assertSeeHtml('data-statement-directory-end')
         ->assertSee('نهاية قائمة الحسابات')
         ->assertSee('تقارير الحسابات')->assertSee('المبيعات')->assertSee('المشتريات')
-        ->assertSeeHtml('aria-expanded="false"')->assertSeeHtml('reports-category-tabs')
+        ->assertSeeHtml('reports-account-sidebar')->assertSeeHtml('reports-category-tabs')
         ->assertSeeHtml('x-on:keydown.arrow-left.prevent="toStatement()"')
         ->call('selectStatementParty', $this->customer->id)
         ->assertSeeHtml('data-selected="true"')->assertDontSee('KEYBOARD-ROW')

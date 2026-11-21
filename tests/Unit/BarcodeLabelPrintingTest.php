@@ -53,6 +53,14 @@ test('label preview and print fit the complete barcode and preserve quiet zones'
         }
         assert.ok(printedHtml.includes('preserveAspectRatio="xMidYMid meet"'));
         assert.ok(printedHtml.includes('size: 50mm 25mm'));
+        const printBarcodeStyle = printedHtml.match(/\.barcode-box\s*\{([^}]+)\}/)[1];
+        const previewBarcodeStyle = blade.match(/id="preview-barcode-wrapper"[\s\S]*?style="([^"]+)"/)[1];
+        for (const style of [printBarcodeStyle, previewBarcodeStyle]) {
+            const padding = style.match(/padding:\s*0\s+([\d.]+)mm\s+0\s+([\d.]+)mm/);
+            assert.ok(padding, 'Barcode must reserve physical left and right margins');
+            assert.ok(Math.abs(Number(padding[1]) - Number(padding[2]) - 2) < 0.001, 'Extra right inset moves barcode toward label center');
+            assert.ok(style.includes('min-width: 0'), 'Barcode must fit within the remaining label width');
+        }
     })().catch(error => { console.error(error); process.exitCode = 1; });
     JS;
 

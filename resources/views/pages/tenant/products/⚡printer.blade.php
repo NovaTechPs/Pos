@@ -1407,7 +1407,7 @@ new class extends Component
 
                                     data-barcode="{{ $selectedBarcode }}"
 
-                        style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;"
+                        style="flex: 1 1 0; min-width: 0; box-sizing: border-box; padding: 0 2.3mm 0 0.3mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;"
 
                                 >
 
@@ -1619,7 +1619,7 @@ body { font-family: Tahoma, Arial, sans-serif; color: #000; }
 .label { width: ${w}mm; height: ${h}mm; padding: 1mm 1.2mm 1.3mm; display: flex; flex-direction: column; gap: 0.4mm; overflow: hidden; }
 .title { flex: 0 0 auto; max-height: 8mm; font-size: 8pt; font-weight: 800; line-height: 1.05; text-align: center; overflow: hidden; overflow-wrap: anywhere; }
 .content { display: flex; flex: 1 1 0; min-height: 0; gap: 0.8mm; direction: rtl; align-items: stretch; }
-.barcode-box { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; align-items: stretch; justify-content: center; padding: 0 0.3mm; }
+.barcode-box { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; align-items: stretch; justify-content: center; padding: 0 2.3mm 0 0.3mm; }
 .barcode-box svg { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
 .side { flex: 0 0 10mm; min-width: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2mm; text-align: center; }
 .price { font: 900 14pt/1 Arial, sans-serif; }

@@ -273,3 +273,18 @@
 .reports-account-panel .reports-party-balance { min-width: 0; padding: 0; background: transparent !important; }
 .reports-account-panel .reports-party-balance.is-positive, .reports-account-panel .reports-party-balance.is-negative { color: inherit; }
 .dark .reports-redesign .reports-account-panel .reports-account-row:hover, .dark .reports-redesign .reports-account-panel .reports-account-row.is-selected { background: #233858; color: #b5ceff; }
+
+/* Customer list as a fixed sidebar beside the statement filters and results. */
+.reports-redesign .reports-workspace.is-statement { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 12px; }
+.reports-redesign .reports-workspace.is-statement>.reports-category-tabs, .reports-redesign .reports-workspace.is-statement>.reports-subnavigation { grid-column: 1 / -1; }
+.reports-redesign .reports-workspace.is-statement>.reports-account-sidebar { grid-column: 1; position: sticky; top: 12px; }
+.reports-redesign .reports-workspace.is-statement>.reports-content { grid-column: 2; }
+.reports-redesign .reports-account-sidebar { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.reports-redesign #report-account-picker.reports-account-panel { position: static; width: 100%; box-shadow: 0 3px 10px #264bac08; }
+.reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(220px, calc(100dvh - 430px)); }
+.reports-redesign .reports-statement-filter .reports-selected-account { min-height: 0; }
+@media (max-width: 900px) {
+    .reports-redesign .reports-workspace.is-statement { grid-template-columns: minmax(0, 1fr); }
+    .reports-redesign .reports-workspace.is-statement>.reports-account-sidebar, .reports-redesign .reports-workspace.is-statement>.reports-content { grid-column: 1; position: static; }
+    .reports-redesign .reports-account-sidebar .reports-account-list { max-height: 280px; }
+}

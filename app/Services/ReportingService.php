@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -61,7 +62,7 @@ class ReportingService
     ];
 
     /** @var list<string> */
-    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'voucher_type', 'payment_method', 'column_filters'];
+    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'product_view', 'voucher_type', 'payment_method', 'column_filters'];
 
     /**
      * Amount a walk-in POS invoice put in the drawer. Walk-in POS invoices no longer create
@@ -154,6 +155,7 @@ class ReportingService
             'source' => ['nullable', Rule::in(['', 'pos', 'web', 'api', 'online'])],
             'sale_kind' => ['nullable', Rule::in(['', 'retail', 'wholesale'])],
             'cost_method' => ['nullable', Rule::in(['recorded', 'latest_purchase', 'weighted_average'])],
+            'product_view' => ['nullable', Rule::in(['summary', 'detailed'])],
             'voucher_type' => ['nullable', Rule::in(['', 'receipt', 'payment'])],
             'payment_method' => ['nullable', Rule::in(['', 'cash', 'card', 'bank_transfer', 'cheque'])],
         ])->validate();
@@ -165,7 +167,7 @@ class ReportingService
 
         $definition = match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
-            'sales' => $this->sales(), 'pos-invoices' => $this->posInvoices(), 'product-sales' => $this->productSales(),
+            'sales' => $this->sales(), 'pos-invoices' => $this->posInvoices(), 'product-sales' => $this->user->can('reports.profit') ? $this->productProfit(false) : $this->productSales(),
             'product-history' => $this->productHistory(), 'product-profit' => $this->productProfit(),
             'profit' => $this->profit(), 'shifts' => $this->shifts(), 'purchases' => $this->purchases(),
             'payroll' => $this->payroll(), 'salary-payments' => $this->salaryPayments(),
@@ -493,42 +495,72 @@ class ReportingService
     /** @return ReportDefinition */
     private function productSales(): array
     {
+        $detailed = ($this->filters['product_view'] ?? 'summary') === 'detailed';
         $query = $this->orders()->join('order_items', 'order_items.order_id', '=', 'orders.id')->where('order_items.tenant_id', $this->tenantId)
             ->join('products', 'products.id', '=', 'order_items.product_id')->where('products.tenant_id', $this->tenantId);
         $this->productFilters($query, 'products.id');
         $query->select('products.id', 'products.product_number', 'products.name')
             ->selectRaw("SUM(CASE WHEN orders.type != 'return' AND COALESCE(order_items.is_gift, false) = false THEN ABS(order_items.quantity) ELSE 0 END) as sold, SUM(CASE WHEN orders.type != 'return' AND order_items.is_gift = true THEN ABS(order_items.quantity) ELSE 0 END) as gift_quantity, SUM(CASE WHEN orders.type = 'return' THEN ABS(order_items.quantity) ELSE 0 END) as returned, SUM(CASE WHEN orders.type = 'return' AND order_items.returned_to_stock = true THEN ABS(order_items.quantity) ELSE 0 END) as returned_usable, SUM(CASE WHEN orders.type = 'return' AND order_items.returned_to_stock = false THEN ABS(order_items.quantity) ELSE 0 END) as returned_damaged, SUM(CASE WHEN orders.type = 'return' THEN -ABS(order_items.quantity) ELSE order_items.quantity END) as net_quantity, SUM(CASE WHEN orders.type = 'return' THEN -ABS(order_items.total_price) ELSE order_items.total_price END) as revenue")
             ->groupBy('products.id', 'products.product_number', 'products.name')->orderByDesc('sold')->orderBy('products.id');
+        if ($detailed) {
+            $query->addSelect('orders.id as order_id', 'orders.invoice_number', 'orders.created_at as invoice_date', 'order_items.unit_price as sale_price')
+                ->groupBy('orders.id', 'orders.invoice_number', 'orders.created_at', 'order_items.unit_price');
+        }
         $totals = DB::query()->fromSub(clone $query, 'product_totals')->selectRaw('COALESCE(SUM(sold),0) as sold, COALESCE(SUM(gift_quantity),0) as gift_quantity, COALESCE(SUM(returned),0) as returned, COALESCE(SUM(returned_usable),0) as returned_usable, COALESCE(SUM(returned_damaged),0) as returned_damaged, COALESCE(SUM(net_quantity),0) as net_quantity, COALESCE(SUM(revenue),0) as revenue')->first();
 
-        return $this->definition($query, ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'sold' => 'الكمية المباعة', 'gift_quantity' => 'كمية الهدايا', 'returned' => 'الكمية المرتجعة', 'returned_usable' => 'مرتجع سليم', 'returned_damaged' => 'مرتجع تالف', 'net_quantity' => 'صافي الكمية', 'revenue' => 'قيمة السطور الصافية'], ['الكمية المباعة' => $totals->sold, 'الهدايا' => $totals->gift_quantity, 'الكمية المرتجعة' => $totals->returned, 'مرتجع سليم' => $totals->returned_usable, 'مرتجع تالف' => $totals->returned_damaged, 'صافي الكمية' => $totals->net_quantity, 'قيمة السطور' => $totals->revenue], ['اختر التاريخ نفسه للبداية والنهاية لتقرير يوم واحد. قيمة السطور قبل توزيع خصم الفاتورة العام والضريبة والتوصيل؛ الهدايا معروضة في عمود مستقل؛ صافي الكمية يشمل الهدايا والمردودات.']);
+        $query = DB::query()->fromSub($query->reorder(), 'sales_totals')->select('sales_totals.*')
+            ->selectRaw($detailed ? 'sale_price as unit_price' : '1.0 * revenue / NULLIF(net_quantity, 0) as unit_price')
+            ->orderByDesc('sold')->orderBy('id');
+        if ($detailed) {
+            $query->reorder()->orderBy('invoice_date')->orderBy('order_id')->orderBy('id')->orderBy('sale_price');
+        }
+
+        return $this->definition($query,
+            ($detailed ? ['invoice_number' => 'رقم الفاتورة', 'invoice_date' => 'تاريخ الفاتورة'] : []) + ['product_number' => 'رقم الصنف', 'name' => 'الصنف', 'net_quantity' => 'الكمية', 'unit_price' => 'سعر البيع', 'revenue' => 'مجموع البيع'],
+            ['الكمية' => $totals->net_quantity, 'مجموع البيع' => $totals->revenue],
+            ['اختر التاريخ نفسه للبداية والنهاية لتقرير يوم واحد. الكمية هي صافي الكمية بعد المرتجعات وتشمل الهدايا. مجموع البيع بعد طرح المرتجعات وقبل توزيع خصم الفاتورة العام والضريبة والتوصيل.',
+                $detailed ? 'العرض التفصيلي: سطر لكل صنف داخل كل فاتورة ولكل سعر بيع مختلف؛ سعر البيع هو السعر المسجل في الفاتورة.' : 'العرض الإجمالي: سطر واحد لكل صنف بجميع أسعار بيعه. سعر البيع = مجموع البيع ÷ الكمية؛ عند صافي كمية صفر يظهر سعر القطعة بشرطة.']);
     }
 
     /** @return ReportDefinition */
-    private function productProfit(): array
+    private function productProfit(bool $sortByProfit = true): array
     {
         $sales = $this->productSales();
+        $detailed = ($this->filters['product_view'] ?? 'summary') === 'detailed';
         $costs = DB::query()->fromSub($this->itemCosts(), 'cost_lines')->select('product_id')->selectRaw('SUM(signed_cost) as cost')->groupBy('product_id');
+        if ($detailed) {
+            $costs->addSelect('order_id', 'sale_price')->groupBy('order_id', 'sale_price');
+        }
         $query = DB::query()->fromSub($sales['query']->reorder(), 'product_sales')
-            ->leftJoinSub($costs, 'product_costs', 'product_costs.product_id', '=', 'product_sales.id')
+            ->leftJoinSub($costs, 'product_costs', function (JoinClause $join) use ($detailed): void {
+                $join->on('product_costs.product_id', '=', 'product_sales.id');
+                if ($detailed) {
+                    $join->on('product_costs.order_id', '=', 'product_sales.order_id')
+                        ->on('product_costs.sale_price', '=', 'product_sales.sale_price');
+                }
+            })
             ->select('product_sales.*')->selectRaw('COALESCE(product_costs.cost, 0) as cost, revenue - COALESCE(product_costs.cost, 0) as gross_profit')
-            ->orderByDesc('gross_profit')->orderBy('product_sales.id');
+            ->selectRaw('1.0 * COALESCE(product_costs.cost, 0) / NULLIF(net_quantity, 0) as cost_price')
+            ->orderByDesc($sortByProfit ? 'gross_profit' : 'sold')->orderBy('product_sales.id');
+        if ($detailed) {
+            $query->reorder()->orderBy('product_sales.invoice_date')->orderBy('product_sales.order_id')->orderBy('product_sales.id')->orderBy('product_sales.sale_price');
+        }
         $totals = DB::query()->fromSub(clone $query, 'product_profit_totals')
             ->selectRaw('COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit')->first();
 
-        return $this->definition($query, $sales['columns'] + ['cost' => 'التكلفة', 'gross_profit' => 'ربح السطور'],
-            $sales['summary'] + ['التكلفة' => $totals->cost, 'ربح السطور' => $totals->gross_profit],
-            [...$sales['notes'], ...$this->costNotes(), 'ربح السطور قبل توزيع خصم الفاتورة العام والمصروفات.']);
+        return $this->definition($query, $sales['columns'] + ['cost_price' => 'تكلفة القطعة', 'cost' => 'إجمالي التكلفة', 'gross_profit' => 'إجمالي ربح الصنف'],
+            $sales['summary'] + ['إجمالي التكلفة' => $totals->cost, 'إجمالي الربح' => $totals->gross_profit],
+            [...$sales['notes'], ...$this->costNotes(), 'تكلفة القطعة = إجمالي التكلفة ÷ الكمية. إجمالي ربح الصنف = مجموع البيع − إجمالي التكلفة، قبل توزيع خصم الفاتورة العام والمصروفات.']);
     }
 
     private function itemCosts(): Builder
     {
         $items = $this->orders()->join('order_items', 'order_items.order_id', '=', 'orders.id')
             ->where('order_items.tenant_id', $this->tenantId)
-            ->select('order_items.product_id', 'orders.type', 'order_items.quantity', 'order_items.total_cost');
+            ->select('order_items.product_id', 'order_items.order_id', 'order_items.unit_price as sale_price', 'orders.type', 'order_items.quantity', 'order_items.total_cost');
         $method = $this->filters['cost_method'] ?? 'recorded';
         if ($method === 'recorded') {
-            return DB::query()->fromSub($items, 'cost_items')->select('product_id')
+            return DB::query()->fromSub($items, 'cost_items')->select('product_id', 'order_id', 'sale_price')
                 ->selectRaw("CASE WHEN type = 'return' THEN -ABS(total_cost) ELSE ABS(total_cost) END as signed_cost");
         }
 
@@ -545,7 +577,7 @@ class ReportingService
         }
         $items->selectSub($purchaseCost, 'purchase_cost');
 
-        return DB::query()->fromSub($items, 'cost_items')->select('product_id')
+        return DB::query()->fromSub($items, 'cost_items')->select('product_id', 'order_id', 'sale_price')
             ->selectRaw("(CASE WHEN type = 'return' THEN -1 ELSE 1 END) * COALESCE(ABS(quantity) * purchase_cost, ABS(total_cost)) as signed_cost");
     }
 
