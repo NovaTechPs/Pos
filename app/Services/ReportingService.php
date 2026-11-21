@@ -61,7 +61,7 @@ class ReportingService
     ];
 
     /** @var list<string> */
-    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'voucher_type', 'payment_method'];
+    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'voucher_type', 'payment_method', 'column_filters'];
 
     /**
      * Amount a walk-in POS invoice put in the drawer. Walk-in POS invoices no longer create
@@ -146,6 +146,8 @@ class ReportingService
             'party_id' => ['nullable', 'integer', 'min:1'],
             'product_id' => ['nullable', 'integer', 'min:1'],
             'search' => ['nullable', 'string', 'max:200'],
+            'column_filters' => ['sometimes', 'array', 'max:30'],
+            'column_filters.*' => ['nullable', 'string', 'max:200'],
             'party_type' => ['required', Rule::in(['all', 'customer', 'supplier', 'both'])],
             'balance_side' => ['required', Rule::in(['all', 'debit', 'credit', 'settled'])],
             'stock_filter' => ['required', Rule::in(['all', 'low', 'zero', 'negative'])],
@@ -161,7 +163,7 @@ class ReportingService
             }
         }
 
-        return match ($report) {
+        $definition = match ($report) {
             'statement' => $this->statement(), 'balances' => $this->balances(),
             'sales' => $this->sales(), 'pos-invoices' => $this->posInvoices(), 'product-sales' => $this->productSales(),
             'product-history' => $this->productHistory(), 'product-profit' => $this->productProfit(),
@@ -172,6 +174,53 @@ class ReportingService
             'daily-cash' => $this->dailyCash(), 'expenses' => $this->expenses(), 'aging' => $this->aging(),
             'tax' => $this->tax(), 'branches' => $this->branches(), 'employees' => $this->employees(), 'settlements' => $this->settlements(),
         };
+
+        $definition['query'] = $this->filterColumns($definition['query'], $definition['columns']);
+
+        return $definition;
+    }
+
+    /** @param array<string, string> $columns */
+    private function filterColumns(Builder $query, array $columns): Builder
+    {
+        $filters = array_filter(array_intersect_key($this->filters['column_filters'] ?? [], $columns), fn (?string $value): bool => trim($value ?? '') !== '');
+        if ($filters === []) {
+            return $query;
+        }
+
+        $ordered = clone $query;
+        $result = DB::query();
+        foreach ($query->orders ?? [] as $index => $order) {
+            $column = $order['column'];
+            if (is_string($column) && str_contains($column, '.')) {
+                $alias = '__report_sort_'.$index;
+                $ordered->addSelect($column.' as '.$alias);
+                $column = $alias;
+            }
+            $result->orderBy($column, $order['direction']);
+        }
+        $result->fromSub($ordered->reorder(), 'filtered_report');
+
+        foreach ($filters as $column => $value) {
+            $term = trim($value);
+            $wrapped = $result->getGrammar()->wrap($column);
+            $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term).'%';
+            $result->where(function (Builder $match) use ($column, $wrapped, $pattern, $term): void {
+                $match->whereRaw("LOWER(CAST({$wrapped} AS CHAR)) LIKE LOWER(?) ESCAPE '!'", [$pattern]);
+                if (is_numeric($term) && self::formatCell($column, 1) !== '1') {
+                    $match->orWhereRaw("CAST({$wrapped} AS DECIMAL(24, 6)) = CAST(? AS DECIMAL(24, 6))", [$term]);
+                }
+                if (in_array($column, ['status', 'payment_method', 'source_type'], true)) {
+                    foreach (['approved', 'paid', 'draft', 'processing', 'cash', 'card', 'bank_transfer', 'cheque', 'check', 'opening', 'manual', 'order', 'purchase', 'sales_return', 'purchase_return', 'stock_in', 'stock_out', 'stock_transfer', 'stock_count', 'transfer_reversal', 'sale_reversal', 'sync', 'open', 'closed'] as $code) {
+                        if (str_contains(self::formatCell($column, $code), $term)) {
+                            $match->orWhere($column, $code);
+                        }
+                    }
+                }
+            });
+        }
+
+        return $result;
     }
 
     public static function formatCell(string $column, mixed $value): string

@@ -67,7 +67,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
+        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -81,6 +81,8 @@ new class extends Component {
     public ?int $partyId = null;
     public ?int $productId = null;
     public string $search = '';
+    /** @var array<string, string> */
+    public array $columnFilters = [];
     public string $partyType = 'all';
     public string $balanceSide = 'all';
     public string $stockFilter = 'all';
@@ -158,7 +160,7 @@ new class extends Component {
     public function filters(): array
     {
         return ['from' => $this->from, 'to' => $this->to, 'party_id' => $this->partyId, 'product_id' => $this->productId,
-            'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
+            'column_filters' => $this->columnFilters, 'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
             'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod,
             'voucher_type' => $this->voucherType, 'payment_method' => $this->paymentMethod];
     }
@@ -178,12 +180,26 @@ new class extends Component {
 
     private function statementSignature(): string
     {
-        return hash('sha256', json_encode([$this->branchId, $this->filters()], JSON_THROW_ON_ERROR));
+        $filters = $this->filters();
+        unset($filters['column_filters']);
+
+        return hash('sha256', json_encode([$this->branchId, $filters], JSON_THROW_ON_ERROR));
     }
 
     private function statementIsReady(): bool
     {
         return $this->partyId !== null && $this->appliedStatementSignature === $this->statementSignature();
+    }
+
+    public function updatedColumnFilters(): void
+    {
+        $this->resetPage();
+    }
+
+    public function clearColumnFilters(): void
+    {
+        $this->columnFilters = [];
+        $this->resetPage();
     }
 
     public function updatedProductSearch(): void
@@ -210,6 +226,7 @@ new class extends Component {
         $party = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
             ->when($service->branchId, fn ($query) => $query->where(fn ($query) => $query->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
             ->findOrFail($partyId);
+        $this->columnFilters = [];
         $this->partyId = $party->id;
         $this->appliedStatementSignature = null;
         $this->resetErrorBag();
@@ -284,6 +301,7 @@ new class extends Component {
 
     public function updatedReport(): void
     {
+        $this->columnFilters = [];
         $this->resetPage();
         $this->resetErrorBag();
         $this->search = '';
@@ -606,7 +624,7 @@ new class extends Component {
     @if ($definition['notes'])<details class="reports-notes"><summary>ملاحظات التقرير</summary><div>@foreach ($definition['notes'] as $note)<p wire:key="note-{{ $loop->index }}">{{ $note }}</p>@endforeach</div></details>@endif
     <div class="reports-data-scroll overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700" tabindex="0" role="region" aria-label="نتائج التقرير">
         <table class="w-full whitespace-nowrap text-right text-sm">
-            <thead class="bg-slate-100 dark:bg-slate-800"><tr>@foreach ($definition['columns'] as $label)<th class="p-3">{{ $label }}</th>@endforeach</tr></thead>
+            <thead class="bg-slate-100 dark:bg-slate-800">@include('pages.tenant.reports.partials.column-filters')</thead>
             <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">@if (in_array($report, ['product-history', 'pos-invoices'], true) && $key === 'reference' && auth()->user()->can($row->invoice_type === 'purchase' ? 'purchases.view' : (in_array($row->invoice_type, ['pos', 'return']) ? 'pos.view' : 'sales_invoices.view')))<a class="font-bold text-indigo-600 dark:text-indigo-400" @if ($report !== 'pos-invoices') target="_blank" rel="noopener" @endif href="{{ route($row->invoice_type === 'purchase' ? 'tenant.purchase-invoices' : (in_array($row->invoice_type, ['pos', 'return']) ? 'tenant.pos' : 'tenant.sale-invoices'), ['invoice' => $row->invoice_id]) }}">{{ $row->reference }}@if ($report !== 'pos-invoices') ↗@endif</a>@elseif ($report === 'sales' && $key === 'day')<a class="font-bold text-indigo-600 dark:text-indigo-400" title="فواتير هذا اليوم" href="{{ route('tenant.reports', ['report' => 'pos-invoices', 'from' => $row->day, 'to' => $row->day] + ($branchId ? ['branch_id' => $branchId] : [])) }}">{{ $row->day }}</a>@else {{ ReportingService::formatCell($key, $row->{$key} ?? null) }} @endif</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
         </table>
     </div>

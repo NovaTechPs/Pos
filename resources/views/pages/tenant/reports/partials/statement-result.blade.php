@@ -5,7 +5,7 @@
 @endphp
 <div class="reports-table-wrap" data-statement-scroll x-data="{ selectedRow: null }">
     <table class="reports-statement-table">
-        <thead><tr>@foreach ($definition['columns'] as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
+        <thead>@include('pages.tenant.reports.partials.column-filters')</thead>
         <tbody>
             @if ($hasParty && $rows->onFirstPage())
                 <tr data-statement-opening><td><span class="reports-date"><flux:icon.calendar variant="outline" />{{ $from }}</span></td><td>—</td><td>رصيد افتتاحي</td><td>—</td><td>{{ $money(0) }}</td><td>{{ $money(0) }}</td><td class="reports-balance">{{ $money($summary['رصيد أول الفترة']) }}</td></tr>
@@ -29,9 +29,11 @@
                     @endforeach
                 </tr>
             @empty
-                @unless ($hasParty)
+                @if ($hasParty)
+                    <tr><td colspan="{{ count($definition['columns']) }}" class="reports-empty">لا توجد حركات مطابقة للبحث.</td></tr>
+                @else
                     <tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="reports-empty">اختر زبوناً أو مورداً من القائمة لعرض كشف الحساب.</td></tr>
-                @endunless
+                @endif
             @endforelse
         </tbody>
         @if ($hasParty)

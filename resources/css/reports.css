@@ -115,3 +115,4 @@
 .reports-invoice-paid-toggle input{width:15px;height:15px;accent-color:#123b86}
 .reports-invoice-paid{display:inline-block;font-size:11px;font-weight:700;color:#047857;white-space:nowrap}
 .dark .reports-invoice-paid{color:#6ee7b7}
+.reports-column-filter{display:flex;flex-direction:column;gap:7px;min-width:80px}.reports-column-filter input{width:100%;min-width:0;border:1px solid #c9d6ed;border-radius:6px;background:#fff;color:#243454;padding:6px 8px;font-size:12px;font-weight:400}.reports-column-filter input:focus{outline:2px solid #4f7bff;outline-offset:1px}.reports-column-search-status{padding:8px 12px;font-size:11px;color:#64748b}.reports-column-search-status button{color:#1543e0;font-weight:700;margin-inline-end:12px}.dark .reports-column-filter input{background:#172033;border-color:#405371;color:#e2e8f0}.dark .reports-column-search-status,.dark .reports-column-search-status button{color:#b5ceff}

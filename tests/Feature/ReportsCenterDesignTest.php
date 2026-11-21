@@ -201,3 +201,64 @@ test('report filters flow in one compact grid with small fields', function (): v
     expect(file_get_contents(resource_path('css/reports.css')))
         ->toContain('.reports-filter-fields>.grid{display:contents}', '.reports-filter-fields>.reports-filter-actions{grid-column:1/-1', '.reports-filter-fields [data-flux-control]{height:30px!important');
 });
+
+test('column searches combine across all statement pages without changing ledger balances', function (): void {
+    for ($index = 1; $index <= 31; $index++) {
+        ($this->makeOrder)(['invoice_number' => 'COL-'.$index, 'notes' => $index === 31 ? 'ملاحظة خاصة' : 'عادي']);
+    }
+
+    Livewire::test('pages::tenant.reports.center')
+        ->call('showStatementParty', $this->customer->id)
+        ->assertSeeHtml('columnFilters.notes')
+        ->assertSeeHtml('columnFilters.event_date')
+        ->call('gotoPage', 2)
+        ->set('columnFilters.notes', 'خاصة')
+        ->assertSet('paginators.page', 1)
+        ->assertViewHas('rows', function ($rows): bool {
+            expect($rows->total())->toBe(1);
+            expect($rows->first()->reference)->toBe('COL-31');
+            expect((float) $rows->first()->balance)->toBe(9400.0);
+
+            return true;
+        })
+        ->set('columnFilters.event_date', '2026-10-15')
+        ->set('columnFilters.debit', '300.00')
+        ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 1)
+        ->set('columnFilters.balance', '9400.00')
+        ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 1)
+        ->set('columnFilters.reference', 'missing')
+        ->assertSee('لا توجد حركات مطابقة للبحث.')
+        ->call('clearColumnFilters')
+        ->assertSet('columnFilters', [])
+        ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 31)
+        ->set('columnFilters.notes', 'خاصة')
+        ->call('selectReport', 'sales')
+        ->assertSet('columnFilters', []);
+});
+
+test('column searches treat wildcards literally and ignore unknown column names', function (): void {
+    ($this->makeOrder)(['notes' => 'خصم 10%_خاص']);
+    ($this->makeOrder)(['notes' => 'خصم عادي']);
+
+    Livewire::test('pages::tenant.reports.center')
+        ->call('showStatementParty', $this->customer->id)
+        ->set('columnFilters.notes', '%_')
+        ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 1)
+        ->set('columnFilters', ['unknown' => 'anything'])
+        ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 2)
+        ->call('resetFilters')
+        ->assertSet('columnFilters', []);
+});
+
+test('every report supports column searches on its result query', function (string $report): void {
+    ($this->makeOrder)();
+    $component = Livewire::test('pages::tenant.reports.center')->call('selectReport', $report);
+    if ($report === 'statement') {
+        $component->call('showStatementParty', $this->customer->id);
+    }
+    $columns = $component->viewData('definition')['columns'];
+    foreach (array_keys($columns) as $column) {
+        $component->set('columnFilters', [$column => 'unmatched-value'])->assertHasNoErrors()
+            ->assertViewHas('rows', fn ($rows): bool => $rows->total() === 0);
+    }
+})->with(array_keys(ReportingService::REPORTS));
