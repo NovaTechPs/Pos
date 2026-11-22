@@ -125,6 +125,31 @@ new class extends Component {
 
     public string $notes = '';
 
+    /** The notes window opened from the toolbar; a delivery invoice shows its delivery details there too. */
+    public bool $showNotesModal = false;
+
+    /**
+     * Recipient, phone, address, company and fee of the loaded invoice when it was delivered.
+     *
+     * @return array{name: ?string, phone: ?string, address: ?string, company: ?string, fee: float}|null
+     */
+    public function currentDeliveryDetails(): ?array
+    {
+        if (! $this->currentOrderId || $this->posDeliveryFee <= 0) {
+            return null;
+        }
+        $order = Order::query()->where('tenant_id', $this->tenantId())->find($this->currentOrderId, ['id', 'customer_name', 'customer_phone', 'customer_address', 'delivery_party_id', 'delivery_fee']);
+        if (! $order) {
+            return null;
+        }
+
+        return [
+            'name' => $order->customer_name, 'phone' => $order->customer_phone, 'address' => $order->customer_address,
+            'company' => $order->delivery_party_id ? Party::query()->where('tenant_id', $this->tenantId())->whereKey($order->delivery_party_id)->value('name') : null,
+            'fee' => (float) $order->delivery_fee,
+        ];
+    }
+
     /*
     |--------------------------------------------------------------------------
     | البحث عن الفواتير
@@ -393,6 +418,7 @@ new class extends Component {
         $this->taxable = true;
         $this->taxPercent = 16.0;
         $this->notes = '';
+        $this->showNotesModal = false;
         $this->searchInvoiceQuery = '';
         $this->showInvoiceSearch = false;
 
@@ -1808,6 +1834,7 @@ new class extends Component {
         $this->taxPercent = $order->type === 'pos' ? 0.0 : max(0, (float) ($order->tax_percent ?? 16));
         $this->taxable = $order->type !== 'pos';
         $this->notes = $order->notes ?? '';
+        $this->showNotesModal = false;
 
         $this->cart = [];
         $this->replacingCartKey = null;
@@ -2369,6 +2396,17 @@ new class extends Component {
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
+                    @php $toolbarDelivery = $this->currentDeliveryDetails(); @endphp
+                    <button type="button" data-sales-notes-button wire:click="$set('showNotesModal', true)" class="relative inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                        @if ($toolbarDelivery)
+                            <flux:icon.truck class="size-4 text-indigo-600" /> التوصيل
+                        @else
+                            <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات
+                        @endif
+                        @if (filled($notes))
+                            <span class="absolute -left-1 -top-1 size-2.5 rounded-full bg-blue-600" aria-label="توجد ملاحظة"></span>
+                        @endif
+                    </button>
                     <div class="relative" x-data="{ toolsOpen: false }" x-on:click.outside="toolsOpen = false" x-on:keydown.escape.stop="toolsOpen = false">
                         <button type="button" x-on:click="toolsOpen = ! toolsOpen" x-bind:aria-expanded="toolsOpen" aria-haspopup="menu" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
                             أدوات
@@ -2376,7 +2414,7 @@ new class extends Component {
                         </button>
 
                         <div x-cloak x-show="toolsOpen" x-transition.origin.top x-on:click="toolsOpen = false" role="menu" class="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-700 shadow-xl">
-                            <button type="button" role="menuitem" x-on:click="document.getElementById('sales-invoice-notes')?.focus()" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
+                            <button type="button" role="menuitem" wire:click="$set('showNotesModal', true)" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50">
                                 <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات الفاتورة
                             </button>
 
@@ -3033,32 +3071,22 @@ new class extends Component {
 
         <div class="grid shrink-0 gap-3 xl:mt-auto xl:grid-cols-12">
 
-            {{-- الملاحظات --}}
+            {{-- سندات القبض المرتبطة (الملاحظات تفتح من زر «ملاحظات» في الأعلى) --}}
+            @php $hasLinkedReceipts = $currentOrderId && $linkedReceipts->isNotEmpty(); @endphp
+            @if ($hasLinkedReceipts)
             <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
-                <label for="sales-invoice-notes" class="mb-2 flex items-center gap-1.5 text-sm font-black text-slate-800">
-                    <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات
-                </label>
-                <textarea
-                    id="sales-invoice-notes"
-                    wire:model="notes"
-                    rows="3"
-                    placeholder="اكتب ملاحظة على الفاتورة أو شروط البيع..."
-                    class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                ></textarea>
-
-                @if ($currentOrderId && $linkedReceipts->isNotEmpty())
-                    <div class="mt-2 flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-2">
                         @foreach ($linkedReceipts as $linkedReceipt)
                             <a href="{{ route('tenant.receipts', ['voucher' => $linkedReceipt->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100">
                                 تعديل سند القبض {{ $linkedReceipt->voucher_number }} — {{ number_format((float) $linkedReceipt->amount, 2) }}
                             </a>
                         @endforeach
                     </div>
-                @endif
             </div>
+            @endif
 
             {{-- الكميات --}}
-            <div class="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 xl:grid-cols-1">
+            <div @class(['grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:grid-cols-1', 'xl:col-span-2' => $hasLinkedReceipts, 'xl:col-span-6' => ! $hasLinkedReceipts])>
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                     <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
                     <div class="mt-1 flex items-center justify-between">
@@ -3186,6 +3214,40 @@ new class extends Component {
         </div>
     @endif
     <livewire:product-price-history-modal :key="'sales-price-history-singleton'" />
+    @if ($showNotesModal)
+        @php $noteDelivery = $this->currentDeliveryDetails(); @endphp
+        <div data-sales-notes-modal class="app-modal-overlay fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" x-data x-on:keydown.escape.window.stop="$wire.set('showNotesModal', false)" wire:click.self="$set('showNotesModal', false)">
+            <div role="dialog" aria-modal="true" aria-labelledby="sales-notes-title" class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl" dir="rtl">
+                <div class="mb-3 flex items-center justify-between">
+                    <h2 id="sales-notes-title" class="flex items-center gap-2 text-lg font-black text-slate-900">
+                        @if ($noteDelivery)
+                            <flux:icon.truck class="size-5 text-indigo-600" /> بيانات التوصيل
+                        @else
+                            <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات الفاتورة
+                        @endif
+                    </h2>
+                    <button type="button" wire:click="$set('showNotesModal', false)" aria-label="إغلاق" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100">✕</button>
+                </div>
+                @if ($noteDelivery)
+                    <dl data-sales-delivery-details class="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-sm">
+                        <div><dt class="text-xs font-bold text-slate-500">المستلم</dt><dd class="font-black text-slate-900">{{ $noteDelivery['name'] ?: '—' }}</dd></div>
+                        <div><dt class="text-xs font-bold text-slate-500">الهاتف</dt><dd class="font-mono font-bold text-slate-900" dir="ltr">{{ $noteDelivery['phone'] ?: '—' }}</dd></div>
+                        <div class="col-span-2"><dt class="text-xs font-bold text-slate-500">العنوان</dt><dd class="font-bold text-slate-900">{{ $noteDelivery['address'] ?: '—' }}</dd></div>
+                        <div><dt class="text-xs font-bold text-slate-500">شركة التوصيل</dt><dd class="font-bold text-slate-900">{{ $noteDelivery['company'] ?: '—' }}</dd></div>
+                        <div><dt class="text-xs font-bold text-slate-500">رسوم التوصيل</dt><dd class="font-mono font-black text-indigo-700">{{ number_format($noteDelivery['fee'], 2) }}</dd></div>
+                    </dl>
+                @endif
+                <label for="sales-invoice-notes" class="mb-1 block text-sm font-black text-slate-800">{{ $noteDelivery ? 'ملاحظات التوصيل والفاتورة' : 'الملاحظة' }}</label>
+                <textarea id="sales-invoice-notes" wire:model="notes" rows="4" x-init="$nextTick(() => $el.focus())"
+                    placeholder="اكتب ملاحظة على الفاتورة أو شروط البيع..."
+                    class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
+                <p class="mt-1 text-xs text-slate-500">تُحفظ الملاحظة مع الفاتورة عند الضغط على حفظ.</p>
+                <div class="mt-4 flex justify-end">
+                    <button type="button" wire:click="$set('showNotesModal', false)" class="rounded-lg bg-blue-700 px-5 py-2 text-sm font-black text-white hover:bg-blue-800">تم</button>
+                </div>
+            </div>
+        </div>
+    @endif
 </flux:main>
 
 @script
