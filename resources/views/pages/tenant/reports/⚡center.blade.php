@@ -99,7 +99,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'productView', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'showDeliveryDetails', 'appliedStatementSignature', 'productSearch');
+        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'invoiceScope', 'costMethod', 'productView', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'showDeliveryDetails', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -120,6 +120,9 @@ new class extends Component {
     public string $stockFilter = 'all';
     public string $source = '';
     public string $saleKind = '';
+
+    /** Daily sales summary: walk-in POS invoices (default), invoices linked to a customer, or all. */
+    public string $invoiceScope = '';
     public string $costMethod = 'recorded';
     #[Url(as: 'product_view')]
     public string $productView = 'summary';
@@ -197,7 +200,7 @@ new class extends Component {
     {
         return ['from' => $this->from, 'to' => $this->to, 'party_id' => $this->partyId, 'product_id' => $this->productId,
             'column_filters' => $this->columnFilters, 'search' => $this->search, 'party_type' => $this->partyType, 'balance_side' => $this->balanceSide,
-            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'cost_method' => $this->costMethod,
+            'stock_filter' => $this->stockFilter, 'source' => $this->source, 'sale_kind' => $this->saleKind, 'invoice_scope' => $this->invoiceScope, 'cost_method' => $this->costMethod,
             'product_view' => $this->productView, 'voucher_type' => $this->voucherType, 'payment_method' => $this->paymentMethod];
     }
 
@@ -622,7 +625,10 @@ new class extends Component {
             </div>
         @endif
         @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'tax', 'branches']))
-            <div class="grid gap-4 sm:grid-cols-2">
+            <div @class(['grid gap-4', 'sm:grid-cols-3' => $report === 'sales', 'sm:grid-cols-2' => $report !== 'sales'])>
+                @if ($report === 'sales')
+                    <flux:select label="الفواتير" wire:model="invoiceScope" data-report-invoice-scope><option value="">فواتير الزبون العام</option><option value="customer">فواتير مربوطة بزبون</option><option value="all">كل الفواتير</option></flux:select>
+                @endif
                 <flux:select label="مصدر الفاتورة" wire:model="source"><option value="">الكل</option><option value="pos">نقطة البيع (زبون نقدي)</option><option value="web">فواتير المبيعات (تشمل فواتير نقطة البيع لزبون)</option><option value="api">التطبيق / API</option><option value="online">المتجر الإلكتروني</option></flux:select>
                 <flux:select label="نوع البيع" wire:model="saleKind"><option value="">الكل</option><option value="retail">مفرق</option><option value="wholesale">جملة</option></flux:select>
             </div>

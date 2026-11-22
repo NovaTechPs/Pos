@@ -28,7 +28,7 @@ class ReportingService
     public const REPORTS = [
         'statement' => ['كشف حساب زبون / مورد', 'customers.view'],
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
-        'sales' => ['ملخص مبيعات نقطة البيع اليومي (زبون نقدي)', 'reports.sales'],
+        'sales' => ['ملخص المبيعات يوم بيوم', 'reports.sales'],
         'pos-invoices' => ['فواتير نقطة البيع فاتورة فاتورة', 'reports.sales'],
         'product-sales' => ['مبيعات الأصناف خلال فترة', 'reports.sales'],
         'product-profit' => ['أرباح الأصناف خلال فترة', 'reports.profit'],
@@ -62,7 +62,7 @@ class ReportingService
     ];
 
     /** @var list<string> */
-    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'cost_method', 'product_view', 'voucher_type', 'payment_method', 'column_filters'];
+    public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'invoice_scope', 'cost_method', 'product_view', 'voucher_type', 'payment_method', 'column_filters'];
 
     /**
      * Amount a walk-in POS invoice put in the drawer. Walk-in POS invoices no longer create
@@ -154,6 +154,7 @@ class ReportingService
             'stock_filter' => ['required', Rule::in(['all', 'low', 'zero', 'negative'])],
             'source' => ['nullable', Rule::in(['', 'pos', 'web', 'api', 'online'])],
             'sale_kind' => ['nullable', Rule::in(['', 'retail', 'wholesale'])],
+            'invoice_scope' => ['nullable', Rule::in(['', 'walk_in', 'customer', 'all'])],
             'cost_method' => ['nullable', Rule::in(['recorded', 'latest_purchase', 'weighted_average'])],
             'product_view' => ['nullable', Rule::in(['summary', 'detailed'])],
             'voucher_type' => ['nullable', Rule::in(['', 'receipt', 'payment'])],
@@ -433,14 +434,29 @@ class ReportingService
         return $this->orders()->where('orders.source', 'pos')->whereNull('orders.customer_id');
     }
 
-    /** @return ReportDefinition */
+    /**
+     * Day-by-day sales. By default only walk-in POS invoices; the «الفواتير» filter can show the
+     * invoices issued to a registered customer (from the POS or as sales invoices) or every invoice.
+     *
+     * @return ReportDefinition
+     */
     private function sales(): array
     {
-        $query = $this->shopSalesOrders()->selectRaw("DATE(orders.created_at) as day, SUM(CASE WHEN type != 'return' THEN 1 ELSE 0 END) as invoices, SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END) as sales, SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END) as returns, SUM(CASE WHEN type = 'return' THEN -ABS(total) ELSE total END) as net")
+        $scope = $this->filters['invoice_scope'] ?? '';
+        $orders = match ($scope) {
+            'customer' => $this->orders()->whereNotNull('orders.customer_id'),
+            'all' => $this->orders(),
+            default => $this->shopSalesOrders(),
+        };
+        $query = $orders->selectRaw("DATE(orders.created_at) as day, SUM(CASE WHEN type != 'return' THEN 1 ELSE 0 END) as invoices, SUM(CASE WHEN type != 'return' THEN ABS(total) ELSE 0 END) as sales, SUM(CASE WHEN type = 'return' THEN ABS(total) ELSE 0 END) as returns, SUM(CASE WHEN type = 'return' THEN -ABS(total) ELSE total END) as net")
             ->groupByRaw('DATE(orders.created_at)')->orderBy('day');
         $totals = DB::query()->fromSub(clone $query, 'daily_totals')->selectRaw('COALESCE(SUM(sales),0) as sales, COALESCE(SUM(returns),0) as returns, COALESCE(SUM(net),0) as net')->first();
 
-        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], ['فواتير البيع المكتملة غير المرتبطة بزبون أو مورد مسجل فقط؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي. صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
+        return $this->definition($query, ['day' => 'التاريخ', 'invoices' => 'عدد فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'net' => 'صافي المبيعات'], ['إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net], [match ($scope) {
+            'customer' => 'فواتير البيع المكتملة المرتبطة بزبون مسجل، من نقطة البيع أو فواتير المبيعات؛ مرتجعاتهم تُخصم من الصافي.',
+            'all' => 'كل فواتير البيع المكتملة: الزبون العام والفواتير المرتبطة بزبون؛ المرتجعات تُخصم من الصافي.',
+            default => 'فواتير نقطة البيع للزبون العام فقط (غير المرتبطة بزبون أو مورد مسجل)؛ المرتجعات غير المرتبطة بطرف تُخصم من الصافي.',
+        }, 'صافي المبيعات يشمل الضريبة ورسوم التوصيل كما في الفاتورة.']);
     }
 
     /**
@@ -777,7 +793,7 @@ class ReportingService
             'إجمالي المبيعات' => $totals->sales, 'المردودات' => $totals->returns, 'صافي المبيعات' => $totals->net, 'مجمل الربح' => $totals->gross_profit, 'مصروفات الشيفت' => $totals->expenses, 'الربح بعد المصروفات' => $totals->net_profit,
         ], [
             'الفترة تُحدَّد بوقت فتح الشيفت، وتُحتسب كل فواتير الشيفت ومصروفاته حتى لو تجاوزت منتصف الليل. مجمل الربح دون الضريبة ورسوم التوصيل.',
-            'يعتمد التقرير على الفواتير المكتملة المرتبطة بالشيفت. تقرير اليوم متاح أيضاً من تقريري «ملخص مبيعات نقطة البيع اليومي» و«الأرباح والمصروفات» باختيار زر اليوم.',
+            'يعتمد التقرير على الفواتير المكتملة المرتبطة بالشيفت. تقرير اليوم متاح أيضاً من تقريري «ملخص المبيعات يوم بيوم» و«الأرباح والمصروفات» باختيار زر اليوم.',
             'التكلفة هي تكلفة البيع المحفوظة وقت الفاتورة. مصروفات الشيفت تشمل سندات الصرف التشغيلية غير المرتبطة بطرف أو فاتورة، ولا تشمل الرواتب أو سداد الموردين.',
         ]);
     }

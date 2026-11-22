@@ -314,6 +314,25 @@ test('shop sales report includes only walk-in point-of-sale invoices and returns
         ->and($report['notes'][0])->toContain('غير المرتبطة بزبون أو مورد مسجل');
 });
 
+test('the daily sales summary can show walk-in, customer-linked or all invoices', function (): void {
+    ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SCOPE-WALKIN', 'total' => 80]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'SCOPE-NAMED-POS', 'total' => 120]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'web', 'invoice_number' => 'SCOPE-INVOICE', 'total' => 200]);
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'type' => 'return', 'invoice_number' => 'SCOPE-NAMED-RETURN', 'total' => -15]);
+    $net = fn (string $scope): float => (float) (new ReportingService($this->user))->prepare('sales', array_replace($this->filters, ['invoice_scope' => $scope]))['summary']['صافي المبيعات'];
+
+    expect($net(''))->toBe(80.0)
+        ->and($net('walk_in'))->toBe(80.0)
+        ->and($net('customer'))->toBe(305.0)
+        ->and($net('all'))->toBe(385.0);
+
+    Livewire::test('pages::tenant.reports.center')->set('report', 'sales')
+        ->assertSeeHtml('data-report-invoice-scope')->assertSee('فواتير مربوطة بزبون')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])
+        ->set('invoiceScope', 'customer')->call('applyFilters')
+        ->assertSee('305.00')->assertSee('المرتبطة بزبون مسجل');
+});
+
 test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {
     ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SHOP-WALKIN', 'total' => 80]);
     ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'SHOP-NAMED', 'total' => 120]);
