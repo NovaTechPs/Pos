@@ -467,6 +467,8 @@ class ReportingService
     private function posInvoices(): array
     {
         $query = $this->orders()->where('orders.source', 'pos')
+            ->when(($this->filters['invoice_scope'] ?? '') === 'walk_in', fn (Builder $q): Builder => $q->whereNull('orders.customer_id'))
+            ->when(($this->filters['invoice_scope'] ?? '') === 'customer', fn (Builder $q): Builder => $q->whereNotNull('orders.customer_id'))
             ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId))
             ->leftJoin('users', 'users.id', '=', 'orders.created_by')
             ->leftJoin('branches', 'branches.id', '=', 'orders.branch_id');

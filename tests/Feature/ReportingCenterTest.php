@@ -331,6 +331,16 @@ test('the daily sales summary can show walk-in, customer-linked or all invoices'
         ->set('from', $this->filters['from'])->set('to', $this->filters['to'])
         ->set('invoiceScope', 'customer')->call('applyFilters')
         ->assertSee('305.00')->assertSee('المرتبطة بزبون مسجل');
+
+    $posInvoices = fn (string $scope): array => (new ReportingService($this->user))->prepare('pos-invoices', array_replace($this->filters, ['invoice_scope' => $scope]))['query']->pluck('reference')->sort()->values()->all();
+    expect($posInvoices(''))->toBe(['SCOPE-NAMED-POS', 'SCOPE-NAMED-RETURN', 'SCOPE-WALKIN'])
+        ->and($posInvoices('walk_in'))->toBe(['SCOPE-WALKIN'])
+        ->and($posInvoices('customer'))->toBe(['SCOPE-NAMED-POS', 'SCOPE-NAMED-RETURN']);
+    Livewire::test('pages::tenant.reports.center')->set('report', 'pos-invoices')
+        ->assertSeeHtml('data-report-invoice-scope')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])
+        ->set('invoiceScope', 'walk_in')->call('applyFilters')
+        ->assertSee('SCOPE-WALKIN')->assertDontSee('SCOPE-NAMED-POS');
 });
 
 test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {

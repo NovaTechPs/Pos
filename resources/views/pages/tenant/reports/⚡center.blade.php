@@ -646,6 +646,9 @@ new class extends Component {
                 <option value="weighted_average">متوسط أسعار الشراء المرجّح بالكميات</option>
             </flux:select>
         @endif
+        @if ($report === 'pos-invoices')
+            <flux:select label="الفواتير" wire:model="invoiceScope" data-report-invoice-scope><option value="">كل الفواتير</option><option value="walk_in">فواتير الزبون العام</option><option value="customer">فواتير مربوطة بزبون</option></flux:select>
+        @endif
         @if (in_array($report, ['pos-invoices', 'product-history'], true))<label class="reports-invoice-paid-toggle" data-report-delivery-toggle><input type="checkbox" wire:model.live="showDeliveryDetails" /><span>بيانات التوصيل</span></label>@endif
         @if ($report === 'inventory')<flux:select label="حالة المخزون" wire:model="stockFilter"><option value="all">الكل</option><option value="low">أقل من حد التنبيه</option><option value="zero">نافد</option><option value="negative">رصيد سالب</option></flux:select>@endif
         <div class="reports-filter-actions flex flex-wrap gap-2">
