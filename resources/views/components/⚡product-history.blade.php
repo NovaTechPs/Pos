@@ -57,7 +57,7 @@ new class extends Component
                 ->where(fn ($query) => $query
                     ->whereIn('orders.type', auth()->user()->can('pos.view') ? ['pos', 'return'] : [])
                     ->orWhereIn('orders.type', auth()->user()->can('sales_invoices.view') ? ['wholesale'] : []))
-                ->selectRaw("orders.id as invoice_id, orders.invoice_number as reference, orders.created_at as event_date, COALESCE(NULLIF(orders.customer_name, ''), customers.name) as party_name, order_items.quantity, order_items.unit_price as price, orders.type as kind, order_items.returned_to_stock as returned_to_stock");
+                ->selectRaw("orders.id as invoice_id, orders.invoice_number as reference, orders.created_at as event_date, COALESCE(customers.name, NULLIF(orders.customer_name, '')) as party_name, order_items.quantity, order_items.unit_price as price, orders.type as kind, order_items.returned_to_stock as returned_to_stock");
             $purchases = DB::table('purchase_items')->join('purchases', 'purchases.id', '=', 'purchase_items.purchase_id')
                 ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'purchases.supplier_id')->where('parties.tenant_id', $tenantId))
                 ->where('purchases.tenant_id', $tenantId)->whereNull('purchases.deleted_at')

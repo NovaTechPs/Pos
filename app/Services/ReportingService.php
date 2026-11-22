@@ -474,7 +474,7 @@ class ReportingService
             ->leftJoin('branches', 'branches.id', '=', 'orders.branch_id');
         $totals = (clone $query)->selectRaw("COALESCE(SUM(CASE WHEN orders.type != 'return' THEN 1 ELSE 0 END), 0) as invoices, COALESCE(SUM(CASE WHEN orders.type != 'return' THEN ABS(orders.total) ELSE 0 END), 0) as sales, COALESCE(SUM(CASE WHEN orders.type = 'return' THEN ABS(orders.total) ELSE 0 END), 0) as returns")->first();
         $query->select('orders.id as invoice_id', 'orders.type as invoice_type', 'orders.created_at', 'orders.invoice_number as reference', 'branches.name as branch_name', 'orders.paid_amount')
-            ->selectRaw("CASE WHEN orders.type = 'return' THEN 'مرتجع' ELSE 'بيع' END as kind, COALESCE(NULLIF(orders.customer_name, ''), parties.name, 'زبون نقدي') as party_name, COALESCE(users.name, '—') as cashier_name, CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END as total")
+            ->selectRaw("CASE WHEN orders.type = 'return' THEN 'مرتجع' ELSE 'بيع' END as kind, COALESCE(parties.name, NULLIF(orders.customer_name, ''), 'زبون نقدي') as party_name, COALESCE(users.name, '—') as cashier_name, CASE WHEN orders.type = 'return' THEN -ABS(orders.total) ELSE orders.total END as total")
             ->orderBy('orders.created_at')->orderBy('orders.id');
 
         return $this->definition($query,
@@ -492,7 +492,7 @@ class ReportingService
             ->leftJoin('parties', fn ($join) => $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId));
         $this->productFilters($sales, 'products.id');
         $sales->select('orders.id as invoice_id', 'orders.type as invoice_type', 'orders.created_at as event_date', 'orders.invoice_number as reference', 'products.product_number', 'products.name', 'order_items.id as line_id', 'order_items.quantity', 'order_items.unit_price', 'order_items.total_price as amount')
-            ->selectRaw("'بيع' as kind, COALESCE(NULLIF(orders.customer_name, ''), parties.name, 'زبون عام') as party_name, CASE WHEN order_items.is_gift = true THEN 0 ELSE order_items.quantity END as sold, 0 as incoming, CASE WHEN order_items.is_gift = true THEN order_items.quantity ELSE 0 END as gift_quantity");
+            ->selectRaw("'بيع' as kind, COALESCE(parties.name, NULLIF(orders.customer_name, ''), 'زبون عام') as party_name, CASE WHEN order_items.is_gift = true THEN 0 ELSE order_items.quantity END as sold, 0 as incoming, CASE WHEN order_items.is_gift = true THEN order_items.quantity ELSE 0 END as gift_quantity");
         $purchases = $this->period($this->branch($this->table('purchases'), 'purchases.branch_id'), 'purchases.created_at')
             ->join('purchase_items', 'purchase_items.purchase_id', '=', 'purchases.id')
             ->join('products', 'products.id', '=', 'purchase_items.product_id')->where('products.tenant_id', $this->tenantId)

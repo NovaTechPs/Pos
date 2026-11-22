@@ -343,6 +343,16 @@ test('the daily sales summary can show walk-in, customer-linked or all invoices'
         ->assertSee('SCOPE-WALKIN')->assertDontSee('SCOPE-NAMED-POS');
 });
 
+test('an invoice issued to a customer shows the customer, not the parcel recipient', function (): void {
+    ($this->makeOrder)(['customer_id' => $this->customer->id, 'customer_name' => 'صاحب الطرد', 'source' => 'pos', 'invoice_number' => 'PARCEL-1', 'total' => 119]);
+    ($this->makeOrder)(['customer_id' => null, 'customer_name' => 'مستلم نقدي', 'source' => 'pos', 'invoice_number' => 'WALKIN-NAMED', 'total' => 20]);
+
+    $names = (new ReportingService($this->user))->prepare('pos-invoices', $this->filters)['query']->pluck('party_name', 'reference');
+
+    expect($names['PARCEL-1'])->toBe($this->customer->name)
+        ->and($names['WALKIN-NAMED'])->toBe('مستلم نقدي');
+});
+
 test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {
     ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SHOP-WALKIN', 'total' => 80]);
     ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'SHOP-NAMED', 'total' => 120]);

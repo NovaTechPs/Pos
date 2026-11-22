@@ -58,7 +58,7 @@ trait HasProductPriceHistory
             ->where('orders.status', 'completed')
             ->where('orders.type', '!=', 'return')
             ->select('items.id', 'items.unit_price as price', 'items.quantity', 'orders.invoice_number as invoice', 'orders.created_at as date')
-            ->selectRaw("COALESCE(NULLIF(orders.customer_name, ''), customers.name) as party")
+            ->selectRaw("COALESCE(customers.name, NULLIF(orders.customer_name, '')) as party")
             ->orderByDesc('orders.created_at')->orderByDesc('items.id');
         $costs = DB::table('purchase_items as items')
             ->join('purchases', 'purchases.id', '=', 'items.purchase_id')
