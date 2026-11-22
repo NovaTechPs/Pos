@@ -288,3 +288,5 @@
     .reports-redesign .reports-workspace.is-statement>.reports-account-sidebar, .reports-redesign .reports-workspace.is-statement>.reports-content { grid-column: 1; position: static; }
     .reports-redesign .reports-account-sidebar .reports-account-list { max-height: 280px; }
 }
+.reports-invoice-delivery{display:block;margin-top:2px;font-size:11px;font-weight:600;color:#1e40af;white-space:normal}
+.dark .reports-invoice-delivery{color:#93c5fd}

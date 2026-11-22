@@ -868,3 +868,22 @@ test('the statement shows the paid part of each invoice only when «المدفو
     Livewire::test('pages::tenant.reports.center')->set('showInvoicePaid', true)->call('showStatementParty', $this->supplier->id)
         ->assertSeeHtmlInOrder(['PAID-PURCHASE', 'فاتورة مشتريات', '(مدفوع 150.00)']);
 });
+
+test('«بيانات التوصيل» shows each delivery invoice recipient in the statement and the POS invoices report', function (): void {
+    $company = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'شركة السهم للتوصيل', 'type' => 'supplier']);
+    ($this->makeOrder)(['invoice_number' => 'DELIVERY-01', 'total' => 210, 'delivery_fee' => 10, 'delivery_party_id' => $company->id,
+        'customer_name' => 'نعمة البدوي', 'customer_phone' => '0505210395', 'customer_address' => 'الداخل جسر الزرقاء']);
+    ($this->makeOrder)(['invoice_number' => 'PLAIN-01', 'customer_name' => 'زبون التقرير']);
+
+    Livewire::test('pages::tenant.reports.center')->call('showStatementParty', $this->customer->id)
+        ->assertSeeHtml('data-report-delivery-toggle')->assertDontSeeHtml('data-statement-invoice-delivery>')
+        ->set('showDeliveryDetails', true)
+        ->assertSeeHtml('data-statement-invoice-delivery>🚚 نعمة البدوي · 0505210395 · الداخل جسر الزرقاء · شركة السهم للتوصيل · رسوم 10.00')
+        ->assertSeeHtmlInOrder(['DELIVERY-01', 'نعمة البدوي', 'PLAIN-01'])
+        ->call('resetFilters')->assertSet('showDeliveryDetails', false);
+
+    $html = Livewire::test('pages::tenant.reports.center')->set('from', '2026-10-01')->set('to', '2026-10-31')
+        ->call('selectReport', 'pos-invoices')->set('showDeliveryDetails', true)->html();
+    expect($html)->toContain('data-report-delivery-toggle', 'بيانات التوصيل', 'نعمة البدوي · 0505210395')
+        ->and(substr_count($html, 'شركة السهم للتوصيل'))->toBe(1);
+});

@@ -19,8 +19,8 @@
                             <td><button type="button" x-on:keydown.enter.stop class="reports-document-link" @if(isset($row->source_order, $row->source_id)) wire:click.stop="openStatementDocument({{ $row->source_order }}, {{ $row->source_id }})" @endif><flux:icon.arrow-top-right-on-square variant="outline" />{{ $row->reference ?: '—' }}</button></td>
                         @elseif ($key === 'balance')
                             <td class="reports-balance">{{ \App\Services\ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>
-                        @elseif ($key === 'description' && isset($invoicePaid[($row->source_order ?? '').':'.($row->source_id ?? '')]))
-                            <td>{{ $row->description }} <span class="reports-invoice-paid" data-statement-invoice-paid>(مدفوع {{ $money($invoicePaid[$row->source_order.':'.$row->source_id]) }})</span></td>
+                        @elseif ($key === 'description' && (isset($invoicePaid[($row->source_order ?? '').':'.($row->source_id ?? '')]) || ((int) ($row->source_order ?? 0) === 1 && isset($invoiceDelivery[(int) ($row->source_id ?? 0)]))))
+                            <td>{{ $row->description }}@isset($invoicePaid[$row->source_order.':'.$row->source_id]) <span class="reports-invoice-paid" data-statement-invoice-paid>(مدفوع {{ $money($invoicePaid[$row->source_order.':'.$row->source_id]) }})</span>@endisset @if ((int) $row->source_order === 1 && isset($invoiceDelivery[(int) $row->source_id]))<span class="reports-invoice-delivery" data-statement-invoice-delivery>🚚 {{ $invoiceDelivery[(int) $row->source_id] }}</span>@endif</td>
                         @elseif ($key === 'notes')
                             <td class="reports-statement-notes">{{ \App\Services\ReportingService::formatCell($key, $row->{$key} ?? null) }}</td>
                         @else

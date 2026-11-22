@@ -49,6 +49,38 @@ new class extends Component {
      * @param  array<int, object>  $rows
      * @return array<string, float>
      */
+    /** Reports whose rows are invoices and can show their delivery details. */
+    private const DELIVERY_DETAIL_REPORTS = ['statement', 'pos-invoices', 'product-history'];
+
+    /**
+     * Delivery details of the sales invoices among the rows, keyed by order id.
+     *
+     * @param  array<int, object>  $rows
+     * @return array<int, string>
+     */
+    private function invoiceDeliveryDetails(array $rows): array
+    {
+        $orderIds = collect($rows)->map(fn (object $row): ?int => match (true) {
+            isset($row->source_order) => (int) $row->source_order === 1 ? (int) $row->source_id : null,
+            isset($row->invoice_id) => ($row->invoice_type ?? '') !== 'purchase' ? (int) $row->invoice_id : null,
+            default => null,
+        })->filter()->unique()->values()->all();
+        if ($orderIds === []) {
+            return [];
+        }
+
+        $tenantId = $this->service()->tenantId;
+        $orders = Order::query()->where('tenant_id', $tenantId)->whereKey($orderIds)->where('delivery_fee', '>', 0)
+            ->get(['id', 'customer_name', 'customer_phone', 'customer_address', 'delivery_party_id', 'delivery_fee']);
+        $companies = Party::query()->where('tenant_id', $tenantId)->whereKey($orders->pluck('delivery_party_id')->filter()->unique())->pluck('name', 'id');
+
+        return $orders->mapWithKeys(fn (Order $order): array => [$order->id => collect([
+            $order->customer_name, $order->customer_phone, $order->customer_address,
+            $order->delivery_party_id ? $companies[$order->delivery_party_id] ?? null : null,
+            'رسوم '.number_format((float) $order->delivery_fee, 2),
+        ])->filter(fn ($part): bool => filled($part))->implode(' · ')])->all();
+    }
+
     private function invoicePaidAmounts(array $rows): array
     {
         $tenantId = $this->service()->tenantId;
@@ -67,7 +99,7 @@ new class extends Component {
 
     public function resetFilters(): void
     {
-        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'productView', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'appliedStatementSignature', 'productSearch');
+        $this->reset('columnFilters', 'partyId', 'productId', 'search', 'partyType', 'balanceSide', 'stockFilter', 'source', 'saleKind', 'costMethod', 'productView', 'voucherType', 'paymentMethod', 'partySearch', 'statementPartyType', 'statementBalanceFilter', 'showInvoicePaid', 'showDeliveryDetails', 'appliedStatementSignature', 'productSearch');
         $this->setPeriod('month');
         $this->resetPage('statementPartiesPage');
         $this->resetErrorBag();
@@ -98,6 +130,8 @@ new class extends Component {
     public string $statementBalanceFilter = 'all';
     /** Shows how much of each invoice in the statement has been paid. */
     public bool $showInvoicePaid = false;
+    /** Shows the recipient, phone, address, company and fee of delivery invoices in the statement and invoice reports. */
+    public bool $showDeliveryDetails = false;
     #[Locked]
     public ?string $appliedStatementSignature = null;
     public string $productSearch = '';
@@ -427,7 +461,14 @@ new class extends Component {
         $activeRange = collect($periodRanges)->search(fn (array $range): bool => $range[0] === $this->from && $range[1] === $this->to);
         $rows = $definition['query']->paginate(30);
         $invoicePaid = $this->report === 'statement' && $this->showInvoicePaid ? $this->invoicePaidAmounts($rows->items()) : [];
-        return $this->view(['invoicePaid' => $invoicePaid, 'statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $rows, 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        $invoiceDelivery = $this->showDeliveryDetails && in_array($this->report, self::DELIVERY_DETAIL_REPORTS, true) ? $this->invoiceDeliveryDetails($rows->items()) : [];
+        if ($this->showDeliveryDetails && $this->report !== 'statement' && in_array($this->report, self::DELIVERY_DETAIL_REPORTS, true)) {
+            $definition['columns']['delivery_details'] = 'بيانات التوصيل';
+            foreach ($rows->items() as $row) {
+                $row->delivery_details = ($row->invoice_type ?? '') !== 'purchase' ? ($invoiceDelivery[(int) ($row->invoice_id ?? 0)] ?? null) : null;
+            }
+        }
+        return $this->view(['invoiceDelivery' => $invoiceDelivery, 'invoicePaid' => $invoicePaid, 'statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $rows, 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -522,6 +563,7 @@ new class extends Component {
                 <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>
             @endif
             <label class="reports-invoice-paid-toggle" data-statement-invoice-paid-toggle><input type="checkbox" wire:model.live="showInvoicePaid" /><span>المدفوع من الفاتورة</span></label>
+            <label class="reports-invoice-paid-toggle" data-report-delivery-toggle><input type="checkbox" wire:model.live="showDeliveryDetails" /><span>بيانات التوصيل</span></label>
         </div>
         <div class="reports-filter-actions flex flex-wrap gap-2">
             <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
@@ -598,6 +640,7 @@ new class extends Component {
                 <option value="weighted_average">متوسط أسعار الشراء المرجّح بالكميات</option>
             </flux:select>
         @endif
+        @if (in_array($report, ['pos-invoices', 'product-history'], true))<label class="reports-invoice-paid-toggle" data-report-delivery-toggle><input type="checkbox" wire:model.live="showDeliveryDetails" /><span>بيانات التوصيل</span></label>@endif
         @if ($report === 'inventory')<flux:select label="حالة المخزون" wire:model="stockFilter"><option value="all">الكل</option><option value="low">أقل من حد التنبيه</option><option value="zero">نافد</option><option value="negative">رصيد سالب</option></flux:select>@endif
         <div class="reports-filter-actions flex flex-wrap gap-2">
             <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
