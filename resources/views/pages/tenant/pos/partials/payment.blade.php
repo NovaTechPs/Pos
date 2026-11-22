@@ -655,6 +655,15 @@
 
             @endif
 
+            @if ($delivery_fee <= 0)
+                <label class="mt-1.5 block text-[9px] font-black text-slate-600" data-pos-invoice-recipient>
+                    اسم المستلم على الفاتورة
+                    <input type="text" maxlength="191" autocomplete="off" wire:model.blur="invoiceRecipientName" @disabled($invoiceLocked)
+                        placeholder="{{ $selectedCustomerId ? 'اسم الزبون المحدد' : 'زبون عام' }}"
+                        class="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-900 outline-none focus:border-indigo-500 disabled:bg-slate-100">
+                </label>
+            @endif
+
             @can('customers.create')
                 <a href="{{ route('tenant.customer') }}" target="_blank" rel="noopener" data-pos-add-customer aria-label="إضافة زبون جديد" title="إضافة زبون جديد"
                     class="pos-add-customer">

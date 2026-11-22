@@ -148,6 +148,8 @@ new class extends Component {
     public bool $showDeliveryDetailsModal = false;
     public string $pendingDeliveryAction = 'checkout';
     public string $deliveryCustomerName = '';
+    /** Name printed on a non-delivery invoice instead of the selected customer's name; empty uses the customer's name. */
+    public string $invoiceRecipientName = '';
     public ?int $deliveryCompanyId = null;
     public string $deliveryCustomerPhone = '';
     public string $deliveryCustomerAddress = '';
@@ -2378,6 +2380,7 @@ new class extends Component {
         $this->showDeliveryDetailsModal = false;
         $this->pendingDeliveryAction = 'checkout';
         $this->deliveryCustomerName = '';
+        $this->invoiceRecipientName = '';
         $this->deliveryCompanyId = null;
         $this->deliveryCustomerPhone = '';
         $this->deliveryCustomerAddress = '';
@@ -2461,6 +2464,7 @@ new class extends Component {
             'discount_type' => $this->discount_type,
             'delivery_fee' => $this->delivery_fee,
             'delivery_customer_name' => $this->deliveryCustomerName,
+            'invoice_recipient_name' => $this->invoiceRecipientName,
             'delivery_company_id' => $this->deliveryCompanyId,
             'delivery_customer_phone' => $this->deliveryCustomerPhone,
             'delivery_customer_address' => $this->deliveryCustomerAddress,
@@ -2496,6 +2500,7 @@ new class extends Component {
         $this->discount_type = $held['discount_type'] ?? 'fixed';
         $this->delivery_fee = (float) ($held['delivery_fee'] ?? 0);
         $this->deliveryCustomerName = (string) ($held['delivery_customer_name'] ?? '');
+        $this->invoiceRecipientName = (string) ($held['invoice_recipient_name'] ?? '');
         $this->deliveryCompanyId = isset($held['delivery_company_id']) ? (int) $held['delivery_company_id'] : null;
         $this->deliveryCustomerPhone = (string) ($held['delivery_customer_phone'] ?? '');
         $this->deliveryCustomerAddress = (string) ($held['delivery_customer_address'] ?? '');
@@ -2641,6 +2646,9 @@ new class extends Component {
         $this->discount_type = $invoice->discount_type ?? 'fixed';
         $this->delivery_fee = (float) ($invoice->delivery_fee ?? 0);
         $this->deliveryCustomerName = (string) ($invoice->customer_name ?? '');
+        $partyName = $invoice->customer_id ? Party::query()->where('tenant_id', $this->tenantId())->whereKey($invoice->customer_id)->value('name') : null;
+        $this->invoiceRecipientName = (float) ($invoice->delivery_fee ?? 0) <= 0 && filled($invoice->customer_name)
+            && ! in_array($invoice->customer_name, array_filter([$partyName, 'زبون عام', 'زبون نقدي']), true) ? (string) $invoice->customer_name : '';
         $this->deliveryCompanyId = $invoice->delivery_party_id ? (int) $invoice->delivery_party_id : null;
         $this->deliveryCustomerPhone = (string) ($invoice->customer_phone ?? '');
         $this->deliveryCustomerAddress = (string) ($invoice->customer_address ?? '');
@@ -3873,7 +3881,8 @@ new class extends Component {
                 if ($isDelivery && ! $this->deliveryCompanyIsValid()) {
                     throw new \DomainException('اختر شركة توصيل صحيحة من الموردين.');
                 }
-                $invoiceCustomerName = $isDelivery ? trim($this->deliveryCustomerName) : ($customer?->name ?? 'زبون عام');
+                $recipientName = mb_substr(trim($this->invoiceRecipientName), 0, 191);
+                $invoiceCustomerName = $isDelivery ? trim($this->deliveryCustomerName) : ($recipientName !== '' ? $recipientName : ($customer?->name ?? 'زبون عام'));
                 $invoiceCustomerPhone = $isDelivery ? trim($this->deliveryCustomerPhone) : ($customer?->phone ?? null);
                 $invoiceCustomerAddress = $isDelivery ? trim($this->deliveryCustomerAddress) : ($customer?->address ?? null);
                 $invoiceNotes = trim($this->notes);
