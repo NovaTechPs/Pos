@@ -18,6 +18,21 @@ test('purchase invoice summary spans the full entry grid width', function (): vo
         ->assertSee('xl:col-span-12', false);
 });
 
+test('a purchase invoice cannot be saved without selecting a supplier', function (): void {
+    $tenant = Tenant::create(['name' => 'المتجر']);
+    $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
+    $user = User::factory()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'is_owner' => true]);
+    $this->actingAs($user)->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
+
+    Livewire::test('pages::tenant.purchases.invoices')
+        ->set('cart', [['id' => 1, 'name' => 'الصنف', 'quantity' => 1, 'price' => 10, 'discount' => 0]])
+        ->call('saveInvoice')
+        ->assertSet('errorMessage', 'لا يمكن حفظ فاتورة المشتريات بدون اسم المورد.')
+        ->assertDispatched('toast', type: 'error', message: 'لا يمكن حفظ فاتورة المشتريات بدون اسم المورد.');
+
+    expect(Purchase::query()->count())->toBe(0);
+});
+
 test('purchase summary keeps discounts and payment totals reactive in the compact layout', function (): void {
     $tenant = Tenant::create(['name' => 'المتجر']);
     $branch = Branch::create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);

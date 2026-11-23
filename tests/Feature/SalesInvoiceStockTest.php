@@ -35,6 +35,17 @@ test('a new sales invoice takes its quantities from the branch stock', function 
         ->and((float) StockMovement::query()->where('source_type', 'order')->where('source_id', $order->id)->sum('quantity'))->toBe(-3.0);
 });
 
+test('a sales invoice cannot be saved without selecting a customer', function (): void {
+    Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)->set('selectedQuantity', 1)->call('commitRowToCart')
+        ->call('saveInvoice')
+        ->assertSet('errorMessage', 'لا يمكن حفظ فاتورة المبيعات بدون اسم الزبون.')
+        ->assertDispatched('toast', type: 'error', message: 'لا يمكن حفظ فاتورة المبيعات بدون اسم الزبون.');
+
+    expect(Order::query()->count())->toBe(0)
+        ->and((float) $this->stock->fresh()->stock_quantity)->toBe(10.0);
+});
+
 test('editing a sales invoice gives back its old quantities before taking the new ones', function (): void {
     ($this->sell)(3);
     $order = Order::query()->sole();

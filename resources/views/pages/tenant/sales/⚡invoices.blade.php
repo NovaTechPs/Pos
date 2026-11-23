@@ -1200,6 +1200,13 @@ new class extends Component {
             }
         }
 
+        if (! $customer) {
+            $this->errorMessage = 'لا يمكن حفظ فاتورة المبيعات بدون اسم الزبون.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         if ($openSettlementModal && !$customer) {
             $this->errorMessage = 'اختر زبوناً للفاتورة قبل تسجيل سند القبض.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);

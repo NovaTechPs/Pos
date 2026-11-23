@@ -1132,6 +1132,13 @@ new class extends Component {
             }
         }
 
+        if (! $supplier) {
+            $this->errorMessage = 'لا يمكن حفظ فاتورة المشتريات بدون اسم المورد.';
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+            return;
+        }
+
         if ($openSettlementModal && !$supplier) {
             $this->errorMessage = 'اختر مورداً للفاتورة قبل تسجيل سند الصرف.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
