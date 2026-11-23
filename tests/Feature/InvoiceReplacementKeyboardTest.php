@@ -62,7 +62,7 @@ test('replacement keyboard selects scrolls and handles refreshed empty and disab
     const mainInput = { focused: false, selected: false, focus() { this.focused = true; }, select() { this.selected = true; } };
     state.$el = { isConnected: true,
         querySelectorAll: selector => selector === '[data-replacement-result]' ? rows : [],
-        querySelector: selector => selector === '#product-search-input' ? mainInput : null,
+        querySelector: selector => selector === '#product-code-input' ? mainInput : null,
         contains: element => element === mainInput,
     };
     state.$nextTick = fn => fn();

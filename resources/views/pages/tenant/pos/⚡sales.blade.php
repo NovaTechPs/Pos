@@ -1838,7 +1838,7 @@ new class extends Component {
             ->where('tenant_id', $this->tenantId())
             ->where('branch_id', $this->getActiveBranchId())
             ->whereIn('type', ['pos', 'return'])
-            ->where('invoice_number', $invoiceBarcode)
+            ->whereInvoiceNumber($invoiceBarcode)
             ->first();
 
         if ($invoice && ! $this->onlyOwnInvoices(Order::query())->whereKey($invoice->id)->exists()) {
@@ -2554,7 +2554,7 @@ new class extends Component {
             ->where('branch_id', $branchId)
             ->whereIn('type', ['pos', 'return'])
             ->where(function ($q) use ($query, $digitsOnly): void {
-                $q->where('invoice_number', $query)->orWhere('invoice_number', 'like', "%{$query}%");
+                $q->whereInvoiceNumber($query, partial: true);
 
                 if (is_numeric($query)) {
                     $q->orWhere('id', (int) $query);

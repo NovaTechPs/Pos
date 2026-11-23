@@ -43,7 +43,7 @@ class PosController extends Controller
             ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id));
         if (! empty($validated['search'])) {
             $search = $validated['search'];
-            $query->where(fn ($query) => $query->where('invoice_number', $search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
+            $query->where(fn ($query) => $query->whereInvoiceNumber($search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
         }
         if (! empty($validated['before'])) {
             $query->where('id', '<', $validated['before']);
@@ -189,7 +189,7 @@ class PosController extends Controller
             ->when($request->filled('to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date('to')))
             ->when($request->filled('search'), fn ($query) => $query->where(function ($inner) use ($request): void {
                 $search = '%'.$request->string('search').'%';
-                $inner->where('invoice_number', 'like', $search)->orWhere('customer_name', 'like', $search);
+                $inner->whereInvoiceNumber($request->string('search')->toString(), partial: true)->orWhere('customer_name', 'like', $search);
             }))
             ->latest('created_at')->paginate(min(100, max(1, $request->integer('per_page', 20))));
 

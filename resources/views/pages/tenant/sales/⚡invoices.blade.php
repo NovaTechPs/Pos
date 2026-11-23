@@ -1731,7 +1731,7 @@ new class extends Component {
             ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where(function ($query) use ($search) {
-                $query->where('invoice_number', 'like', "%{$search}%")
+                $query->whereInvoiceNumber($search, partial: true)
                     ->orWhere('customer_name', 'like', "%{$search}%")
                     ->orWhere('customer_phone', 'like', "%{$search}%");
 
@@ -2297,7 +2297,7 @@ new class extends Component {
                 ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
                 ->when($search !== '', function ($query) use ($search): void {
                     $query->where(function ($matches) use ($search): void {
-                        $matches->where('invoice_number', 'like', "%{$search}%")
+                        $matches->whereInvoiceNumber($search, partial: true)
                             ->orWhere('customer_name', 'like', "%{$search}%")
                             ->orWhere('customer_phone', 'like', "%{$search}%");
 

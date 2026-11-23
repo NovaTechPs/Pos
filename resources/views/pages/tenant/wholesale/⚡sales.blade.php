@@ -687,8 +687,7 @@ new class extends Component {
             ->where('branch_id', $branchId)
             ->where('type', 'wholesale')
             ->where(function ($q) use ($query, $digits) {
-                $q->where('invoice_number', $query)
-                    ->orWhere('invoice_number', 'like', "%{$query}%");
+                $q->whereInvoiceNumber($query, partial: true);
 
                 if ($digits !== '') {
                     $q->orWhere('invoice_number', 'like', "%{$digits}%");

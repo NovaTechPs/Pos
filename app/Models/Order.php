@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\BelongsToTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -34,6 +35,21 @@ class Order extends Model
     protected $casts = [
         'invoice_date' => 'date',
     ];
+
+    /**
+     * Matches the invoice number, or the number an invoice carried before it was
+     * renumbered into the shared sequence (old printed receipts still show it).
+     *
+     * @param  Builder<Order>  $query
+     */
+    public function scopeWhereInvoiceNumber(Builder $query, string $number, bool $partial = false): void
+    {
+        $operator = $partial ? 'like' : '=';
+        $value = $partial ? '%'.$number.'%' : $number;
+        $query->where(fn (Builder $inner) => $inner
+            ->where($this->qualifyColumn('invoice_number'), $operator, $value)
+            ->orWhere($this->qualifyColumn('previous_invoice_number'), $operator, $value));
+    }
 
     /** @return HasMany<OrderItem, $this> */
     public function items(): HasMany

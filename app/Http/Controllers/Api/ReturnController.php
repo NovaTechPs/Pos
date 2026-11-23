@@ -25,7 +25,7 @@ class ReturnController extends Controller
         $tenantId = $user->tenant_id;
 
         $order = Order::where('tenant_id', $tenantId)
-            ->where('invoice_number', $invoiceNumber)
+            ->whereInvoiceNumber($invoiceNumber)
             ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
             ->whereIn('type', ['pos', 'wholesale'])
             ->where('status', 'completed')

@@ -212,7 +212,7 @@ class WholesaleWorkspaceController extends Controller
         }
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
-            $query->where(fn ($q) => $q->where('invoice_number', $search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
+            $query->where(fn ($q) => $q->whereInvoiceNumber($search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
         }
         if ($request->filled('before')) {
             $query->where('id', '<', $request->integer('before'));
