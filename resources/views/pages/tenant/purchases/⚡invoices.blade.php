@@ -3362,6 +3362,13 @@ new class extends Component {
 
                         if (target?.matches?.('#product-code-input')) {
                             event.preventDefault();
+                            // No barcode typed: Enter moves on to the item name.
+                            if (target.value.trim() === '') {
+                                const nameInput = this.$el.querySelector('#product-name-input');
+                                nameInput?.focus();
+                                nameInput?.select();
+                                return;
+                            }
                             const barcodeMatched = await this.$wire.scanBarcodeToCart(target.value, true);
                             if (barcodeMatched) {
                                 this.productIndex = -1;

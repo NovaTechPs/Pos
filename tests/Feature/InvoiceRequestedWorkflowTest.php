@@ -530,7 +530,7 @@ test('notes button and dialog share the workspace Alpine state', function (): vo
         ->and($toolbar)->toContain('x-on:click="notesOpen = true"', 'x-show="notesOpen"');
 });
 
-test('saving and paying an invoice opens a new invoice once the voucher is saved or skipped', function (string $page, string $partyType, string $partyField, string $currentIdField): void {
+test('saving and paying a purchase invoice opens a new invoice once the voucher is saved or skipped', function (string $page, string $partyType, string $partyField, string $currentIdField): void {
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'طرف فاتورة جديدة', 'type' => $partyType]);
     $saveAndPay = fn () => Livewire::test('pages::tenant.'.$page.'.invoices')
         ->set($partyField, $party->id)
@@ -548,9 +548,54 @@ test('saving and paying an invoice opens a new invoice once the voucher is saved
 
     expect(Payment::query()->count())->toBe(1);
 })->with([
-    ['sales', 'customer', 'selectedCustomerId', 'currentOrderId'],
     ['purchases', 'supplier', 'selectedSupplierId', 'currentPurchaseId'],
 ]);
+
+test('sales save and settle saves the invoice only with its receipt and cancelling returns to the unsaved invoice', function (): void {
+    $customer = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون حفظ وتسديد', 'type' => 'customer']);
+    $component = Livewire::test('pages::tenant.sales.invoices')
+        ->set('selectedCustomerId', $customer->id)
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('openSaveAndSettle')
+        ->assertSet('showSettlementModal', true)
+        ->assertSet('settlementAmount', '10')
+        ->assertSet('currentOrderId', null)
+        ->assertSee('حفظ الفاتورة وسند القبض');
+
+    expect(Order::query()->count())->toBe(0);
+
+    // Cancel: back to the same invoice, nothing saved.
+    $component->set('showSettlementModal', false)
+        ->assertSet('currentOrderId', null)
+        ->assertSet('selectedCustomerId', $customer->id)
+        ->assertCount('cart', 1);
+    expect(Order::query()->count())->toBe(0)->and(Payment::query()->count())->toBe(0);
+
+    // Save from the window: the invoice and its receipt are saved together, then a new invoice opens.
+    $component->call('openSaveAndSettle')
+        ->set('settlementAmount', 6)
+        ->set('settlementMethod', 'card')
+        ->call('saveSettlementVoucher')
+        ->assertHasNoErrors()
+        ->assertSet('showSettlementModal', false)
+        ->assertSet('currentOrderId', null)
+        ->assertSet('cart', []);
+
+    $order = Order::query()->sole();
+    $receipt = Payment::query()->where('order_id', $order->id)->sole();
+    expect((float) $receipt->amount)->toBe(6.0)
+        ->and($receipt->payment_method)->toBe('card')
+        ->and((float) $order->fresh()->paid_amount)->toBe(6.0);
+
+    // Without a customer nothing opens.
+    Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->call('openSaveAndSettle')
+        ->assertSet('showSettlementModal', false)
+        ->assertSet('errorMessage', 'اختر زبوناً للفاتورة قبل تسجيل سند القبض.');
+});
 
 test('saving an edited invoice opens a new invoice', function (string $page, string $currentIdField, string $loadMethod): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')

@@ -159,3 +159,34 @@ test('the sales items table shows the item number instead of the internal id', f
         ->assertViewHas('cartProductNumbers', [$this->product->id => 'I00000001'])
         ->assertSeeHtml('text-slate-700">'."\n".'                                    I00000001');
 });
+
+test('enter on an empty barcode field moves to the item name in sales and purchase invoices', function (string $page): void {
+    $source = file_get_contents(resource_path("views/pages/tenant/{$page}/⚡invoices.blade.php"));
+    $codeEnter = Str::after($source, "product-code-input')");
+    $codeEnter = Str::after($codeEnter, 'Enter');
+
+    expect(Str::before($codeEnter, 'selectProductByBarcode') !== $codeEnter || Str::before($codeEnter, 'scanBarcodeToCart') !== $codeEnter)->toBeTrue();
+
+    $beforeLookup = $page === 'sales' ? Str::before($codeEnter, 'selectProductByBarcode') : Str::before($codeEnter, 'scanBarcodeToCart');
+    expect($beforeLookup)
+        ->toContain("target.value.trim() === ''")
+        ->toContain("querySelector('#product-name-input')")
+        ->toContain('nameInput?.focus()');
+})->with(['sales', 'purchases']);
+
+test('sales invoice rows move like the purchase invoice: right goes toward quantity, enter skips the total and a row click activates it', function (): void {
+    $source = file_get_contents(resource_path('views/pages/tenant/sales/⚡invoices.blade.php'));
+    $gridKeys = Str::after($source, "if (target?.matches('[data-grid-input]')) {");
+
+    expect(Str::between($gridKeys, "key === 'ArrowRight'", 'return;'))->toContain("moveGridInput(target, -1, 'col')")
+        ->and(Str::between($gridKeys, "key === 'ArrowLeft'", 'return;'))->toContain("moveGridInput(target, 1, 'col')")
+        ->and($source)->toContain('gridColumns: [0, 1, 2]')
+        ->and($source)->toContain("closest?.('tr[data-invoice-row]')")
+        ->and($source)->toContain('tr[data-invoice-row]:focus-within { background: #bfdbfe !important; outline: 2px solid #2563eb;');
+
+    $component = Livewire::test('pages::tenant.sales.invoices')
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart');
+    expect($component->html())->toContain('data-invoice-row="0"')
+        ->and(substr_count($component->html(), 'data-grid-input'))->toBeGreaterThanOrEqual(4);
+});

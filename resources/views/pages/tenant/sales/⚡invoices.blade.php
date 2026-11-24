@@ -59,6 +59,9 @@ new class extends Component {
     /** The settlement window was opened from a saved invoice, so closing it keeps that invoice open. */
     public bool $settlementStaysOnInvoice = false;
 
+    /** «حفظ وتسديد»: the invoice is saved only together with the receipt; cancelling leaves it unsaved on screen. */
+    public bool $settlementSavesInvoice = false;
+
     public string $invoiceNumber = '';
 
     public string $invoiceDate = '';
@@ -1530,6 +1533,42 @@ new class extends Component {
         }
     }
 
+    /**
+     * «حفظ وتسديد» asks for the receipt first. The invoice and its receipt are saved together
+     * from the receipt window; «إلغاء» goes back to the invoice without saving anything.
+     */
+    public function openSaveAndSettle(): void
+    {
+        $this->errorMessage = null;
+        $problem = match (true) {
+            $this->currentOrderId && ! $this->invoiceEditMode => 'هذه فاتورة محفوظة للعرض فقط. اضغط «تعديل» أولاً لتغييرها.',
+            ! auth()->user()?->can('accounting.receipt.create') => 'لا تملك صلاحية إنشاء سند قبض.',
+            ! $this->selectedCustomerId => 'اختر زبوناً للفاتورة قبل تسجيل سند القبض.',
+            $this->cart === [] => 'أضف صنفاً واحداً على الأقل قبل الحفظ.',
+            default => null,
+        };
+        if ($problem !== null) {
+            $this->errorMessage = $problem;
+            $this->dispatch('toast', type: 'error', message: $problem);
+
+            return;
+        }
+
+        $totals = $this->calculateTotals();
+        $receipts = $this->currentOrderId
+            ? (float) Payment::query()->where('tenant_id', $this->tenantId())->where('order_id', $this->currentOrderId)->where('type', 'receipt')->sum('amount')
+            : 0.0;
+        $deliveryFee = $this->currentOrderType === 'pos' ? max(0, $this->posDeliveryFee) : 0.0;
+        $this->settlementAmount = (string) max(0, round((float) $totals['total'] - $deliveryFee - $receipts, 2));
+        $this->settlementMethod = 'cash';
+        $this->settlementNotes = '';
+        $this->editingSettlementId = null;
+        $this->settlementStaysOnInvoice = false;
+        $this->settlementSavesInvoice = true;
+        $this->resetValidation(['settlementAmount', 'settlementNotes', 'settlementMethod']);
+        $this->showSettlementModal = true;
+    }
+
     private function openSettlementModal(): void
     {
         if (!$this->currentOrderId || !$this->selectedCustomerId) {
@@ -1599,6 +1638,20 @@ new class extends Component {
             'settlementNotes' => ['nullable', 'string', 'max:5000'],
             'settlementMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
         ]);
+
+        if ($this->settlementSavesInvoice) {
+            // «حفظ وتسديد»: save the invoice now, then its receipt with what was typed in the window.
+            $entered = [$this->settlementAmount, $this->settlementMethod, $this->settlementNotes];
+            $this->settlementSavesInvoice = false;
+            $this->saveInvoice(false, true);
+            if ($this->errorMessage !== null || ! $this->currentOrderId) {
+                // The invoice could not be saved: back to it, with the reason shown.
+                $this->showSettlementModal = false;
+
+                return;
+            }
+            [$this->settlementAmount, $this->settlementMethod, $this->settlementNotes] = $entered;
+        }
 
         $tenantId = $this->tenantId();
         abort_unless($tenantId && $this->currentOrderId, 404);
@@ -1684,6 +1737,12 @@ new class extends Component {
         }
 
         $this->editingSettlementId = null;
+        if ($this->settlementSavesInvoice) {
+            // Cancelled before anything was saved: stay on the invoice as it is.
+            $this->settlementSavesInvoice = false;
+
+            return;
+        }
         if ($this->settlementStaysOnInvoice) {
             $this->settlementStaysOnInvoice = false;
 
@@ -2496,7 +2555,7 @@ new class extends Component {
                     @endif
 
                     @can('accounting.receipt.create')
-                        <button type="button" wire:click="saveInvoice(false, true)" wire:loading.attr="disabled" wire:target="saveInvoice" class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
+                        <button type="button" data-save-and-settle wire:click="openSaveAndSettle" wire:loading.attr="disabled" wire:target="openSaveAndSettle,saveInvoice"class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
                             <flux:icon.banknotes class="size-4" /> {{ $currentOrderId ? 'حفظ التعديل وتسديد' : 'حفظ وتسديد' }}
                         </button>
                     @endcan
@@ -2549,7 +2608,7 @@ new class extends Component {
                         </select>
                     </label>
                     <div class="mt-5 grid grid-cols-2 gap-2">
-                        <button type="button" wire:click="saveSettlementVoucher" wire:loading.attr="disabled" wire:target="saveSettlementVoucher" class="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-50">{{ $editingSettlementId ? 'حفظ تعديل السند' : 'حفظ سند القبض' }}</button>
+                        <button type="button" wire:click="saveSettlementVoucher" wire:loading.attr="disabled" wire:target="saveSettlementVoucher" class="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-50">{{ $editingSettlementId ? 'حفظ تعديل السند' : ($settlementSavesInvoice ? 'حفظ الفاتورة وسند القبض' : 'حفظ سند القبض') }}</button>
                         <button type="button" wire:click="$set('showSettlementModal', false)" class="rounded-xl border border-slate-200 px-4 py-3 font-black text-slate-700">إلغاء</button>
                     </div>
                 </section>
@@ -3248,6 +3307,14 @@ new class extends Component {
     @endif
 </flux:main>
 
+<style>
+    /* Strong highlight for the item row being edited, as in the purchase invoice. */
+    tr[data-invoice-row]:focus-within { background: #bfdbfe !important; outline: 2px solid #2563eb; outline-offset: -2px; }
+    tr[data-invoice-row]:focus-within td { background: transparent !important; }
+    tr[data-invoice-row]:focus-within input { border-color: #2563eb !important; background: #eff6ff !important; }
+    tr[data-invoice-row]:focus-within [data-price-history-button] { color: #1d4ed8 !important; }
+</style>
+
 @script
 <script>
     Alpine.data('salesInvoiceKeyboard', () => ({
@@ -3268,6 +3335,19 @@ new class extends Component {
             window.addEventListener('keydown', (event) => this.globalKeydown(event), {
                 signal: this.keyboardController.signal,
             });
+
+            // Like the purchase invoice: clicking anywhere on an item row activates it,
+            // on the clicked field's column or on the quantity.
+            this.$el.addEventListener('click', (event) => {
+                const row = event.target.closest?.('tr[data-invoice-row]');
+                if (!row || !this.$el.contains(row)) return;
+                if (event.target.closest('button, a, input, select, textarea, [contenteditable="true"]')) return;
+                const input = event.target.closest('td')?.querySelector('[data-grid-input]')
+                    ?? row.querySelector('[data-grid-input][data-col="0"]');
+                if (!input || input.disabled) return;
+                input.focus({ preventScroll: true });
+                input.select();
+            }, { signal: this.keyboardController.signal });
 
             this.fitToViewport();
             this.$nextTick(() => this.fitToViewport());
@@ -3480,52 +3560,45 @@ new class extends Component {
             ) ?? null;
         },
 
+        /** Quantity, bonus and price, as in the purchase invoice; the line total is reached by click. */
+        gridColumns: [0, 1, 2],
+
+        focusGridInput(target) {
+            if (!target) return false;
+            target.focus({ preventScroll: true });
+            target.select();
+            target.closest('tr')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            return true;
+        },
+
         moveGridInput(element, direction, axis) {
             const row = Number(element.dataset.row);
             const col = Number(element.dataset.col);
 
             if (axis === 'row') {
-                const targetRow = row + direction;
-                const target = this.gridInput(targetRow, col);
-
-                if (target) {
-                    target.focus();
-                    target.select();
-                } else if (direction > 0) {
-                    this.entryRef('productLookup')?.focus();
-                    this.entryRef('productLookup')?.select();
-                }
+                // Up and down change the item row and stay on its first or last row at the ends.
+                this.focusGridInput(this.gridInput(row + direction, col));
 
                 return;
             }
 
-            const targetCol = col + direction;
-            const target = this.gridInput(row, targetCol);
-
-            if (target) {
-                target.focus();
-                target.select();
+            const position = this.gridColumns.indexOf(col);
+            const nextColumn = this.gridColumns[(position < 0 ? this.gridColumns.length : position) + direction];
+            if (nextColumn !== undefined) {
+                this.focusGridInput(this.gridInput(row, nextColumn));
             }
         },
 
         focusNextGridInput(element) {
             const row = Number(element.dataset.row);
-            const col = Number(element.dataset.col);
+            const position = this.gridColumns.indexOf(Number(element.dataset.col));
 
-            const nextSameRow = this.gridInput(row, col + 1);
-
-            if (nextSameRow) {
-                nextSameRow.focus();
-                nextSameRow.select();
+            if (position >= 0 && position < this.gridColumns.length - 1
+                && this.focusGridInput(this.gridInput(row, this.gridColumns[position + 1]))) {
                 return;
             }
 
-            const nextRow = this.gridInput(row + 1, 0);
-
-            if (nextRow) {
-                nextRow.focus();
-                nextRow.select();
-            } else {
+            if (!this.focusGridInput(this.gridInput(row + 1, this.gridColumns[0]))) {
                 this.entryRef('productLookup')?.focus();
                 this.entryRef('productLookup')?.select();
             }
@@ -3621,6 +3694,13 @@ new class extends Component {
 
             if (productCodeInput && key === 'Enter') {
                 event.preventDefault();
+                // No barcode typed: Enter moves on to the item name.
+                if (target.value.trim() === '') {
+                    const nameInput = this.$el.querySelector('#product-name-input');
+                    nameInput?.focus();
+                    nameInput?.select();
+                    return;
+                }
                 this.$wire.selectProductByBarcode(target.value, true).then((barcodeMatched) => {
                     if (barcodeMatched) {
                         this.productIndex = -1;
@@ -3696,15 +3776,16 @@ new class extends Component {
                     return;
                 }
 
+                // Right-to-left: Right moves to the field on the right (quantity side), Left to the left.
                 if (key === 'ArrowRight') {
                     event.preventDefault();
-                    this.moveGridInput(target, 1, 'col');
+                    this.moveGridInput(target, -1, 'col');
                     return;
                 }
 
                 if (key === 'ArrowLeft') {
                     event.preventDefault();
-                    this.moveGridInput(target, -1, 'col');
+                    this.moveGridInput(target, 1, 'col');
                     return;
                 }
 
