@@ -22,6 +22,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Livewire\Component;
+use ReflectionProperty;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -36,9 +38,31 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
+    /**
+     * Clearing a number field sends an empty value, which Livewire cannot store in a typed
+     * property, so it unsets the property and the next read fails with «Property not found».
+     * Such a property goes back to its default value (for example 0) instead.
+     */
+    private function restoreClearedLivewireNumbers(): void
+    {
+        \Livewire\before('update', function (Component $component, string $path, mixed $value): ?\Closure {
+            if (($value !== '' && $value !== null) || str_contains($path, '.') || ! property_exists($component, $path)) {
+                return null;
+            }
+
+            return function () use ($component, $path): void {
+                $property = new ReflectionProperty($component, $path);
+                if ($property->hasType() && $property->hasDefaultValue() && ! $property->isInitialized($component)) {
+                    $property->setValue($component, $property->getDefaultValue());
+                }
+            };
+        });
+    }
+
     public function boot(): void
     {
         TelegramNotifier::listen();
+        $this->restoreClearedLivewireNumbers();
 
         // App sign-ins unused for the configured number of days are refused (see auth.api_token_idle_days).
         Sanctum::authenticateAccessTokensUsing(function (PersonalAccessToken $token, bool $isValid): bool {
