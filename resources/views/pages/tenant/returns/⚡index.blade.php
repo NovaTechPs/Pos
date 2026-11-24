@@ -1422,58 +1422,58 @@ new class extends Component
             {{-- ================================================================
                  الملاحظات والإجماليات
             ================================================================= --}}
-            <div class="grid shrink-0 gap-3 xl:mt-auto xl:grid-cols-12">
-                <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
-                    <label for="return-notes" class="mb-2 flex items-center gap-1.5 text-sm font-black text-slate-800">
-                        <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات
+            <div class="grid shrink-0 gap-2 xl:mt-auto xl:grid-cols-12">
+                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-4">
+                    <label for="return-notes" class="mb-1 flex items-center gap-1.5 text-xs font-black text-slate-800">
+                        <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات
                     </label>
-                    <textarea id="return-notes" wire:model="notes" rows="3" placeholder="سبب المردود أو أي ملاحظة على الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
-                    <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
+                    <textarea id="return-notes" wire:model="notes" rows="2" placeholder="سبب المردود أو أي ملاحظة على الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
+                    <div class="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] leading-4 font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 xl:grid-cols-1">
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
-                        <div class="mt-1 flex items-center justify-between"><span class="font-mono text-lg font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-5 text-slate-400" /></div>
+                <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2 xl:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                        <div class="text-[10px] font-bold text-slate-500">إجمالي الكمية</div>
+                        <div class="mt-0.5 flex items-center justify-between"><span class="font-mono text-base font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-4 text-slate-400" /></div>
                     </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
-                        <div class="mt-1 flex items-center justify-between"><span class="font-mono text-lg font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-5 text-slate-400" /></div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                        <div class="text-[10px] font-bold text-slate-500">عدد الأصناف</div>
+                        <div class="mt-0.5 flex items-center justify-between"><span class="font-mono text-base font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-4 text-slate-400" /></div>
                     </div>
                 </div>
 
-                <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-4">
+                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-4">
                     <div class="grid grid-cols-3 divide-x divide-x-reverse divide-slate-200 text-center">
-                        <div class="px-2"><div class="text-xs font-bold text-slate-500">المجموع الفرعي</div><div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($totals['subtotal'], 2) }}</div></div>
-                        <div class="px-2"><div class="text-xs font-bold text-slate-500">الخصم المحتسب</div><div class="mt-1 font-mono text-lg font-black text-rose-600">{{ number_format($totals['discount'], 2) }}</div></div>
-                        <div class="px-2"><div class="text-xs font-bold text-slate-500">{{ $showTax ? 'الضريبة المضمنة' : 'بعد الخصم' }}</div><div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($showTax ? $totals['tax'] : $totals['total'], 2) }}</div></div>
+                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">المجموع الفرعي</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($totals['subtotal'], 2) }}</div></div>
+                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">الخصم المحتسب</div><div class="mt-0.5 font-mono text-base font-black text-rose-600">{{ number_format($totals['discount'], 2) }}</div></div>
+                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">{{ $showTax ? 'الضريبة المضمنة' : 'بعد الخصم' }}</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($showTax ? $totals['tax'] : $totals['total'], 2) }}</div></div>
                     </div>
-                    <div class="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-3">
-                        <label class="text-xs font-bold text-slate-600">الخصم
-                            <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                    <div class="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 sm:grid-cols-3 xl:grid-cols-5">
+                        <label class="text-[11px] font-bold text-slate-600">الخصم
+                            <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                         </label>
-                        <label class="text-xs font-bold text-slate-600">نوع الخصم
-                            <select wire:model.live="discountType" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold outline-none focus:border-blue-500"><option value="fixed">مبلغ</option><option value="percentage">نسبة %</option></select>
+                        <label class="text-[11px] font-bold text-slate-600">نوع الخصم
+                            <select wire:model.live="discountType" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-xs font-bold outline-none focus:border-blue-500"><option value="fixed">مبلغ</option><option value="percentage">نسبة %</option></select>
                         </label>
                         @if ($showTax)
-                            <label class="text-xs font-bold text-slate-600">نسبة الضريبة المضمنة %
-                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                            <label class="text-[11px] font-bold text-slate-600">نسبة الضريبة المضمنة %
+                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                             </label>
                         @endif
-                        <label class="text-xs font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}
-                            <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                        <label class="text-[11px] font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}
+                            <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                         </label>
-                        <label class="text-xs font-bold text-slate-600">طريقة الدفع
-                            <select wire:model="paymentMethod" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-bold outline-none focus:border-blue-500"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select>
+                        <label class="text-[11px] font-bold text-slate-600">طريقة الدفع
+                            <select wire:model="paymentMethod" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-xs font-bold outline-none focus:border-blue-500"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select>
                         </label>
                     </div>
                 </div>
 
-                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-4 text-white shadow-sm xl:col-span-2">
-                    <div class="text-sm font-black text-white/90">إجمالي المردود</div>
-                    <div class="mt-2 font-mono text-3xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
+                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-3 text-white shadow-sm xl:col-span-2">
+                    <div class="text-xs font-black text-white/90">إجمالي المردود</div>
+                    <div class="mt-1 font-mono text-2xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
                     @if ($selectedPartyId)
-                        <div class="return-balance-summary mt-2 flex w-full justify-between border-t border-white/30 pt-2 text-xs font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
+                        <div class="return-balance-summary mt-1 flex w-full justify-between border-t border-white/30 pt-1 text-[11px] font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
                             <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
                         </div>
                     @endif
