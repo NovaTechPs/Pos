@@ -363,6 +363,16 @@ test('pos search lists matches from the highest to the lowest stock with exact b
 
     $component->set('inlineSearchQuery', '777');
     expect(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$exact->id, $other->id]);
+
+    // Stock wins over how closely the name matches.
+    $exactName = searchablePosProduct($this, 'زيت');
+    BranchProduct::query()->where('product_id', $exactName->id)->update(['stock_quantity' => 1]);
+    $plenty = searchablePosProduct($this, 'علبة زيت زيتون');
+    BranchProduct::query()->where('product_id', $plenty->id)->update(['stock_quantity' => 90]);
+
+    $component->set('productSearchQuery', 'زيت')->set('inlineSearchQuery', 'زيت');
+    expect(array_column($component->get('quickProducts'), 'id'))->toBe([$plenty->id, $exactName->id])
+        ->and(array_column($component->get('inlineSearchResults'), 'id'))->toBe([$plenty->id, $exactName->id]);
 });
 
 test('a quantity typed before scanning adds that many of the scanned item', function (string $input, ?float $quantity): void {

@@ -122,6 +122,17 @@ class PosProductSearch
             ->orderByRaw('CASE WHEN LOWER(COALESCE(products.product_number, \'\')) = LOWER(?) THEN 0 ELSE 1 END', [$search]);
     }
 
+    /**
+     * Search results order: an exact barcode or product number first (so a scan stays on top),
+     * then from the highest to the lowest branch stock, then by how closely the name matches.
+     */
+    public function applyStockFirstOrdering(Builder $query, string $search, int $tenantId, ?int $branchId): void
+    {
+        $this->applyExactMatchOrdering($query, $search, $tenantId);
+        $this->applyBranchStockOrdering($query, $branchId);
+        $this->applyRelevanceOrdering($query, $search, $tenantId);
+    }
+
     /** Orders products from the highest to the lowest stock in the branch; products without a branch row count as zero. */
     public function applyBranchStockOrdering(Builder $query, ?int $branchId): void
     {

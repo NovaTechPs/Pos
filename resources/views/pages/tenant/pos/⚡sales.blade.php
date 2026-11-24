@@ -1284,9 +1284,8 @@ new class extends Component {
                 'branchProducts' => fn ($query) => $query->select(['id', 'product_id', 'branch_id', 'retail_price', 'stock_quantity'])->where('branch_id', $branchId),
             ]);
          $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
-        // Keep the usual relevance ranking; within each level, the items with the most stock come first.
-        app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
-        app(PosProductSearch::class)->applyBranchStockOrdering($query->getQuery(), (int) $branchId);
+        // Exact barcode or product number first, then from the most to the least stock.
+        app(PosProductSearch::class)->applyStockFirstOrdering($query->getQuery(), $search, (int) $tenantId, (int) $branchId);
         $this->inlineSearchResults = $query->orderBy('name')->orderBy('id')
             ->limit(12)
             ->get()
@@ -1766,9 +1765,8 @@ new class extends Component {
         // An empty search means "All": do not apply the search service's no-results guard.
         if ($search !== '') {
              $this->applyPosCatalogSearch($query, $search, (int) $tenantId);
-            // Keep the usual relevance ranking; within each level, the items with the most stock come first.
-            app(PosProductSearch::class)->applyRelevanceOrdering($query->getQuery(), $search, (int) $tenantId);
-            app(PosProductSearch::class)->applyBranchStockOrdering($query->getQuery(), (int) $branchId);
+            // Exact barcode or product number first, then from the most to the least stock.
+            app(PosProductSearch::class)->applyStockFirstOrdering($query->getQuery(), $search, (int) $tenantId, (int) $branchId);
         }
 
         $resultLimit = 24;

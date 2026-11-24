@@ -61,7 +61,7 @@ class BranchSyncCatalogController extends Controller
                         $searchService->applyContains($nameMatches, $search);
                     });
                 });
-                $searchService->applyRelevanceOrdering($query, $search, (int) $device->tenant_id);
+                $searchService->applyStockFirstOrdering($query, $search, (int) $device->tenant_id, (int) $device->branch_id);
             } else {
                 $query->where(fn ($query) => $query->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%"));
             }
