@@ -353,6 +353,51 @@ test('an invoice issued to a customer shows the customer, not the parcel recipie
         ->and($names['WALKIN-NAMED'])->toBe('مستلم نقدي');
 });
 
+test('customer profit reports show each invoice profit and one line per customer', function (): void {
+    $other = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'زبون ثان', 'type' => 'customer', 'code' => 'C-2']);
+    $line = fn (Order $order, float $price, float $cost) => $order->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $this->product->id, 'quantity' => 1, 'unit_price' => $price, 'total_price' => $price, 'cost_price' => $cost, 'total_cost' => $cost]);
+    $first = ($this->makeOrder)(['invoice_number' => 'CP-1', 'source' => 'pos', 'total' => 200, 'created_at' => '2026-10-11 10:00:00']);
+    $line($first, 200, 120);
+    $second = ($this->makeOrder)(['invoice_number' => 'CP-2', 'type' => 'wholesale', 'source' => 'web', 'total' => 330, 'tax_amount' => 20, 'delivery_fee' => 10, 'created_at' => '2026-10-12 10:00:00']);
+    $line($second, 300, 200);
+    $return = ($this->makeOrder)(['invoice_number' => 'CP-R', 'type' => 'return', 'source' => 'pos', 'total' => -50, 'created_at' => '2026-10-13 10:00:00']);
+    $line($return, 50, 30);
+    $line(($this->makeOrder)(['invoice_number' => 'CP-OTHER', 'customer_id' => $other->id, 'total' => 100]), 100, 90);
+    ($this->makeOrder)(['invoice_number' => 'CP-WALKIN', 'customer_id' => null, 'total' => 999]);
+    ($this->makeOrder)(['invoice_number' => 'CP-OUTSIDE', 'created_at' => '2026-10-25 10:00:00']);
+
+    $invoices = (new ReportingService($this->user))->prepare('customer-invoice-profit', array_replace($this->filters, ['party_id' => $this->customer->id]));
+    $rows = $invoices['query']->get()->keyBy('reference');
+
+    expect($rows->keys()->all())->toBe(['CP-1', 'CP-2', 'CP-R'])
+        ->and((float) $rows['CP-1']->revenue)->toBe(200.0)
+        ->and((float) $rows['CP-1']->gross_profit)->toBe(80.0)
+        ->and((float) $rows['CP-1']->profit_margin)->toBe(40.0)
+        ->and((float) $rows['CP-2']->revenue)->toBe(300.0)
+        ->and((float) $rows['CP-2']->gross_profit)->toBe(100.0)
+        ->and((float) $rows['CP-R']->revenue)->toBe(-50.0)
+        ->and((float) $rows['CP-R']->gross_profit)->toBe(-20.0)
+        ->and($invoices['summary']['عدد الفواتير'])->toBe(2)
+        ->and((float) $invoices['summary']['الربح'])->toBe(160.0);
+
+    $customers = (new ReportingService($this->user))->prepare('customer-profit', $this->filters)['query']->get();
+
+    expect($customers->pluck('party_name')->all())->toBe([$this->customer->name, 'زبون ثان'])
+        ->and((int) $customers[0]->invoices)->toBe(2)
+        ->and((float) $customers[0]->revenue)->toBe(450.0)
+        ->and((float) $customers[0]->cost)->toBe(290.0)
+        ->and((float) $customers[0]->gross_profit)->toBe(160.0)
+        ->and((int) $customers[1]->invoices)->toBe(1)
+        ->and((float) $customers[1]->gross_profit)->toBe(10.0);
+
+    Livewire::test('pages::tenant.reports.center')->set('report', 'customer-profit')
+        ->set('from', $this->filters['from'])->set('to', $this->filters['to'])->call('applyFilters')
+        ->assertSeeHtml('data-customer-invoices-link')->assertSee('160.00')->assertSee('زبون ثان');
+    Livewire::withQueryParams(['report' => 'customer-invoice-profit', 'party_id' => $other->id, 'from' => $this->filters['from'], 'to' => $this->filters['to']])
+        ->test('pages::tenant.reports.center')
+        ->assertSet('partyId', $other->id)->assertSee('CP-OTHER')->assertDontSee('CP-1');
+});
+
 test('point-of-sale analytics exclude invoices linked to a saved customer or supplier', function (): void {
     ($this->makeOrder)(['customer_id' => null, 'source' => 'pos', 'invoice_number' => 'SHOP-WALKIN', 'total' => 80]);
     ($this->makeOrder)(['customer_id' => $this->customer->id, 'source' => 'pos', 'invoice_number' => 'SHOP-NAMED', 'total' => 120]);

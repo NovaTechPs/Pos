@@ -50,13 +50,15 @@ class ReportingService
         'tax' => ['تقرير الضريبة: المبيعات والمشتريات', 'reports.sales'],
         'branches' => ['ملخص أداء الفروع', 'reports.profit'],
         'employees' => ['أفضل الموظفين: المبيعات والربح لكل موظف', 'reports.profit'],
+        'customer-invoice-profit' => ['أرباح فواتير زبون: ربح كل فاتورة', 'reports.profit'],
+        'customer-profit' => ['أرباح الزبائن: سطر لكل زبون', 'reports.profit'],
         'settlements' => ['سجل التسويات اليومية', 'reports.daily_settlement'],
     ];
 
     /** @var array<string, list<string>> */
     public const REPORT_GROUPS = [
         'الحسابات والذمم' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
-        'المبيعات والأرباح' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'profit', 'shifts', 'branches', 'employees', 'tax'],
+        'المبيعات والأرباح' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'customer-invoice-profit', 'customer-profit', 'profit', 'shifts', 'branches', 'employees', 'tax'],
         'المشتريات والمخزون' => ['purchases', 'product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments'],
     ];
@@ -176,6 +178,7 @@ class ReportingService
             'inventory' => $this->inventory(), 'stagnant' => $this->stagnant(), 'expiring' => $this->expiring(), 'cashflow' => $this->cashflow(),
             'daily-cash' => $this->dailyCash(), 'expenses' => $this->expenses(), 'aging' => $this->aging(),
             'tax' => $this->tax(), 'branches' => $this->branches(), 'employees' => $this->employees(), 'settlements' => $this->settlements(),
+            'customer-invoice-profit' => $this->customerInvoiceProfit(), 'customer-profit' => $this->customerProfit(),
         };
 
         $definition['query'] = $this->filterColumns($definition['query'], $definition['columns']);
@@ -234,7 +237,7 @@ class ReportingService
         $quantity = ['quantity', 'quantity_before', 'quantity_after', 'sold', 'returned', 'net_quantity', 'stock_quantity', 'alert_quantity', 'incoming', 'outgoing', 'gift_quantity'];
         $money = ['debit', 'credit', 'balance', 'sales', 'returns', 'net', 'revenue', 'basic_salary', 'total_allowances', 'total_deductions', 'advance_deduction', 'net_salary', 'paid_amount', 'remaining', 'amount', 'unit_price', 'cost_price', 'retail_price', 'valuation', 'opening_cash', 'expected_cash', 'actual_cash', 'difference', 'cost', 'gross_profit', 'expenses', 'net_profit', 'average_invoice',
             'cash_in', 'cash_out', 'net_cash', 'card_in', 'transfer_in', 'cheque_in', 'total_in', 'total_out', 'net_total', 'taxable', 'output_tax', 'input_tax', 'total',
-            'age_0_30', 'age_31_60', 'age_61_90', 'age_over_90', 'purchases_total', 'delivery_fees', 'tax_amount', 'total_sales', 'total_returns', 'total_cash', 'total_card'];
+            'age_0_30', 'age_31_60', 'age_61_90', 'age_over_90', 'purchases_total', 'delivery_fees', 'tax_amount', 'total_sales', 'total_returns', 'total_cash', 'total_card', 'profit_margin'];
         if (in_array($column, $quantity, true)) {
             return number_format((float) $value, 3, '.', '');
         }
@@ -1173,6 +1176,65 @@ class ReportingService
             ['employee_name' => 'الموظف', 'invoices' => 'فواتير البيع', 'sales' => 'المبيعات', 'returns' => 'المردودات', 'revenue' => 'صافي الإيراد', 'cost' => 'التكلفة', 'gross_profit' => 'مجمل الربح', 'average_invoice' => 'متوسط الفاتورة'],
             ['عدد الموظفين' => (int) $totals->employees, 'صافي الإيراد' => $totals->revenue, 'مجمل الربح' => $totals->gross_profit],
             ['مرتبة من الأعلى صافي إيراد. كل فاتورة تُحسب لمن أنشأها، وكل مردود لمن سجّله. صافي الإيراد دون الضريبة ورسوم التوصيل، والتكلفة هي المسجلة وقت البيع.']);
+    }
+
+    /**
+     * Completed invoices and returns of registered customers with the cost and profit of each.
+     * Returns are negative rows so a customer's rows add up to its net profit.
+     */
+    private function customerInvoices(): Builder
+    {
+        $costs = DB::query()->fromSub($this->itemCosts(), 'cost_lines')->select('order_id')->selectRaw('SUM(signed_cost) as cost')->groupBy('order_id');
+
+        return $this->orders()->whereNotNull('orders.customer_id')
+            ->when(! empty($this->filters['party_id']), fn (Builder $q): Builder => $q->where('orders.customer_id', $this->filters['party_id']))
+            ->join('parties', fn (JoinClause $join) => $join->on('parties.id', '=', 'orders.customer_id')->where('parties.tenant_id', $this->tenantId))
+            ->leftJoinSub($costs, 'invoice_costs', 'invoice_costs.order_id', '=', 'orders.id')
+            ->select('orders.id as invoice_id', 'orders.type as invoice_type', 'orders.created_at', 'orders.invoice_number as reference', 'orders.customer_id', 'parties.code as party_code', 'parties.name as party_name', 'parties.phone')
+            ->selectRaw("CASE WHEN orders.type = 'return' THEN 'مرتجع' ELSE 'بيع' END as kind")
+            ->selectRaw(self::ORDER_REVENUE_SQL.' as revenue')
+            ->selectRaw('COALESCE(invoice_costs.cost, 0) as cost')
+            ->selectRaw('('.self::ORDER_REVENUE_SQL.') - COALESCE(invoice_costs.cost, 0) as gross_profit');
+    }
+
+    /** @return list<string> */
+    private function customerProfitNotes(): array
+    {
+        return ['فواتير البيع المكتملة المرتبطة بزبون مسجل من نقطة البيع وفواتير المبيعات؛ المرتجعات تظهر بالسالب وتُخصم من الربح.',
+            'القيمة بعد خصم الفاتورة ودون الضريبة ورسوم التوصيل. الربح = القيمة − التكلفة. نسبة الربح = الربح ÷ القيمة × 100.', ...$this->costNotes()];
+    }
+
+    /** @return ReportDefinition */
+    private function customerInvoiceProfit(): array
+    {
+        $query = DB::query()->fromSub($this->customerInvoices(), 'customer_invoices')->select('customer_invoices.*')
+            ->selectRaw('100.0 * gross_profit / NULLIF(revenue, 0) as profit_margin')
+            ->orderBy('created_at')->orderBy('invoice_id');
+        $totals = DB::query()->fromSub($this->customerInvoices(), 'customer_invoice_totals')
+            ->selectRaw("COALESCE(SUM(CASE WHEN invoice_type != 'return' THEN 1 ELSE 0 END), 0) as invoices, COALESCE(SUM(revenue), 0) as revenue, COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit")->first();
+
+        return $this->definition($query,
+            ['created_at' => 'التاريخ', 'reference' => 'رقم الفاتورة', 'kind' => 'النوع', 'party_name' => 'الزبون', 'revenue' => 'قيمة الفاتورة', 'cost' => 'التكلفة', 'gross_profit' => 'الربح', 'profit_margin' => 'نسبة الربح %'],
+            ['عدد الفواتير' => (int) $totals->invoices, 'قيمة الفواتير' => $totals->revenue, 'التكلفة' => $totals->cost, 'الربح' => $totals->gross_profit],
+            ['اختر الزبون لعرض فواتيره فقط، أو اتركه فارغاً لعرض فواتير كل الزبائن.', ...$this->customerProfitNotes()]);
+    }
+
+    /** @return ReportDefinition */
+    private function customerProfit(): array
+    {
+        $query = DB::query()->fromSub($this->customerInvoices(), 'customer_invoices')
+            ->select('customer_id as id', 'party_code', 'party_name', 'phone')
+            ->selectRaw("SUM(CASE WHEN invoice_type != 'return' THEN 1 ELSE 0 END) as invoices, SUM(revenue) as revenue, SUM(cost) as cost, SUM(gross_profit) as gross_profit")
+            ->selectRaw('100.0 * SUM(gross_profit) / NULLIF(SUM(revenue), 0) as profit_margin')
+            ->groupBy('customer_id', 'party_code', 'party_name', 'phone')
+            ->orderByDesc('gross_profit')->orderBy('customer_id');
+        $totals = DB::query()->fromSub(clone $query, 'customer_totals')
+            ->selectRaw('COUNT(*) as customers, COALESCE(SUM(invoices), 0) as invoices, COALESCE(SUM(revenue), 0) as revenue, COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit')->first();
+
+        return $this->definition($query,
+            ['party_code' => 'الرمز', 'party_name' => 'الزبون', 'phone' => 'الهاتف', 'invoices' => 'عدد الفواتير', 'revenue' => 'قيمة الفواتير', 'cost' => 'التكلفة', 'gross_profit' => 'الربح', 'profit_margin' => 'نسبة الربح %'],
+            ['عدد الزبائن' => (int) $totals->customers, 'عدد الفواتير' => (int) $totals->invoices, 'قيمة الفواتير' => $totals->revenue, 'التكلفة' => $totals->cost, 'الربح' => $totals->gross_profit],
+            ['سطر لكل زبون اشترى خلال الفترة، مرتبة من الأعلى ربحاً. اضغط اسم الزبون لعرض فواتيره وربح كل فاتورة.', ...$this->customerProfitNotes()]);
     }
 
     /** @return ReportDefinition */

@@ -21,7 +21,7 @@ new class extends Component {
 
     private const NAVIGATION_GROUPS = [
         'الحسابات' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
-        'المبيعات' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'profit', 'shifts'],
+        'المبيعات' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'customer-invoice-profit', 'customer-profit', 'profit', 'shifts'],
         'المشتريات' => ['purchases'],
         'المخزون' => ['product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
         'الموظفون' => ['payroll', 'salary-payments', 'employees'],
@@ -166,7 +166,7 @@ new class extends Component {
         if ($this->report === 'expiring' && ! request()->query('to')) {
             $this->to = today()->addDays(30)->toDateString();
         }
-        if ($this->report === 'statement' && request()->integer('party_id') > 0) {
+        if (in_array($this->report, ['statement', 'customer-invoice-profit'], true) && request()->integer('party_id') > 0) {
             $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
                 ->whereKey(request()->integer('party_id'))->value('id');
             $this->statementPartyType = in_array(request('party_type'), ['customer', 'supplier'], true) ? request('party_type') : 'all';
@@ -425,11 +425,16 @@ new class extends Component {
         $parties = collect();
         $statementParties = null;
         $products = collect();
-        if (in_array($this->report, ['statement', 'balances', 'aging', 'cashflow'], true)) {
+        if (in_array($this->report, ['statement', 'balances', 'aging', 'cashflow', 'customer-invoice-profit'], true)) {
             $parties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when($service->branchId, fn ($q) => $q->where(fn ($q) => $q->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
                 ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')))
+                ->when($this->report === 'customer-invoice-profit', fn ($q) => $q->whereIn('type', ['customer', 'both']))
                 ->orderBy('name')->limit(100)->get(['id', 'name', 'type']);
+            if ($this->partyId && ! $parties->contains('id', $this->partyId)) {
+                $parties->prepend(Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereKey($this->partyId)->first(['id', 'name', 'type']));
+                $parties = $parties->filter()->values();
+            }
         }
         if ($this->report === 'statement') {
             $statementPartyTypes = $this->statementPartyType === 'supplier' ? ['supplier', 'both'] : ($this->statementPartyType === 'all' ? ['customer', 'supplier', 'both'] : ['customer', 'both']);
@@ -591,9 +596,9 @@ new class extends Component {
             @endif
             @if (in_array($report, ['balances', 'aging', 'cashflow', 'expenses', 'product-history', 'product-sales', 'product-profit', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring']))<flux:input label="بحث في التقرير" wire:model="search" placeholder="اسم أو رقم الصنف / الطرف" />@endif
         </div>
-        @if (in_array($report, ['balances', 'aging', 'cashflow']))
+        @if (in_array($report, ['balances', 'aging', 'cashflow', 'customer-invoice-profit']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الزبون / المورد' : 'كل الأطراف' }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
+                <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الزبون / المورد' : ($report === 'customer-invoice-profit' ? 'كل الزبائن' : 'كل الأطراف') }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
                 <flux:input label="ابحث عن الطرف" icon="magnifying-glass" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الهاتف أو الرمز …" />
                 @if (in_array($report, ['balances', 'aging']))<flux:select label="نوع الطرف" wire:model="partyType"><option value="all">الجميع</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></flux:select>@endif
                 @if (in_array($report, ['balances', 'aging']))<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
@@ -624,7 +629,7 @@ new class extends Component {
                 <flux:select label="طريقة الدفع" wire:model="paymentMethod"><option value="">كل الطرق</option><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل</option><option value="cheque">شيك</option></flux:select>
             </div>
         @endif
-        @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'profit', 'shifts', 'tax', 'branches']))
+        @if (in_array($report, ['sales', 'product-sales', 'product-profit', 'customer-invoice-profit', 'customer-profit', 'profit', 'shifts', 'tax', 'branches']))
             <div @class(['grid gap-4', 'sm:grid-cols-3' => $report === 'sales', 'sm:grid-cols-2' => $report !== 'sales'])>
                 @if ($report === 'sales')
                     <flux:select label="الفواتير" wire:model="invoiceScope" data-report-invoice-scope><option value="">فواتير الزبون العام</option><option value="customer">فواتير مربوطة بزبون</option><option value="all">كل الفواتير</option></flux:select>
@@ -639,7 +644,7 @@ new class extends Component {
                 <option value="detailed">تفصيلي</option>
             </flux:select>
         @endif
-        @if (in_array($report, ['profit', 'product-profit']) || ($report === 'product-sales' && auth()->user()->can('reports.profit')))
+        @if (in_array($report, ['profit', 'product-profit', 'customer-invoice-profit', 'customer-profit']) || ($report === 'product-sales' && auth()->user()->can('reports.profit')))
             <flux:select label="طريقة احتساب تكلفة الصنف" wire:model="costMethod">
                 <option value="recorded">التكلفة المسجلة وقت البيع</option>
                 <option value="latest_purchase">آخر سعر شراء</option>
@@ -685,7 +690,7 @@ new class extends Component {
     <div class="reports-data-scroll overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700" tabindex="0" role="region" aria-label="نتائج التقرير">
         <table class="w-full whitespace-nowrap text-right text-sm">
             <thead class="bg-slate-100 dark:bg-slate-800">@include('pages.tenant.reports.partials.column-filters')</thead>
-            <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">@if (in_array($report, ['product-history', 'pos-invoices'], true) && $key === 'reference' && auth()->user()->can($row->invoice_type === 'purchase' ? 'purchases.view' : (in_array($row->invoice_type, ['pos', 'return']) ? 'pos.view' : 'sales_invoices.view')))<a class="font-bold text-indigo-600 dark:text-indigo-400" @if ($report !== 'pos-invoices') target="_blank" rel="noopener" @endif href="{{ route($row->invoice_type === 'purchase' ? 'tenant.purchase-invoices' : (in_array($row->invoice_type, ['pos', 'return']) ? 'tenant.pos' : 'tenant.sale-invoices'), ['invoice' => $row->invoice_id]) }}">{{ $row->reference }}@if ($report !== 'pos-invoices') ↗@endif</a>@elseif ($report === 'sales' && $key === 'day')<a class="font-bold text-indigo-600 dark:text-indigo-400" title="فواتير هذا اليوم" href="{{ route('tenant.reports', ['report' => 'pos-invoices', 'from' => $row->day, 'to' => $row->day] + ($branchId ? ['branch_id' => $branchId] : [])) }}">{{ $row->day }}</a>@else {{ ReportingService::formatCell($key, $row->{$key} ?? null) }} @endif</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
+            <tbody>@forelse ($rows as $row)<tr wire:key="row-{{ $report }}-{{ $rows->currentPage() }}-{{ $loop->index }}" class="border-t border-slate-100 dark:border-slate-800">@foreach ($definition['columns'] as $key => $label)<td class="p-3 tabular-nums">@if (in_array($report, ['product-history', 'pos-invoices', 'customer-invoice-profit'], true) && $key === 'reference' && auth()->user()->can($row->invoice_type === 'purchase' ? 'purchases.view' : (in_array($row->invoice_type, ['pos', 'return']) ? 'pos.view' : 'sales_invoices.view')))<a class="font-bold text-indigo-600 dark:text-indigo-400" @if ($report !== 'pos-invoices') target="_blank" rel="noopener" @endif href="{{ route($row->invoice_type === 'purchase' ? 'tenant.purchase-invoices' : (in_array($row->invoice_type, ['pos', 'return']) ? 'tenant.pos' : 'tenant.sale-invoices'), ['invoice' => $row->invoice_id]) }}">{{ $row->reference }}@if ($report !== 'pos-invoices') ↗@endif</a>@elseif ($report === 'customer-profit' && $key === 'party_name')<a class="font-bold text-indigo-600 dark:text-indigo-400" title="فواتير هذا الزبون وربح كل فاتورة" data-customer-invoices-link href="{{ route('tenant.reports', ['report' => 'customer-invoice-profit', 'party_id' => $row->id, 'from' => $from, 'to' => $to] + ($branchId ? ['branch_id' => $branchId] : [])) }}">{{ $row->party_name }}</a>@elseif ($report === 'sales' && $key === 'day')<a class="font-bold text-indigo-600 dark:text-indigo-400" title="فواتير هذا اليوم" href="{{ route('tenant.reports', ['report' => 'pos-invoices', 'from' => $row->day, 'to' => $row->day] + ($branchId ? ['branch_id' => $branchId] : [])) }}">{{ $row->day }}</a>@else {{ ReportingService::formatCell($key, $row->{$key} ?? null) }} @endif</td>@endforeach</tr>@empty<tr><td colspan="{{ max(1, count($definition['columns'])) }}" class="p-8 text-center text-slate-500">لا توجد بيانات مطابقة. اختر الفلاتر ثم اعرض التقرير.</td></tr>@endforelse</tbody>
         </table>
     </div>
     <div class="flex flex-wrap items-center justify-between gap-3"><flux:text>عدد النتائج: {{ $rows->total() }} — {{ $from }} إلى {{ $to }}</flux:text>{{ $rows->links() }}</div>
