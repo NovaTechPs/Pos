@@ -7,6 +7,7 @@ use App\Models\Party;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
@@ -82,14 +83,21 @@ test('the entry row discount cannot exceed the line value or be negative', funct
 test('the sales invoice summary shows quantity, item count, discounts and balance after invoice', function (): void {
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'الزبون', 'type' => 'customer', 'current_balance' => 0]);
 
-    Livewire::test('pages::tenant.sales.invoices')
+    $component = Livewire::test('pages::tenant.sales.invoices')
         ->call('selectCustomer', $party->id)
         ->call('selectProduct', $this->product->id)
         ->set('selectedQuantity', 4)
         ->set('selectedDiscount', 5)
         ->call('commitRowToCart')
-        ->set('discount', 1)
-        ->assertSee('xl:grid-cols-4', false)
+        ->set('discount', 1);
+
+    $summary = Str::after($component->html(), 'data-sales-invoice-summary');
+    $positions = array_map(fn (string $label): int|false => mb_strpos($summary, $label), ['عدد الأصناف', 'إجمالي الكمية', 'إجمالي قبل الخصم', 'خصم إضافي', 'الخصم الإجمالي', 'الإجمالي النهائي']);
+    expect($positions)->not->toContain(false)
+        ->and($positions)->toBe(collect($positions)->sort()->values()->all());
+
+    $component
+        ->assertDontSee('إجمالي بعد الخصم')
         ->assertSee('إجمالي الكمية')
         ->assertSee('عدد الأصناف')
         ->assertSee('إجمالي قبل الخصم')

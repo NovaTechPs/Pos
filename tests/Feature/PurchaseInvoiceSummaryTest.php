@@ -16,8 +16,7 @@ test('purchase invoice summary spans the full entry grid width', function (): vo
     Livewire::test('pages::tenant.purchases.invoices')
         ->assertSee('data-purchase-invoice-summary', false)
         ->assertSee('xl:col-span-12', false)
-        ->assertSee('xl:grid-cols-4', false)
-        ->assertSeeInOrder(['عدد الأصناف', 'إجمالي الكمية', 'الخصم الإجمالي', 'الإجمالي النهائي']);
+        ->assertSeeInOrder(['عدد الأصناف', 'إجمالي الكمية', 'إجمالي قبل الخصم', 'خصم الفاتورة', 'الخصم الإجمالي', 'ملاحظات', 'الإجمالي النهائي']);
 });
 
 test('a purchase invoice cannot be saved without selecting a supplier', function (): void {
@@ -44,10 +43,9 @@ test('purchase summary keeps discounts and payment totals reactive in the compac
     Livewire::test('pages::tenant.purchases.invoices')
         ->assertSee('data-purchase-invoice-summary', false)
         ->assertSee('xl:col-span-12', false)
-        ->assertSee('xl:grid-cols-4', false)
         // Payments are recorded as payment vouchers from the settlement window, not typed on the invoice.
         ->assertDontSee('wire:model.live.debounce.800ms="paidAmount"', false)
-        ->assertSee('إجمالي بعد الخصم')
+        ->assertDontSee('إجمالي بعد الخصم')
         ->set('cart', [['id' => 1, 'name' => 'الصنف', 'quantity' => 2, 'price' => 100, 'discount' => 0]])
         ->set('discountType', 'percentage')
         ->set('discount', 10)

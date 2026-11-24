@@ -2815,73 +2815,82 @@ new class extends Component {
             $invoiceTotalDiscount = $invoiceLineDiscounts + $invoiceDiscount;
         @endphp
 
-        <div data-purchase-invoice-summary class="grid min-w-0 shrink-0 grid-cols-2 gap-2 xl:mt-auto xl:col-span-12 xl:grid-cols-4">
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
-                <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
-                <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ count($cart) }}</span><flux:icon.square-3-stack-3d class="size-5 text-blue-500" /></div>
-            </div>
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
-                <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
-                <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ number_format($totalQuantity, 2) }}</span><flux:icon.cube class="size-5 text-blue-500" /></div>
-            </div>
-            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3 shadow-sm xl:col-span-1">
-                <div class="text-xs font-bold text-rose-700">الخصم الإجمالي</div>
-                <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-rose-700">{{ number_format($invoiceTotalDiscount, 2) }}</span><span class="flex size-7 items-center justify-center rounded-full bg-rose-100 font-mono text-lg font-black text-rose-600">%</span></div>
-            </div>
-            <div class="flex flex-col justify-between rounded-xl bg-emerald-700 p-3 text-white shadow-sm xl:col-span-1">
-                <div class="text-xs font-black text-emerald-50">الإجمالي النهائي</div>
-                <div class="mt-1 font-mono text-2xl font-black tabular-nums">{{ number_format($grandTotal, 2) }}</div>
-                @if ($selectedSupplier)
-                    <div class="mt-1 border-t border-emerald-500/60 pt-1 text-[11px] font-bold text-emerald-100">
-                        المتبقي: <span class="font-mono font-black text-white">{{ number_format($remainingTotal, 2) }}</span>
-                    </div>
-                @endif
-            </div>
+        @php
+            $summaryCell = 'flex min-w-0 flex-col justify-center px-3 py-1.5';
+            $summaryLabel = 'text-[11px] font-bold text-slate-500';
+            $summaryValue = 'font-mono text-base font-black tabular-nums text-slate-900';
+            $summaryInput = 'h-7 w-full min-w-20 rounded-md border border-slate-300 bg-white px-1.5 text-center font-mono text-sm font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
+        @endphp
 
-            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2">
-                <label for="purchase-notes" class="mb-2 flex items-center gap-1.5 text-sm font-black text-slate-800">
-                    <flux:icon.chat-bubble-left-ellipsis class="size-5 text-slate-500" /> ملاحظات الفاتورة (اختياري)
-                </label>
-                <textarea id="purchase-notes" wire:model="notes" rows="3" placeholder="اكتب ملاحظة الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
-                @if ($currentPurchaseId && $linkedPayments->isNotEmpty() && app(\App\Services\PaymentVoucherAccess::class)->available())
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        @foreach ($linkedPayments as $linkedPayment)
-                            <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100">تعديل سند الصرف {{ $linkedPayment->voucher_number }}</a>
-                        @endforeach
+        <div data-purchase-invoice-summary class="min-w-0 shrink-0 space-y-1.5 xl:mt-auto xl:col-span-12">
+            <div class="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:flex-row">
+                {{-- الأرقام وحقول الخصم والضريبة --}}
+                <div class="grid flex-1 grid-cols-2 divide-y divide-slate-100 sm:grid-cols-3 sm:divide-y-0 sm:divide-x sm:divide-x-reverse {{ $showTax ? 'xl:grid-cols-7' : 'xl:grid-cols-6' }}">
+                    <div class="{{ $summaryCell }}">
+                        <span class="{{ $summaryLabel }}">عدد الأصناف</span>
+                        <span class="{{ $summaryValue }}">{{ count($cart) }}</span>
                     </div>
-                @endif
-            </div>
-
-            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2">
-                <div class="grid grid-cols-2 divide-x divide-x-reverse divide-slate-200 text-center">
-                    <div class="px-2">
-                        <div class="text-xs font-bold text-slate-500">إجمالي قبل الخصم</div>
-                        <div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($invoiceGrossTotal, 2) }}</div>
+                    <div class="{{ $summaryCell }}">
+                        <span class="{{ $summaryLabel }}">إجمالي الكمية</span>
+                        <span class="{{ $summaryValue }}">{{ number_format($totalQuantity, 2) }}</span>
                     </div>
-                    <div class="px-2">
-                        <div class="text-xs font-bold text-slate-500">إجمالي بعد الخصم</div>
-                        <div class="mt-1 font-mono text-lg font-black text-slate-900">{{ number_format($grandTotal, 2) }}</div>
+                    <div class="{{ $summaryCell }}">
+                        <span class="{{ $summaryLabel }}">إجمالي قبل الخصم</span>
+                        <span class="{{ $summaryValue }}">{{ number_format($invoiceGrossTotal, 2) }}</span>
                     </div>
+                    <div class="{{ $summaryCell }}">
+                        <span class="{{ $summaryLabel }}">خصم الفاتورة</span>
+                        <div class="flex gap-1">
+                            <input type="number" min="0" step="0.01" wire:model.live="discount" aria-label="خصم الفاتورة" class="{{ $summaryInput }} text-rose-600" />
+                            <select wire:model.live="discountType" aria-label="نوع الخصم" class="h-7 shrink-0 rounded-md border border-slate-300 bg-white px-1 text-xs font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+                                <option value="fixed">مبلغ</option><option value="percentage">%</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="{{ $summaryCell }} bg-rose-50/60">
+                        <span class="text-[11px] font-bold text-rose-700">الخصم الإجمالي</span>
+                        <span class="font-mono text-base font-black tabular-nums text-rose-700">{{ number_format($invoiceTotalDiscount, 2) }}</span>
+                    </div>
+                    @if ($showTax)
+                        <div data-purchase-tax class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">قيمة الضريبة</span>
+                            <span class="{{ $summaryValue }}">{{ number_format((float) $taxAmount, 2) }}</span>
+                        </div>
+                    @endif
+                    <label for="purchase-notes" class="{{ $summaryCell }} col-span-2 sm:col-span-3 xl:col-span-1">
+                        <span class="{{ $summaryLabel }}">ملاحظات</span>
+                        <input id="purchase-notes" type="text" wire:model="notes" placeholder="اختياري..." class="h-7 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                    </label>
                 </div>
 
-                <div class="mt-2 grid gap-2 border-t border-slate-100 pt-2 {{ $showTax ? 'grid-cols-3' : 'grid-cols-2' }}">
-                    <label class="text-xs font-bold text-slate-600">خصم الفاتورة
-                        <input type="number" min="0" step="0.01" wire:model.live="discount" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-sm font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
-                    </label>
-                    <label class="text-xs font-bold text-slate-600">نوع الخصم
-                        <select wire:model.live="discountType" class="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                            <option value="fixed">مبلغ</option><option value="percentage">%</option>
-                        </select>
-                    </label>
-                    @if ($showTax)
-                        <div data-purchase-tax class="text-xs font-bold text-slate-600">قيمة الضريبة
-                            <div class="mt-1 flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 font-mono text-sm font-black text-slate-800">{{ number_format((float) $taxAmount, 2) }}</div>
+                {{-- الإجمالي النهائي --}}
+                <div class="flex shrink-0 flex-col justify-center bg-emerald-700 px-4 py-1.5 text-white sm:min-w-52">
+                    <div class="flex items-baseline justify-between gap-3">
+                        <span class="text-xs font-black text-emerald-50">الإجمالي النهائي</span>
+                        <span class="font-mono text-xl font-black tabular-nums">{{ number_format($grandTotal, 2) }}</span>
+                    </div>
+                    @if ($selectedSupplier)
+                        <div class="flex justify-between gap-3 text-[11px] font-bold text-emerald-100">
+                            <span>المتبقي</span>
+                            <span class="font-mono font-black text-white">{{ number_format($remainingTotal, 2) }}</span>
                         </div>
                     @endif
                 </div>
             </div>
 
+            {{-- سندات الصرف المرتبطة --}}
+            @if ($currentPurchaseId && $linkedPayments->isNotEmpty() && app(\App\Services\PaymentVoucherAccess::class)->available())
+                <div class="flex flex-wrap gap-1.5">
+                    @foreach ($linkedPayments as $linkedPayment)
+                        <a href="{{ route('tenant.payment', ['voucher' => $linkedPayment->id]) }}" class="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-black text-indigo-700 hover:bg-indigo-100">
+                            <flux:icon.receipt-percent class="size-3.5" />
+                            تعديل سند الصرف {{ $linkedPayment->voucher_number }}
+                        </a>
+                    @endforeach
+                </div>
+            @endif
         </div>
+
 
         {{-- اختصارات لوحة المفاتيح --}}
         <div class="mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg">

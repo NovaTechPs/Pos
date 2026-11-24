@@ -1422,64 +1422,80 @@ new class extends Component
             {{-- ================================================================
                  الملاحظات والإجماليات
             ================================================================= --}}
-            <div data-return-invoice-summary class="grid shrink-0 grid-cols-2 gap-2 xl:mt-auto xl:grid-cols-4">
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
-                    <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
-                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-5 text-blue-500" /></div>
-                </div>
-                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
-                    <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
-                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-5 text-blue-500" /></div>
-                </div>
-                <div class="rounded-xl border border-rose-200 bg-rose-50 p-3 shadow-sm xl:col-span-1">
-                    <div class="text-xs font-bold text-rose-700">الخصم الإجمالي</div>
-                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-rose-700">{{ number_format($totals['discount'], 2) }}</span><span class="flex size-7 items-center justify-center rounded-full bg-rose-100 font-mono text-lg font-black text-rose-600">%</span></div>
-                </div>
-                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-3 text-white shadow-sm xl:col-span-1">
-                    <div class="text-xs font-black text-white/90">إجمالي المردود</div>
-                    <div class="mt-1 font-mono text-2xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
-                    @if ($selectedPartyId)
-                        <div class="return-balance-summary mt-1 flex w-full justify-between border-t border-white/30 pt-1 text-[11px] font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
-                            <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
+            @php
+                $summaryCell = 'flex min-w-0 flex-col justify-center px-3 py-1.5';
+                $summaryLabel = 'truncate text-[11px] font-bold text-slate-500';
+                $summaryValue = 'font-mono text-base font-black tabular-nums text-slate-900';
+                $summaryInput = 'h-7 w-full min-w-16 rounded-md border border-slate-300 bg-white px-1.5 text-center font-mono text-sm font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+                $summarySelect = 'h-7 w-full rounded-md border border-slate-300 bg-white px-1 text-xs font-bold outline-none focus:border-blue-500';
+            @endphp
+            <div data-return-invoice-summary class="shrink-0 space-y-1 xl:mt-auto">
+                <div class="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:flex-row">
+                    {{-- الأرقام وحقول الخصم والضريبة والدفعة --}}
+                    <div class="grid flex-1 grid-cols-2 divide-y divide-slate-100 sm:grid-cols-4 sm:divide-y-0 sm:divide-x sm:divide-x-reverse {{ $showTax ? 'xl:grid-cols-5' : 'xl:grid-cols-8' }}">
+                        <div class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">عدد الأصناف</span>
+                            <span class="{{ $summaryValue }}">{{ count($lines) }}</span>
                         </div>
-                    @endif
-                </div>
-
-                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2">
-                    <label for="return-notes" class="mb-1 flex items-center gap-1.5 text-xs font-black text-slate-800">
-                        <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات
-                    </label>
-                    <textarea id="return-notes" wire:model="notes" rows="2" placeholder="سبب المردود أو أي ملاحظة على الفاتورة..." class="w-full resize-none rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
-                    <div class="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] leading-4 font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
-                </div>
-
-                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2">
-                    <div class="grid grid-cols-2 divide-x divide-x-reverse divide-slate-200 text-center">
-                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">المجموع الفرعي</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($totals['subtotal'], 2) }}</div></div>
-                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">{{ $showTax ? 'الضريبة المضمنة' : 'بعد الخصم' }}</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($showTax ? $totals['tax'] : $totals['total'], 2) }}</div></div>
-                    </div>
-                    <div class="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 sm:grid-cols-3 xl:grid-cols-5">
-                        <label class="text-[11px] font-bold text-slate-600">الخصم
-                            <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-rose-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
-                        </label>
-                        <label class="text-[11px] font-bold text-slate-600">نوع الخصم
-                            <select wire:model.live="discountType" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-xs font-bold outline-none focus:border-blue-500"><option value="fixed">مبلغ</option><option value="percentage">نسبة %</option></select>
-                        </label>
+                        <div class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">إجمالي الكمية</span>
+                            <span class="{{ $summaryValue }}">{{ number_format($returnQuantity, 2) }}</span>
+                        </div>
+                        <div class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">المجموع الفرعي</span>
+                            <span class="{{ $summaryValue }}">{{ number_format($totals['subtotal'], 2) }}</span>
+                        </div>
+                        <div class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">الخصم</span>
+                            <div class="flex gap-1">
+                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="discountRate" aria-label="الخصم" class="{{ $summaryInput }} text-rose-600" />
+                                <select wire:model.live="discountType" aria-label="نوع الخصم" class="h-7 shrink-0 rounded-md border border-slate-300 bg-white px-1 text-xs font-bold outline-none focus:border-blue-500"><option value="fixed">مبلغ</option><option value="percentage">%</option></select>
+                            </div>
+                        </div>
+                        <div class="{{ $summaryCell }} bg-rose-50/60">
+                            <span class="truncate text-[11px] font-bold text-rose-700">الخصم الإجمالي</span>
+                            <span class="font-mono text-base font-black tabular-nums text-rose-700">{{ number_format($totals['discount'], 2) }}</span>
+                        </div>
                         @if ($showTax)
-                            <label class="text-[11px] font-bold text-slate-600">نسبة الضريبة المضمنة %
-                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+                            <label class="{{ $summaryCell }}">
+                                <span class="{{ $summaryLabel }}">نسبة الضريبة المضمنة %</span>
+                                <input type="number" min="0" step="0.01" wire:model.live.debounce.400ms="taxPercent" class="{{ $summaryInput }} text-slate-800" />
                             </label>
+                            <div class="{{ $summaryCell }}">
+                                <span class="{{ $summaryLabel }}">الضريبة المضمنة</span>
+                                <span class="{{ $summaryValue }}">{{ number_format($totals['tax'], 2) }}</span>
+                            </div>
                         @endif
-                        <label class="text-[11px] font-bold text-slate-600">{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}
-                            <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-center text-xs font-black text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                        <label class="{{ $summaryCell }}" title="{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}">
+                            <span class="{{ $summaryLabel }}">{{ $isSale ? 'الدفعة المعادة للزبون' : 'الدفعة المستردة من المورد' }}</span>
+                            <input type="number" min="0" step="0.01" wire:model.live.debounce.800ms="paidAmount" class="{{ $summaryInput }} text-slate-800" />
                         </label>
-                        <label class="text-[11px] font-bold text-slate-600">طريقة الدفع
-                            <select wire:model="paymentMethod" class="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 text-xs font-bold outline-none focus:border-blue-500"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select>
+                        <label class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">طريقة الدفع</span>
+                            <select wire:model="paymentMethod" class="{{ $summarySelect }}"><option value="cash">نقدي</option><option value="card">بطاقة</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option></select>
+                        </label>
+                        <label for="return-notes" class="{{ $summaryCell }}">
+                            <span class="{{ $summaryLabel }}">ملاحظات</span>
+                            <input id="return-notes" type="text" wire:model="notes" placeholder="سبب المردود..." class="h-7 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                         </label>
                     </div>
-                </div>
 
+                    {{-- إجمالي المردود --}}
+                    <div class="flex shrink-0 flex-col justify-center {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} px-4 py-1.5 text-white sm:min-w-52">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <span class="text-xs font-black text-white/90">إجمالي المردود</span>
+                            <span class="font-mono text-xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</span>
+                        </div>
+                        @if ($selectedPartyId)
+                            <div class="return-balance-summary flex w-full justify-between gap-3 text-[11px] font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
+                                <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+                <div class="px-1 text-[10px] font-bold text-amber-700">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
             </div>
+
         </fieldset>
 
         {{-- ================================================================
