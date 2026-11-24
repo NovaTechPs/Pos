@@ -89,6 +89,7 @@ test('the sales invoice summary shows quantity, item count, discounts and balanc
         ->set('selectedDiscount', 5)
         ->call('commitRowToCart')
         ->set('discount', 1)
+        ->assertSee('xl:grid-cols-4', false)
         ->assertSee('إجمالي الكمية')
         ->assertSee('عدد الأصناف')
         ->assertSee('إجمالي قبل الخصم')

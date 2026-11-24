@@ -1422,8 +1422,30 @@ new class extends Component
             {{-- ================================================================
                  الملاحظات والإجماليات
             ================================================================= --}}
-            <div class="grid shrink-0 gap-2 xl:mt-auto xl:grid-cols-12">
-                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-4">
+            <div data-return-invoice-summary class="grid shrink-0 grid-cols-2 gap-2 xl:mt-auto xl:grid-cols-4">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
+                    <div class="text-xs font-bold text-slate-500">عدد الأصناف</div>
+                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-5 text-blue-500" /></div>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm xl:col-span-1">
+                    <div class="text-xs font-bold text-slate-500">إجمالي الكمية</div>
+                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-5 text-blue-500" /></div>
+                </div>
+                <div class="rounded-xl border border-rose-200 bg-rose-50 p-3 shadow-sm xl:col-span-1">
+                    <div class="text-xs font-bold text-rose-700">الخصم الإجمالي</div>
+                    <div class="mt-1 flex items-center justify-between"><span class="font-mono text-xl font-black text-rose-700">{{ number_format($totals['discount'], 2) }}</span><span class="flex size-7 items-center justify-center rounded-full bg-rose-100 font-mono text-lg font-black text-rose-600">%</span></div>
+                </div>
+                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-3 text-white shadow-sm xl:col-span-1">
+                    <div class="text-xs font-black text-white/90">إجمالي المردود</div>
+                    <div class="mt-1 font-mono text-2xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
+                    @if ($selectedPartyId)
+                        <div class="return-balance-summary mt-1 flex w-full justify-between border-t border-white/30 pt-1 text-[11px] font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
+                            <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
+                        </div>
+                    @endif
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2">
                     <label for="return-notes" class="mb-1 flex items-center gap-1.5 text-xs font-black text-slate-800">
                         <flux:icon.chat-bubble-left-ellipsis class="size-4 text-slate-500" /> ملاحظات
                     </label>
@@ -1431,21 +1453,9 @@ new class extends Component
                     <div class="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] leading-4 font-bold text-amber-800">سيُسجل المبلغ على حساب {{ $isSale ? 'الزبون ويعاد الصنف السليم إلى المخزون' : 'المورد ويخصم الصنف من المخزون' }}.</div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2 xl:grid-cols-2">
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
-                        <div class="text-[10px] font-bold text-slate-500">إجمالي الكمية</div>
-                        <div class="mt-0.5 flex items-center justify-between"><span class="font-mono text-base font-black text-slate-900">{{ number_format($returnQuantity, 2) }}</span><flux:icon.cube class="size-4 text-slate-400" /></div>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
-                        <div class="text-[10px] font-bold text-slate-500">عدد الأصناف</div>
-                        <div class="mt-0.5 flex items-center justify-between"><span class="font-mono text-base font-black text-slate-900">{{ count($lines) }}</span><flux:icon.square-3-stack-3d class="size-4 text-slate-400" /></div>
-                    </div>
-                </div>
-
-                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-4">
-                    <div class="grid grid-cols-3 divide-x divide-x-reverse divide-slate-200 text-center">
+                <div class="rounded-xl border border-slate-200 bg-white p-2 shadow-sm xl:col-span-2">
+                    <div class="grid grid-cols-2 divide-x divide-x-reverse divide-slate-200 text-center">
                         <div class="px-1"><div class="text-[10px] font-bold text-slate-500">المجموع الفرعي</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($totals['subtotal'], 2) }}</div></div>
-                        <div class="px-1"><div class="text-[10px] font-bold text-slate-500">الخصم المحتسب</div><div class="mt-0.5 font-mono text-base font-black text-rose-600">{{ number_format($totals['discount'], 2) }}</div></div>
                         <div class="px-1"><div class="text-[10px] font-bold text-slate-500">{{ $showTax ? 'الضريبة المضمنة' : 'بعد الخصم' }}</div><div class="mt-0.5 font-mono text-base font-black text-slate-900">{{ number_format($showTax ? $totals['tax'] : $totals['total'], 2) }}</div></div>
                     </div>
                     <div class="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 sm:grid-cols-3 xl:grid-cols-5">
@@ -1469,15 +1479,6 @@ new class extends Component
                     </div>
                 </div>
 
-                <div class="flex flex-col justify-between rounded-xl {{ $isSale ? 'bg-rose-700' : 'bg-amber-700' }} p-3 text-white shadow-sm xl:col-span-2">
-                    <div class="text-xs font-black text-white/90">إجمالي المردود</div>
-                    <div class="mt-1 font-mono text-2xl font-black tabular-nums">{{ number_format($totals['total'], 2) }}</div>
-                    @if ($selectedPartyId)
-                        <div class="return-balance-summary mt-1 flex w-full justify-between border-t border-white/30 pt-1 text-[11px] font-bold text-white/90" style="position: static !important; inset: auto !important; width: 100% !important;">
-                            <span>الرصيد بعد الدفعة</span><strong class="font-mono text-white">{{ number_format($totals['balance'], 2) }}</strong>
-                        </div>
-                    @endif
-                </div>
             </div>
         </fieldset>
 

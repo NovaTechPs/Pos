@@ -355,7 +355,9 @@ test('return schema migration can be resumed without overwriting existing invoic
 
 test('return invoices use the invoice layout with a search window, party balance and entry row', function (string $kind): void {
     ['party' => $party, 'component' => $component] = editableReturnFixture($kind);
-    $component->assertSee('الرصيد الحالي')->assertSee('200.00')->assertSee('اختصارات لوحة المفاتيح')
+    $component->assertSee('data-return-invoice-summary', false)->assertSee('xl:grid-cols-4', false)
+        ->assertSee('عدد الأصناف')->assertSee('إجمالي الكمية')->assertSee('الخصم الإجمالي')->assertSee('إجمالي المردود')
+        ->assertSee('الرصيد الحالي')->assertSee('200.00')->assertSee('اختصارات لوحة المفاتيح')
         ->assertSee('rows="2"', false)->assertSee('xl:grid-cols-5', false)
         ->assertSee('رقم الصنف / الباركود / اسم الصنف ثم Enter...')
         ->call('saveReturn')->assertHasNoErrors();
