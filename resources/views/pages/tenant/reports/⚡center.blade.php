@@ -144,7 +144,7 @@ new class extends Component {
     {
         $this->from = today()->startOfMonth()->toDateString();
         $this->to = today()->toDateString();
-        $this->branchId = auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin()
+        $this->branchId = ReportingService::choosesBranch(auth()->user(), $this->report)
             ? null
             : auth()->user()->activeBranchId();
         // Links from the analytics dashboard open the report on the same period and branch.
@@ -175,13 +175,13 @@ new class extends Component {
 
     private function service(): ReportingService
     {
-        return new ReportingService(auth()->user(), $this->branchId, false);
+        return new ReportingService(auth()->user(), $this->branchId, false, $this->report);
     }
 
     public function updatedBranchId($value): void
     {
         $user = auth()->user();
-        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
+        if (! $user || ! ReportingService::choosesBranch($user, $this->report)) {
             $this->branchId = $user?->activeBranchId();
             return;
         }
@@ -346,6 +346,10 @@ new class extends Component {
 
     public function updatedReport(): void
     {
+        // Employees see every branch in the account statement and only their own branch elsewhere.
+        if (! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin()) {
+            $this->branchId = ReportingService::choosesBranch(auth()->user(), $this->report) ? null : auth()->user()->activeBranchId();
+        }
         $this->columnFilters = [];
         $this->resetPage();
         $this->resetErrorBag();
@@ -565,7 +569,7 @@ new class extends Component {
             </div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+            @if (ReportingService::choosesBranch(auth()->user(), 'statement'))
                 <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
                 <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>

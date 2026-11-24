@@ -78,13 +78,22 @@ class ReportingService
     /** Net revenue of a sales document without tax and without the delivery fee collected by the courier. */
     public const ORDER_REVENUE_SQL = "CASE WHEN orders.type = 'return' THEN -(ABS(orders.total) - ABS(orders.tax_amount) - ABS(orders.delivery_fee)) ELSE orders.total - orders.tax_amount - orders.delivery_fee END";
 
-    public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true)
+    /**
+     * Owners choose any branch. The account statement shows every branch to anyone allowed to
+     * see it, so receipts taken in another branch are not missing from a customer's account.
+     */
+    public static function choosesBranch(User $user, ?string $report = null): bool
+    {
+        return $user->isTenantOwner() || $user->isSaaSAdmin() || ($report === 'statement' && $user->can(self::REPORTS['statement'][1]));
+    }
+
+    public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true, ?string $report = null)
     {
         $tenant = $user->isSaaSAdmin() ? session('active_tenant_id') : $user->tenant_id;
         abort_unless($tenant && DB::table('tenants')->where('id', $tenant)->exists(), 403, 'حدد المتجر أولاً.');
         $this->tenantId = (int) $tenant;
         $activeBranchId = $user->activeBranchId();
-        $this->branchId = $user->isTenantOwner() || $user->isSaaSAdmin()
+        $this->branchId = self::choosesBranch($user, $report)
             ? ($useActiveBranchWhenUnspecified && $activeBranchId ? (int) $activeBranchId : $branchId)
             : ($user->branch_id ? (int) $user->branch_id : $branchId);
         if ($this->branchId) {

@@ -500,6 +500,30 @@ test('search matches saved product barcodes for sales and product options withou
     Livewire::test('pages::tenant.reports.center')->set('report', 'product-sales')->set('productSearch', '000123')->assertSee('قهوة التقارير')->assertSee('data-report-product')->call('selectReportProduct', $this->product->id)->assertSet('productId', $this->product->id);
 });
 
+test('an employee allowed to see account statements sees every branch in the statement but only their branch elsewhere', function (): void {
+    $role = Role::create(['tenant_id' => $this->tenant->id, 'name' => 'Statements']);
+    foreach (['reports.analytics', 'reports.sales', 'customers.view'] as $name) {
+        $role->permissions()->attach(Permission::firstOrCreate(['name' => $name], ['display_name' => $name, 'group' => 'reports'])->id);
+    }
+    $staff = User::factory()->create(['tenant_id' => $this->tenant->id, 'role_id' => $role->id, 'branch_id' => $this->branch->id, 'is_owner' => false, 'type' => 'tenant_user']);
+    ($this->makeOrder)(['invoice_number' => 'HERE-SALE', 'total' => 160]);
+    ($this->makePayment)(['branch_id' => $this->otherBranch->id, 'voucher_number' => 'OTHER-BRANCH-RECEIPT', 'amount' => 160]);
+    ($this->makeOrder)(['branch_id' => $this->otherBranch->id, 'customer_id' => null, 'source' => 'pos', 'invoice_number' => 'OTHER-BRANCH-SALE', 'total' => 500]);
+
+    $statement = (new ReportingService($staff, null, false, 'statement'))->prepare('statement', array_replace($this->filters, ['party_id' => $this->customer->id]));
+    expect($statement['query']->pluck('reference')->all())->toContain('HERE-SALE', 'OTHER-BRANCH-RECEIPT');
+    expect((new ReportingService($staff, $this->otherBranch->id, false, 'sales'))->branchId)->toBe($this->branch->id);
+
+    Livewire::actingAs($staff)->test('pages::tenant.reports.center', ['report' => 'statement'])
+        ->assertSet('branchId', null)->assertSeeHtml('statement-branch-'.$this->otherBranch->id)
+        ->call('showStatementParty', $this->customer->id)->assertSee('OTHER-BRANCH-RECEIPT')
+        ->set('branchId', $this->otherBranch->id)->assertSet('branchId', $this->otherBranch->id)
+        ->call('selectReport', 'sales')->assertSet('branchId', $this->branch->id)->call('applyFilters')->assertDontSee('500.00');
+    $printed = $this->actingAs($staff)->get(route('tenant.reports.print', ['report' => 'statement', 'branch_id' => 0, 'party_id' => $this->customer->id] + $this->filters))
+        ->assertOk()->streamedContent();
+    expect($printed)->toContain('OTHER-BRANCH-RECEIPT');
+});
+
 test('report permissions are enforced on livewire selection exports and direct print endpoints', function (): void {
     $role = Role::create(['tenant_id' => $this->tenant->id, 'name' => 'Sales Reports Only']);
     foreach (['reports.analytics', 'reports.sales'] as $name) {

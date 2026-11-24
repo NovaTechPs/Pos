@@ -18,8 +18,8 @@ class ReportPrintController extends Controller
         $request->validate(['report' => ['required', 'string'], 'branch_id' => ['nullable', 'integer', 'min:0'], 'format' => ['nullable', 'in:html,pdf']]);
         $hasBranchFilter = $request->filled('branch_id');
         $branchId = $hasBranchFilter && $request->integer('branch_id') > 0 ? $request->integer('branch_id') : null;
-        $service = new ReportingService($request->user(), $branchId, ! $hasBranchFilter);
         $report = $request->string('report')->toString();
+        $service = new ReportingService($request->user(), $branchId, ! $hasBranchFilter, $report);
         $definition = $service->prepare($report, $request->only(ReportingService::FILTER_KEYS));
         $data = ['title' => ReportingService::REPORTS[$report][0], 'definition' => $definition,
             'from' => $request->string('from')->toString(), 'to' => $request->string('to')->toString(),
