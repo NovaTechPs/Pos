@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ReportingService;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
@@ -302,4 +303,20 @@ test('report center keeps a small title so the statement account list is taller 
     expect($css)->toContain('.reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(360px, calc(100dvh - 300px)); }')
         ->and($css)->toContain('.reports-redesign .reports-account-panel .reports-account-row strong { font-size: 12px;')
         ->and($css)->toContain('.reports-redesign .reports-title [data-flux-heading] { font-size: 16px;');
+});
+
+test('the report center uses the full page width', function (): void {
+    expect(file_get_contents(resource_path('css/reports.css')))
+        ->toContain(".reports-redesign .reports-workspace,\n.reports-redesign .reports-workspace.is-statement { max-width: none; }");
+});
+
+test('the report center drops empty bands around its title, tabs and panels', function (): void {
+    $css = file_get_contents(resource_path('css/reports.css'));
+    $compact = Str::after($css, '/* Compact report center: no empty bands around the title, tabs and panels. */');
+
+    expect($compact)->toContain('.reports-center.reports-redesign { padding: 8px 12px !important; }')
+        ->and($compact)->toContain('.reports-redesign .reports-category-tab { min-height: 0; flex-direction: row;')
+        ->and($compact)->toContain('.reports-redesign .reports-report-tab { min-height: 0;')
+        ->and($compact)->toContain('.reports-redesign .reports-statement-placeholder { min-height: 140px;')
+        ->and($compact)->toContain('max-height: max(360px, calc(100dvh - 250px));');
 });

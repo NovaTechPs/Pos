@@ -309,3 +309,31 @@
 .reports-redesign .reports-account-panel .reports-account-row small { margin-top: 1px; font-size: 10px; }
 .reports-redesign .reports-account-panel .reports-account-row b { font-size: 11.5px; }
 @media (max-width: 760px) { .reports-redesign .reports-account-sidebar .reports-account-list { max-height: 360px; } }
+
+/* Use the full width freed by hiding the side menu on the reports tab. */
+.reports-redesign .reports-workspace,
+.reports-redesign .reports-workspace.is-statement { max-width: none; }
+
+/* Compact report center: no empty bands around the title, tabs and panels. */
+.reports-center.reports-redesign { padding: 8px 12px !important; }
+.reports-redesign .reports-header { margin-bottom: 6px; }
+.reports-redesign .reports-workspace,
+.reports-redesign .reports-workspace.is-statement { gap: 8px; }
+.reports-redesign .reports-category-tabs { gap: 6px; }
+.reports-redesign .reports-category-tab { min-height: 0; flex-direction: row; gap: 6px; padding: 7px 8px; font-size: 13px; }
+.reports-redesign .reports-category-tab svg { width: 18px; height: 18px; }
+.reports-redesign .reports-subnavigation { padding: 6px 10px; }
+.reports-redesign .reports-subnavigation>summary { font-size: 12px; }
+.reports-redesign .reports-report-tabs { gap: 6px; padding-top: 6px; }
+.reports-redesign .reports-report-tab { min-height: 0; padding: 6px 10px; flex-direction: row; gap: 6px; line-height: 1.4; }
+.reports-redesign .reports-report-tab svg { width: 16px; height: 16px; }
+.reports-redesign .reports-content { gap: 8px; }
+.reports-redesign .reports-filter, .reports-redesign .reports-result { padding: 10px 12px; }
+.reports-redesign .reports-statement-placeholder { min-height: 140px; padding: 14px; gap: 8px; }
+.reports-redesign #report-account-picker.reports-account-panel { padding: 10px 12px; }
+.reports-redesign .reports-account-panel .reports-directory-tools { gap: 6px; margin-top: 6px; }
+.reports-redesign .reports-account-panel .reports-account-types button { padding: 6px 3px; }
+.reports-redesign .reports-account-panel .reports-account-end { padding-top: 4px; }
+@media (min-width: 761px) {
+    .reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(360px, calc(100dvh - 250px)); }
+}

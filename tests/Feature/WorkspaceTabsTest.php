@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -20,7 +21,8 @@ test('tenant pages expose one accessible workspace without duplicating the livew
     if ($path === '/dashboard/pos') {
         $response->assertSee('فتح قسم')->assertDontSee('data-tenant-shell', false);
     } else {
-        $response->assertDontSee('فتح قسم')->assertSee('data-tenant-shell', false);
+        // Shown only while a point of sale tab hides the side menu.
+        $response->assertSee('workspace-menu workspace-menu-pos-only', false)->assertSee('data-tenant-shell', false);
     }
     $html = $response->getContent();
     $dom = new DOMDocument;
@@ -70,4 +72,26 @@ test('a page opened in a workspace tab without the iframe header can still scrol
         $html = preg_replace('/<link[^>]+(?:stylesheet|modulepreload)[^>]*>/i', '', $html);
         file_put_contents($previewPath, str_replace('</head>', '<style>'.$css.'</style></head>', $html));
     }
+});
+
+test('the point of sale tab opens sections from «فتح قسم» because it hides the side menu', function (): void {
+    $this->get('/dashboard')->assertSuccessful()
+        ->assertSee('فتح قسم')
+        ->assertSee('data-tenant-navigation-trigger', false);
+
+    $css = file_get_contents(resource_path('css/workspace-tabs.css'));
+    expect($css)->toContain('body.workspace-pos-active > [data-flux-sidebar],')
+        ->and($css)->toContain('.workspace-menu.workspace-menu-pos-only { display: none; }')
+        ->and($css)->toContain('body.workspace-pos-active .workspace-menu.workspace-menu-pos-only { display: block; }')
+        ->and($css)->toContain('body.workspace-pos-active [data-tenant-navigation-trigger] { display: none !important; }');
+});
+
+test('the reports tab hides the side menu on computer screens and opens sections from «فتح قسم»', function (): void {
+    $css = file_get_contents(resource_path('css/workspace-tabs.css'));
+    $wide = Str::after($css, '@media screen and (min-width: 1024px) {'."\n".'    body.workspace-wide-active');
+
+    expect($wide)->toContain('[data-flux-sidebar]')
+        ->and($css)->toContain('body.workspace-wide-active .workspace-menu.workspace-menu-pos-only { display: block; }')
+        ->and($css)->toContain('body.workspace-wide-active [data-tenant-navigation-trigger] { display: none !important; }')
+        ->and(file_get_contents(resource_path('js/workspace-tabs.js')))->toContain("classList.toggle('workspace-wide-active', workspaceUsesWideLayout(activeUrl))");
 });

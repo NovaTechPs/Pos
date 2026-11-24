@@ -65,7 +65,7 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     import fs from 'node:fs';
     import assert from 'node:assert/strict';
     const source = fs.readFileSync('resources/js/workspace-tabs.js', 'utf8');
-    const { WorkspaceTabState, workspaceUrl, cleanWorkspaceAddress, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, openWorkspaceLinkInTab, workspaceUsesFullWidth, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    const { WorkspaceTabState, workspaceUrl, cleanWorkspaceAddress, syncWorkspacePanels, workspaceLifecycle, interceptWorkspaceNavigation, openWorkspaceLinkInTab, workspaceUsesFullWidth, workspaceUsesWideLayout, readWorkspaceSnapshot, loadWorkspaceFrame, cycleWorkspaceTab, normalizeWorkspaceFrame } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     const base = 'https://pos.example/dashboard/pos';
     const pageContent = { livewireId: 'same-component', value: 'unsaved invoice' };
     let frameMarked = false, frameClass = false, replacements = 0;
@@ -94,6 +94,10 @@ test('workspace deduplicates pages preserves tab identities and closes to adjace
     assert.equal(workspaceUsesFullWidth(base + '/?_workspace=frame'), true);
     assert.equal(workspaceUsesFullWidth('https://pos.example/dashboard/product'), false);
     assert.equal(workspaceUsesFullWidth(undefined), false);
+    assert.equal(workspaceUsesWideLayout('https://pos.example/dashboard/reports?report=statement'), true);
+    assert.equal(workspaceUsesWideLayout('https://pos.example/dashboard/reports/'), true);
+    assert.equal(workspaceUsesWideLayout(base), false);
+    assert.equal(workspaceUsesWideLayout('https://pos.example/dashboard/reports/print'), false);
     assert.equal(workspaceUrl('/dashboard/product?_workspace=frame&search=44', base), 'https://pos.example/dashboard/product?search=44');
     assert.equal(workspaceUrl('https://evil.example/dashboard', base), null);
     assert.equal(workspaceUrl('javascript:alert(1)', base), null);

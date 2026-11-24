@@ -25,7 +25,8 @@ test('authenticated users can visit the dashboard', function () {
         ->assertSee('data-tenant-navigation-trigger', false)
         ->assertSee('data-tenant-navigation', false)
         ->assertSee('collapsible="true"', false)
-        ->assertDontSee('data-workspace-menu', false)
+        // «فتح قسم» exists only for the point of sale tab, which hides the side menu.
+        ->assertSee('workspace-menu workspace-menu-pos-only', false)
         ->assertSee('الرئيسية')
         ->assertSee('الزباين والموردون')
         ->assertSee('المخزون والمنتجات');

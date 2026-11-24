@@ -76,6 +76,11 @@ export function workspaceUsesFullWidth(url) {
     return Boolean(url && /\/dashboard\/pos\/?$/.test(new URL(url).pathname));
 }
 
+/** Pages that hide the side menu on computer screens for more room; phones keep their own header. */
+export function workspaceUsesWideLayout(url) {
+    return Boolean(url && /\/dashboard\/reports\/?$/.test(new URL(url).pathname));
+}
+
 export function syncWorkspaceNavigation(page, activeUrl) {
     if (!activeUrl) return;
     const active = new URL(activeUrl);
@@ -369,7 +374,9 @@ function mountWorkspace(root) {
         }
         syncWorkspacePanels(panels, state.active);
         syncWorkspaceNavigation(document, active?.url);
-        document.body.classList.toggle('workspace-pos-active', workspaceUsesFullWidth(state.tabs.find(tab => tab.id === state.active)?.url));
+        const activeUrl = state.tabs.find(tab => tab.id === state.active)?.url;
+        document.body.classList.toggle('workspace-pos-active', workspaceUsesFullWidth(activeUrl));
+        document.body.classList.toggle('workspace-wide-active', workspaceUsesWideLayout(activeUrl));
         const loading = root.querySelector('[data-workspace-loading]');
         if (loading) {
             loading.hidden = !active?.loading && !active?.loadError;
@@ -535,7 +542,7 @@ function mountWorkspace(root) {
     focusPage(state.active);
     return () => {
         root.querySelector('[data-workspace-retry]')?.removeEventListener('click', retry);
-        document.body.classList.remove('workspace-pos-active');
+        document.body.classList.remove('workspace-pos-active', 'workspace-wide-active');
         document.removeEventListener('click', click, true);
         document.removeEventListener('contextmenu', contextMenu, true);
         document.removeEventListener('mousedown', press, true);

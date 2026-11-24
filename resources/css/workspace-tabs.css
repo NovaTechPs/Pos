@@ -124,6 +124,19 @@
     body.workspace-pos-active > .pos-mobile-header { display: none !important; }
     body.workspace-pos-active:has(> .workspace-shell) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
     body.workspace-pos-active > .workspace-shell { height: 100dvh; }
+    /* The side menu is hidden on the point of sale, so «فتح قسم» replaces its toggle there. */
+    .workspace-menu.workspace-menu-pos-only { display: none; }
+    body.workspace-pos-active .workspace-menu.workspace-menu-pos-only { display: block; }
+    body.workspace-pos-active [data-tenant-navigation-trigger] { display: none !important; }
+}
+
+/* Reports get the same room on computer screens; phones keep their header and menu. */
+@media screen and (min-width: 1024px) {
+    body.workspace-wide-active > [data-flux-sidebar],
+    body.workspace-wide-active > [data-flux-sidebar-backdrop] { display: none !important; }
+    body.workspace-wide-active:has(> .workspace-shell) { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+    body.workspace-wide-active .workspace-menu.workspace-menu-pos-only { display: block; }
+    body.workspace-wide-active [data-tenant-navigation-trigger] { display: none !important; }
 }
 
 @media screen {

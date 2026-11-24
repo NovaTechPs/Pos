@@ -12,14 +12,13 @@
                     icon="bars-3"
                 />
             @endif
-            @if (! $shellMain)
-                <details data-workspace-menu class="workspace-menu">
-                    <summary>☰ <span>فتح قسم</span></summary>
-                    <div class="workspace-menu-panel">
-                        @include(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'layouts.admin.navigation' : 'layouts.tenant.navigation')
-                    </div>
-                </details>
-            @endif
+            {{-- With the side menu, this menu shows only on the point of sale, which hides the side menu to use the full width. --}}
+            <details data-workspace-menu class="workspace-menu {{ $shellMain ? 'workspace-menu-pos-only' : '' }}">
+                <summary>☰ <span>فتح قسم</span></summary>
+                <div class="workspace-menu-panel">
+                    @include(auth()->user()?->isSaaSAdmin() && ! session('active_tenant_id') ? 'layouts.admin.navigation' : 'layouts.tenant.navigation')
+                </div>
+            </details>
             <div data-workspace-tab-list class="workspace-tab-list" role="tablist" aria-label="الصفحات المفتوحة"></div>
         </div>
         <div data-workspace-panels class="workspace-panels">
