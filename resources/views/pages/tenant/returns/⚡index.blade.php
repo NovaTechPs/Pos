@@ -447,7 +447,8 @@ new class extends Component
             $branchProduct = BranchProduct::query()->where('tenant_id', $this->tenantId())
                 ->where('branch_id', $this->branchId())->where('product_id', $productId)->first();
 
-            return (float) ($branchProduct?->retail_price ?? 0);
+            // A customer with no invoice for the product is priced at wholesale, or retail when no wholesale price is set.
+            return (float) $branchProduct?->wholesale_price > 0 ? (float) $branchProduct->wholesale_price : (float) ($branchProduct?->retail_price ?? 0);
         }
 
         $lastCost = DB::table('purchase_items as pi')->join('purchases as p', 'p.id', '=', 'pi.purchase_id')
@@ -788,6 +789,39 @@ new class extends Component
             : app(PartyBalance::class)->applyPurchase($party, $unsettled);
     }
 
+    /**
+     * A new return whose number is already taken was usually saved by an earlier click whose
+     * reply never reached the browser. That return is opened instead of being saved twice;
+     * any other clash gets a fresh number.
+     *
+     * @return bool Whether the save should stop because the return is already saved.
+     */
+    private function resolveTakenNumber(): bool
+    {
+        $numberColumn = $this->kind === 'sale' ? 'invoice_number' : 'reference_number';
+        $partyColumn = $this->kind === 'sale' ? 'customer_id' : 'supplier_id';
+        $table = $this->kind === 'sale' ? 'orders' : 'purchase_returns';
+        if (! DB::table($table)->where('tenant_id', $this->tenantId())->where($numberColumn, $this->invoiceNumber)->exists()) {
+            return false;
+        }
+        $saved = $this->returnQuery()->where($numberColumn, $this->invoiceNumber)
+            ->where($partyColumn, $this->selectedPartyId)->first(['id']);
+        if (! $saved) {
+            $this->invoiceNumber = $this->generateInvoiceNumber();
+
+            return false;
+        }
+
+        $number = $this->invoiceNumber;
+        $this->loadReturn((int) $saved->id);
+        $this->lastSavedReturnId = (int) $saved->id;
+        $this->lastSavedNumber = $number;
+        $this->startNewReturn(false);
+        $this->successMessage = 'هذا المردود محفوظ مسبقاً برقم '.$number.'، ولم يُحفظ مرة ثانية. يمكنك فتحه من البحث.';
+
+        return true;
+    }
+
     public function saveReturn(bool $print = false): void
     {
         if ($this->currentReturnId && ! $this->editing && $print) {
@@ -801,6 +835,9 @@ new class extends Component
 
             return;
         }
+        if (! $this->currentReturnId && $this->resolveTakenNumber()) {
+            return;
+        }
         $this->validate([
             'kind' => ['required', 'in:sale,purchase'],
             'selectedPartyId' => ['required', 'integer'], 'invoiceDate' => ['required', 'date'],
@@ -811,7 +848,7 @@ new class extends Component
             'discountType' => ['required', 'in:fixed,percentage'], 'discountRate' => ['required', 'numeric', 'min:0'],
             'taxPercent' => ['required', 'numeric', 'min:0'], 'paidAmount' => ['required', 'numeric', 'min:0'],
             'paymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
-        ]);
+        ], [], ['invoiceNumber' => 'رقم الفاتورة', 'selectedPartyId' => 'الزبون / المورد']);
         foreach ($this->lines as &$line) {
             $line['quantity'] = round((float) $line['quantity'], 2);
             $line['bonus'] = round(max(0, (float) ($line['bonus'] ?? 0)), 2);

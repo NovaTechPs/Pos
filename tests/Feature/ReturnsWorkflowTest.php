@@ -224,6 +224,33 @@ test('return invoices support payment discount tax editing printing and deletion
         ->and(Payment::query()->count())->toBe(0);
 })->with(['sale', 'purchase']);
 
+test('saving a return again after its reply was lost opens the saved return instead of failing or saving it twice', function (string $kind): void {
+    extract(editableReturnFixture($kind));
+    $component->set('lines.0.quantity', 2);
+    $number = $component->get('invoiceNumber');
+    $lines = $component->get('lines');
+    $component->call('saveReturn')->assertHasNoErrors();
+    $stockAfterSave = (float) $stock->fresh()->stock_quantity;
+    $balanceAfterSave = (float) $party->fresh()->current_balance;
+
+    // The browser never got the reply, so it sends the same return again.
+    $component->set('invoiceNumber', $number)->set('selectedPartyId', $party->id)->set('lines', $lines)
+        ->call('saveReturn')->assertHasNoErrors()
+        ->assertSee('هذا المردود محفوظ مسبقاً برقم')->assertSet('lastSavedNumber', $number)->assertSet('lines', []);
+    $returns = $kind === 'sale' ? Order::query()->where('type', 'return')->count() : DB::table('purchase_returns')->count();
+    expect($returns)->toBe(1)
+        ->and((float) $stock->fresh()->stock_quantity)->toBe($stockAfterSave)
+        ->and((float) $party->fresh()->current_balance)->toBe($balanceAfterSave);
+
+    if ($kind === 'purchase') {
+        return;
+    }
+    // A number taken by another sales document gets a fresh number instead of an error.
+    $component->set('invoiceNumber', 'ORIGINAL')->set('selectedPartyId', $party->id)->set('lines', $lines)
+        ->call('saveReturn')->assertHasNoErrors();
+    expect($component->get('lastSavedNumber'))->not->toBe('ORIGINAL')->toStartWith('RET-');
+})->with(['sale', 'purchase']);
+
 test('return validation and failed stock changes leave saved documents and balances intact', function (string $kind): void {
     extract(editableReturnFixture($kind));
     $component->set('lines.0.quantity', 2)->call('saveReturn');
@@ -329,6 +356,7 @@ test('return schema migration can be resumed without overwriting existing invoic
 test('return invoices use the invoice layout with a search window, party balance and entry row', function (string $kind): void {
     ['party' => $party, 'component' => $component] = editableReturnFixture($kind);
     $component->assertSee('الرصيد الحالي')->assertSee('200.00')->assertSee('اختصارات لوحة المفاتيح')
+        ->assertSee('rows="2"', false)->assertSee('xl:grid-cols-5', false)
         ->assertSee('رقم الصنف / الباركود / اسم الصنف ثم Enter...')
         ->call('saveReturn')->assertHasNoErrors();
     $number = $component->get('lastSavedNumber');
@@ -341,14 +369,14 @@ test('return invoices use the invoice layout with a search window, party balance
         ->assertSet('editing', false)->assertSee('محفوظ');
 })->with(['sale', 'purchase']);
 
-test('returns accept products the party never bought here once the store allows returns without history', function (string $kind, string $partyType, float $price, float $stockAfter): void {
+test('returns accept products the party never bought here once the store allows returns without history', function (string $kind, string $partyType, float $price, float $stockAfter, float $wholesalePrice = 0): void {
     $tenant = Tenant::query()->create(['name' => 'متجر منتقل من برنامج قديم']);
     $branch = Branch::query()->create(['tenant_id' => $tenant->id, 'name' => 'الفرع']);
     $user = returnsTestUser($tenant);
     $party = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'طرف قديم', 'type' => $partyType]);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف قديم', 'cost_price' => 8]);
     $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id,
-        'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 15]);
+        'product_id' => $product->id, 'stock_quantity' => 5, 'retail_price' => 15, 'wholesale_price' => $wholesalePrice]);
     $this->withSession(['active_tenant_id' => $tenant->id, 'active_branch_id' => $branch->id]);
 
     Livewire::actingAs($user)->test('pages::tenant.returns.index')
@@ -365,7 +393,11 @@ test('returns accept products the party never bought here once the store allows 
 
     expect((float) $stock->fresh()->stock_quantity)->toBe($stockAfter)
         ->and($kind === 'sale' ? Order::query()->where('type', 'return')->count() : DB::table('purchase_returns')->count())->toBe(1);
-})->with([['sale', 'customer', 15.0, 7.0], ['purchase', 'supplier', 8.0, 3.0]]);
+})->with([
+    'customer at wholesale price' => ['sale', 'customer', 12.0, 7.0, 12.0],
+    'customer at retail price without a wholesale price' => ['sale', 'customer', 15.0, 7.0, 0.0],
+    'supplier at cost' => ['purchase', 'supplier', 8.0, 3.0, 12.0],
+]);
 
 test('the store settings page turns returns without history on', function (): void {
     $tenant = Tenant::query()->create(['name' => 'متجر الإعدادات']);
