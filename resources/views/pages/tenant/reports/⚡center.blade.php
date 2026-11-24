@@ -490,7 +490,7 @@ new class extends Component {
     <header class="reports-header">
         <div class="reports-title">
             <span class="reports-title-icon" aria-hidden="true"><flux:icon.share variant="outline" /></span>
-            <div><flux:heading size="xl">مركز التقارير</flux:heading><flux:text>تقارير شاملة للمبيعات والمشتريات والمخزون والحسابات والموظفين</flux:text></div>
+            <flux:heading size="lg">مركز التقارير</flux:heading>
         </div>
         <flux:button :href="route('tenant.analytics')" icon="clock" wire:navigate class="reports-legacy-link">التحليلات السابقة</flux:button>
     </header>

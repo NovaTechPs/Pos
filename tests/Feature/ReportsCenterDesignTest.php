@@ -292,3 +292,14 @@ test('statement report shows the customer list as a sidebar beside the filters w
     $component->assertViewHas('statementReady', true)
         ->call('resetFilters')->assertSee('اختر حساباً من القائمة');
 });
+
+test('report center keeps a small title so the statement account list is taller with compact rows', function (): void {
+    Livewire::test('pages::tenant.reports.center')
+        ->assertSee('مركز التقارير')
+        ->assertDontSee('تقارير شاملة للمبيعات والمشتريات والمخزون والحسابات والموظفين');
+
+    $css = file_get_contents(resource_path('css/reports.css'));
+    expect($css)->toContain('.reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(360px, calc(100dvh - 300px)); }')
+        ->and($css)->toContain('.reports-redesign .reports-account-panel .reports-account-row strong { font-size: 12px;')
+        ->and($css)->toContain('.reports-redesign .reports-title [data-flux-heading] { font-size: 16px;');
+});

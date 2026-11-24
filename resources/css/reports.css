@@ -290,3 +290,22 @@
 }
 .reports-invoice-delivery{display:block;margin-top:2px;font-size:11px;font-weight:600;color:#1e40af;white-space:normal}
 .dark .reports-invoice-delivery{color:#93c5fd}
+
+/* Small page title, so the statement account list gets the height instead. */
+.reports-center.reports-redesign { padding-top: 10px !important; }
+.reports-redesign .reports-header { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; min-height: 0; margin-bottom: 8px; }
+.reports-redesign .reports-title { gap: 6px; }
+.reports-redesign .reports-title-icon { width: 24px; height: 24px; }
+.reports-redesign .reports-title-icon svg { width: 18px; height: 18px; }
+.reports-redesign .reports-title [data-flux-heading] { font-size: 16px; font-weight: 800; line-height: 1.4; }
+.reports-redesign .reports-legacy-link { position: static; height: 30px; font-size: 12px; }
+
+/* Taller statement account list with compact rows and a slightly smaller name. */
+.reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(360px, calc(100dvh - 300px)); }
+.reports-redesign .reports-account-panel>h2 { margin-bottom: 8px; font-size: 14px; }
+.reports-redesign .reports-account-panel .reports-directory-hint { margin: 4px 0; }
+.reports-redesign .reports-account-panel .reports-account-row { padding: 6px 8px; }
+.reports-redesign .reports-account-panel .reports-account-row strong { font-size: 12px; font-weight: 700; line-height: 1.4; }
+.reports-redesign .reports-account-panel .reports-account-row small { margin-top: 1px; font-size: 10px; }
+.reports-redesign .reports-account-panel .reports-account-row b { font-size: 11.5px; }
+@media (max-width: 760px) { .reports-redesign .reports-account-sidebar .reports-account-list { max-height: 360px; } }
