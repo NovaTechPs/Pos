@@ -46,3 +46,12 @@ test('offline protocol support is advertised by live catalog and shift responses
     $this->getJson('/api/pos/products?branch_id='.$this->branch->id)->assertOk()->assertJsonPath('offline_contract_version', 1);
     $this->getJson('/api/shifts/active?branch_id='.$this->branch->id)->assertOk()->assertJsonPath('offline_contract_version', 1);
 });
+
+test('a POS sale keeps the recipient name typed on the invoice, or the customer name when empty', function (): void {
+    $named = $this->postJson('/api/pos/orders', ['customer_name' => '  أبو أحمد  ', 'operation_uuid' => (string) Str::uuid()] + $this->payload)
+        ->assertCreated();
+    expect(Order::query()->findOrFail($named->json('order.id'))->customer_name)->toBe('أبو أحمد');
+
+    $plain = $this->postJson('/api/pos/orders', ['operation_uuid' => (string) Str::uuid()] + $this->payload)->assertCreated();
+    expect(Order::query()->findOrFail($plain->json('order.id'))->customer_name)->toBeNull();
+});

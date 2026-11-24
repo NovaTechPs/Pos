@@ -549,6 +549,8 @@ class PosController extends Controller
             'invoice_id' => ['nullable', 'integer', 'prohibits:held_order_id,offline_shift_id'],
             'branch_id' => ['required', 'integer'],
             'customer_id' => ['nullable', 'integer'],
+            // The name printed on the invoice («اسم المستلم على الفاتورة»); empty uses the customer's name.
+            'customer_name' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer'],
             'items.*.is_gift' => ['sometimes', 'boolean'],
@@ -689,7 +691,7 @@ class PosController extends Controller
                 'shift_id' => $shift?->id,
                 'created_by' => $user->id,
                 'customer_id' => $customer?->id,
-                'customer_name' => $customer?->name,
+                'customer_name' => trim((string) ($validated['customer_name'] ?? '')) ?: $customer?->name,
                 'customer_phone' => $customer?->phone,
                 'invoice_number' => $editing->invoice_number ?? SalesInvoiceNumber::next((int) $tenantId, (int) $branchId),
                 'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail',
