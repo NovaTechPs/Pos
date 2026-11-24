@@ -673,13 +673,13 @@ new class extends Component
 
     dir="rtl"
 
-    class="p-4 sm:p-6 max-w-5xl mx-auto space-y-6"
+    class="p-2 sm:p-3 max-w-6xl mx-auto space-y-3"
 
 >
 
     <div
 
-        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-5"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-3 space-y-3"
 
     >
 
@@ -691,7 +691,7 @@ new class extends Component
 
         <h1
 
-            class="text-xl font-bold text-gray-800 border-b pb-3"
+            class="text-lg font-bold text-gray-800 border-b pb-2"
 
         >
 
@@ -707,7 +707,7 @@ new class extends Component
 
         <div
 
-            class="grid grid-cols-1 md:grid-cols-2 gap-4"
+            class="grid grid-cols-1 md:grid-cols-2 gap-3"
 
         >
 
@@ -789,7 +789,7 @@ new class extends Component
 
                     placeholder="اكتب اسم الصنف أو رقم الصنف أو الباركود..."
 
-                    class="w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    class="w-full rounded-lg border border-gray-300 p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
 
                 >
 
@@ -927,7 +927,7 @@ new class extends Component
 
                     <div
 
-                        class="overflow-x-auto max-h-48 overflow-y-auto"
+                        class="overflow-x-auto max-h-40 overflow-y-auto"
 
                     >
 
@@ -947,37 +947,37 @@ new class extends Component
 
                                 <tr>
 
-                                    <th class="p-2 border-b">
+                                    <th class="p-1.5 border-b">
 
                                         رقم الصنف
 
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th class="p-1.5 border-b">
 
                                         الاسم
 
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th class="p-1.5 border-b">
 
                                         السعر
 
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th class="p-1.5 border-b">
 
                                         العملة
 
                                     </th>
 
-                                    <th class="p-2 border-b">
+                                    <th class="p-1.5 border-b">
 
                                         رقم الباركود
 
                                     </th>
 
-                                    <th class="p-2 border-b text-center">
+                                    <th class="p-1.5 border-b text-center">
 
                                         تحديد
 
@@ -1029,7 +1029,7 @@ new class extends Component
 
                                     >
 
-                                        <td class="p-2">
+                                        <td class="p-1.5">
 
                                             {{
 
@@ -1043,7 +1043,7 @@ new class extends Component
 
                                         <td
 
-                                            class="p-2 truncate max-w-[200px]"
+                                            class="p-1.5 truncate max-w-[200px]"
 
                                         >
 
@@ -1051,7 +1051,7 @@ new class extends Component
 
                                         </td>
 
-                                        <td class="p-2">
+                                        <td class="p-1.5">
 
                                             {{
 
@@ -1061,7 +1061,7 @@ new class extends Component
 
                                         </td>
 
-                                        <td class="p-2">
+                                        <td class="p-1.5">
 
                                             NIS
 
@@ -1069,7 +1069,7 @@ new class extends Component
 
                                         <td
 
-                                            class="p-2 font-mono text-sm text-blue-700"
+                                            class="p-1.5 font-mono text-xs text-blue-700"
 
                                         >
 
@@ -1079,7 +1079,7 @@ new class extends Component
 
                                         <td
 
-                                            class="p-2 text-center"
+                                            class="p-1.5 text-center"
 
                                         >
 
@@ -1123,13 +1123,13 @@ new class extends Component
 
             <div
 
-                class="md:col-span-2 border-t pt-4"
+                class="md:col-span-2 border-t pt-2"
 
             >
 
                 <label
 
-                    class="block text-sm font-semibold text-gray-800 mb-2"
+                    class="block text-sm font-semibold text-gray-800 mb-1"
 
                 >
 
@@ -1139,7 +1139,7 @@ new class extends Component
 
                 <div
 
-                    class="flex flex-wrap gap-4 text-sm"
+                    class="flex flex-wrap gap-3 text-xs"
 
                 >
 
@@ -1253,7 +1253,7 @@ new class extends Component
 
                 <label
 
-                    class="block text-sm font-medium text-gray-700 mb-1"
+                    class="block text-xs font-medium text-gray-700 mb-1"
 
                 >
 
@@ -1271,7 +1271,7 @@ new class extends Component
 
                     wire:model.live="labelWidth"
 
-                    class="w-full rounded-lg border border-gray-300 p-2 text-sm"
+                    class="w-full rounded-lg border border-gray-300 p-1.5 text-sm"
 
                 >
 
@@ -1281,7 +1281,7 @@ new class extends Component
 
                 <label
 
-                    class="block text-sm font-medium text-gray-700 mb-1"
+                    class="block text-xs font-medium text-gray-700 mb-1"
 
                 >
 
@@ -1299,7 +1299,7 @@ new class extends Component
 
                     wire:model.live="labelHeight"
 
-                    class="w-full rounded-lg border border-gray-300 p-2 text-sm"
+                    class="w-full rounded-lg border border-gray-300 p-1.5 text-sm"
 
                 >
 
@@ -1317,7 +1317,7 @@ new class extends Component
 
             <div
 
-                class="border-t pt-4 space-y-4"
+                class="border-t pt-2 space-y-2"
 
             >
 
@@ -1343,7 +1343,7 @@ new class extends Component
 
                 <div
 
-                    class="flex justify-center bg-gray-50 p-6 rounded-xl border border-dashed border-gray-300"
+                    class="flex justify-center bg-gray-50 p-2 rounded-xl border border-dashed border-gray-300"
 
                 >
 
@@ -1439,7 +1439,7 @@ new class extends Component
 
                     wire:loading.attr="disabled"
 
-                    class="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-lg shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                    class="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2 px-3 rounded-lg shadow transition flex items-center justify-center gap-2 cursor-pointer"
 
                 >
 
@@ -1499,7 +1499,7 @@ new class extends Component
 
             <div
 
-                class="text-center py-4 text-sm text-gray-500 border-t"
+                class="text-center py-2 text-sm text-gray-500 border-t"
 
             >
 

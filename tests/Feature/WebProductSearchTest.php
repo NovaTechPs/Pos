@@ -70,6 +70,14 @@ test('barcode printer selects products from a search dropdown', function (): voi
     expect($component->get('productSearch'))->toBe($this->product->name);
 });
 
+test('barcode printer keeps the selected product preview compact on screen', function (): void {
+    Livewire::test('pages::tenant.products.printer')
+        ->call('selectProduct', $this->product->id)
+        ->assertSee('p-2 sm:p-3 max-w-6xl mx-auto space-y-3', false)
+        ->assertSee('border-t pt-2 space-y-2', false)
+        ->assertSee('flex justify-center bg-gray-50 p-2 rounded-xl', false);
+});
+
 test('barcode printer search matches normalized names product numbers and barcodes', function (string $search): void {
     Livewire::test('pages::tenant.products.printer')
         ->set('productSearch', $search)
