@@ -64,6 +64,7 @@ test('replacement keyboard selects scrolls and handles refreshed empty and disab
         querySelectorAll: selector => selector === '[data-replacement-result]' ? rows : [],
         querySelector: selector => selector === '#product-code-input' ? mainInput : null,
         contains: element => element === mainInput,
+        addEventListener: () => {},
     };
     state.$nextTick = fn => fn();
     state.$root = state.$el;
