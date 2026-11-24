@@ -159,7 +159,10 @@ test('staff can invoice retail orders without creating wholesale accounts', func
     $this->actingAs($owner)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
     Shift::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'opened_by' => $owner->id, 'opened_at' => now(), 'status' => 'open', 'opening_cash' => 0]);
     Livewire::test('pages::tenant.customer-orders.index')->assertSee($request->reference)->call('setStatus', $request->id, 'processing');
-    Livewire::withQueryParams(['customer_order' => $request->id])->test('pages::tenant.sales.invoices')->assertSet('selectedCustomerId', null)->set('paidAmount', 60)->call('saveInvoice')->assertSet('errorMessage', null);
+    // The invoice needs a customer account picked by staff; the shop login stays separate.
+    $buyer = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'مشتري المتجر', 'type' => 'customer']);
+    Livewire::withQueryParams(['customer_order' => $request->id])->test('pages::tenant.sales.invoices')->assertSet('selectedCustomerId', null)
+        ->call('selectCustomer', $buyer->id)->set('paidAmount', 60)->call('saveInvoice')->assertSet('errorMessage', null);
     expect($request->fresh()->status)->toBe('invoiced')->and($request->fresh()->store_customer_id)->toBe($this->customer->id)
         ->and((float) $request->fresh()->order->total)->toBe(60.0)->and(CustomerAccount::query()->count())->toBe(0);
 });

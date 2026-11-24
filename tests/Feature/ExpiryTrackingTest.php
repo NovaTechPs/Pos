@@ -2,6 +2,7 @@
 
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Party;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\Shift;
@@ -20,7 +21,10 @@ beforeEach(function (): void {
     $this->actingAs($this->owner)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
     $this->product = Product::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'حليب طويل الأجل', 'cost_price' => 3]);
     BranchProduct::query()->create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'product_id' => $this->product->id, 'stock_quantity' => 0, 'retail_price' => 5]);
+    // Purchase invoices are saved only with a supplier.
+    $this->supplier = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'مورد الألبان', 'type' => 'supplier']);
     $this->buy = fn (?string $expiry) => tap(Livewire::test('pages::tenant.purchases.invoices')
+        ->set('selectedSupplierId', $this->supplier->id)
         ->call('selectProduct', $this->product->id)->set('selectedQuantity', 12)->set('selectedPurchasePrice', 3)->call('commitRowToCart'),
         fn ($page) => $expiry === null ? null : $page->call('updateItemExpiry', array_key_first($page->get('cart')), $expiry))
         ->call('saveInvoice')->assertSet('errorMessage', null);
@@ -86,7 +90,7 @@ test('the store settings turn expiry tracking on', function (): void {
 
 test('one product can carry several expiry dates, one per purchase line, and replacing a line keeps its date', function (): void {
     TenantSetting::setBool($this->tenant->id, 'track_expiry', true);
-    $page = Livewire::test('pages::tenant.purchases.invoices');
+    $page = Livewire::test('pages::tenant.purchases.invoices')->set('selectedSupplierId', $this->supplier->id);
     foreach ([today()->addDays(5), today()->addDays(25)] as $expiry) {
         $page->call('selectProduct', $this->product->id)->set('selectedQuantity', 6)->set('selectedPurchasePrice', 3)->call('commitRowToCart');
         $page->call('updateItemExpiry', array_key_last($page->get('cart')), $expiry->toDateString());

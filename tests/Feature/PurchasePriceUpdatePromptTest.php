@@ -2,6 +2,7 @@
 
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Party;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
@@ -46,7 +47,11 @@ beforeEach(function (): void {
 
 function savePurchaseWithChangedCost(int $productId): Testable
 {
+    // Purchase invoices are saved only with a supplier.
+    $supplier = Party::query()->create(['tenant_id' => auth()->user()->tenant_id, 'name' => 'مورد الأسعار', 'type' => 'supplier']);
+
     return Livewire::test('pages::tenant.purchases.invoices')
+        ->set('selectedSupplierId', $supplier->id)
         ->call('selectProduct', $productId)
         ->set('selectedPurchasePrice', 8)
         ->call('commitRowToCart');

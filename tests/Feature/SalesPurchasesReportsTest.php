@@ -255,7 +255,8 @@ test('editing a purchase saved before stock movements were recorded adds only th
     $user = User::factory()->create(['tenant_id' => $tenant->id, 'type' => 'tenant_user', 'is_owner' => true]);
     $product = Product::query()->create(['tenant_id' => $tenant->id, 'name' => 'صنف قديم', 'cost_price' => 10]);
     $stock = BranchProduct::query()->create(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 5]);
-    $purchaseId = DB::table('purchases')->insertGetId(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'reference_number' => 'PUR-LEGACY',
+    $supplier = Party::query()->create(['tenant_id' => $tenant->id, 'name' => 'مورد قديم', 'type' => 'supplier']);
+    $purchaseId = DB::table('purchases')->insertGetId(['tenant_id' => $tenant->id, 'branch_id' => $branch->id, 'supplier_id' => $supplier->id, 'reference_number' => 'PUR-LEGACY',
         'total' => 50, 'paid_amount' => 0, 'payment_status' => 'unpaid', 'created_at' => now(), 'updated_at' => now()]);
     DB::table('purchase_items')->insert(['purchase_id' => $purchaseId, 'product_id' => $product->id, 'quantity' => 5, 'unit_cost' => 10,
         'subtotal' => 50, 'created_at' => now(), 'updated_at' => now()]);

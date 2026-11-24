@@ -16,6 +16,18 @@ use ArPHP\I18N\Arabic;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
+/**
+ * Sales and purchase invoices are saved only with a customer or a supplier.
+ *
+ * @return array{0: string, 1: int}
+ */
+function invoicePartyField(int $tenantId, string $page): array
+{
+    $party = Party::create(['tenant_id' => $tenantId, 'name' => $page === 'sales' ? 'زبون الفاتورة' : 'مورد الفاتورة', 'type' => $page === 'sales' ? 'customer' : 'supplier']);
+
+    return [$page === 'sales' ? 'selectedCustomerId' : 'selectedSupplierId', $party->id];
+}
+
 beforeEach(function (): void {
     $this->tenant = Tenant::create(['name' => 'متجر الاختبار']);
     $this->branch = Branch::create(['tenant_id' => $this->tenant->id, 'name' => 'الفرع']);
@@ -28,6 +40,7 @@ beforeEach(function (): void {
 
 test('editing an invoice line total recalculates and saves its unit price', function (string $page): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
         ->call('selectProduct', $this->product->id)
         ->set('selectedQuantity', 3)
         ->call('commitRowToCart')
@@ -98,6 +111,7 @@ test('invoice item rows have prominent separators', function (string $page): voi
 
 test('saving a sales or purchase invoice immediately starts a fresh invoice after printing the saved data', function (string $page, string $model, string $idField): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
         ->set('invoiceDate', '2026-01-15')
         ->call('selectProduct', $this->product->id)
         ->set('selectedQuantity', 3)->call('commitRowToCart');
@@ -386,6 +400,7 @@ test('owner can reconcile a customer balance to the account statement movements'
 
 test('saving a sales or purchase invoice without printing starts a fresh invoice', function (string $page, string $model, string $idField): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
         ->set('invoiceDate', '2026-01-15')
         ->call('selectProduct', $this->product->id)
         ->call('commitRowToCart');
@@ -408,6 +423,7 @@ test('saving a sales or purchase invoice without printing starts a fresh invoice
 
 test('sales and purchase invoice totals include the tax already present in item prices', function (string $page, string $model, string $priceField, string $taxField, float $expectedTax): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
         ->call('selectProduct', $this->product->id)
         ->set($priceField, 116)
         ->call('commitRowToCart')
@@ -599,6 +615,7 @@ test('sales save and settle saves the invoice only with its receipt and cancelli
 
 test('saving an edited invoice opens a new invoice', function (string $page, string $currentIdField, string $loadMethod): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
         ->call('selectProduct', $this->product->id)
         ->call('commitRowToCart')
         ->call('saveInvoice')
