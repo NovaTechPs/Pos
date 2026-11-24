@@ -1021,17 +1021,21 @@ class ReportingService
         $search = trim($this->filters['search'] ?? '');
         $query = $this->expenseVouchers()
             ->when(! empty($this->filters['payment_method']), fn (Builder $q): Builder => $q->where('payments.payment_method', $this->filters['payment_method']))
-            ->when($search !== '', fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q->where('payments.notes', 'like', '%'.$search.'%')->orWhere('payments.voucher_number', 'like', '%'.$search.'%')))
+            ->when($search !== '', fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q->where('payments.notes', 'like', '%'.$search.'%')->orWhere('payments.voucher_number', 'like', '%'.$search.'%')->orWhere('payments.expense_category', 'like', '%'.$search.'%')))
             ->leftJoin('branches', function ($join): void {
                 $join->on('branches.id', '=', 'payments.branch_id')->where('branches.tenant_id', $this->tenantId);
             })
             ->leftJoin('users as expense_user', 'expense_user.id', '=', 'payments.created_by');
         $sums = (clone $query)->selectRaw("COALESCE(SUM(payments.amount),0) as total, COALESCE(SUM(CASE WHEN payments.payment_method = 'cash' THEN payments.amount ELSE 0 END),0) as cash, COUNT(*) as vouchers")->first();
+        // One total per expense type, largest first, e.g. «دعاية وإعلان».
+        $byCategory = (clone $query)->selectRaw("COALESCE(payments.expense_category, 'غير مصنف') as category, SUM(payments.amount) as total")
+            ->groupBy('category')->orderByDesc('total')->pluck('total', 'category')
+            ->mapWithKeys(fn ($total, $category): array => [$category => (float) $total])->all();
 
-        return $this->definition($query->select('payments.id', 'payments.payment_date', 'payments.voucher_number', 'payments.notes', 'payments.payment_method', 'payments.shift_id', 'payments.amount', 'branches.name as branch_name', 'expense_user.name as user_name')
+        return $this->definition($query->select('payments.id', 'payments.payment_date', 'payments.voucher_number', DB::raw("COALESCE(payments.expense_category, 'غير مصنف') as expense_category"), 'payments.notes', 'payments.payment_method', 'payments.shift_id', 'payments.amount', 'branches.name as branch_name', 'expense_user.name as user_name')
             ->orderBy('payments.payment_date')->orderBy('payments.id'),
-            ['payment_date' => 'التاريخ', 'voucher_number' => 'السند', 'notes' => 'البيان', 'branch_name' => 'الفرع', 'shift_id' => 'الشيفت', 'user_name' => 'المستخدم', 'payment_method' => 'الطريقة', 'amount' => 'المبلغ'],
-            ['إجمالي المصروفات' => $sums->total, 'منها نقداً' => $sums->cash, 'عدد السندات' => $sums->vouchers],
+            ['payment_date' => 'التاريخ', 'voucher_number' => 'السند', 'expense_category' => 'نوع المصروف', 'notes' => 'البيان', 'branch_name' => 'الفرع', 'shift_id' => 'الشيفت', 'user_name' => 'المستخدم', 'payment_method' => 'الطريقة', 'amount' => 'المبلغ'],
+            ['إجمالي المصروفات' => $sums->total, 'منها نقداً' => $sums->cash, 'عدد السندات' => $sums->vouchers] + $byCategory,
             ['سندات الصرف غير المرتبطة بطرف أو فاتورة أو مردود فقط. سداد الموردين والرواتب والسلف ليست مصروفات تشغيلية ولها تقاريرها.']);
     }
 

@@ -38,6 +38,10 @@ new class extends Component
     public ?int $partyId = null;
     public ?int $purchaseId = null;
 
+    /** «مصروف»: the voucher pays no account (advertising, rent…) and shows in the operating expenses. */
+    public bool $isExpense = false;
+    public string $expenseCategory = '';
+
     public bool $showForm = false;
     public bool $showDeleteModal = false;
     public bool $showPrintModal = false;
@@ -102,7 +106,8 @@ new class extends Component
                         'voucher_number',
                         'like',
                         "%{$search}%"
-                    )->orWhereHas('party', function ($partyQuery) use ($search) {
+                    )->orWhere('expense_category', 'like', "%{$search}%")
+                    ->orWhereHas('party', function ($partyQuery) use ($search) {
                         $partyQuery
                             ->where('name', 'like', "%{$search}%")
                             ->orWhere('phone', 'like', "%{$search}%")
@@ -238,6 +243,8 @@ new class extends Component
 
         $this->paymentId = $payment->id;
         $this->partyId = $payment->party_id;
+        $this->isExpense = $payment->isExpense();
+        $this->expenseCategory = (string) ($payment->expense_category ?? '');
         $this->voucherNumber = $payment->voucher_number;
         $this->paymentDate =
             optional($payment->payment_date)->format('Y-m-d')
@@ -254,6 +261,21 @@ new class extends Component
     {
         $this->partyId = null;
         $this->partySearch = '';
+    }
+
+    /** Switches the voucher between paying an account and recording an expense. */
+    public function setExpenseMode(bool $isExpense): void
+    {
+        if ($this->purchaseId) {
+            return; // A payment for a purchase invoice always goes to its supplier.
+        }
+        $this->isExpense = $isExpense;
+        $this->resetValidation(['partyId', 'expenseCategory']);
+        if ($isExpense) {
+            $this->clearParty();
+        } else {
+            $this->expenseCategory = '';
+        }
     }
 
     public function selectParty(int $partyId): void
@@ -293,17 +315,20 @@ new class extends Component
             return;
         }
 
+        $isExpense = $this->isExpense && ! $this->purchaseId;
         $validated = $this->validate([
-            'partyId' => ['required', 'integer'],
+            'partyId' => $isExpense ? ['nullable'] : ['required', 'integer'],
+            'expenseCategory' => $isExpense ? ['required', 'string', \Illuminate\Validation\Rule::in(Payment::EXPENSE_CATEGORIES)] : ['nullable'],
             'voucherNumber' => ['required', 'string', 'max:50'],
             'paymentDate' => ['required', 'date'],
             'paymentMethod' => ['required', 'in:cash,card,bank_transfer,cheque'],
             'amount' => ['required', 'numeric', 'gt:0'],
             'notes' => ['nullable', 'string', 'max:5000'],
-        ]);
+        ], attributes: ['partyId' => 'المورد / الجهة', 'expenseCategory' => 'نوع المصروف']);
 
-        DB::transaction(function () use ($tenantId, $validated) {
-            $newParty = Party::query()
+        DB::transaction(function () use ($tenantId, $validated, $isExpense) {
+            $balances = app(\App\Services\PartyBalance::class);
+            $newParty = $isExpense ? null : Party::query()
                 ->where('tenant_id', $tenantId)
                 ->where('is_active', true)
                 ->whereIn('type', ['customer', 'supplier', 'both'])
@@ -311,6 +336,11 @@ new class extends Component
                 ->findOrFail($validated['partyId']);
 
             $newAmount = (float) $validated['amount'];
+            $account = [
+                'party_id' => $newParty?->id,
+                // An expense belongs to the branch it was paid for, so branch reports include it.
+                'expense_category' => $isExpense ? $validated['expenseCategory'] : null,
+            ];
 
             // تعديل سند صرف موجود
             if ($this->paymentId) {
@@ -323,25 +353,21 @@ new class extends Component
                 $oldPartyId = $payment->party_id;
                 $oldAmount = (float) $payment->amount;
 
-                // نفس المورد
-                if ($oldPartyId === $newParty->id) {
-                    app(\App\Services\PartyBalance::class)->applyPurchase($newParty, $oldAmount - $newAmount);
-                // تغيير المورد
+                if ($newParty && $oldPartyId === $newParty->id) {
+                    // نفس المورد: فرق المبلغ فقط
+                    $balances->applyPurchase($newParty, $oldAmount - $newAmount);
                 } else {
-                    $oldParty = Party::query()
-                        ->where('tenant_id', $tenantId)
-                        ->lockForUpdate()
-                        ->findOrFail($oldPartyId);
-
-                    // إعادة تأثير سند الصرف القديم للمورد القديم
-                    app(\App\Services\PartyBalance::class)->applyPurchase($oldParty, $oldAmount);
-
-                    // تطبيق سند الصرف الجديد على المورد الجديد
-                    app(\App\Services\PartyBalance::class)->applyPurchase($newParty, -($newAmount));
+                    // إعادة تأثير السند القديم لمورده (إن وُجد) ثم تطبيقه على المورد الجديد (إن وُجد)
+                    if ($oldPartyId) {
+                        $balances->applyPurchase(Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($oldPartyId), $oldAmount);
+                    }
+                    if ($newParty) {
+                        $balances->applyPurchase($newParty, -($newAmount));
+                    }
                 }
 
-                $payment->update([
-                    'party_id' => $newParty->id,
+                $payment->update($account + [
+                    'branch_id' => $payment->branch_id ?? ($isExpense ? auth()->user()?->activeBranchId() : null),
                     'voucher_number' => $payment->voucher_number,
                     'payment_date' => $validated['paymentDate'],
                     'payment_method' => $validated['paymentMethod'],
@@ -350,11 +376,12 @@ new class extends Component
                 ]);
             // إنشاء سند صرف جديد
             } else {
-                Payment::create([
+                Payment::create($account + [
                     'tenant_id' => $tenantId,
-                    'party_id' => $newParty->id,
                     'purchase_id' => $this->purchaseId,
-                    'branch_id' => $this->purchaseId ? \App\Models\Purchase::query()->where('tenant_id', $tenantId)->whereKey($this->purchaseId)->value('branch_id') : null,
+                    'branch_id' => $this->purchaseId
+                        ? \App\Models\Purchase::query()->where('tenant_id', $tenantId)->whereKey($this->purchaseId)->value('branch_id')
+                        : ($isExpense ? auth()->user()?->activeBranchId() : null),
                     'created_by' => Auth::id(),
                     'type' => 'payment',
                     'voucher_number' => $this->voucherNumber = $this->freeVoucherNumber($validated['voucherNumber']),
@@ -372,14 +399,19 @@ new class extends Component
                     $purchase->update(['paid_amount' => $paidAmount, 'payment_status' => $paidAmount >= (float) $purchase->total ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid')]);
                 }
 
-                // سند الصرف يقلل رصيد المورد
-                app(\App\Services\PartyBalance::class)->applyPurchase($newParty, -($newAmount));
+                // سند الصرف يقلل رصيد المورد؛ المصروف لا يمس أي رصيد
+                if ($newParty) {
+                    $balances->applyPurchase($newParty, -($newAmount));
+                }
             }
         });
 
-        $message = $this->paymentId
-            ? 'تم تحديث سند الصرف بنجاح.'
-            : 'تم إنشاء سند الصرف بنجاح.';
+        $message = match (true) {
+            $isExpense && (bool) $this->paymentId => 'تم تحديث سند المصروف بنجاح.',
+            $isExpense => 'تم تسجيل المصروف بنجاح.',
+            (bool) $this->paymentId => 'تم تحديث سند الصرف بنجاح.',
+            default => 'تم إنشاء سند الصرف بنجاح.',
+        };
 
         $this->showForm = false;
 
@@ -430,13 +462,14 @@ new class extends Component
                 ->lockForUpdate()
                 ->findOrFail($this->deleteId);
 
-            $party = Party::query()
-                ->where('tenant_id', $tenantId)
-                ->lockForUpdate()
-                ->findOrFail($payment->party_id);
-
-            // إعادة قيمة سند الصرف إلى رصيد المورد
-            app(\App\Services\PartyBalance::class)->applyPurchase($party, (float) $payment->amount);
+            // إعادة قيمة سند الصرف إلى رصيد المورد؛ سند المصروف بلا مورد فلا رصيد يتغير
+            if ($payment->party_id) {
+                $party = Party::query()
+                    ->where('tenant_id', $tenantId)
+                    ->lockForUpdate()
+                    ->findOrFail($payment->party_id);
+                app(\App\Services\PartyBalance::class)->applyPurchase($party, (float) $payment->amount);
+            }
 
             $payment->delete();
         });
@@ -551,6 +584,8 @@ new class extends Component
             'paymentId',
             'partyId',
             'purchaseId',
+            'isExpense',
+            'expenseCategory',
         ]);
 
         $this->paymentDate = now()->format('Y-m-d');

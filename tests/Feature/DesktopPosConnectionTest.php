@@ -6,6 +6,7 @@ use App\Models\BranchSyncDevice;
 use App\Models\BranchSyncOperation;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\Shift;
@@ -420,6 +421,8 @@ test('desktop shift expenses are queued for the central server', function (): vo
     $operation = BranchSyncOperation::query()->sole();
     expect($operation->operation_type)->toBe('expense.created')
         ->and($operation->payload['payment']['amount'])->toEqual(20)
+        ->and($operation->payload['payment']['expense_category'])->toBe('كهرباء')
+        ->and(Payment::query()->sole()->expense_category)->toBe('كهرباء')
         ->and($operation->payload['shift']['sync_uuid'])->toBe(Shift::query()->sole()->sync_uuid);
 });
 

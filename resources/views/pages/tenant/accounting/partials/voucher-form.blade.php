@@ -25,6 +25,10 @@
         ? 'رصيد المورد الحالي'
         : 'رصيد الزبون الحالي';
 
+    // Only payment vouchers can be an expense (a payment to no account).
+    $isExpense = $isPayment && ($isExpense ?? false);
+    $voucherLabel = $isExpense ? 'سند مصروف' : $voucherLabel;
+
     $balanceAfterLabel = $isPayment
         ? 'الرصيد بعد سند الصرف'
         : 'الرصيد بعد سند القبض';
@@ -192,7 +196,21 @@
                     class="space-y-2 p-3 sm:px-4"
                 >
 
-                    @if (!$paymentId)
+                    @if ($isPayment && empty($purchaseId) && (! $paymentId || ! $voucherLocked))
+                    <div data-voucher-mode data-payment-kind class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-1.5">
+                        <div class="flex items-center gap-3">
+                            <span class="inline-flex size-7 items-center justify-center rounded-lg bg-blue-600 text-white"><flux:icon name="document-text" class="size-4" /></span>
+                            <div>
+                                <p class="text-sm font-black text-slate-900">نوع السند <span class="text-rose-500">*</span></p>
+                                <p class="text-xs text-slate-500">{{ $isExpense ? 'مصروف تشغيلي لا يمس رصيد أي حساب.' : 'دفعة تخصم من رصيد المورد أو الجهة.' }}</p>
+                            </div>
+                        </div>
+                        <div class="inline-flex overflow-hidden rounded-lg border border-blue-200 bg-white text-sm font-black" role="group" aria-label="نوع سند الصرف">
+                            <button type="button" wire:click="setExpenseMode(false)" aria-pressed="{{ $isExpense ? 'false' : 'true' }}" class="px-4 py-1.5 {{ $isExpense ? 'text-slate-600 hover:bg-blue-50' : 'bg-blue-600 text-white' }}">دفعة لمورد / جهة</button>
+                            <button type="button" data-expense-mode wire:click="setExpenseMode(true)" aria-pressed="{{ $isExpense ? 'true' : 'false' }}" class="border-r border-blue-200 px-4 py-1.5 {{ $isExpense ? 'bg-rose-600 text-white' : 'text-slate-600 hover:bg-rose-50' }}">مصروف</button>
+                        </div>
+                    </div>
+                    @elseif (!$paymentId)
                     <div data-voucher-mode class="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-1.5">
                         <div class="flex items-center gap-3">
                             <span class="inline-flex size-7 items-center justify-center rounded-lg bg-blue-600 text-white"><flux:icon name="document-text" class="size-4" /></span>
@@ -247,6 +265,26 @@
 
                     </div>
 
+                    @if ($isExpense)
+                    {{-- Expense type: an expense pays no account --}}
+                    <div data-expense-category>
+                        <label for="voucher-expense-category" class="mb-1 block text-sm font-black text-slate-800">
+                            نوع المصروف <span class="text-rose-500">*</span>
+                        </label>
+                        <select id="voucher-expense-category" wire:model="expenseCategory" class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-100">
+                            <option value="">اختر نوع المصروف…</option>
+                            @foreach (\App\Models\Payment::EXPENSE_CATEGORIES as $category)
+                                <option value="{{ $category }}">{{ $category }}</option>
+                            @endforeach
+                        </select>
+                        @error('expenseCategory')
+                            <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1.5 text-xs leading-5 text-slate-500">
+                            يظهر في تقرير «المصروفات التشغيلية» ويُخصم من الربح. لا يُخصم من صندوق الوردية؛ للمصروف من درج الكاشير استخدم «مصروف من الصندوق» في نقطة البيع.
+                        </p>
+                    </div>
+                    @else
                     {{-- Party --}}
                     <div>
 
@@ -739,8 +777,14 @@
                                 {{ $message }}
                             </p>
                         @enderror
+                        @error('partyId')
+                            <p class="mt-1.5 text-xs text-rose-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
 
                     </div>
+                    @endif
 
                     {{-- Amount / payment method --}}
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

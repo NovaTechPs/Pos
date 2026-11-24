@@ -108,6 +108,7 @@ class BranchSyncOperationProcessor
             'payment.payment_date' => ['required', 'date'],
             'payment.created_by' => ['nullable', 'integer'],
             'payment.notes' => ['nullable', 'string', 'max:5000'],
+            'payment.expense_category' => ['nullable', 'string', 'max:80'],
             'shift' => ['required', 'array'],
             'shift.sync_uuid' => ['required', 'uuid'],
             'shift.opening_cash' => ['required', 'numeric', 'min:0'],
@@ -145,6 +146,7 @@ class BranchSyncOperationProcessor
             'voucher_number' => $data['payment']['voucher_number'],
             'amount' => $data['payment']['amount'],
             'payment_method' => $data['payment']['payment_method'],
+            'expense_category' => $data['payment']['expense_category'] ?? null,
             'notes' => $data['payment']['notes'] ?? null,
             'payment_date' => $data['payment']['payment_date'],
         ]);

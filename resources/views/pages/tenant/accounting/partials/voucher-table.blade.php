@@ -97,13 +97,13 @@
                                 <td class="px-5 py-4">
                                     <div class="flex min-w-[180px] items-center gap-3">
                                         <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><flux:icon name="user" class="size-4" /></span>
-                                        <div class="min-w-0"><p class="truncate text-sm font-bold text-slate-800">{{ $item->party?->name ?? 'غير محدد' }}</p>@if ($item->party?->phone)<p class="mt-0.5 text-xs text-slate-400" dir="ltr">{{ $item->party->phone }}</p>@endif</div>
+                                        <div class="min-w-0"><p class="truncate text-sm font-bold text-slate-800">{{ $item->accountName() }}</p>@if ($item->party?->phone)<p class="mt-0.5 text-xs text-slate-400" dir="ltr">{{ $item->party->phone }}</p>@endif</div>
                                     </div>
                                 </td>
                                 <td class="px-5 py-4 text-sm font-semibold text-slate-700">{{ optional($item->payment_date)->format('Y-m-d') ?: '-' }}</td>
                                 <td class="px-5 py-4"><span class="inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{{ $method }}</span></td>
                                 <td class="px-5 py-4"><span class="text-base font-black text-blue-700" dir="ltr">{{ number_format((float) $item->amount, 2) }}</span></td>
-                                <td class="px-5 py-4"><span class="text-sm font-bold text-slate-700" dir="ltr">{{ number_format((float) ($item->party?->current_balance ?? 0), 2) }}</span></td>
+                                <td class="px-5 py-4"><span class="text-sm font-bold text-slate-700" dir="ltr">{{ $item->party ? number_format((float) $item->party->current_balance, 2) : '—' }}</span></td>
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-center gap-1.5">
                                         @if (!$item->purchase_return_id && $item->order?->type !== 'return')

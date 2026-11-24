@@ -1096,7 +1096,7 @@ new class extends Component {
         $this->authorize('accounting.voucher.create');
         $this->validate([
             'expense_amount' => ['required', 'numeric', 'gt:0', 'max:9999999999.99'],
-            'expense_category' => ['required', 'string', 'max:80'],
+            'expense_category' => ['required', 'string', \Illuminate\Validation\Rule::in(Payment::EXPENSE_CATEGORIES)],
             'expense_notes' => ['nullable', 'string', 'max:5000'],
         ]);
 
@@ -1126,6 +1126,7 @@ new class extends Component {
                     'voucher_number' => 'EXP-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
                     'amount' => $this->expense_amount,
                     'payment_method' => 'cash',
+                    'expense_category' => $this->expense_category,
                     'notes' => trim($this->expense_category.($this->expense_notes !== '' ? ' — '.$this->expense_notes : '')),
                     'payment_date' => now(),
                 ]);
@@ -4299,6 +4300,7 @@ new class extends Component {
                     'voucher_number' => $expense->voucher_number,
                     'amount' => (float) $expense->amount,
                     'payment_method' => $expense->payment_method,
+                    'expense_category' => $expense->expense_category,
                     'payment_date' => $expense->payment_date->toISOString(),
                     'created_by' => $expense->created_by,
                     'notes' => $expense->notes,

@@ -9,7 +9,7 @@
                 <div>
                     <label class="mb-1 block text-xs font-black text-slate-700">نوع المصروف</label>
                     <select wire:model="expense_category" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold focus:border-rose-500 focus:outline-none">
-                        <option>كهرباء</option><option>مياه</option><option>إيجار</option><option>نثريات</option><option>مواصلات</option><option>أخرى</option>
+                        @foreach (\App\Models\Payment::EXPENSE_CATEGORIES as $category)<option>{{ $category }}</option>@endforeach
                     </select>
                     @error('expense_category') <div class="mt-1 text-[10px] font-bold text-rose-600">{{ $message }}</div> @enderror
                 </div>

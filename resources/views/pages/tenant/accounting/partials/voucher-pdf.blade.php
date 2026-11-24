@@ -33,7 +33,7 @@
     <table>
         <tr><td class="number">{{ $voucher->voucher_number }}</td><td class="label">{{ $ar('رقم السند') }}</td></tr>
         <tr><td class="number">{{ $voucher->payment_date?->format('Y-m-d') }}</td><td class="label">{{ $ar('التاريخ') }}</td></tr>
-        <tr><td>{{ $ar($voucher->party?->name ?: '—') }}</td><td class="label">{{ $ar('الحساب') }}</td></tr>
+        <tr><td>{{ $ar($voucher->party || $voucher->isExpense() ? $voucher->accountName() : '—') }}</td><td class="label">{{ $ar('الحساب') }}</td></tr>
         <tr><td>{{ $ar($method) }}</td><td class="label">{{ $ar('طريقة الدفع') }}</td></tr>
         <tr><td class="number amount">{{ number_format((float) $voucher->amount, 2) }}</td><td class="label">{{ $ar('المبلغ') }}</td></tr>
         @if ($voucher->party)

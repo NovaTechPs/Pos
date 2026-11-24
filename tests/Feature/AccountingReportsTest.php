@@ -256,3 +256,35 @@ test('api summary keeps staff on their branch and excludes delivery fees and tax
     $foreignBranch = Branch::withoutGlobalScopes()->create(['tenant_id' => $foreign->id, 'name' => 'فرع آخر']);
     $this->actingAs($this->user)->getJson('/api/reports/summary?branch_id='.$foreignBranch->id)->assertNotFound();
 });
+
+test('expenses report shows each expense type with a total per type', function (): void {
+    ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'amount' => 120, 'payment_method' => 'card', 'expense_category' => 'دعاية وإعلان', 'voucher_number' => 'AD-1']);
+    ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'amount' => 30, 'payment_method' => 'card', 'expense_category' => 'دعاية وإعلان', 'voucher_number' => 'AD-2']);
+    ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'amount' => 40, 'expense_category' => 'كهرباء', 'voucher_number' => 'POWER']);
+    ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'amount' => 5, 'voucher_number' => 'OLD']);
+
+    $report = ($this->report)('expenses');
+    expect($report['columns'])->toHaveKey('expense_category')
+        ->and($report['query']->pluck('expense_category', 'voucher_number')->all())->toBe(['AD-1' => 'دعاية وإعلان', 'AD-2' => 'دعاية وإعلان', 'POWER' => 'كهرباء', 'OLD' => 'غير مصنف'])
+        ->and((float) $report['summary']['إجمالي المصروفات'])->toBe(195.0)
+        ->and((float) $report['summary']['دعاية وإعلان'])->toBe(150.0)
+        ->and((float) $report['summary']['كهرباء'])->toBe(40.0)
+        ->and(($this->report)('expenses', ['search' => 'دعاية'])['query']->pluck('voucher_number')->all())->toBe(['AD-1', 'AD-2']);
+});
+
+test('the expense type migration reads the type of earlier POS cash expenses from their notes', function (): void {
+    $pos = ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'notes' => 'كهرباء — فاتورة الشهر', 'voucher_number' => 'EXP-OLD-1']);
+    $plain = ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'notes' => 'إيجار', 'voucher_number' => 'EXP-OLD-2']);
+    $other = ($this->makePayment)(['type' => 'payment', 'party_id' => null, 'notes' => 'شراء أكياس', 'voucher_number' => 'EXP-OLD-3']);
+    $supplier = ($this->makePayment)(['type' => 'payment', 'party_id' => $this->supplier->id, 'notes' => 'كهرباء', 'voucher_number' => 'SUP']);
+    Payment::query()->update(['expense_category' => null]);
+
+    $migration = require database_path('migrations/2026_11_24_121540_add_expense_category_to_payments_table.php');
+    $migration->down();
+    $migration->up();
+
+    expect($pos->fresh()->expense_category)->toBe('كهرباء')
+        ->and($plain->fresh()->expense_category)->toBe('إيجار')
+        ->and($other->fresh()->expense_category)->toBeNull()
+        ->and($supplier->fresh()->expense_category)->toBeNull();
+});

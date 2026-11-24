@@ -50,11 +50,11 @@
             <div class="grid grid-cols-2 gap-4">
                 <div class="rounded-xl border border-slate-200 p-4">
                     <p class="text-xs text-slate-400">
-                        {{ $isPayment ? 'المورد' : 'الزبون' }}
+                        {{ $voucher->isExpense() ? 'البند' : ($isPayment ? 'المورد' : 'الزبون') }}
                     </p>
 
                     <p class="mt-1 font-bold text-slate-900">
-                        {{ $voucher->party?->name ?? '-' }}
+                        {{ $voucher->party || $voucher->isExpense() ? $voucher->accountName() : '-' }}
                     </p>
                 </div>
 

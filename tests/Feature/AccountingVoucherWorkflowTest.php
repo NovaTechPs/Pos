@@ -632,3 +632,60 @@ test('voucher pages open on a new voucher and the inquiry finds old ones by numb
     ['receipts', 'saveReceipt', 'customer'],
     ['payment', 'savePayment', 'supplier'],
 ]);
+
+test('a payment voucher can record an expense paid by card without touching any account balance', function (): void {
+    $supplier = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'مورد', 'type' => 'supplier', 'is_active' => true, 'current_balance' => 300]);
+
+    $component = Livewire::test('pages::tenant.accounting.payment')
+        ->assertSeeHtml('data-payment-kind')
+        ->call('setExpenseMode', true)
+        ->assertSet('isExpense', true)
+        ->assertSeeHtml('data-expense-category')
+        ->assertSee('دعاية وإعلان')
+        ->set('amount', '150')
+        ->set('paymentMethod', 'card')
+        ->set('notes', 'إعلان ممول على فيسبوك')
+        ->call('savePayment')
+        ->assertHasErrors(['expenseCategory' => 'required'])
+        ->set('expenseCategory', 'دعاية وإعلان')
+        ->call('savePayment')
+        ->assertHasNoErrors()
+        ->assertDispatched('toast', type: 'success', message: 'تم تسجيل المصروف بنجاح.');
+
+    $expense = Payment::query()->sole();
+    expect($expense->party_id)->toBeNull()
+        ->and($expense->expense_category)->toBe('دعاية وإعلان')
+        ->and($expense->payment_method)->toBe('card')
+        ->and((float) $expense->amount)->toBe(150.0)
+        ->and($expense->isExpense())->toBeTrue()
+        ->and($expense->accountName())->toBe('مصروف: دعاية وإعلان')
+        ->and((float) $supplier->fresh()->current_balance)->toBe(300.0);
+
+    // The list shows the expense type, and it can be opened, changed and deleted.
+    $component->call('openCreate')->set('showForm', false)->assertSee('مصروف: دعاية وإعلان');
+    $component->call('edit', $expense->id)->assertSet('isExpense', true)->assertSet('expenseCategory', 'دعاية وإعلان')
+        ->call('unlockVoucher')->set('amount', '175')->call('savePayment')->assertHasNoErrors();
+    expect((float) $expense->fresh()->amount)->toBe(175.0)->and((float) $supplier->fresh()->current_balance)->toBe(300.0);
+
+    $component->call('confirmDelete', $expense->id)->call('delete');
+    expect($expense->fresh()->trashed())->toBeTrue()->and((float) $supplier->fresh()->current_balance)->toBe(300.0);
+});
+
+test('switching a saved supplier payment to an expense gives the supplier its amount back', function (): void {
+    $supplier = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'مورد التحويل', 'type' => 'supplier', 'is_active' => true, 'current_balance' => 300]);
+    $component = Livewire::test('pages::tenant.accounting.payment')
+        ->call('selectParty', $supplier->id)->set('amount', '100')->call('savePayment')->assertHasNoErrors();
+    $payment = Payment::query()->sole();
+    $afterPayment = (float) $supplier->fresh()->current_balance;
+    expect($afterPayment)->not->toBe(300.0);
+
+    $component->call('edit', $payment->id)->call('unlockVoucher')
+        ->call('setExpenseMode', true)->set('expenseCategory', 'إيجار')->call('savePayment')->assertHasNoErrors();
+
+    expect($payment->fresh()->party_id)->toBeNull()
+        ->and($payment->fresh()->expense_category)->toBe('إيجار')
+        ->and((float) $supplier->fresh()->current_balance)->toBe(300.0);
+
+    // A supplier payment still needs its supplier.
+    Livewire::test('pages::tenant.accounting.payment')->set('amount', '10')->call('savePayment')->assertHasErrors(['partyId' => 'required']);
+});

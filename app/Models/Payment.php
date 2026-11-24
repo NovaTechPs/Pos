@@ -13,10 +13,36 @@ class Payment extends Model
 
     protected $guarded = [];
 
+    /** Types offered for an expense voucher (a payment to no account) and for cash expenses at the POS. */
+    public const EXPENSE_CATEGORIES = [
+        'دعاية وإعلان', 'إيجار', 'كهرباء', 'مياه', 'إنترنت واتصالات', 'صيانة', 'مواصلات',
+        'ضيافة', 'رسوم بنكية', 'نثريات', 'أخرى',
+    ];
+
     protected $casts = [
         'payment_date' => 'datetime',
         'amount' => 'decimal:2',
     ];
+
+    /** The account a voucher is for: its party, or «مصروف: النوع» for an expense voucher. */
+    public function accountName(): string
+    {
+        if ($this->party) {
+            return (string) $this->party->name;
+        }
+        if (! $this->isExpense()) {
+            return 'غير محدد';
+        }
+
+        return $this->expense_category ? 'مصروف: '.$this->expense_category : 'مصروف';
+    }
+
+    /** A payment voucher to no account and no document: an operating expense. */
+    public function isExpense(): bool
+    {
+        return $this->type === 'payment' && ! $this->party_id && ! $this->order_id && ! $this->purchase_id
+            && ! $this->purchase_return_id && ! $this->employee_payment_id;
+    }
 
     /*
     |--------------------------------------------------------------------------

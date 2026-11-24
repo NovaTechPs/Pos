@@ -501,7 +501,7 @@ test('desktop shift expenses reach the central accounts once in their shift', fu
     $shiftUuid = (string) Str::uuid();
     $operation = ['operation_uuid' => (string) Str::uuid(), 'operation_type' => 'expense.created', 'payload' => [
         'payment' => ['voucher_number' => 'EXP-20261111-ABCDE', 'amount' => 35, 'payment_method' => 'cash',
-            'payment_date' => now()->toISOString(), 'created_by' => $user->id, 'notes' => 'كهرباء'],
+            'payment_date' => now()->toISOString(), 'created_by' => $user->id, 'notes' => 'كهرباء', 'expense_category' => 'كهرباء'],
         'shift' => ['sync_uuid' => $shiftUuid, 'opening_cash' => 100, 'opened_at' => now()->subHour()->toISOString(),
             'opened_by' => $user->id, 'notes' => null],
     ]];
@@ -515,7 +515,8 @@ test('desktop shift expenses reach the central accounts once in their shift', fu
     expect($expense->type)->toBe('payment')
         ->and((float) $expense->amount)->toBe(35.0)
         ->and($expense->shift_id)->toBe(Shift::query()->where('sync_uuid', $shiftUuid)->sole()->id)
-        ->and($expense->branch_id)->toBe($branch->id);
+        ->and($expense->branch_id)->toBe($branch->id)
+        ->and($expense->expense_category)->toBe('كهرباء');
 });
 
 test('barcodes linked at a branch are added to the central product once and never moved from another product', function (): void {
