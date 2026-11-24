@@ -327,7 +327,7 @@ test('linked return payments cannot be independently changed through vouchers', 
     $component->set('paidAmount', 5)->call('saveReturn');
     $payment = Payment::query()->sole();
     $user->update(['is_owner' => true]);
-    Livewire::test('pages::tenant.accounting.'.$page)->call('edit', $payment->id)->assertSet('showForm', false)
+    Livewire::test('pages::tenant.accounting.'.$page)->call('edit', $payment->id)->assertSet('paymentId', null)
         ->set('paymentId', $payment->id)->set('amount', 999)->call($save)
         ->set('deleteId', $payment->id)->call('delete');
     expect((float) $payment->fresh()->amount)->toBe(5.0)

@@ -118,7 +118,12 @@ trait NavigatesVoucherArchive
         $digits = ['٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
             '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9'];
         $search = trim(strtr($this->voucherArchiveSearch, $digits));
-        if ($search === '' || mb_strlen($search) > 100) {
+        if (mb_strlen($search) > 100) {
+            return;
+        }
+        if ($search === '') {
+            $this->showVoucherList('');
+
             return;
         }
         $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search);
@@ -128,11 +133,35 @@ trait NavigatesVoucherArchive
             ->orderByRaw('CASE WHEN voucher_number = ? THEN 0 ELSE 1 END', [$search])
             ->latest('id')->first();
         if (! $voucher) {
-            $this->dispatch('toast', type: 'error', message: 'لم يتم العثور على سند مطابق: '.$search);
+            $byParty = $this->voucherArchiveQuery()
+                ->whereHas('party', fn (Builder $party) => $party
+                    ->whereRaw("name LIKE ? ESCAPE '!'", ['%'.$escaped.'%'])
+                    ->orWhereRaw("phone LIKE ? ESCAPE '!'", ['%'.$escaped.'%']))
+                ->latest('id')->limit(2)->pluck('id');
+            if ($byParty->isEmpty()) {
+                $this->dispatch('toast', type: 'error', message: 'لم يتم العثور على سند مطابق: '.$search);
 
-            return;
+                return;
+            }
+            if ($byParty->count() > 1) {
+                // Several vouchers for that account: list them to pick one.
+                $this->showVoucherList($search);
+
+                return;
+            }
+            $voucher = $this->voucherArchiveQuery()->findOrFail($byParty->first());
         }
         $this->voucherArchiveSearch = '';
         $this->edit($voucher->id);
+    }
+
+    /** Closes the voucher window onto the list of saved vouchers, filtered by the search. */
+    private function showVoucherList(string $search): void
+    {
+        $this->voucherArchiveSearch = '';
+        $this->showForm = false;
+        $this->tableSearch = $search;
+        $this->resetPage();
+        unset($this->items);
     }
 }

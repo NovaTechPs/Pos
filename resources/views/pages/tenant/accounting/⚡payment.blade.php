@@ -63,6 +63,9 @@ new class extends Component
             $this->notes = (string) request()->input('notes', 'سند دفع لفاتورة '.$purchase->reference_number);
             $this->voucherNumber = $this->generateVoucherNumber();
             $this->showForm = true;
+        } else {
+            // The page opens on a new voucher; «استعلام» finds the old ones.
+            $this->openCreate();
         }
     }
 

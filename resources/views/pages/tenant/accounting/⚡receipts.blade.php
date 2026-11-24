@@ -77,6 +77,9 @@ new class extends Component {
             $this->notes = (string) request()->input('notes', 'سند قبض لفاتورة '.$order->invoice_number);
             $this->voucherNumber = $this->generateVoucherNumber();
             $this->showForm = true;
+        } else {
+            // The page opens on a new voucher; «استعلام» finds the old ones.
+            $this->openCreate();
         }
 
     }

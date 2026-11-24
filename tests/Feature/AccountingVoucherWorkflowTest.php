@@ -602,3 +602,33 @@ test('a saved voucher opened from the archive is edited after pressing «تعد�
     ['receipts', 'saveReceipt', 'customer', 'receipt'],
     ['payment', 'savePayment', 'supplier', 'payment'],
 ]);
+
+test('voucher pages open on a new voucher and the inquiry finds old ones by number or account', function (string $page, string $save, string $type): void {
+    $single = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'حساب وحيد', 'phone' => '0599111222', 'type' => $type, 'is_active' => true]);
+    $repeated = Party::query()->create(['tenant_id' => $this->tenant->id, 'name' => 'حساب متكرر', 'type' => $type, 'is_active' => true]);
+    foreach ([$single, $repeated, $repeated] as $party) {
+        Livewire::test('pages::tenant.accounting.'.$page)->call('selectParty', $party->id)->set('amount', '10')->call($save)->assertHasNoErrors();
+    }
+    $singleVoucher = Payment::query()->where('party_id', $single->id)->sole();
+
+    $component = Livewire::test('pages::tenant.accounting.'.$page)
+        ->assertSet('showForm', true)
+        ->assertSet('paymentId', null)
+        ->assertSeeHtml('data-voucher-form')
+        ->assertSeeHtml('data-voucher-archive-search');
+    expect($component->get('voucherNumber'))->not->toBe('');
+
+    $component->set('voucherArchiveSearch', '0599111')->call('searchVoucherArchive')
+        ->assertSet('paymentId', $singleVoucher->id)->assertSet('showForm', true);
+
+    $component->call('openCreate')->set('voucherArchiveSearch', 'متكرر')->call('searchVoucherArchive')
+        ->assertSet('showForm', false)->assertSet('tableSearch', 'متكرر');
+    expect($component->instance()->items->pluck('party_id')->unique()->all())->toBe([$repeated->id]);
+
+    $component->call('openCreate')->set('voucherArchiveSearch', '')->call('searchVoucherArchive')
+        ->assertSet('showForm', false)->assertSet('tableSearch', '');
+    expect($component->instance()->items->total())->toBe(3);
+})->with([
+    ['receipts', 'saveReceipt', 'customer'],
+    ['payment', 'savePayment', 'supplier'],
+]);

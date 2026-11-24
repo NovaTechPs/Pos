@@ -162,9 +162,9 @@
                     </button>
                 </div>
                 <form wire:submit="searchVoucherArchive" class="flex min-w-0 flex-1 items-center gap-1.5">
-                    <input type="text" wire:model="voucherArchiveSearch" maxlength="100" inputmode="search" autocomplete="off" aria-label="بحث برقم السند" placeholder="رقم السند…" class="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                    <input type="text" id="voucher-archive-search" data-voucher-archive-search wire:model="voucherArchiveSearch" maxlength="100" inputmode="search" autocomplete="off" aria-label="بحث في السندات السابقة" placeholder="رقم السند أو اسم الحساب أو الهاتف… (فارغ = كل السندات)" x-on:keydown.f7.window.prevent="$el.focus(); $el.select()" class="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
                     <button type="submit" class="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-                        <flux:icon.magnifying-glass class="size-4" /> استعلام
+                        <flux:icon.magnifying-glass class="size-4" /> استعلام <kbd class="rounded border border-slate-300 bg-slate-50 px-1 font-mono text-[10px] text-slate-500">F7</kbd>
                     </button>
                 </form>
                 @if ($paymentId && $voucherLocked)
