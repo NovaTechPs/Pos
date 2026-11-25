@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Party;
 use App\Models\Payment;
+use App\Models\TelegramLink;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Services\PaymentVoucherAccess;
@@ -35,6 +36,7 @@ class TenantInvoicePdfController extends Controller
             'order' => $order,
             'accountBalance' => $order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('current_balance') : null,
             'storeName' => $order->branch?->name ?: Tenant::query()->whereKey($order->tenant_id)->value('name') ?: 'المتجر',
+            'telegramStartUrl' => $order->type === 'return' ? null : TelegramLink::printableStartUrl((int) $order->tenant_id, $order->customer_id),
         ], PdfFilename::forDocument($order->customer_name ?: ($order->customer_id ? Party::query()->where('tenant_id', $order->tenant_id)->whereKey($order->customer_id)->value('name') : null), $order->invoice_number, 'زبون عام', $order->type === 'return' ? 'مردود مبيعات' : 'فاتورة مبيعات'));
     }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\TelegramLink;
+use App\Models\TenantSetting;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -15,12 +16,25 @@ new #[Title('Telegram')] class extends Component
 
     public ?string $startUrl = null;
 
+    /** Store owner only: send linked customers their account statement on the first of each month. */
+    public bool $monthlyStatements = true;
+
+    /** Store owner only: a sale whose discount reaches this percent warns the owner (0 = off). */
+    public int $discountAlertPercent = 10;
+
+    /** Store owner only: remind customers who paid nothing for this many days (0 = off). */
+    public int $debtReminderDays = 0;
+
     public function mount(): void
     {
         abort_unless(auth()->user()->tenant_id, 404);
+        $tenantId = (int) auth()->user()->tenant_id;
+        $this->monthlyStatements = TenantSetting::getBool($tenantId, 'telegram_monthly_statements', true);
+        $this->discountAlertPercent = (int) TenantSetting::get($tenantId, 'telegram_discount_alert_percent', 10);
+        $this->debtReminderDays = (int) TenantSetting::get($tenantId, 'telegram_debt_reminder_days', 0);
         $link = $this->link();
         foreach ($this->available() as $key => $label) {
-            $this->notifications[$key] = $link ? $link->wants($key) : true;
+            $this->notifications[$key] = $link ? $link->wants($key) : TelegramLink::STAFF_NOTIFICATIONS[$key]['default'];
         }
     }
 
@@ -30,7 +44,7 @@ new #[Title('Telegram')] class extends Component
         $user = auth()->user();
 
         return collect(TelegramLink::STAFF_NOTIFICATIONS)
-            ->filter(fn (array $notification): bool => $user->hasPermission($notification['permission']))
+            ->filter(fn (array $notification, string $key): bool => TelegramLink::allows($user, $key))
             ->map(fn (array $notification): string => $notification['label'])->all();
     }
 
@@ -56,6 +70,26 @@ new #[Title('Telegram')] class extends Component
     {
         $this->link()?->update(['notifications' => $this->chosen()]);
         $this->dispatch('toast', type: 'success', message: 'تم حفظ الإشعارات.');
+    }
+
+    public function updatedMonthlyStatements(bool $value): void
+    {
+        abort_unless(auth()->user()->isTenantOwner(), 403);
+        TenantSetting::setBool((int) auth()->user()->tenant_id, 'telegram_monthly_statements', $value);
+        $this->dispatch('toast', type: 'success', message: 'تم حفظ الإعداد.');
+    }
+
+    public function saveStoreSettings(): void
+    {
+        abort_unless(auth()->user()->isTenantOwner(), 403);
+        $this->validate([
+            'discountAlertPercent' => ['required', 'integer', 'min:0', 'max:100'],
+            'debtReminderDays' => ['required', 'integer', 'in:0,7,15,30'],
+        ]);
+        $tenantId = (int) auth()->user()->tenant_id;
+        TenantSetting::set($tenantId, 'telegram_discount_alert_percent', (string) $this->discountAlertPercent);
+        TenantSetting::set($tenantId, 'telegram_debt_reminder_days', (string) $this->debtReminderDays);
+        $this->dispatch('toast', type: 'success', message: 'تم حفظ الإعدادات.');
     }
 
     public function unlink(): void
@@ -120,6 +154,26 @@ new #[Title('Telegram')] class extends Component
                     <flux:button variant="primary" wire:click="createLink" :disabled="! $botReady">ربط تيليجرام</flux:button>
                 @endif
             </div>
+
+            @if (auth()->user()->isTenantOwner())
+                <div class="space-y-2 border-t border-zinc-200 pt-4 dark:border-zinc-700" data-telegram-customer-settings>
+                    <flux:heading size="sm">للزبائن المربوطين</flux:heading>
+                    <flux:checkbox wire:model.live="monthlyStatements" label="إرسال كشف الحساب الشهري PDF أول كل شهر" />
+                    <p class="text-xs text-zinc-500">الفواتير والمردودات وسندات القبض تصل الزبون PDF تلقائياً، ويُطبع على فاتورته رمز QR ليربط تيليجرام بنفسه.</p>
+                    <flux:select wire:model="debtReminderDays" label="تذكير الزبون بدينه إذا لم يدفع منذ">
+                        <flux:select.option value="0">لا ترسل تذكيراً</flux:select.option>
+                        <flux:select.option value="7">7 أيام</flux:select.option>
+                        <flux:select.option value="15">15 يوماً</flux:select.option>
+                        <flux:select.option value="30">30 يوماً</flux:select.option>
+                    </flux:select>
+                </div>
+
+                <div class="space-y-2 border-t border-zinc-200 pt-4 dark:border-zinc-700" data-telegram-store-settings>
+                    <flux:heading size="sm">تنبيهات المراجعة</flux:heading>
+                    <flux:input type="number" min="0" max="100" wire:model="discountAlertPercent" label="نبّهني عن الفاتورة إذا وصل خصمها إلى (%)" description="0 لإيقاف تنبيه الخصم؛ البيع بأقل من التكلفة يُنبَّه عنه دائماً." />
+                    <flux:button size="sm" wire:click="saveStoreSettings">حفظ إعدادات المتجر</flux:button>
+                </div>
+            @endif
         </div>
     </x-pages::settings.layout>
 </section>

@@ -4734,6 +4734,7 @@ new class extends Component {
             'summary' => \App\Services\InvoiceBalanceSummary::forOrder($order),
             'currency' => $currencySymbols[$currency] ?? '₪',
             'notice' => TenantSetting::get((int) $this->tenantId(), 'receipt_footer', 'شكراً لتعاملكم معنا'),
+            'telegram_url' => $order->type === 'return' ? null : \App\Models\TelegramLink::printableStartUrl((int) $order->tenant_id, $order->customer_id),
         ];
     }
 

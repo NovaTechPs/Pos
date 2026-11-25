@@ -41,6 +41,28 @@ Schedule::call(fn () => Tenant::query()->pluck('id')
     ->withoutOverlapping()
     ->when(fn (): bool => config('branch-sync.mode') !== 'edge');
 
+// On the first of each month, send linked customers last month's account statement on Telegram.
+Schedule::command('telegram:monthly-statements')
+    ->monthlyOn(1, '09:00')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge' && ! config('app.desktop'));
+
+// The owner's weekly report every Saturday morning, and the monthly report on the first.
+Schedule::command('telegram:period-report week')
+    ->weeklyOn(6, '08:00')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge' && ! config('app.desktop'));
+Schedule::command('telegram:period-report month')
+    ->monthlyOn(1, '08:30')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge' && ! config('app.desktop'));
+
+// Remind linked customers of unpaid balances, in stores that turned the reminder on.
+Schedule::command('telegram:debt-reminders')
+    ->dailyAt('10:00')
+    ->withoutOverlapping()
+    ->when(fn (): bool => config('branch-sync.mode') !== 'edge' && ! config('app.desktop'));
+
 // Where a scheduler runs, upload and verify the daily backup at night. On Render, a Cron Job
 // service runs `php artisan backup:daily` once a day instead.
 Schedule::command('backup:daily')

@@ -142,6 +142,12 @@
                         {!! $ar($order->notes, 55) !!}
                     </div>
                 @endif
+                @if (! empty($telegramStartUrl))
+                    <div style="margin-top: 8px; text-align: center;" data-invoice-telegram-qr>
+                        <img src="{{ \App\Services\TelegramQr::dataUri($telegramStartUrl) }}" style="width: 26mm; height: 26mm;" alt="">
+                        <div class="muted" style="font-size: 9px;">{!! $ar('امسح الرمز لتصلك فواتيرك ودفعاتك على تيليجرام') !!}</div>
+                    </div>
+                @endif
             </td>
         </tr>
     </table>
