@@ -357,6 +357,9 @@ new class extends Component {
 
     public function updatedPartySearch(): void
     {
+        if ($this->report !== 'statement') {
+            $this->partyId = null;
+        }
         $this->resetPage('statementPartiesPage');
     }
 
@@ -381,9 +384,6 @@ new class extends Component {
 
     public function updatedStatementPartyType(): void
     {
-        if ($this->report !== 'statement') {
-            $this->partyId = null;
-        }
         $this->resetPage('statementPartiesPage');
     }
 
