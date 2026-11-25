@@ -101,6 +101,17 @@ test('reset filters clears the party and returns to this month', function (): vo
         ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-30');
 });
 
+test('balances report picks the party from one search field', function (): void {
+    Livewire::test('pages::tenant.reports.center')->call('selectReport', 'balances')
+        ->assertSeeHtml('data-report-party-picker')->assertDontSee('ابحث عن الطرف')
+        ->set('partySearch', 'مورد')->assertSee($this->supplier->name)->assertDontSeeHtml('report-party-'.$this->customer->id.'"')
+        ->call('selectReportParty', $this->supplier->id)
+        ->assertSet('partyId', $this->supplier->id)->assertSet('partySearch', $this->supplier->name)
+        ->set('partySearch', 'زبون')->assertSet('partyId', null)
+        ->call('selectReportParty', $this->customer->id)->call('clearReportParty')
+        ->assertSet('partyId', null)->assertSet('partySearch', '');
+});
+
 test('statement shows opening balance, linked documents and a totals row', function (): void {
     $receiptNotes = 'دفعة على الفاتورة رقم: SAL-20261105160837-873 — تمت معالجته تلقائياً كسند قبض';
     ($this->makeOrder)(['invoice_number' => 'CTR-OPEN', 'total' => 40, 'created_at' => '2026-09-20 12:00:00']);

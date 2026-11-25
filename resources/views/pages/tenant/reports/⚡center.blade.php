@@ -170,6 +170,9 @@ new class extends Component {
             $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
                 ->whereKey(request()->integer('party_id'))->value('id');
             $this->statementPartyType = in_array(request('party_type'), ['customer', 'supplier'], true) ? request('party_type') : 'all';
+            if ($this->report !== 'statement' && $this->partyId) {
+                $this->partySearch = (string) Party::query()->whereKey($this->partyId)->value('name');
+            }
         }
     }
 
@@ -334,6 +337,20 @@ new class extends Component {
         $this->resetPage('statementPartiesPage');
     }
 
+    /** Picks a party from the report's single party search field and shows its name there. */
+    public function selectReportParty(int $partyId): void
+    {
+        $party = Party::withoutGlobalScopes()->where('tenant_id', $this->service()->tenantId)->whereNull('deleted_at')->findOrFail($partyId);
+        $this->partyId = $party->id;
+        $this->partySearch = $party->name;
+    }
+
+    public function clearReportParty(): void
+    {
+        $this->partyId = null;
+        $this->partySearch = '';
+    }
+
     public function updatedStatementBalanceFilter(): void
     {
         $this->resetPage('statementPartiesPage');
@@ -341,6 +358,9 @@ new class extends Component {
 
     public function updatedStatementPartyType(): void
     {
+        if ($this->report !== 'statement') {
+            $this->partyId = null;
+        }
         $this->resetPage('statementPartiesPage');
     }
 
@@ -432,7 +452,7 @@ new class extends Component {
         if (in_array($this->report, ['statement', 'balances', 'aging', 'cashflow', 'customer-invoice-profit'], true)) {
             $parties = Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->whereNull('deleted_at')
                 ->when($service->branchId, fn ($q) => $q->where(fn ($q) => $q->where('branch_id', $service->branchId)->orWhereNull('branch_id')))
-                ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')))
+                ->when(trim($this->partySearch) !== '', fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$this->partySearch.'%')->orWhere('code', 'like', '%'.$this->partySearch.'%')->orWhere('phone', 'like', '%'.$this->partySearch.'%')))
                 ->when($this->report === 'customer-invoice-profit', fn ($q) => $q->whereIn('type', ['customer', 'both']))
                 ->orderBy('name')->limit(100)->get(['id', 'name', 'type']);
             if ($this->partyId && ! $parties->contains('id', $this->partyId)) {
@@ -602,8 +622,19 @@ new class extends Component {
         </div>
         @if (in_array($report, ['balances', 'aging', 'cashflow', 'customer-invoice-profit']))
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <flux:select label="الزبون / المورد" wire:model="partyId"><option value="">{{ $report === 'statement' ? 'اختر الزبون / المورد' : ($report === 'customer-invoice-profit' ? 'كل الزبائن' : 'كل الأطراف') }}</option>@foreach ($parties as $party)<option wire:key="party-{{ $party->id }}" value="{{ $party->id }}">{{ $party->name }} — {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] }}</option>@endforeach</flux:select>
-                <flux:input label="ابحث عن الطرف" icon="magnifying-glass" wire:model.live.debounce.300ms="partySearch" placeholder="الاسم أو الهاتف أو الرمز …" />
+                <div class="reports-filter-wide relative" data-report-party-picker x-data="{ open: false, active: 0, rows() { return [...this.$refs.rows.querySelectorAll('[data-report-party]')] }, move(direction) { const rows = this.rows(); if (!rows.length) return; this.active = Math.max(0, Math.min(rows.length - 1, this.active + direction)); rows[this.active]?.scrollIntoView({ block: 'nearest' }); }, choose() { this.rows()[this.active]?.click() } }" x-on:click.outside="open = false" x-on:keydown.arrow-down.prevent="open = true; move(1)" x-on:keydown.arrow-up.prevent="move(-1)" x-on:keydown.enter.prevent="if (open && rows().length) choose()" x-on:keydown.escape="open = false">
+                    <div class="flex items-end gap-2">
+                        <flux:input label="الزبون / المورد" icon="magnifying-glass" wire:model.live.debounce.300ms="partySearch" x-on:focus="open = true" x-on:input="open = true; active = 0" autocomplete="off" placeholder="{{ $report === 'customer-invoice-profit' ? 'كل الزبائن' : 'كل الأطراف' }} — ابحث بالاسم أو الهاتف أو الرمز" />
+                        @if ($partyId || $partySearch !== '')<flux:button type="button" wire:click="clearReportParty">{{ $report === 'customer-invoice-profit' ? 'كل الزبائن' : 'كل الأطراف' }}</flux:button>@endif
+                    </div>
+                    <div x-cloak x-show="open" class="absolute right-0 top-full z-40 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                        <div class="max-h-72 overflow-auto" x-ref="rows">
+                            @forelse ($parties as $party)
+                                <button type="button" data-report-party wire:key="report-party-{{ $party->id }}" x-bind:class="active === {{ $loop->index }} ? 'search-result-active' : ''" wire:click="selectReportParty({{ $party->id }})" x-on:click="open = false" @class(['flex w-full items-center justify-between gap-3 border-t px-3 py-2 text-right text-sm hover:bg-indigo-50 dark:hover:bg-slate-800', 'font-bold' => (int) $partyId === (int) $party->id])><span>{{ $party->name }}</span><span class="text-xs text-slate-500">{{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$party->type] ?? '' }}</span></button>
+                            @empty<p class="p-4 text-center text-sm text-slate-500">لا توجد أطراف مطابقة.</p>@endforelse
+                        </div>
+                    </div>
+                </div>
                 @if (in_array($report, ['balances', 'aging']))<flux:select label="نوع الطرف" wire:model="partyType"><option value="all">الجميع</option><option value="customer">زبون</option><option value="supplier">مورد</option><option value="both">زبون ومورد</option></flux:select>@endif
                 @if (in_array($report, ['balances', 'aging']))<flux:select label="اتجاه الذمم" wire:model="balanceSide"><option value="all">مدين ودائن معاً</option><option value="debit">مدين / لنا</option><option value="credit">دائن / علينا</option><option value="settled">مسدد</option></flux:select>@endif
             </div>
@@ -673,14 +704,15 @@ new class extends Component {
     @endif
     <div wire:loading role="status" class="text-sm text-blue-700 dark:text-blue-300">جارٍ تجهيز التقرير…</div>
     <section class="reports-result">
+    @if ($report !== 'statement')
     <header class="reports-result-heading">
-        <h2><flux:icon.document-text variant="outline" />{{ $statementParty ? 'كشف حساب: '.$statementParty->name : $allowed[$report][0] }}</h2>
-        @if ($statementParty)<p>رقم الحساب: {{ $statementParty->code ?: '—' }} · النوع: {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</p>@endif
+        <h2><flux:icon.document-text variant="outline" />{{ $allowed[$report][0] }}</h2>
         <p>الفترة: من {{ $from }} إلى {{ $to }} <span aria-hidden="true">|</span> الفرع: {{ $branches->firstWhere('id', $branchId)?->name ?? 'كل الفروع' }}</p>
-        @if ($definition['summary'] && $report !== 'statement')
+        @if ($definition['summary'])
             <dl class="reports-summary-chips">@foreach ($definition['summary'] as $label => $value)<div wire:key="summary-chip-{{ $loop->index }}"><dt>{{ $label }}</dt><dd dir="ltr">{{ number_format((float) $value, 2) }}</dd></div>@endforeach</dl>
         @endif
     </header>
+    @endif
     @if ($report === 'statement')
         @if ($statementReady)
             <section data-statement-ledger class="min-w-0 space-y-4" x-on:keydown.arrow-down.prevent="move(rows(), 1)" x-on:keydown.arrow-up.prevent="move(rows(), -1)" x-on:keydown.arrow-right.prevent="toParties()">

@@ -351,15 +351,21 @@ class ReportingService
             ->selectRaw("supplier_id as party_id, COALESCE(purchases.invoice_date, purchases.created_at) as event_date, reference_number as reference, 'سند صرف' as description, CASE WHEN ({$purchaseUnlinkedPaid}) < ABS(purchases.total) THEN ({$purchaseUnlinkedPaid}) ELSE ABS(purchases.total) END as amount, 7 as source_order, purchases.id as source_id, NULL as notes");
         $returns = $this->branch($this->table('purchase_returns'), 'purchase_returns.branch_id')->whereIn('supplier_id', clone $partyIds)
             ->selectRaw("supplier_id as party_id, created_at as event_date, reference_number as reference, 'مردود مشتريات' as description, ABS(total) as amount, 4 as source_order, id as source_id, purchase_returns.notes as notes");
-        $payments = $this->branch($this->table('payments'), 'payments.branch_id')
+        // A voucher saved without a branch belongs to the branch of the invoice it pays, otherwise to its party's branch.
+        $voucherParty = 'COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id)';
+        $payments = $this->table('payments')
             ->leftJoin('orders as paid_order', function ($join): void {
                 $join->on('paid_order.id', '=', 'payments.order_id')->where('paid_order.tenant_id', $this->tenantId);
             })
             ->leftJoin('purchases as paid_purchase', function ($join): void {
                 $join->on('paid_purchase.id', '=', 'payments.purchase_id')->where('paid_purchase.tenant_id', $this->tenantId);
             })
-            ->whereIn(DB::raw('COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id)'), clone $partyIds)
-            ->selectRaw("COALESCE(payments.party_id, paid_order.customer_id, paid_purchase.supplier_id) as party_id, COALESCE(payments.payment_date, payments.created_at) as event_date, voucher_number as reference, CASE WHEN payments.type = 'receipt' THEN 'سند قبض' ELSE 'سند صرف' END as description, CASE WHEN payments.type = 'receipt' THEN -ABS(amount) ELSE ABS(amount) END as amount, 5 as source_order, payments.id as source_id, payments.notes as notes");
+            ->leftJoin('parties as voucher_party', function ($join) use ($voucherParty): void {
+                $join->on('voucher_party.id', '=', DB::raw($voucherParty))->where('voucher_party.tenant_id', $this->tenantId);
+            })
+            ->when($this->branchId, fn (Builder $q): Builder => $q->whereRaw('COALESCE(payments.branch_id, paid_purchase.branch_id, paid_order.branch_id, voucher_party.branch_id) = ?', [$this->branchId]))
+            ->whereIn(DB::raw($voucherParty), clone $partyIds)
+            ->selectRaw("{$voucherParty} as party_id, COALESCE(payments.payment_date, payments.created_at) as event_date, voucher_number as reference, CASE WHEN payments.type = 'receipt' THEN 'سند قبض' ELSE 'سند صرف' END as description, CASE WHEN payments.type = 'receipt' THEN -ABS(amount) ELSE ABS(amount) END as amount, 5 as source_order, payments.id as source_id, payments.notes as notes");
 
         return DB::query()->fromSub($orders->unionAll($orderPaid)->unionAll($deliveryOrders)->unionAll($purchases)->unionAll($purchasePaid)->unionAll($returns)->unionAll($payments), 'events');
     }

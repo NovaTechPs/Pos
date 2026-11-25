@@ -159,6 +159,27 @@ test('supplier and mixed-party ledgers normalize debit and credit without treati
     expect((float) $statement['summary']['رصيد آخر الفترة'])->toBe(50.0);
 });
 
+test('a branch report counts vouchers saved without a branch under the paid invoice or the party branch', function (): void {
+    $this->supplier->update(['branch_id' => $this->branch->id]);
+    $otherPurchase = Purchase::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->otherBranch->id, 'supplier_id' => $this->supplier->id, 'reference_number' => 'PUR-OTHER', 'total' => 40, 'paid_amount' => 0, 'created_at' => '2026-10-12']);
+    ($this->makePayment)(['branch_id' => null, 'party_id' => $this->supplier->id, 'type' => 'payment', 'amount' => 30, 'voucher_number' => 'NO-BRANCH-PAY']);
+    ($this->makePayment)(['branch_id' => null, 'party_id' => null, 'purchase_id' => $otherPurchase->id, 'type' => 'payment', 'amount' => 25, 'voucher_number' => 'OTHER-PURCHASE-PAY']);
+    $filters = array_replace($this->filters, ['party_id' => $this->supplier->id]);
+
+    $statement = (new ReportingService($this->user, $this->branch->id, false))->prepare('statement', $filters);
+    expect($statement['query']->pluck('reference')->all())->toBe(['NO-BRANCH-PAY'])
+        ->and((float) $statement['summary']['رصيد آخر الفترة'])->toBe(-70.0);
+    $balances = (new ReportingService($this->user, $this->branch->id, false))->prepare('balances', $this->filters);
+    expect((float) $balances['query']->get()->firstWhere('id', $this->supplier->id)->balance)->toBe(-70.0);
+
+    $this->supplier->update(['branch_id' => null]);
+    $other = (new ReportingService($this->user, $this->otherBranch->id, false))->prepare('statement', $filters);
+    expect($other['query']->pluck('reference')->all())->toBe(['PUR-OTHER', 'OTHER-PURCHASE-PAY']);
+    $this->supplier->update(['branch_id' => $this->branch->id]);
+    $all = (new ReportingService($this->user, null, false))->prepare('balances', $this->filters);
+    expect((float) $all['query']->get()->firstWhere('id', $this->supplier->id)->balance)->toBe(-85.0);
+});
+
 test('product sales report includes final-day sales and fractional returns but excludes cancelled and deleted invoices', function (): void {
     $sale = ($this->makeOrder)(['created_at' => '2026-10-20 23:59:59']);
     OrderItem::create(['tenant_id' => $this->tenant->id, 'order_id' => $sale->id, 'product_id' => $this->product->id, 'quantity' => 4.5, 'unit_price' => 40, 'total_price' => 180, 'cost_price' => 20, 'total_cost' => 90]);
@@ -803,7 +824,7 @@ test('report center shows the actual selected account statement in the redesigne
     ($this->makeOrder)(['invoice_number' => 'REPORT-DESIGN-01']);
     ($this->makePayment)();
     $page = Livewire::test('pages::tenant.reports.center')->call('showStatementParty', $this->customer->id)
-        ->assertSee('REPORT-DESIGN-01')->assertSee('reports-result-heading', false)->assertSee('طباعة التقرير')->assertSee('تصدير Excel')->assertSee('تصدير PDF');
+        ->assertSee('REPORT-DESIGN-01')->assertDontSee('reports-result-heading', false)->assertDontSee('كشف حساب: ')->assertSee('طباعة التقرير')->assertSee('تصدير Excel')->assertSee('تصدير PDF');
     if ($previewPath = getenv('CODEX_REPORT_PREVIEW')) {
         $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
         $css = file_get_contents(public_path('build/'.$manifest['resources/css/app.css']['file']));

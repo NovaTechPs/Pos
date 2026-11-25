@@ -103,7 +103,7 @@
 .reports-filter-fields{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 8px;align-items:end}
 .reports-filter-fields>.grid{display:contents}
 .reports-filter-fields>.reports-filter-actions{grid-column:1/-1;gap:6px}
-.reports-filter-fields>.reports-filter-wide{grid-column:span 2}
+.reports-filter-fields>.reports-filter-wide,.reports-filter-fields>.grid>.reports-filter-wide{grid-column:span 2}
 .reports-filter-fields [data-flux-label]{margin-bottom:3px!important;font-size:11px}
 .reports-filter-fields [data-flux-control]{height:30px!important;min-height:30px!important;padding-block:0!important;font-size:12px!important}
 .reports-filter-fields [data-flux-field]{min-width:0}
@@ -283,6 +283,14 @@
 .reports-redesign #report-account-picker.reports-account-panel { position: static; width: 100%; box-shadow: 0 3px 10px #264bac08; }
 .reports-redesign .reports-account-sidebar .reports-account-list { max-height: max(220px, calc(100dvh - 430px)); }
 .reports-redesign .reports-statement-filter .reports-selected-account { min-height: 0; }
+/* Statement filters: fields keep their natural width on one wrapping row, actions and quick ranges beside them. */
+.reports-statement-filter .reports-filter-fields{display:flex;flex-wrap:wrap;align-items:end;gap:6px 8px}
+.reports-statement-filter .reports-filter-fields>.grid{display:contents}
+.reports-statement-filter .reports-filter-fields>.grid>*{flex:0 0 auto;width:auto}
+.reports-statement-filter .reports-selected-account{max-width:220px}
+.reports-statement-filter .reports-filter-fields>.grid>[data-flux-field]{width:140px}
+.reports-statement-filter .reports-filter-fields>.grid>[data-flux-field]:has(select){width:150px}
+.reports-statement-filter .reports-filter-fields>.reports-filter-actions{flex:1 1 auto;align-items:center}
 @media (max-width: 900px) {
     .reports-redesign .reports-workspace.is-statement { grid-template-columns: minmax(0, 1fr); }
     .reports-redesign .reports-workspace.is-statement>.reports-account-sidebar, .reports-redesign .reports-workspace.is-statement>.reports-content { grid-column: 1; position: static; }
