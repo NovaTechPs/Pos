@@ -70,7 +70,7 @@ class ReportingService
      * Amount a walk-in POS invoice put in the drawer. Walk-in POS invoices no longer create
      * receipt vouchers, and delivery fees are collected by the delivery company.
      */
-    private const WALK_IN_COLLECTION_SQL = "CASE WHEN orders.source = 'api' THEN orders.paid_amount WHEN orders.paid_amount > orders.delivery_fee THEN orders.paid_amount - orders.delivery_fee ELSE 0 END";
+    private const WALK_IN_COLLECTION_SQL = "CASE WHEN orders.source = 'api' AND orders.delivery_party_id IS NULL THEN orders.paid_amount WHEN orders.paid_amount > orders.delivery_fee THEN orders.paid_amount - orders.delivery_fee ELSE 0 END";
 
     /** Purchase invoices are dated by their invoice date, like the supplier statement. */
     private const PURCHASE_DATE_SQL = 'COALESCE(purchases.invoice_date, purchases.created_at)';

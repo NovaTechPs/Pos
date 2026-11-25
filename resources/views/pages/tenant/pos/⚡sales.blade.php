@@ -725,7 +725,7 @@ new class extends Component {
             ->where('branch_id', $shift->branch_id)->where('shift_id', $shift->id)
             ->where('status', 'completed')->where('type', 'pos')->whereNull('customer_id');
         $cashReceipts = (float) ($payments?->cash_receipts ?? 0) + (float) (clone $walkInOrders)
-            ->where('payment_method', 'cash')->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+            ->where('payment_method', 'cash')->sum(DB::raw("CASE WHEN source = 'api' AND delivery_party_id IS NULL THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
         $cashPayments = (float) ($payments?->cash_payments ?? 0);
         $bankReceipts = Payment::query()
             ->where('tenant_id', $shift->tenant_id)
@@ -745,11 +745,11 @@ new class extends Component {
         $cardReceipts = (float) ($bankReceipts?->card_receipts ?? 0);
         $bankTransferReceipts = (float) ($bankReceipts?->bank_transfer_receipts ?? 0);
         $chequeReceipts = (float) (clone $walkInOrders)->where('payment_method', 'cheque')
-            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+            ->sum(DB::raw("CASE WHEN source = 'api' AND delivery_party_id IS NULL THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
         $cardReceipts += (float) (clone $walkInOrders)->where('payment_method', 'card')
-            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+            ->sum(DB::raw("CASE WHEN source = 'api' AND delivery_party_id IS NULL THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
         $bankTransferReceipts += (float) (clone $walkInOrders)->where('payment_method', 'bank_transfer')
-            ->sum(DB::raw("CASE WHEN source = 'api' THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
+            ->sum(DB::raw("CASE WHEN source = 'api' AND delivery_party_id IS NULL THEN paid_amount WHEN paid_amount > delivery_fee THEN paid_amount - delivery_fee ELSE 0 END"));
 
         return [
             'sales' => (float) ($orders?->sales ?? 0),

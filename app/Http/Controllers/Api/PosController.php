@@ -131,6 +131,39 @@ class PosController extends Controller
         return response()->json(['message' => 'تم حذف الفاتورة وإعادة مخزونها.']);
     }
 
+    /**
+     * The delivery details of a sale with a delivery fee and a delivery company, as the web POS saves
+     * them; null for a sale without them (older app versions send the fee alone and keep working).
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{name: string, phone: string, address: string, notes: string, party_id: int}|null
+     */
+    private function deliveryDetails(array $validated, int $tenantId, float $deliveryFee): ?array
+    {
+        if ($deliveryFee <= 0 || empty($validated['delivery_party_id'])) {
+            return null;
+        }
+        $details = [
+            'name' => trim((string) ($validated['delivery_customer_name'] ?? '')),
+            'phone' => trim((string) ($validated['delivery_customer_phone'] ?? '')),
+            'address' => trim((string) ($validated['delivery_customer_address'] ?? '')),
+            'notes' => trim((string) ($validated['delivery_notes'] ?? '')),
+            'party_id' => (int) $validated['delivery_party_id'],
+        ];
+        $missing = array_filter(['delivery_customer_name' => 'name', 'delivery_customer_phone' => 'phone', 'delivery_customer_address' => 'address'],
+            fn (string $key): bool => $details[$key] === '');
+        if ($missing !== []) {
+            throw ValidationException::withMessages(array_map(fn (): string => 'أكمل بيانات التوصيل: الاسم والهاتف والعنوان.', $missing));
+        }
+        $companyExists = Party::query()->where('tenant_id', $tenantId)->where('is_active', true)
+            ->whereIn('type', ['customer', 'supplier', 'both'])->whereKey($details['party_id'])->exists();
+        if (! $companyExists) {
+            throw ValidationException::withMessages(['delivery_party_id' => 'اختر شركة توصيل من قائمة الموردين أو الزبائن.']);
+        }
+
+        return $details;
+    }
+
     /** @return array{total: float, quantity: float|null, price: float|null} */
     private function offerLineTotal(int $tenantId, int $branchId, int $productId, float $quantity, float $price): array
     {
@@ -565,6 +598,13 @@ class PosController extends Controller
             'paid_amount' => ['sometimes', 'numeric', 'min:0', 'max:999999999', 'decimal:0,2'],
             'payment_method' => ['nullable', 'in:cash,card,bank_transfer,cheque'],
             'notes' => ['nullable', 'string', 'max:500'],
+            // A delivery sale, as on the web POS: the recipient printed on the invoice and the
+            // delivery company (a customer or supplier account) that collects the delivery fee.
+            'delivery_customer_name' => ['nullable', 'string', 'max:255'],
+            'delivery_customer_phone' => ['nullable', 'string', 'max:40'],
+            'delivery_customer_address' => ['nullable', 'string', 'max:2000'],
+            'delivery_notes' => ['nullable', 'string', 'max:2000'],
+            'delivery_party_id' => ['nullable', 'integer'],
         ]);
 
         $user = $request->user() ?? auth()->user();
@@ -684,6 +724,12 @@ class PosController extends Controller
                 throw ValidationException::withMessages(['customer_id' => 'اختر زبوناً لتسجيل المبلغ المتبقي على الحساب.']);
             }
 
+            $delivery = $this->deliveryDetails($validated, (int) $tenantId, $deliveryFee);
+            $notes = trim((string) ($validated['notes'] ?? ''));
+            if ($delivery && $delivery['notes'] !== '') {
+                $notes = trim($notes.($notes !== '' ? "\n\n" : '').'ملاحظة التوصيل: '.$delivery['notes']);
+            }
+
             $order = $editing ?? $held ?? new Order;
             $order->fill([
                 'tenant_id' => $tenantId,
@@ -691,8 +737,10 @@ class PosController extends Controller
                 'shift_id' => $shift?->id,
                 'created_by' => $user->id,
                 'customer_id' => $customer?->id,
-                'customer_name' => trim((string) ($validated['customer_name'] ?? '')) ?: $customer?->name,
-                'customer_phone' => $customer?->phone,
+                'customer_name' => $delivery['name'] ?? (trim((string) ($validated['customer_name'] ?? '')) ?: $customer?->name),
+                'customer_phone' => $delivery['phone'] ?? $customer?->phone,
+                'customer_address' => $delivery['address'] ?? $customer?->address,
+                'delivery_party_id' => $delivery['party_id'] ?? null,
                 'invoice_number' => $editing->invoice_number ?? SalesInvoiceNumber::next((int) $tenantId, (int) $branchId),
                 'type' => 'pos', 'source' => 'api', 'sale_kind' => 'retail',
                 'status' => 'completed',
@@ -705,7 +753,7 @@ class PosController extends Controller
                 'payment_status' => $paid >= $total ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
                 'total_cost' => round($totalCost, 2),
                 'total_profit' => round($total - $deliveryFee - $totalCost, 2),
-                'notes' => $validated['notes'] ?? null,
+                'notes' => $notes !== '' ? $notes : null,
             ]);
             $order->save();
             if ($held || $editing) {
@@ -743,7 +791,10 @@ class PosController extends Controller
                 }
             }
 
-            if ($received > 0 && $customer) {
+            // As on the web POS, the delivery company collects the delivery fee, so it never
+            // enters the cashier's shift as part of the customer's receipt.
+            $receiptAmount = $delivery ? round(max(0, $received - $deliveryFee), 2) : $received;
+            if ($receiptAmount > 0 && $customer) {
                 Payment::create([
                     'tenant_id' => $tenantId,
                     'branch_id' => $branchId,
@@ -752,7 +803,7 @@ class PosController extends Controller
                     'type' => 'receipt',
                     'voucher_number' => 'VCH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(5)),
                     'party_id' => $customer?->id,
-                    'amount' => $received,
+                    'amount' => $receiptAmount,
                     'payment_method' => in_array($paymentMethod, ['cash', 'card', 'bank_transfer', 'cheque']) ? $paymentMethod : 'cash',
                     'payment_date' => $previousReceipt?->payment_date ?? now(),
                     'order_id' => $order->id,
