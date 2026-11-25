@@ -39,6 +39,13 @@ new class extends Component
      */
     public array $priceBranchIds = [];
 
+    /**
+     * Data scope per area: one level for the employee's own branch and one for the other branches.
+     *
+     * @var array<string, array{own: string, other: string}>
+     */
+    public array $dataScopes = [];
+
     /*
     |--------------------------------------------------------------------------
     | Modal
@@ -175,6 +182,8 @@ new class extends Component
             ->map(fn ($id) => (string) $id)
             ->values()
             ->toArray();
+
+        $this->dataScopes = $this->scopesFor($role->id);
 
         $this->priceBranchIds = $role->priceBranches()
             ->where('branches.tenant_id', $tenantId)
@@ -363,12 +372,40 @@ new class extends Component
             ->pluck('id');
         $role->priceBranches()->sync($priceBranchIds->mapWithKeys(fn ($id): array => [(int) $id => ['tenant_id' => $tenantId]])->all());
 
+        $this->saveDataScopes($role, $tenantId);
+
         session()->flash(
             'message',
             $message
         );
 
         $this->closeModal();
+    }
+
+    /** The job's data scope per area, or the defaults for a new job. @return array<string, array{own: string, other: string}> */
+    private function scopesFor(?int $roleId): array
+    {
+        $scope = app(\App\Services\DataScope::class);
+
+        return collect(\App\Services\DataScope::AREAS)->mapWithKeys(fn ($area, string $key): array => [$key => $scope->roleDefault($roleId, $key)])->all();
+    }
+
+    /** Saves one row per area, keeping each level to the ones that area accepts. */
+    private function saveDataScopes(Role $role, int $tenantId): void
+    {
+        foreach (\App\Services\DataScope::AREAS as $area => [$label, $levels]) {
+            $own = $this->dataScopes[$area]['own'] ?? null;
+            $other = $this->dataScopes[$area]['other'] ?? null;
+            $default = \App\Services\DataScope::DEFAULTS[$area];
+            \App\Models\RoleDataScope::query()->updateOrCreate(
+                ['role_id' => $role->id, 'area' => $area],
+                [
+                    'tenant_id' => $tenantId,
+                    'own_branch' => in_array($own, $levels, true) ? $own : $default['own'],
+                    'other_branches' => in_array($other, $levels, true) ? $other : $default['other'],
+                ],
+            );
+        }
     }
 
     /*
@@ -398,6 +435,8 @@ new class extends Component
         $role->permissions()->detach();
 
         $role->priceBranches()->detach();
+
+        $role->dataScopes()->delete();
 
         $role->delete();
 
@@ -439,6 +478,8 @@ new class extends Component
         $this->selectedPermissions = [];
 
         $this->priceBranchIds = [];
+
+        $this->dataScopes = $this->scopesFor(null);
 
         $this->searchPermission = '';
 
@@ -1556,6 +1597,42 @@ new class extends Component
 
                 </div>
 
+
+                {{-- Data scope: where the job's permissions apply --}}
+                <div data-role-data-scopes class="rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                        <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">نطاق البيانات</div>
+                        <p class="mt-0.5 text-xs text-zinc-500">الصلاحيات أعلاه تحدد ماذا يفعل الموظف، وهذا الجدول يحدد أين: في فرعه وفي باقي الفروع. يمكن استثناء فرع لموظف معين من صفحة الموظفين.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-800/60">
+                                <tr>
+                                    <th class="px-4 py-2 text-start font-semibold">القسم</th>
+                                    <th class="px-4 py-2 text-start font-semibold">فرعه</th>
+                                    <th class="px-4 py-2 text-start font-semibold">باقي الفروع</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                @foreach (\App\Services\DataScope::AREAS as $scopeArea => [$scopeLabel, $scopeLevels])
+                                    <tr wire:key="role-scope-{{ $scopeArea }}">
+                                        <td class="px-4 py-2 font-medium text-zinc-800 dark:text-zinc-200">{{ $scopeLabel }}</td>
+                                        @foreach (['own', 'other'] as $scopeSide)
+                                            <td class="px-4 py-2">
+                                                <select wire:model="dataScopes.{{ $scopeArea }}.{{ $scopeSide }}" data-role-scope="{{ $scopeArea }}-{{ $scopeSide }}"
+                                                    class="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                                                    @foreach ($scopeLevels as $scopeLevel)
+                                                        <option value="{{ $scopeLevel }}">{{ \App\Services\DataScope::LEVELS[$scopeLevel] }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </td>
+                                        @endforeach
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
                 {{-- Footer --}}
 

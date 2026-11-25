@@ -144,9 +144,7 @@ new class extends Component {
     {
         $this->from = today()->startOfMonth()->toDateString();
         $this->to = today()->toDateString();
-        $this->branchId = ReportingService::choosesBranch(auth()->user(), $this->report)
-            ? null
-            : auth()->user()->activeBranchId();
+        $this->branchId = $this->defaultBranchId();
         // Links from the analytics dashboard open the report on the same period and branch.
         foreach (['from', 'to'] as $key) {
             $value = request()->query($key);
@@ -163,6 +161,10 @@ new class extends Component {
         $allowed = $this->service()->availableReports();
         abort_if($allowed === [], 403);
         if (!isset($allowed[$this->report])) { $this->report = array_key_first($allowed); }
+        // The branch follows the scope of the report actually opened (an employee may see different branches per report).
+        if (! \App\Services\DataScope::unrestricted(auth()->user()) && request()->integer('branch_id') <= 0) {
+            $this->branchId = $this->defaultBranchId();
+        }
         if ($this->report === 'expiring' && ! request()->query('to')) {
             $this->to = today()->addDays(30)->toDateString();
         }
@@ -181,15 +183,36 @@ new class extends Component {
         return new ReportingService(auth()->user(), $this->branchId, false, $this->report);
     }
 
+    /** «كل الفروع» when every branch is allowed, otherwise the employee's own branch or their first allowed one. */
+    private function defaultBranchId(): ?int
+    {
+        $user = auth()->user();
+        $allowed = $user ? ReportingService::allowedBranchIds($user, $this->report) : null;
+        if ($allowed === null) {
+            return null;
+        }
+        $own = $user->branch_id ? (int) $user->branch_id : null;
+
+        return $own !== null && in_array($own, $allowed, true) ? $own : ($allowed[0] ?? null);
+    }
+
     public function updatedBranchId($value): void
     {
         $user = auth()->user();
         if (! $user || ! ReportingService::choosesBranch($user, $this->report)) {
-            $this->branchId = $user?->activeBranchId();
+            $this->branchId = $this->defaultBranchId();
             return;
         }
 
         $branchId = $value === '' || $value === null ? null : (int) $value;
+        $allowed = ReportingService::allowedBranchIds($user, $this->report);
+        // Only some branches allowed: one of them, never «all».
+        if ($allowed !== null && ($branchId === null || ! in_array($branchId, $allowed, true))) {
+            $this->branchId = $this->defaultBranchId();
+            $this->resetPage();
+
+            return;
+        }
         if ($branchId && ! \App\Models\Branch::query()->where('tenant_id', $this->service()->tenantId)->whereKey($branchId)->exists()) {
             $this->branchId = null;
             return;
@@ -366,9 +389,9 @@ new class extends Component {
 
     public function updatedReport(): void
     {
-        // Employees see every branch in the account statement and only their own branch elsewhere.
-        if (! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin()) {
-            $this->branchId = ReportingService::choosesBranch(auth()->user(), $this->report) ? null : auth()->user()->activeBranchId();
+        // Each report follows the employee's data scope: the account statement and the other reports have their own.
+        if (! \App\Services\DataScope::unrestricted(auth()->user())) {
+            $this->branchId = $this->defaultBranchId();
         }
         $this->columnFilters = [];
         $this->resetPage();
@@ -478,6 +501,11 @@ new class extends Component {
                 ->orderBy('name')->limit(30)->get(['id', 'name', 'product_number']);
         }
         $branches = \App\Models\Branch::query()->where('tenant_id', $service->tenantId)->orderBy('name')->get(['id', 'name']);
+        // Only the branches this report is allowed for; «كل الفروع» only when all of them are.
+        $allowedBranchIds = ReportingService::allowedBranchIds(auth()->user(), $this->report);
+        if ($allowedBranchIds !== null) {
+            $branches = $branches->whereIn('id', $allowedBranchIds)->values();
+        }
         $statementParty = $statementReady ? Party::withoutGlobalScopes()->where('tenant_id', $service->tenantId)->find($this->partyId) : null;
         $printUrl = $valid ? route('tenant.reports.print', ['report' => $this->report, 'branch_id' => $service->branchId ?? 0] + $this->filters()) : null;
         $navigationGroups = [];
@@ -500,7 +528,7 @@ new class extends Component {
                 $row->delivery_details = ($row->invoice_type ?? '') !== 'purchase' ? ($invoiceDelivery[(int) ($row->invoice_id ?? 0)] ?? null) : null;
             }
         }
-        return $this->view(['invoiceDelivery' => $invoiceDelivery, 'invoicePaid' => $invoicePaid, 'statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $rows, 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
+        return $this->view(['invoiceDelivery' => $invoiceDelivery, 'invoicePaid' => $invoicePaid, 'statementReady' => $statementReady, 'statementParty' => $statementParty, 'periodRanges' => $periodRanges, 'activeRange' => $activeRange, 'navigationGroups' => $navigationGroups, 'activeGroup' => $activeGroup,'definition' => $definition, 'rows' => $rows, 'allowed' => $allowed, 'parties' => $parties, 'statementParties' => $statementParties, 'products' => $products, 'branches' => $branches, 'allBranches' => $allowedBranchIds === null, 'choosesBranch' => $allowedBranchIds === null || count($allowedBranchIds) > 1, 'printUrl' => $printUrl, 'valid' => $valid])->layout('layouts::tenant');
     }
 };
 ?>
@@ -589,8 +617,8 @@ new class extends Component {
             </div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (ReportingService::choosesBranch(auth()->user(), 'statement'))
-                <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @if ($choosesBranch)
+                <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
                 <div class="reports-locked-branch"><span>الفرع</span><strong>{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</strong></div>
             @endif
@@ -613,8 +641,8 @@ new class extends Component {
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <flux:input type="date" label="من تاريخ" wire:model="from" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" />
-            @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
-                <flux:select label="الفرع" wire:model.live="branchId"><option value="">كل الفروع</option>@foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
+            @if ($choosesBranch)
+                <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
                 <div class="flex items-end"><div class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><span class="text-xs text-slate-500">الفرع</span><div class="font-bold">{{ \App\Models\Branch::query()->whereKey($branchId)->value('name') ?? 'فرع المستخدم' }}</div></div></div>
             @endif

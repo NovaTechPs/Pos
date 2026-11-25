@@ -40,6 +40,13 @@ new class extends Component
     public $branch_id = null;
     public $role_id = null;
 
+    /**
+     * The employee's own data scope per branch and area; an empty value follows the job.
+     *
+     * @var array<int|string, array<string, string>>
+     */
+    public array $branchScopes = [];
+
 
     public bool $is_active = true;
 
@@ -342,6 +349,10 @@ new class extends Component
         $linkedProfile = Employee::query()->where('user_id', $employee->id)->first();
         $this->employee_profile_id = $linkedProfile?->id;
         $this->branch_id = $linkedProfile?->branch_id ?? $employee->branch_id;
+        $this->branchScopes = [];
+        foreach (\App\Models\UserBranchScope::query()->where('user_id', $employee->id)->get() as $override) {
+            $this->branchScopes[$override->branch_id][$override->area] = $override->level;
+        }
 
         if ($linkedProfile && !$this->employeeProfiles->contains('id', $linkedProfile->id)) {
             $this->employeeProfiles->push($linkedProfile);
@@ -465,6 +476,8 @@ new class extends Component
             $profile->branch_id = $employee->branch_id;
             $profile->save();
 
+            $this->saveBranchScopes($employee, $tenantId);
+
         });
 
         $message = $this->isEditing
@@ -527,10 +540,36 @@ new class extends Component
         $this->is_partner = false;
         $this->branch_id = null;
         $this->role_id = null;
+        $this->branchScopes = [];
 
         $this->is_active = true;
 
         $this->resetValidation();
+    }
+
+    /** Keeps only real overrides: a known branch, a known area and a level that area accepts. */
+    private function saveBranchScopes(User $employee, int $tenantId): void
+    {
+        \App\Models\UserBranchScope::query()->where('user_id', $employee->id)->delete();
+        if ($employee->is_owner) {
+            return;
+        }
+        $branchIds = \App\Models\Branch::query()->where('tenant_id', $tenantId)->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        foreach ($this->branchScopes as $branchId => $areas) {
+            if (! in_array((int) $branchId, $branchIds, true) || ! is_array($areas)) {
+                continue;
+            }
+            foreach ($areas as $area => $level) {
+                $accepted = \App\Services\DataScope::AREAS[$area][1] ?? [];
+                if ($level === '' || $level === null || ! in_array($level, $accepted, true)) {
+                    continue;
+                }
+                \App\Models\UserBranchScope::query()->create([
+                    'tenant_id' => $tenantId, 'user_id' => $employee->id, 'branch_id' => (int) $branchId,
+                    'area' => $area, 'level' => $level,
+                ]);
+            }
+        }
     }
 
     private function flashError(string $message): void
@@ -1310,7 +1349,7 @@ new class extends Component
                             الفرع
                         </flux:label>
 
-                        <flux:select wire:model="branch_id">
+                        <flux:select wire:model.live="branch_id">
 
                             <option value="">
                                 اختر الفرع
@@ -1344,7 +1383,7 @@ new class extends Component
                             الدور الوظيفي
                         </flux:label>
 
-                        <flux:select wire:model="role_id">
+                        <flux:select wire:model.live="role_id">
 
                             <option value="">
                                 اختر الدور
@@ -1367,6 +1406,55 @@ new class extends Component
                 </div>
 
             </div>
+
+
+            {{-- Data scope: the job's defaults, with this employee's exceptions per branch --}}
+            @if (! $is_partner && count($branches) > 0)
+                @php
+                    $scopeService = app(\App\Services\DataScope::class);
+                    $jobScopes = collect(\App\Services\DataScope::AREAS)->mapWithKeys(fn ($area, $key) => [$key => $scopeService->roleDefault($role_id ? (int) $role_id : null, $key)]);
+                @endphp
+                <div data-employee-branch-scopes class="rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                        <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">نطاق البيانات حسب الفرع</div>
+                        <p class="mt-0.5 text-xs text-zinc-500">يتبع وظيفته في كل فرع، إلا ما تغيّره هنا لهذا الموظف فقط.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-800/60">
+                                <tr>
+                                    <th class="px-3 py-2 text-start font-semibold">الفرع</th>
+                                    @foreach (\App\Services\DataScope::AREAS as [$scopeLabel])
+                                        <th class="px-3 py-2 text-start font-semibold">{{ $scopeLabel }}</th>
+                                    @endforeach
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                @foreach ($branches as $scopeBranch)
+                                    @php $isOwnBranch = ! $branch_id || (int) $branch_id === (int) $scopeBranch->id; @endphp
+                                    <tr wire:key="employee-scope-branch-{{ $scopeBranch->id }}">
+                                        <td class="whitespace-nowrap px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">
+                                            {{ $scopeBranch->name }}@if ($isOwnBranch && $branch_id) <span class="text-xs text-zinc-400">(فرعه)</span>@endif
+                                        </td>
+                                        @foreach (\App\Services\DataScope::AREAS as $scopeArea => [$scopeLabel, $scopeLevels])
+                                            @php $inherited = $jobScopes[$scopeArea][$isOwnBranch ? 'own' : 'other']; @endphp
+                                            <td class="px-3 py-2">
+                                                <select wire:model="branchScopes.{{ $scopeBranch->id }}.{{ $scopeArea }}" data-employee-scope="{{ $scopeBranch->id }}-{{ $scopeArea }}"
+                                                    class="w-full min-w-28 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                                                    <option value="">حسب الوظيفة ({{ \App\Services\DataScope::LEVELS[$inherited] }})</option>
+                                                    @foreach ($scopeLevels as $scopeLevel)
+                                                        <option value="{{ $scopeLevel }}">{{ \App\Services\DataScope::LEVELS[$scopeLevel] }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </td>
+                                        @endforeach
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
 
 
             {{-- Status --}}

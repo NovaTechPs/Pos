@@ -78,13 +78,28 @@ class ReportingService
     /** Net revenue of a sales document without tax and without the delivery fee collected by the courier. */
     public const ORDER_REVENUE_SQL = "CASE WHEN orders.type = 'return' THEN -(ABS(orders.total) - ABS(orders.tax_amount) - ABS(orders.delivery_fee)) ELSE orders.total - orders.tax_amount - orders.delivery_fee END";
 
+    /** The data scope area of a report: the account statement has its own, every other report shares «التقارير». */
+    public static function scopeArea(?string $report): string
+    {
+        return $report === 'statement' ? 'statement' : 'reports';
+    }
+
     /**
-     * Owners choose any branch. The account statement shows every branch to anyone allowed to
-     * see it, so receipts taken in another branch are not missing from a customer's account.
+     * Branches the user may see this report for (data scope); null means every branch, with «كل الفروع».
+     *
+     * @return list<int>|null
      */
+    public static function allowedBranchIds(User $user, ?string $report = null): ?array
+    {
+        return app(DataScope::class)->visibleBranchIds($user, self::scopeArea($report));
+    }
+
+    /** Whether the user picks the branch: allowed in every branch, or in more than one. */
     public static function choosesBranch(User $user, ?string $report = null): bool
     {
-        return $user->isTenantOwner() || $user->isSaaSAdmin() || ($report === 'statement' && $user->can(self::REPORTS['statement'][1]));
+        $allowed = self::allowedBranchIds($user, $report);
+
+        return $allowed === null || count($allowed) > 1;
     }
 
     public function __construct(public readonly User $user, ?int $branchId = null, bool $useActiveBranchWhenUnspecified = true, ?string $report = null)
@@ -92,10 +107,21 @@ class ReportingService
         $tenant = $user->isSaaSAdmin() ? session('active_tenant_id') : $user->tenant_id;
         abort_unless($tenant && DB::table('tenants')->where('id', $tenant)->exists(), 403, 'حدد المتجر أولاً.');
         $this->tenantId = (int) $tenant;
-        $activeBranchId = $user->activeBranchId();
-        $this->branchId = self::choosesBranch($user, $report)
-            ? ($useActiveBranchWhenUnspecified && $activeBranchId ? (int) $activeBranchId : $branchId)
-            : ($user->branch_id ? (int) $user->branch_id : $branchId);
+        $allowed = self::allowedBranchIds($user, $report);
+        if ($allowed === null) {
+            // Every branch: the chosen one, the active one, or all of them.
+            $activeBranchId = $user->activeBranchId();
+            $this->branchId = DataScope::unrestricted($user) && $useActiveBranchWhenUnspecified && $activeBranchId
+                ? (int) $activeBranchId
+                : $branchId;
+        } else {
+            // Only some branches: one of them, never «all», starting with the employee's own.
+            abort_if($allowed === [], 403, 'لا تملك صلاحية على هذا التقرير في أي فرع.');
+            $ownBranch = $user->branch_id ? (int) $user->branch_id : null;
+            $this->branchId = $branchId !== null && in_array($branchId, $allowed, true)
+                ? $branchId
+                : ($ownBranch !== null && in_array($ownBranch, $allowed, true) ? $ownBranch : $allowed[0]);
+        }
         if ($this->branchId) {
             abort_unless(Branch::withoutGlobalScopes()->where('tenant_id', $this->tenantId)->whereKey($this->branchId)->exists(), 404);
         }

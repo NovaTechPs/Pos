@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\TelegramLink;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
+use App\Services\DataScope;
 use App\Services\PaymentVoucherAccess;
 use App\Services\PdfFilename;
 use Illuminate\Http\Request;
@@ -25,12 +26,12 @@ class TenantInvoicePdfController extends Controller
         $order = Order::query()
             ->where('tenant_id', $request->user()->tenant_id)
             ->whereKey($orderId)
-            // Employees open only the invoices they created; the store owner opens every invoice.
-            ->when(! $request->user()->isTenantOwner() && ! $request->user()->isSaaSAdmin(),
-                fn ($query) => $query->where('created_by', $request->user()->id))
             ->with(['items.product', 'user', 'branch'])
             ->withSum('payments as collected_amount', 'amount')
             ->firstOrFail();
+        // The data scope decides: per branch, every invoice or only the ones the employee created.
+        abort_unless(app(DataScope::class)->canView($request->user(), $order->type === 'return' ? 'returns' : 'sales',
+            $order->branch_id ? (int) $order->branch_id : null, $order->created_by ? (int) $order->created_by : null), 404);
 
         return $this->pdfResponse($request, 'pages.tenant.pos.partials.invoice-pdf', [
             'order' => $order,
@@ -88,8 +89,8 @@ class TenantInvoicePdfController extends Controller
         abort_unless($request->user()?->can('returns.view'), 403);
         abort_unless(in_array($kind, ['sale', 'purchase'], true), 404);
         $tenantId = (int) (session('active_tenant_id') ?? $request->user()->tenant_id);
-        $query = DB::table($kind === 'sale' ? 'orders' : 'purchase_returns')->where('tenant_id', $tenantId)
-            ->when($request->user()->branch_id, fn ($query, $branch) => $query->where('branch_id', $branch));
+        $query = DB::table($kind === 'sale' ? 'orders' : 'purchase_returns')->where('tenant_id', $tenantId);
+        app(DataScope::class)->apply($query, $request->user(), 'returns');
         if ($kind === 'sale') {
             $query->where('type', 'return')->whereNull('deleted_at')->where('source', 'web')->whereNull('original_order_id')->whereNull('shift_id');
         } else {
