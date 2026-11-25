@@ -2716,6 +2716,8 @@ new class extends Component {
             </div>
         @endif
 
+        {{-- A saved invoice opens read-only: every field and button below stays disabled until «تعديل». --}}
+        <fieldset data-invoice-lock @disabled($currentOrderId && ! $invoiceEditMode) class="contents">
         {{-- ================================================================
              بيانات رأس الفاتورة
         ================================================================= --}}
@@ -3240,6 +3242,8 @@ new class extends Component {
 
         </div>
 
+        </fieldset>
+
         {{-- ================================================================
              اختصارات لوحة المفاتيح
         ================================================================= --}}
@@ -3325,7 +3329,7 @@ new class extends Component {
                     </dl>
                 @endif
                 <label for="sales-invoice-notes" class="mb-1 block text-sm font-black text-slate-800">{{ $noteDelivery ? 'ملاحظات التوصيل والفاتورة' : 'الملاحظة' }}</label>
-                <textarea id="sales-invoice-notes" wire:model="notes" rows="4" x-init="$nextTick(() => $el.focus())"
+                <textarea id="sales-invoice-notes" wire:model="notes" @readonly($currentOrderId && ! $invoiceEditMode) rows="4" x-init="$nextTick(() => $el.focus())"
                     placeholder="اكتب ملاحظة على الفاتورة أو شروط البيع..."
                     class="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></textarea>
                 <p class="mt-1 text-xs text-slate-500">تُحفظ الملاحظة مع الفاتورة عند الضغط على حفظ.</p>

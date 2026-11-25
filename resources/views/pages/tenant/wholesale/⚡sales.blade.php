@@ -2534,6 +2534,8 @@ new class extends Component {
                 {{-- Products --}}
                 {{-- ===================================================== --}}
 
+                {{-- A saved invoice opens read-only: products and invoice fields stay disabled until «تعديل». --}}
+                <fieldset data-invoice-lock @disabled($editingInvoiceId && ! $invoiceEditMode) class="contents">
                 <section data-search-nav class="flex min-h-0 flex-col gap-3 xl:col-span-7">
 
                     {{-- Search --}}
@@ -2659,6 +2661,7 @@ new class extends Component {
                     </div>
 
                 </section>
+                </fieldset>
 
 
                 {{-- ===================================================== --}}
@@ -2729,6 +2732,7 @@ new class extends Component {
                         @endif
 
                         <div class="space-y-3 p-4">
+                        <fieldset data-invoice-lock @disabled($editingInvoiceId && ! $invoiceEditMode) class="contents">
 
                             {{-- ================================================= --}}
                             {{-- Customer --}}
@@ -3180,6 +3184,7 @@ new class extends Component {
 
                             </div>
 
+                        </fieldset>
                         </div>
 
                     </div>

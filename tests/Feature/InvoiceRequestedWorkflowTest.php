@@ -613,6 +613,24 @@ test('sales save and settle saves the invoice only with its receipt and cancelli
         ->assertSet('errorMessage', 'اختر زبوناً للفاتورة قبل تسجيل سند القبض.');
 });
 
+test('a saved invoice opens with every field disabled until edit is pressed', function (string $page, string $loadMethod): void {
+    $component = Livewire::test('pages::tenant.'.$page.'.invoices')
+        ->set(...invoicePartyField($this->tenant->id, $page))
+        ->call('selectProduct', $this->product->id)
+        ->call('commitRowToCart')
+        ->assertSeeHtml('<fieldset data-invoice-lock  class="contents">')
+        ->call('saveInvoice');
+    $invoiceId = $page === 'sales' ? Order::query()->sole()->id : Purchase::query()->sole()->id;
+
+    $component->call($loadMethod, $invoiceId)
+        ->assertSeeHtml('<fieldset data-invoice-lock disabled class="contents">')
+        ->call('editLoadedInvoice')
+        ->assertDontSeeHtml('<fieldset data-invoice-lock disabled');
+})->with([
+    ['sales', 'loadOrder'],
+    ['purchases', 'loadPurchase'],
+]);
+
 test('saving an edited invoice opens a new invoice', function (string $page, string $currentIdField, string $loadMethod): void {
     $component = Livewire::test('pages::tenant.'.$page.'.invoices')
         ->set(...invoicePartyField($this->tenant->id, $page))

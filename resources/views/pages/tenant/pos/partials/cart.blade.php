@@ -400,8 +400,8 @@
                             @can('products.edit')
                                 <button
                                     type="button"
-                                    wire:click="editCartProduct({{ $item['id'] }})"
-                                    class="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+                                    wire:click="editCartProduct({{ $item['id'] }})" @disabled($invoiceLocked)
+                                    class="rounded-lg px-2 py-1 text-indigo-600 hover:bg-indigo-50 disabled:opacity-40"
                                     title="تعديل الصنف أو إضافة باركود"
                                     aria-label="تعديل {{ $item['name'] }}"
                                 >

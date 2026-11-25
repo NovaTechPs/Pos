@@ -9,6 +9,10 @@
 @import '../../vendor/livewire/flux/dist/flux.css';
 
 @source '../views';
+
+/* A saved invoice before «تعديل»: its fields and buttons look unavailable. */
+fieldset[data-invoice-lock]:disabled :is(input, select, textarea, button) { cursor: not-allowed; }
+fieldset[data-invoice-lock]:disabled button { opacity: .55; }
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../vendor/livewire/flux-pro/stubs/**/*.blade.php';
 @source '../../vendor/livewire/flux/stubs/**/*.blade.php';

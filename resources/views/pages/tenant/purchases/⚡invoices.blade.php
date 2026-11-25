@@ -2483,6 +2483,8 @@ new class extends Component {
             </div>
         @endif
 
+        {{-- A saved invoice opens read-only: every field and button below stays disabled until «تعديل». --}}
+        <fieldset data-invoice-lock @disabled($currentPurchaseId && ! $invoiceEditMode) class="contents">
         {{-- رأس الفاتورة --}}
         @php
             $showBranchField = ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin();
@@ -2891,6 +2893,8 @@ new class extends Component {
             @endif
         </div>
 
+
+        </fieldset>
 
         {{-- اختصارات لوحة المفاتيح --}}
         <div class="mt-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg">
