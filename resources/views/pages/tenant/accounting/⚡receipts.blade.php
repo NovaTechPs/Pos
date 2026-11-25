@@ -372,7 +372,7 @@ new class extends Component {
             return true;
         }
 
-        if (!$this->canChangeVoucher($id)) {
+        if (!$this->canChangeVoucher($id) || $this->refuseVoucherOutOfScope($id)) {
             return false;
         }
 

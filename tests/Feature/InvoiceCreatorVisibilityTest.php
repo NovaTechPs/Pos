@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\DataScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -54,7 +55,7 @@ test('employees browse, search and reopen only their own invoices at the point o
         ->set('searchInvoiceQuery', 'POS-OTHER-1')->call('searchInvoice')->assertSet('currentInvoiceId', $this->own->id)
         ->call('loadInvoice', $this->others->id)->assertSet('currentInvoiceId', $this->own->id)
         ->call('scanBarcode', 'POS-OTHER-2')->assertSet('currentInvoiceId', $this->own->id)
-        ->assertSet('errorMessage', 'هذه الفاتورة أنشأها مستخدم آخر؛ يمكنك فتح فواتيرك فقط.');
+        ->assertSet('errorMessage', DataScope::refusal('pos'));
 
     $pos->set('currentInvoiceId', $this->others->id)->call('printReceipt')->assertNotDispatched('print-receipt');
     $this->get(route('tenant.sale-invoices.pdf', $this->others->id))->assertNotFound();

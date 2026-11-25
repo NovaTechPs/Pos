@@ -4,6 +4,7 @@ use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Order;
 use App\Models\Party;
+use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\RoleDataScope;
@@ -145,4 +146,51 @@ test('the owner sets a job\'s scope on the jobs screen and an employee\'s except
         ->toBe([['branch_id' => $this->third->id, 'area' => 'sales', 'level' => DataScope::NONE]])
         ->and(app(DataScope::class)->level($this->employee->fresh(), 'sales', $this->third->id))->toBe(DataScope::NONE)
         ->and(app(DataScope::class)->level($this->employee->fresh(), 'sales', $this->second->id))->toBe(DataScope::VIEW);
+});
+
+test('receipt and payment vouchers follow their own scope per branch', function (): void {
+    $voucher = fn (Branch $branch, User $creator, string $type, string $number): Payment => Payment::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $branch->id, 'party_id' => $this->customer->id, 'created_by' => $creator->id,
+        'type' => $type, 'voucher_number' => $number, 'amount' => 5, 'payment_method' => 'cash', 'payment_date' => now(),
+    ]);
+    $mine = $voucher($this->home, $this->employee, 'receipt', 'R-MINE');
+    $colleagues = $voucher($this->home, $this->colleague, 'receipt', 'R-COLLEAGUE');
+    $voucher($this->second, $this->colleague, 'receipt', 'R-SECOND');
+    $voucher($this->second, $this->colleague, 'payment', 'P-SECOND');
+    $numbers = fn (): array => Payment::query()->visibleTo($this->employee)->orderBy('voucher_number')->pluck('voucher_number')->all();
+
+    // Without a saved scope: only the vouchers he wrote.
+    expect($numbers())->toBe(['R-MINE'])
+        ->and($mine->mayBeChangedBy($this->employee))->toBeTrue()
+        ->and($colleagues->mayBeChangedBy($this->employee))->toBeFalse();
+
+    // Receipts: everything in his branch, read-only in the second; payments stay his own.
+    RoleDataScope::query()->create(['tenant_id' => $this->tenant->id, 'role_id' => $this->role->id, 'area' => 'receipts', 'own_branch' => DataScope::FULL, 'other_branches' => DataScope::VIEW]);
+    expect($numbers())->toBe(['R-COLLEAGUE', 'R-MINE', 'R-SECOND'])
+        ->and($colleagues->mayBeChangedBy($this->employee))->toBeTrue()
+        ->and(Payment::query()->where('voucher_number', 'R-SECOND')->first()->mayBeChangedBy($this->employee))->toBeFalse();
+});
+
+test('the app shows and changes only the point of sale invoices in the employee\'s scope', function (): void {
+    $order = fn (Branch $branch, User $creator, string $number): Order => Order::query()->create([
+        'tenant_id' => $this->tenant->id, 'branch_id' => $branch->id, 'created_by' => $creator->id,
+        'invoice_number' => $number, 'type' => 'pos', 'status' => 'completed', 'subtotal' => 10, 'total' => 10, 'paid_amount' => 10,
+    ]);
+    $colleagues = $order($this->home, $this->colleague, 'POS-COLLEAGUE');
+    $mine = $order($this->home, $this->employee, 'POS-MINE');
+    $permissions = collect(['pos.invoice.search', 'sales_invoices.view', 'sales_invoices.delete'])
+        ->map(fn (string $name): Permission => Permission::query()->firstOrCreate(['name' => $name], ['display_name' => $name, 'group' => 'Sales']));
+    $this->role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
+    $this->actingAs($this->employee);
+
+    // By default an employee reaches only the invoices they created.
+    $this->getJson('/api/pos/invoices?branch_id='.$this->home->id)->assertOk()->assertJsonPath('order.invoice_number', 'POS-MINE');
+    $this->getJson('/api/pos/invoices?branch_id='.$this->home->id.'&search=POS-COLLEAGUE')->assertNotFound();
+
+    // «عرض فقط» in his branch: sees the colleague's invoice but cannot delete it.
+    RoleDataScope::query()->create(['tenant_id' => $this->tenant->id, 'role_id' => $this->role->id, 'area' => 'pos', 'own_branch' => DataScope::VIEW, 'other_branches' => DataScope::NONE]);
+    $this->getJson('/api/pos/invoices?branch_id='.$this->home->id.'&search=POS-COLLEAGUE')->assertOk()
+        ->assertJsonPath('order.editable_in_pos', false);
+    $this->deleteJson('/api/pos/invoices/'.$colleagues->id)->assertForbidden();
+    expect($mine->fresh())->not->toBeNull();
 });

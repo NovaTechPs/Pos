@@ -27,7 +27,7 @@ class VoucherController extends Controller
         $vouchers = Payment::query()->with('party')->where('tenant_id', $user->tenant_id)
             ->when($request->filled('type'), fn ($query) => $query->where('type', $request->string('type')))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
-            ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
+            ->visibleTo($user)
             ->when($request->filled('from'), fn ($query) => $query->whereDate('payment_date', '>=', $request->date('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('payment_date', '<=', $request->date('to')))
             ->latest('payment_date')->paginate(min(100, max(1, $request->integer('per_page', 20))));

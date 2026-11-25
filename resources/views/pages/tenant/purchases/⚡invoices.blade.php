@@ -8,6 +8,7 @@ use App\Models\Party;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\Product;
+use App\Services\DataScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -129,7 +130,7 @@ new class extends Component {
     {
         $this->trackExpiry = TenantSetting::getBool((int) $this->tenantId(), 'track_expiry');
         $this->selectedBranchId = $this->resolveBranchId();
-        $this->purchaseBranchFilter = (auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin()) ? null : $this->selectedBranchId;
+        $this->purchaseBranchFilter = null;
         $this->startNewInvoice(false);
 
         $purchaseId = request()->integer('purchase');
@@ -249,14 +250,9 @@ new class extends Component {
 
     public function updatedPurchaseBranchFilter($value): void
     {
-        $user = auth()->user();
-        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
-            $this->purchaseBranchFilter = $user?->activeBranchId();
-            return;
-        }
-
         $branchId = $value === '' || $value === null ? null : (int) $value;
-        if ($branchId && ! Branch::query()->where('tenant_id', $this->tenantId())->whereKey($branchId)->exists()) {
+        $allowed = $this->purchaseBranchChoices();
+        if ($branchId && (($allowed !== null && ! in_array($branchId, $allowed, true)) || ! Branch::query()->where('tenant_id', $this->tenantId())->whereKey($branchId)->exists())) {
             $this->purchaseBranchFilter = null;
             $this->errorMessage = 'الفرع المحدد غير صالح لهذا المتجر.';
             return;
@@ -265,12 +261,34 @@ new class extends Component {
         $this->purchaseBranchFilter = $branchId;
     }
 
-    private function purchaseBranchScopeId(): ?int
+    private function dataScope(): DataScope
+    {
+        return app(DataScope::class);
+    }
+
+    /**
+     * Purchases the user may see under their data scope («فواتير المشتريات»: per branch, all or only their
+     * own), narrowed to the branch chosen in the purchase list.
+     */
+    private function visiblePurchases($query, string $prefix = '')
+    {
+        $this->dataScope()->apply($query, auth()->user(), 'purchases', $prefix.'branch_id', $prefix.'created_by');
+
+        return $query->when($this->purchaseBranchFilter, fn ($query, $branchId) => $query->where($prefix.'branch_id', $branchId));
+    }
+
+    /** Editing, deleting and adding payments to a saved purchase. */
+    private function mayChangePurchase(object $purchase): bool
+    {
+        return $this->dataScope()->canChange(auth()->user(), 'purchases', $purchase->branch_id ? (int) $purchase->branch_id : null, $purchase->created_by ? (int) $purchase->created_by : null);
+    }
+
+    /** Branches the user may browse purchases in; null means every branch. @return list<int>|null */
+    private function purchaseBranchChoices(): ?array
     {
         $user = auth()->user();
-        return $user?->isTenantOwner() || $user?->isSaaSAdmin()
-            ? $this->purchaseBranchFilter
-            : ($user?->branch_id ? (int) $user->branch_id : $user?->activeBranchId());
+
+        return $user ? $this->dataScope()->visibleBranchIds($user, 'purchases') : null;
     }
 
     /*
@@ -1055,6 +1073,13 @@ new class extends Component {
 
         try {
             $this->authorize($this->currentPurchaseId ? 'purchases.edit' : 'purchases.create');
+            if (! $this->currentPurchaseId && ! DataScope::unrestricted(auth()->user())
+                && ! in_array((int) $this->selectedBranchId, $this->dataScope()->creatableBranchIds(auth()->user(), 'purchases'), true)) {
+                $this->errorMessage = DataScope::refusal('purchases');
+                $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
+                return;
+            }
         } catch (\Illuminate\Auth\Access\AuthorizationException) {
             $this->errorMessage = 'لا تملك صلاحية حفظ أو تعديل فاتورة المشتريات.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
@@ -1173,6 +1198,9 @@ new class extends Component {
 
                     if (!$purchase) {
                         throw new \RuntimeException('فاتورة المشتريات المطلوب تعديلها غير موجودة.');
+                    }
+                    if (! $this->mayChangePurchase($purchase)) {
+                        throw new \DomainException(DataScope::refusal('purchases'));
                     }
 
                     if (DB::table('purchase_returns')->where('tenant_id', $tenantId)
@@ -1417,6 +1445,7 @@ new class extends Component {
 
         $purchase = DB::table('purchases')->where('tenant_id', $this->tenantId())->where('id', $this->currentPurchaseId)->first();
         abort_unless($purchase, 404);
+        abort_unless($this->mayChangePurchase($purchase), 403, DataScope::refusal('purchases'));
         $linkedPayments = (float) Payment::query()
             ->where('tenant_id', $this->tenantId())
             ->where('purchase_id', $purchase->id)
@@ -1450,6 +1479,7 @@ new class extends Component {
                 ->lockForUpdate()
                 ->first();
             abort_unless($purchase && $purchase->supplier_id, 422);
+            abort_unless($this->mayChangePurchase($purchase), 403, DataScope::refusal('purchases'));
 
             $supplier = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($purchase->supplier_id);
             $amount = round((float) $validated['settlementAmount'], 2);
@@ -1659,7 +1689,7 @@ new class extends Component {
 
         $query = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->tap(fn ($query) => $this->visiblePurchases($query))
             ->where(function ($q) use ($search) {
                 $q->where('reference_number', 'like', "%{$search}%");
                 $supplierIds = Party::query()
@@ -1701,7 +1731,7 @@ new class extends Component {
 
         $exists = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->tap(fn ($query) => $this->visiblePurchases($query))
             ->where('id', $purchaseId)
             ->exists();
 
@@ -1727,7 +1757,7 @@ new class extends Component {
 
         $purchase = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->tap(fn ($query) => $this->visiblePurchases($query))
             ->where('id', $purchaseId)
             ->first();
 
@@ -1830,7 +1860,7 @@ new class extends Component {
 
         $query = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId));
+            ->tap(fn ($query) => $this->visiblePurchases($query));
 
         if ($this->currentPurchaseId) {
             $query->where('id', '<', $this->currentPurchaseId);
@@ -1856,7 +1886,7 @@ new class extends Component {
 
         $purchaseId = DB::table('purchases')
             ->where('tenant_id', $tenantId)
-            ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->tap(fn ($query) => $this->visiblePurchases($query))
             ->where('id', '>', $this->currentPurchaseId)
             ->orderBy('id')
             ->value('id');
@@ -1988,6 +2018,9 @@ new class extends Component {
             $number = DB::transaction(function () use ($tenantId): string {
                 $purchase = DB::table('purchases')->where('tenant_id', $tenantId)->where('id', $this->currentPurchaseId)
                     ->whereNull('deleted_at')->lockForUpdate()->first();
+                if ($purchase && ! $this->mayChangePurchase($purchase)) {
+                    throw new \DomainException(DataScope::refusal('purchases'));
+                }
                 if (! $purchase) {
                     throw new \DomainException('الفاتورة غير موجودة أو حُذفت من قبل.');
                 }
@@ -2054,6 +2087,14 @@ new class extends Component {
     public function editLoadedInvoice(): void
     {
         if (! $this->currentPurchaseId) {
+            return;
+        }
+
+        $purchase = DB::table('purchases')->where('tenant_id', $this->tenantId())->where('id', $this->currentPurchaseId)->first();
+        if (! $purchase || ! $this->mayChangePurchase($purchase)) {
+            $this->errorMessage = DataScope::refusal('purchases');
+            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
+
             return;
         }
 
@@ -2230,7 +2271,7 @@ new class extends Component {
                     $join->on('b.id', '=', 'p.branch_id')->on('b.tenant_id', '=', 'p.tenant_id');
                 })
                 ->where('p.tenant_id', $tenantId)
-                ->when($this->purchaseBranchScopeId(), fn ($query, $branchId) => $query->where('p.branch_id', $branchId))
+                ->tap(fn ($query) => $this->visiblePurchases($query, 'p.'))
                 ->when($this->purchaseBranchFilter, fn ($query, $branchId) => $query->where('p.branch_id', (int) $branchId))
                 ->when($search !== '', function ($query) use ($search): void {
                     $query->where(function ($matches) use ($search): void {
@@ -2284,7 +2325,10 @@ new class extends Component {
                 ? Product::query()->where('tenant_id', $tenantId)->whereIn('id', array_column($this->cart, 'id'))->pluck('product_number', 'id')->filter()->all()
                 : [],
             'branches' => $branches,
-            'purchaseBranches' => $branches,
+            // Only the branches the user may browse purchases in (all of them for the owner).
+            'purchaseBranches' => ($choices = $this->purchaseBranchChoices()) === null ? $branches : $branches->whereIn('id', $choices)->values(),
+            'purchaseBranchChoice' => $choices === null || count($choices) > 1,
+            'purchaseBranchChoices' => $choices,
             'purchaseSearchResults' => $purchaseSearchResults,
             'productSearchLocked' => $productSearchLocked,
             'productResults' => $productResults,
@@ -2452,9 +2496,9 @@ new class extends Component {
                     </div>
 
                     <div class="grid gap-2 border-b border-slate-200 p-3 sm:grid-cols-[1fr_13rem_auto] sm:p-4">
-                        @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
+                        @if ($purchaseBranchChoice)
                             <select wire:model.live="purchaseBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
-                                <option value="">كل الفروع</option>
+                                <option value="">{{ $purchaseBranchChoices === null ? 'كل الفروع' : 'كل فروعي' }}</option>
                                 @foreach ($purchaseBranches as $branch)<option wire:key="purchase-invoice-filter-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
                             </select>
                         @endif

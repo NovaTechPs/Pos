@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Services\ApiShiftLedger;
+use App\Services\DataScope;
 use App\Services\PartyBalance;
 use App\Services\StockMovementContext;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,7 @@ class ReturnController extends Controller
 
         $order = Order::where('tenant_id', $tenantId)
             ->whereInvoiceNumber($invoiceNumber)
-            ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
+            ->when(! DataScope::unrestricted($user), fn ($query) => $query->whereIn('branch_id', app(DataScope::class)->creatableBranchIds($user, 'returns')))
             ->whereIn('type', ['pos', 'wholesale'])
             ->where('status', 'completed')
             ->with(['items.product', 'branch', 'party'])
@@ -81,7 +82,7 @@ class ReturnController extends Controller
             $shift = ApiShiftLedger::activeForWrite($tenantId, (int) $validated['branch_id'], $user->id);
             $originalOrder = Order::query()->where('tenant_id', $tenantId)
                 ->where('branch_id', $validated['branch_id'])
-                ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
+                ->when(! DataScope::unrestricted($user), fn ($query) => $query->whereIn('branch_id', app(DataScope::class)->creatableBranchIds($user, 'returns')))
                 ->whereIn('type', ['pos', 'wholesale'])
                 ->where('status', 'completed')
                 ->with('items')

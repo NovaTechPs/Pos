@@ -21,6 +21,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use App\Models\TenantSetting;
+use App\Services\DataScope;
 use App\Services\DesktopPosConnection;
 use App\Services\PosProductSearch;
 
@@ -475,6 +476,11 @@ new class extends Component {
         }
 
         $invoice = $this->invoiceNavigationQuery()->find($this->editingInvoiceId);
+        if ($invoice && ! $this->mayChangePosInvoice($invoice)) {
+            $this->errorMessage = DataScope::refusal('pos');
+            $this->dispatch('pos-sound', type: 'error');
+            return;
+        }
         if ($invoice?->type === 'return') {
             $this->editCashReturn((int) $invoice->id, true);
             return;
@@ -1500,6 +1506,10 @@ new class extends Component {
         $order = Order::query()->where('tenant_id', $this->tenantId())->where('branch_id', $this->getActiveBranchId())
             ->where('type', 'return')->whereNull('original_order_id')
             ->where('invoice_number', 'like', 'RET-CASH-%')->with('items.product')->findOrFail($orderId);
+        if (! $this->mayChangePosInvoice($order)) {
+            $this->errorMessage = DataScope::refusal('pos');
+            return;
+        }
         $shift = Shift::query()->where('tenant_id', $this->tenantId())->find($order->shift_id);
         if (! $shift || $shift->status !== 'open' || (int) $shift->opened_by !== (int) auth()->id()) {
             $this->errorMessage = 'يمكن تعديل المرتجع داخل شيفتك المفتوح فقط.';
@@ -1841,7 +1851,7 @@ new class extends Component {
             ->first();
 
         if ($invoice && ! $this->onlyOwnInvoices(Order::query())->whereKey($invoice->id)->exists()) {
-            $this->errorMessage = 'هذه الفاتورة أنشأها مستخدم آخر؛ يمكنك فتح فواتيرك فقط.';
+            $this->errorMessage = DataScope::refusal('pos');
             $this->barcode = '';
             $this->dispatch('pos-barcode-handled', componentId: $this->getId(), barcode: $rawInput);
             $this->dispatch('pos-sound', type: 'error');
@@ -2691,6 +2701,10 @@ new class extends Component {
             $this->errorMessage = 'اختر فاتورة محفوظة وغير محذوفة أولاً.';
             return;
         }
+        if (! $this->mayChangePosInvoice($invoice)) {
+            $this->errorMessage = DataScope::refusal('pos');
+            return;
+        }
 
         try {
             DB::transaction(function () use ($invoice): void {
@@ -2754,19 +2768,23 @@ new class extends Component {
     }
 
     /**
-     * Employees reopen, search and browse only the invoices they created; the store owner sees every invoice.
+     * Invoices the user may reopen, search and browse under their data scope («فواتير نقطة البيع»):
+     * by default an employee sees only the invoices they created; the store owner sees every invoice.
      *
      * @param  \Illuminate\Database\Eloquent\Builder<Order>  $query
      * @return \Illuminate\Database\Eloquent\Builder<Order>
      */
     private function onlyOwnInvoices($query)
     {
-        $user = Auth::user();
-        if ($user && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
-            $query->where('created_by', $user->id);
-        }
+        app(DataScope::class)->apply($query, Auth::user(), 'pos', $query->qualifyColumn('branch_id'), $query->qualifyColumn('created_by'));
 
         return $query;
+    }
+
+    /** Editing and deleting a saved invoice: «عرض فقط» opens it without changing it. */
+    private function mayChangePosInvoice(Order $invoice): bool
+    {
+        return app(DataScope::class)->canChange(Auth::user(), 'pos', $invoice->branch_id ? (int) $invoice->branch_id : null, $invoice->created_by ? (int) $invoice->created_by : null);
     }
 
     private function invoiceNavigationQuery()
@@ -3718,6 +3736,9 @@ new class extends Component {
 
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة الأصلية لم تعد موجودة. رقمها الداخلي: ' . $editingInvoiceId);
+                    }
+                    if (! $this->mayChangePosInvoice($order)) {
+                        throw new \DomainException(DataScope::refusal('pos'));
                     }
 
                     if ($order->type === 'return' || Order::query()->where('tenant_id', $tenantId)

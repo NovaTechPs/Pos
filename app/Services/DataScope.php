@@ -42,21 +42,30 @@ class DataScope
      */
     public const AREAS = [
         'sales' => ['فواتير المبيعات', [self::NONE, self::VIEW, self::OWN, self::FULL]],
+        'pos' => ['فواتير نقطة البيع', [self::NONE, self::VIEW, self::OWN, self::FULL]],
         'returns' => ['المردودات', [self::NONE, self::VIEW, self::OWN, self::FULL]],
+        'purchases' => ['فواتير المشتريات', [self::NONE, self::VIEW, self::OWN, self::FULL]],
+        'receipts' => ['سندات القبض', [self::NONE, self::VIEW, self::OWN, self::FULL]],
+        'payments' => ['سندات الصرف', [self::NONE, self::VIEW, self::OWN, self::FULL]],
         'reports' => ['التقارير', [self::NONE, self::VIEW]],
         'statement' => ['كشف حساب الزبائن والموردين', [self::NONE, self::VIEW]],
     ];
 
     /**
      * Without a saved scope, a job keeps the behaviour from before scopes existed: an employee works on
-     * the sales invoices they created and on every return of their branch, sees reports of their branch
-     * and statements of every branch.
+     * the sales and POS invoices they created, on every return and purchase of their branch, on the vouchers
+     * they wrote, sees reports of their branch and statements of every branch.
      *
      * @var array<string, array{own: string, other: string}>
      */
     public const DEFAULTS = [
         'sales' => ['own' => self::OWN, 'other' => self::NONE],
+        'pos' => ['own' => self::OWN, 'other' => self::NONE],
         'returns' => ['own' => self::FULL, 'other' => self::NONE],
+        'purchases' => ['own' => self::FULL, 'other' => self::NONE],
+        // Vouchers: the ones the employee wrote, in any branch.
+        'receipts' => ['own' => self::OWN, 'other' => self::OWN],
+        'payments' => ['own' => self::OWN, 'other' => self::OWN],
         'reports' => ['own' => self::VIEW, 'other' => self::NONE],
         'statement' => ['own' => self::VIEW, 'other' => self::VIEW],
     ];

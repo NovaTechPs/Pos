@@ -14,7 +14,9 @@ use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Shift;
 use App\Models\TenantSetting;
+use App\Models\User;
 use App\Services\ApiShiftLedger;
+use App\Services\DataScope;
 use App\Services\PartyBalance;
 use App\Services\SalesInvoiceNumber;
 use App\Services\StockMovementContext;
@@ -40,7 +42,7 @@ class PosController extends Controller
             ->where('branch_id', $validated['branch_id'])
             // Every sale shares one number sequence, so the archive walks POS, web and wholesale invoices alike.
             ->whereIn('type', ['pos', 'wholesale', 'online'])->where('status', 'completed')
-            ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id));
+            ->tap(fn ($query) => $this->visibleOrders($query, $user));
         if (! empty($validated['search'])) {
             $search = $validated['search'];
             $query->where(fn ($query) => $query->whereInvoiceNumber($search)->orWhere('id', ctype_digit($search) ? (int) $search : 0));
@@ -65,7 +67,7 @@ class PosController extends Controller
         $order->setAttribute('linked_receipt', $receipt);
         $order->setAttribute('payment_method', $receipt?->payment_method ?? 'cash');
         // Only point-of-sale invoices are edited or deleted from the POS app; the rest from the sales invoice page.
-        $order->setAttribute('editable_in_pos', $order->type === 'pos');
+        $order->setAttribute('editable_in_pos', $order->type === 'pos' && $this->mayChangeOrder($order, $user));
 
         return response()->json(['order' => $order]);
     }
@@ -119,7 +121,7 @@ class PosController extends Controller
     {
         $user = $request->user();
         abort_unless($order->tenant_id === $user->tenant_id && $order->type === 'pos' && $order->status === 'completed', 404);
-        abort_unless(! $user->branch_id || $user->isTenantOwner() || $order->branch_id === $user->branch_id, 404);
+        abort_unless($this->mayChangeOrder($order, $user), 403, DataScope::refusal('pos'));
         abort_if(config('branch-sync.mode') === 'edge', 422, 'الحذف متاح من النظام المركزي فقط.');
         DB::transaction(function () use ($order, $user): void {
             ApiShiftLedger::activeForWrite($user->tenant_id, $order->branch_id, $user->id);
@@ -183,6 +185,28 @@ class PosController extends Controller
         return ['total' => round($bundles * (float) $offerPrice + $remainder * $price, 2), 'quantity' => $offerQuantity, 'price' => (float) $offerPrice];
     }
 
+    /**
+     * Limits invoices to the user's data scope: point-of-sale invoices follow «فواتير نقطة البيع», the
+     * other sales (wholesale, online) follow «فواتير المبيعات».
+     */
+    private function visibleOrders($query, User $user)
+    {
+        if (DataScope::unrestricted($user)) {
+            return $query;
+        }
+        $scope = app(DataScope::class);
+
+        return $query->where(fn ($any) => $any
+            ->where(fn ($pos) => $scope->apply($pos->where('orders.type', 'pos'), $user, 'pos', 'orders.branch_id', 'orders.created_by'))
+            ->orWhere(fn ($sales) => $scope->apply($sales->where('orders.type', '!=', 'pos'), $user, 'sales', 'orders.branch_id', 'orders.created_by')));
+    }
+
+    private function mayChangeOrder(Order $order, User $user): bool
+    {
+        return app(DataScope::class)->canChange($user, $order->type === 'pos' ? 'pos' : 'sales',
+            $order->branch_id ? (int) $order->branch_id : null, $order->created_by ? (int) $order->created_by : null);
+    }
+
     public function held(Request $request): JsonResponse
     {
         $user = $request->user() ?? auth()->user();
@@ -217,7 +241,7 @@ class PosController extends Controller
             ->where('type', $type)
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
-            ->when($user->branch_id && ! $user->isTenantOwner(), fn ($query) => $query->where('branch_id', $user->branch_id))
+            ->tap(fn ($query) => $this->visibleOrders($query, $user))
             ->when($request->filled('from'), fn ($query) => $query->whereDate('created_at', '>=', $request->date('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date('to')))
             ->when($request->filled('search'), fn ($query) => $query->where(function ($inner) use ($request): void {
@@ -626,6 +650,7 @@ class PosController extends Controller
                 abort_if(config('branch-sync.mode') === 'edge', 422, 'التعديل متاح من النظام المركزي فقط.');
                 $editing = Order::query()->where('tenant_id', $tenantId)->where('branch_id', $branchId)
                     ->where('type', 'pos')->where('status', 'completed')->whereKey($validated['invoice_id'])->lockForUpdate()->firstOrFail();
+                abort_unless($this->mayChangeOrder($editing, $user), 403, DataScope::refusal('pos'));
                 $previousReceipt = Payment::query()->where('tenant_id', $tenantId)->where('order_id', $editing->id)
                     ->where('type', 'receipt')->lockForUpdate()->first(['payment_date', 'notes']);
                 $this->reverseInvoice($editing);

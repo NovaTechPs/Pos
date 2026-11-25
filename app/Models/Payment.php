@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\DataScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -101,17 +102,28 @@ class Payment extends Model
     }
 
     /**
-     * Employees see, reopen and change only the vouchers they created; the store owner sees every voucher.
+     * Vouchers the user may see under their data scope: receipt vouchers follow «سندات القبض», payment
+     * vouchers «سندات الصرف» (per branch: none, view, only their own, or all). The owner sees every voucher.
      *
      * @param  Builder<Payment>  $query
      * @return Builder<Payment>
      */
     public function scopeVisibleTo(Builder $query, ?User $user): Builder
     {
-        if ($user && ! $user->isTenantOwner() && ! $user->isSaaSAdmin()) {
-            $query->where('created_by', $user->id);
+        if (DataScope::unrestricted($user)) {
+            return $query;
         }
+        $scope = app(DataScope::class);
 
-        return $query;
+        return $query->where(fn (Builder $any) => $any
+            ->where(fn (Builder $receipts) => $scope->apply($receipts->where('payments.type', 'receipt'), $user, 'receipts', 'payments.branch_id', 'payments.created_by'))
+            ->orWhere(fn (Builder $payments) => $scope->apply($payments->where('payments.type', 'payment'), $user, 'payments', 'payments.branch_id', 'payments.created_by')));
+    }
+
+    /** Editing or deleting this voucher: «full» in its branch, or «own» when the user wrote it. */
+    public function mayBeChangedBy(?User $user): bool
+    {
+        return app(DataScope::class)->canChange($user, $this->type === 'payment' ? 'payments' : 'receipts',
+            $this->branch_id ? (int) $this->branch_id : null, $this->created_by ? (int) $this->created_by : null);
     }
 }

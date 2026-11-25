@@ -427,7 +427,7 @@ new class extends Component
 
     public function confirmDelete(int $id): void
     {
-        if (!$this->canChangeVoucher($id)) {
+        if (!$this->canChangeVoucher($id) || $this->refuseVoucherOutOfScope($id)) {
             return;
         }
 
@@ -444,7 +444,7 @@ new class extends Component
 
     public function delete(): void
     {
-        if (!$this->canChangeVoucher($this->deleteId)) {
+        if (!$this->canChangeVoucher($this->deleteId) || $this->refuseVoucherOutOfScope($this->deleteId)) {
             return;
         }
 

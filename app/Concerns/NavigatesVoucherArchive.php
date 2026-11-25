@@ -18,7 +18,7 @@ trait NavigatesVoucherArchive
 
     public function unlockVoucher(): void
     {
-        if ($this->paymentId) {
+        if ($this->paymentId && ! $this->refuseVoucherOutOfScope($this->paymentId)) {
             $this->voucherLocked = false;
         }
     }
@@ -27,12 +27,35 @@ trait NavigatesVoucherArchive
     public function editVoucherNow(int $id): void
     {
         $this->edit($id);
-        $this->voucherLocked = false;
+        if ($this->paymentId && ! $this->refuseVoucherOutOfScope($this->paymentId)) {
+            $this->voucherLocked = false;
+        }
+    }
+
+    /**
+     * True, with a message, when the data scope lets the user see this voucher but not change it
+     * («عرض فقط» in its branch, or «ما أنشأه فقط» for someone else's voucher).
+     */
+    protected function refuseVoucherOutOfScope(?int $id): bool
+    {
+        if (! $id) {
+            return false;
+        }
+        $voucher = Payment::query()->where('tenant_id', $this->getTenantId())->find($id);
+        if (! $voucher || $voucher->mayBeChangedBy(auth()->user())) {
+            return false;
+        }
+        $this->dispatch('toast', type: 'error', message: 'لا تملك صلاحية تعديل هذا السند في هذا الفرع.');
+
+        return true;
     }
 
     /** True, with a message, while a saved voucher is still view-only. */
     protected function refuseLockedVoucher(): bool
     {
+        if ($this->paymentId && $this->refuseVoucherOutOfScope($this->paymentId)) {
+            return true;
+        }
         if (! $this->voucherLocked || ! $this->paymentId) {
             return false;
         }
