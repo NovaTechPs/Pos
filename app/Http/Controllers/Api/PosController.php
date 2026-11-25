@@ -395,6 +395,7 @@ class PosController extends Controller
             'categories' => $categories,
             'offline_contract_version' => 1,
             'pos_line_contract_version' => 2,
+            'can_sell_below_cost' => $user->hasPermission('pos.sell_below_cost'),
         ]);
     }
 
@@ -692,6 +693,9 @@ class PosController extends Controller
                 $lineTotal = $offer['total'] ?? round($quantity * $price, 2);
                 $subtotal += $lineTotal;
                 $cost = (float) $product->cost_price;
+                if (! $isGift && $price < $cost && ! $user->hasPermission('pos.sell_below_cost')) {
+                    throw ValidationException::withMessages(['items' => 'لا تملك صلاحية البيع بأقل من التكلفة.']);
+                }
                 $totalCost += $cost * $quantity;
                 $lines[] = compact('product', 'quantity', 'price', 'lineTotal', 'cost', 'stockRows', 'isGift', 'offer');
             }

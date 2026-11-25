@@ -194,3 +194,31 @@ test('pos order ignores forged totals and rejects a mismatch', function () {
 
     $this->assertDatabaseCount('orders', 0);
 });
+
+test('an app cashier needs the below cost permission to sell under cost, as on the web', function () {
+    $branch = Branch::create(['name' => 'Main Branch', 'tenant_id' => 1]);
+    $product = Product::create(['name' => 'Cost Product', 'tenant_id' => 1, 'cost_price' => 80]);
+    BranchProduct::create(['tenant_id' => 1, 'branch_id' => $branch->id, 'product_id' => $product->id, 'stock_quantity' => 10, 'retail_price' => 75]);
+    $role = Role::create(['tenant_id' => 1, 'name' => 'Cashier']);
+    foreach (['pos.view', 'pos.sale.checkout'] as $name) {
+        $role->permissions()->attach(Permission::firstOrCreate(['name' => $name], ['display_name' => $name, 'group' => 'POS']));
+    }
+    $cashier = User::factory()->create(['tenant_id' => 1, 'type' => 'tenant_user', 'branch_id' => $branch->id, 'role_id' => $role->id, 'is_active' => true]);
+    $sale = [
+        'branch_id' => $branch->id,
+        'payment_method' => 'cash',
+        'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 75]],
+    ];
+
+    $this->actingAs($cashier)->getJson('/api/pos/products?branch_id='.$branch->id)
+        ->assertOk()->assertJsonPath('can_sell_below_cost', false);
+    $this->actingAs($cashier)->postJson('/api/pos/orders', $sale)
+        ->assertUnprocessable()->assertJsonPath('errors.items.0', 'لا تملك صلاحية البيع بأقل من التكلفة.');
+    $this->assertDatabaseCount('orders', 0);
+
+    $role->permissions()->attach(Permission::firstOrCreate(['name' => 'pos.sell_below_cost'], ['display_name' => 'Below cost', 'group' => 'POS']));
+    $cashier = $cashier->fresh();
+    $this->actingAs($cashier)->getJson('/api/pos/products?branch_id='.$branch->id)
+        ->assertOk()->assertJsonPath('can_sell_below_cost', true);
+    $this->actingAs($cashier)->postJson('/api/pos/orders', $sale)->assertCreated();
+});
