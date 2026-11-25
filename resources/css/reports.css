@@ -287,10 +287,18 @@
 .reports-statement-filter .reports-filter-fields{display:flex;flex-wrap:wrap;align-items:end;gap:6px 8px}
 .reports-statement-filter .reports-filter-fields>.grid{display:contents}
 .reports-statement-filter .reports-filter-fields>.grid>*{flex:0 0 auto;width:auto}
-.reports-statement-filter .reports-selected-account{max-width:220px}
+.reports-statement-filter .reports-filter-fields{padding-top:6px}
+.reports-statement-filter .reports-filter-fields .reports-selected-account,.dark .reports-statement-filter .reports-selected-account{max-width:260px;padding:0;border:0;background:transparent}
+.reports-statement-filter .reports-selected-account>span{margin-bottom:3px;font-size:11px;font-weight:600}
+.reports-selected-account-box{display:flex;align-items:center;gap:6px;height:30px;padding-inline:8px;border:1px solid var(--report-border);border-radius:8px;background:#f8faff;overflow:hidden;white-space:nowrap}
+.dark .reports-selected-account-box{background:#202e45}
+.reports-statement-filter .reports-selected-account-box strong{margin-top:0;font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.reports-statement-filter .reports-selected-account-box small{margin-top:0}
+.reports-statement-filter .reports-filter-fields>.reports-filter-actions{flex-wrap:nowrap}
+.reports-statement-filter .reports-ranges{flex-wrap:nowrap;margin-inline-start:0}
 .reports-statement-filter .reports-filter-fields>.grid>[data-flux-field]{width:140px}
 .reports-statement-filter .reports-filter-fields>.grid>[data-flux-field]:has(select){width:150px}
-.reports-statement-filter .reports-filter-fields>.reports-filter-actions{flex:1 1 auto;align-items:center}
+.reports-statement-filter .reports-filter-fields>.reports-filter-actions{flex:0 1 auto;align-items:center}
 @media (max-width: 900px) {
     .reports-redesign .reports-workspace.is-statement { grid-template-columns: minmax(0, 1fr); }
     .reports-redesign .reports-workspace.is-statement>.reports-account-sidebar, .reports-redesign .reports-workspace.is-statement>.reports-content { grid-column: 1; position: static; }

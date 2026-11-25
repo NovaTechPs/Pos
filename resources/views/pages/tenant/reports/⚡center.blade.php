@@ -607,12 +607,14 @@ new class extends Component {
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div class="reports-selected-account">
                 <span>الحساب</span>
+                <div class="reports-selected-account-box">
                 @if ($statementParty)
                     <strong>{{ $statementParty->name }}</strong>
                     <small>{{ $statementParty->code ?: 'بدون رقم حساب' }} · {{ ['customer' => 'زبون', 'supplier' => 'مورد', 'both' => 'زبون ومورد'][$statementParty->type] ?? $statementParty->type }}</small>
                 @else
                     <strong class="is-empty">اختر حساباً من القائمة</strong>
                 @endif
+                </div>
                 @error('partyId')<p role="alert">{{ $message }}</p>@enderror
             </div>
             <flux:input type="date" label="من تاريخ" wire:model="from" />
@@ -626,11 +628,11 @@ new class extends Component {
             <label class="reports-invoice-paid-toggle" data-report-delivery-toggle><input type="checkbox" wire:model.live="showDeliveryDetails" /><span>بيانات التوصيل</span></label>
         </div>
         <div class="reports-filter-actions flex flex-wrap gap-2">
-            <flux:button type="submit" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
-            <flux:button type="button" icon="arrow-path" wire:click="resetFilters">إعادة التعيين</flux:button>
             <div class="reports-ranges" role="group" aria-label="فترات سريعة">
-                @foreach ($periodRanges as $range => [, , $label])<flux:button type="button" wire:key="statement-range-{{ $range }}" wire:click="setPeriod('{{ $range }}')" :variant="$activeRange === $range ? 'primary' : 'outline'" aria-pressed="{{ $activeRange === $range ? 'true' : 'false' }}">{{ $label }}</flux:button>@endforeach
+                @foreach ($periodRanges as $range => [, , $label])<flux:button type="button" size="sm" wire:key="statement-range-{{ $range }}" wire:click="setPeriod('{{ $range }}')" :variant="$activeRange === $range ? 'primary' : 'outline'" aria-pressed="{{ $activeRange === $range ? 'true' : 'false' }}">{{ $label }}</flux:button>@endforeach
             </div>
+            <flux:button type="submit" size="sm" variant="primary" icon="magnifying-glass" wire:loading.attr="disabled">عرض التقرير</flux:button>
+            <flux:button type="button" size="sm" icon="arrow-path" wire:click="resetFilters">إعادة التعيين</flux:button>
         </div>
         </div></details>
         @if ($errors->any())<div role="alert" class="text-sm text-red-700 dark:text-red-300">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
