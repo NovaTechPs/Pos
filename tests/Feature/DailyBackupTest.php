@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Storage;
 
 beforeEach(function (): void {
     config(['filesystems.disks.backups' => ['driver' => 's3'], 'backup.disk' => 'backups', 'backup.daily_keep' => 2,
-        'services.telegram.bot_token' => 'test-token', 'services.telegram.chat_id' => '42']);
+        'services.telegram.system_bot_token' => 'system-token', 'services.telegram.chat_id' => '42']);
     Storage::fake('backups');
     Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
     $this->archive = storage_path('framework/testing/daily-backup-'.uniqid().'.zip');
@@ -40,7 +40,7 @@ test('the daily backup is uploaded, checked and reported on Telegram', function 
 
     expect(Storage::disk('backups')->files('daily-backups'))->toHaveCount(1)
         ->and(File::exists($this->archive))->toBeFalse();
-    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'bottest-token/sendMessage')
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'botsystem-token/sendMessage')
         && $request['chat_id'] === '42' && str_contains($request['text'], 'نجح فحص الاستعادة'));
 });
 

@@ -8,9 +8,10 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Talks to the shared WaslaPOS Telegram bot. Owner alerts go to TELEGRAM_CHAT_ID; store staff and
- * customers get messages in their own linked chats. Nothing here ever throws: a message must not
- * break the work that raised it.
+ * Talks to Telegram. Store staff and customers get messages from the shared WaslaPOS store bot in
+ * their own linked chats. System errors and backup reports go only to the developer's separate
+ * system bot (TELEGRAM_SYSTEM_BOT_TOKEN → TELEGRAM_SYSTEM_CHAT_ID), never through the store bot.
+ * Nothing here ever throws: a message must not break the work that raised it.
  */
 class TelegramAlert
 {
@@ -19,19 +20,28 @@ class TelegramAlert
         return filled(config('services.telegram.bot_token'));
     }
 
+    /** Whether the developer's system bot and chat are set, so errors and backup reports can be sent. */
     public function enabled(): bool
     {
-        return $this->botConfigured() && filled(config('services.telegram.chat_id'));
+        return filled(config('services.telegram.system_bot_token')) && filled(config('services.telegram.chat_id'));
     }
 
-    /** Sends an alert to the system owner's chat. */
+    /** Sends an alert to the system developer's chat through the system bot. */
     public function send(string $text): bool
     {
         if (! $this->enabled()) {
             return false;
         }
-
-        return $this->sendTo((string) config('services.telegram.chat_id'), '['.config('app.name').'] '.$text);
+        try {
+            return Http::connectTimeout(2)->timeout(5)
+                ->post('https://api.telegram.org/bot'.config('services.telegram.system_bot_token').'/sendMessage', [
+                    'chat_id' => (string) config('services.telegram.chat_id'),
+                    'text' => Str::limit('['.config('app.name').'] '.$text, 3900),
+                    'disable_web_page_preview' => true,
+                ])->successful();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function sendTo(string $chatId, string $text): bool

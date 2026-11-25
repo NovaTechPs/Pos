@@ -41,12 +41,16 @@ return [
     ],
 
     /*
-     * Error and daily backup alerts. Create a bot with @BotFather, send it a message, then read
-     * the chat id from https://api.telegram.org/bot<token>/getUpdates.
+     * bot_token / bot_username: the store bot that stores and their customers link to.
+     * system_bot_token / chat_id: a separate bot of the system developer that receives only
+     * application errors and daily backup reports; the store bot never sends them. Create each
+     * bot with @BotFather, send the system bot a message, then read the chat id from
+     * https://api.telegram.org/bot<system token>/getUpdates.
      */
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
-        'chat_id' => env('TELEGRAM_CHAT_ID'),
+        'system_bot_token' => env('TELEGRAM_SYSTEM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_SYSTEM_CHAT_ID', env('TELEGRAM_CHAT_ID')),
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'error_quiet_minutes' => (int) env('TELEGRAM_ERROR_QUIET_MINUTES', 30),
