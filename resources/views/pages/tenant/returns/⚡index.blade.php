@@ -584,23 +584,18 @@ new class extends Component
         return (float) $this->savedLines($this->currentReturnId)->where('product_id', $productId)->sum(fn ($line): float => (float) $line->quantity + (float) ($line->bonus_quantity ?? 0));
     }
 
-    /** Editing and deleting a saved return: «full» in its branch, or «own» when the employee created it. */
-    private function mayChangeReturn(object $return): bool
-    {
-        return app(\App\Services\DataScope::class)->canChange(auth()->user(), 'returns',
-            $return->branch_id ? (int) $return->branch_id : null, $return->created_by ? (int) $return->created_by : null);
-    }
-
     private function returnQuery(): Builder
     {
         $query = DB::table($this->kind === 'sale' ? 'orders' : 'purchase_returns')
-            ->where('tenant_id', $this->tenantId());
-        // The owner works in the branch chosen at the top; an employee sees what their data scope allows.
-        if (\App\Services\DataScope::unrestricted(auth()->user())) {
-            $query->where('branch_id', $this->branchId());
-        } else {
-            app(\App\Services\DataScope::class)->apply($query, auth()->user(), 'returns');
-        }
+            ->where('tenant_id', $this->tenantId())
+            ->when(
+                auth()->user()?->branch_id && ! auth()->user()->isTenantOwner() && ! auth()->user()->isSaaSAdmin(),
+                fn ($query, $branch) => $query->where('branch_id', $branch)
+            )
+            ->when(
+                auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin(),
+                fn ($query) => $query->where('branch_id', $this->branchId())
+            );
         if ($this->kind === 'sale') {
             $query->where('type', 'return')->whereNull('deleted_at')->where('source', 'web')
                 ->whereNull('original_order_id')->whereNull('shift_id');
@@ -656,13 +651,7 @@ new class extends Component
     public function editLoadedInvoice(): void
     {
         Gate::authorize('returns.create');
-        $return = $this->currentReturnId ? $this->returnQuery()->where('id', $this->currentReturnId)->first() : null;
-        abort_unless($return, 404);
-        if (! $this->mayChangeReturn($return)) {
-            $this->errorMessage = \App\Services\DataScope::refusal('returns');
-
-            return;
-        }
+        abort_unless($this->currentReturnId && $this->returnQuery()->where('id', $this->currentReturnId)->exists(), 404);
         $this->editing = true;
         $this->successMessage = 'عدّل الفاتورة ثم اضغط حفظ التعديلات.';
     }
@@ -880,11 +869,6 @@ new class extends Component
                 abort_unless($branchId, 422);
                 $old = $this->currentReturnId ? $this->returnQuery()->where('id', $this->currentReturnId)->lockForUpdate()->first() : null;
                 abort_if($this->currentReturnId && ! $old, 404);
-                abort_if($old && ! $this->mayChangeReturn($old), 403, \App\Services\DataScope::refusal('returns'));
-                // A new return needs a branch where the employee works (data scope «own» or «full»).
-                abort_if(! $old && ! \App\Services\DataScope::unrestricted(auth()->user())
-                    && ! in_array((int) $branchId, app(\App\Services\DataScope::class)->creatableBranchIds(auth()->user(), 'returns'), true),
-                    403, \App\Services\DataScope::refusal('returns'));
                 $party = Party::query()->where('tenant_id', $tenantId)->where('is_active', true)->lockForUpdate()->findOrFail($this->selectedPartyId);
                 $cost = 0;
                 foreach ($this->lines as $line) {
@@ -992,7 +976,6 @@ new class extends Component
             DB::transaction(function (): void {
                 $old = $this->returnQuery()->where('id', $this->currentReturnId)->lockForUpdate()->first();
                 abort_unless($old, 404);
-                abort_unless($this->mayChangeReturn($old), 403, \App\Services\DataScope::refusal('returns'));
                 $changes = $this->stockChanges($old, [], (int) $old->branch_id);
                 $costPlan = $this->purchaseReturnCostPlan($old, []);
                 $this->reverseBalance($old);

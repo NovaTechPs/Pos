@@ -4,7 +4,6 @@ use Livewire\Component;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Order;
-use App\Services\DataScope;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Party;
@@ -192,7 +191,7 @@ new class extends Component {
     {
         $this->invoiceDate = now()->format('Y-m-d');
         $this->selectedBranchId = $this->resolveBranchId();
-        $this->invoiceBranchFilter = null;
+        $this->invoiceBranchFilter = (auth()->user()?->isTenantOwner() || auth()->user()?->isSaaSAdmin()) ? null : $this->selectedBranchId;
         $this->startNewInvoice(false);
 
         $invoiceId = request()->integer('invoice');
@@ -347,9 +346,14 @@ new class extends Component {
 
     public function updatedInvoiceBranchFilter($value): void
     {
+        $user = auth()->user();
+        if (! $user?->isTenantOwner() && ! $user?->isSaaSAdmin()) {
+            $this->invoiceBranchFilter = $user?->activeBranchId();
+            return;
+        }
+
         $branchId = $value === '' || $value === null ? null : (int) $value;
-        $allowed = $this->invoiceBranchChoices();
-        if ($branchId && (($allowed !== null && ! in_array($branchId, $allowed, true)) || ! Branch::query()->where('tenant_id', $this->tenantId())->whereKey($branchId)->exists())) {
+        if ($branchId && ! Branch::query()->where('tenant_id', $this->tenantId())->whereKey($branchId)->exists()) {
             $this->invoiceBranchFilter = null;
             $this->errorMessage = 'الفرع المحدد غير صالح لهذا المتجر.';
             return;
@@ -358,34 +362,20 @@ new class extends Component {
         $this->invoiceBranchFilter = $branchId;
     }
 
-    private function dataScope(): DataScope
+    private function invoiceBranchScopeId(): ?int
     {
-        return app(DataScope::class);
+        $user = auth()->user();
+        return $user?->isTenantOwner() || $user?->isSaaSAdmin()
+            ? $this->invoiceBranchFilter
+            : ($user?->branch_id ? (int) $user->branch_id : $user?->activeBranchId());
     }
 
-    /**
-     * Saved invoices the user may see under their data scope («فواتير المبيعات»: per branch, all or only
-     * their own), narrowed to the branch chosen in the invoice list.
-     */
-    private function visibleInvoices($query)
-    {
-        $this->dataScope()->apply($query, auth()->user(), 'sales');
-
-        return $query->when($this->invoiceBranchFilter, fn ($query, $branchId) => $query->where('branch_id', $branchId));
-    }
-
-    /** Editing, deleting and adding receipts to a saved invoice. */
-    private function mayChangeInvoice(Order $order): bool
-    {
-        return $this->dataScope()->canChange(auth()->user(), 'sales', $order->branch_id ? (int) $order->branch_id : null, $order->created_by ? (int) $order->created_by : null);
-    }
-
-    /** Branches the user may browse invoices in; null means every branch. @return list<int>|null */
-    private function invoiceBranchChoices(): ?array
+    /** Employees reopen only the invoices they created; the store owner sees every invoice. */
+    private function invoiceCreatorScopeId(): ?int
     {
         $user = auth()->user();
 
-        return $user ? $this->dataScope()->visibleBranchIds($user, 'sales') : null;
+        return $user?->isTenantOwner() || $user?->isSaaSAdmin() ? null : $user?->id;
     }
 
     /*
@@ -1157,14 +1147,6 @@ new class extends Component {
 
         try {
             $this->authorize($this->currentOrderId ? 'sales_invoices.edit' : 'sales_invoices.create');
-            // A new invoice needs a branch where the user works (data scope «own» or «full»).
-            if (! $this->currentOrderId && ! DataScope::unrestricted(auth()->user())
-                && ! in_array((int) $this->selectedBranchId, $this->dataScope()->creatableBranchIds(auth()->user(), 'sales'), true)) {
-                $this->errorMessage = DataScope::refusal('sales');
-                $this->dispatch('toast', type: 'error', message: $this->errorMessage);
-
-                return;
-            }
         } catch (\Illuminate\Auth\Access\AuthorizationException) {
             $this->errorMessage = 'لا تملك صلاحية حفظ أو تعديل فاتورة المبيعات.';
             $this->dispatch('toast', type: 'error', message: $this->errorMessage);
@@ -1262,9 +1244,6 @@ new class extends Component {
 
                     if (!$order) {
                         throw new \RuntimeException('الفاتورة المطلوب تعديلها غير موجودة.');
-                    }
-                    if (! $this->mayChangeInvoice($order)) {
-                        throw new \DomainException(DataScope::refusal('sales'));
                     }
 
                     $isPosOrder = $order->type === 'pos';
@@ -1630,12 +1609,6 @@ new class extends Component {
 
             return;
         }
-        if (! $this->mayChangeInvoice($order)) {
-            $this->errorMessage = DataScope::refusal('sales');
-            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
-
-            return;
-        }
 
         $receipts = (float) Payment::query()->where('tenant_id', $tenantId)->where('order_id', $order->id)->where('type', 'receipt')->sum('amount');
         $this->editingSettlementId = null;
@@ -1685,7 +1658,6 @@ new class extends Component {
 
         DB::transaction(function () use ($tenantId, $validated): void {
             $order = Order::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($this->currentOrderId);
-            abort_unless($this->mayChangeInvoice($order), 403, DataScope::refusal('sales'));
             abort_unless($order->customer_id, 422);
 
             $customer = Party::query()->where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($order->customer_id);
@@ -1822,7 +1794,8 @@ new class extends Component {
                     ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
             })
             ->where('status', 'completed')
-            ->tap(fn ($query) => $this->visibleInvoices($query))
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where(function ($query) use ($search) {
                 $query->whereInvoiceNumber($search, partial: true)
                     ->orWhere('customer_name', 'like', "%{$search}%")
@@ -1851,7 +1824,8 @@ new class extends Component {
     {
         $order = Order::query()
             ->where('tenant_id', $this->tenantId())
-            ->tap(fn ($query) => $this->visibleInvoices($query))
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where(function ($query): void {
                 $query->where('type', 'wholesale')
                     ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed'));
@@ -1879,8 +1853,13 @@ new class extends Component {
             return;
         }
 
-        if (! $this->dataScope()->canView(auth()->user(), 'sales', $order->branch_id, $order->created_by)) {
-            $this->errorMessage = DataScope::refusal('sales');
+        if ($this->invoiceBranchScopeId() && (int) $order->branch_id !== $this->invoiceBranchScopeId()) {
+            $this->errorMessage = 'لا يمكنك عرض فواتير فرع آخر ضمن نطاق الفرع المحدد.';
+            return;
+        }
+
+        if ($this->invoiceCreatorScopeId() && (int) $order->created_by !== $this->invoiceCreatorScopeId()) {
+            $this->errorMessage = 'يمكنك عرض الفواتير التي أنشأتها أنت فقط.';
             return;
         }
 
@@ -1980,7 +1959,8 @@ new class extends Component {
         $query = Order::query()
             ->where('tenant_id', $tenantId)
             ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
-            ->tap(fn ($query) => $this->visibleInvoices($query));
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId));
 
         if ($this->currentOrderId) {
             $query->where('id', '<', $this->currentOrderId);
@@ -2007,7 +1987,8 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $tenantId)
             ->where(fn ($query) => $query->where('type', 'wholesale')->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id')->where('status', 'completed')))
-            ->tap(fn ($query) => $this->visibleInvoices($query))
+            ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->where('id', '>', $this->currentOrderId)
             ->orderBy('id')
             ->first();
@@ -2086,7 +2067,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $tenantId)
             ->whereKey($this->currentOrderId)
-            ->tap(fn ($query) => $this->dataScope()->apply($query, auth()->user(), 'sales'))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->with('items.product')
             ->first();
 
@@ -2130,11 +2111,10 @@ new class extends Component {
 
         try {
             $number = DB::transaction(function () use ($tenantId): string {
+                $user = auth()->user();
                 $order = Order::query()->where('tenant_id', $tenantId)->whereKey($this->currentOrderId)
+                    ->when(! $user?->isTenantOwner() && ! $user?->isSaaSAdmin(), fn ($query) => $query->where('created_by', $user?->id))
                     ->lockForUpdate()->first();
-                if ($order && ! $this->mayChangeInvoice($order)) {
-                    throw new \DomainException(DataScope::refusal('sales'));
-                }
 
                 if (! $order) {
                     throw new \DomainException('الفاتورة غير موجودة أو حُذفت من قبل.');
@@ -2185,14 +2165,6 @@ new class extends Component {
             return;
         }
 
-        $order = Order::query()->where('tenant_id', $this->tenantId())->find($this->currentOrderId);
-        if (! $order || ! $this->mayChangeInvoice($order)) {
-            $this->errorMessage = DataScope::refusal('sales');
-            $this->dispatch('toast', type: 'error', message: $this->errorMessage);
-
-            return;
-        }
-
         $this->invoiceEditMode = true;
         $this->successMessage = 'تم تفعيل تعديل الفاتورة. عدّل البيانات ثم اضغط حفظ.';
         $this->errorMessage = null;
@@ -2209,7 +2181,7 @@ new class extends Component {
         $order = Order::query()
             ->where('tenant_id', $this->tenantId())
             ->whereKey($this->currentOrderId)
-            ->tap(fn ($query) => $this->dataScope()->apply($query, auth()->user(), 'sales'))
+            ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
             ->with(['items.product', 'user', 'branch'])
             ->withSum('payments as collected_amount', 'amount')
             ->first();
@@ -2387,7 +2359,8 @@ new class extends Component {
                     $query->where('type', 'wholesale')
                         ->orWhere(fn ($pos) => $pos->where('type', 'pos')->whereNotNull('customer_id'));
                 })
-                ->tap(fn ($query) => $this->visibleInvoices($query))
+                ->when($this->invoiceBranchScopeId(), fn ($query, $branchId) => $query->where('branch_id', $branchId))
+                ->when($this->invoiceCreatorScopeId(), fn ($query, $creatorId) => $query->where('created_by', $creatorId))
                 ->when($search !== '', function ($query) use ($search): void {
                     $query->where(function ($matches) use ($search): void {
                         $matches->whereInvoiceNumber($search, partial: true)
@@ -2426,10 +2399,7 @@ new class extends Component {
                 ? Product::query()->where('tenant_id', $tenantId)->whereIn('id', array_column($this->cart, 'id'))->pluck('product_number', 'id')->filter()->all()
                 : [],
             'branches' => $branches,
-            // Only the branches the user may browse invoices in (all of them for the owner).
-            'invoiceBranches' => ($choices = $this->invoiceBranchChoices()) === null ? $branches : $branches->whereIn('id', $choices)->values(),
-            'invoiceBranchChoice' => $choices === null || count($choices) > 1,
-            'invoiceBranchChoices' => $choices,
+            'invoiceBranches' => $branches,
             'invoiceSearchResults' => $invoiceSearchResults,
             'productResults' => $productResults,
             'replacementProductResults' => $replacementProductResults,
@@ -2685,9 +2655,9 @@ new class extends Component {
                     </div>
 
                     <div class="grid gap-2 border-b border-slate-200 p-3 sm:grid-cols-[1fr_13rem_auto] sm:p-4">
-                        @if ($invoiceBranchChoice)
+                        @if (auth()->user()->isTenantOwner() || auth()->user()->isSaaSAdmin())
                             <select wire:model.live="invoiceBranchFilter" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold">
-                                <option value="">{{ $invoiceBranchChoices === null ? 'كل الفروع' : 'كل فروعي' }}</option>
+                                <option value="">كل الفروع</option>
                                 @foreach ($invoiceBranches as $branch)<option wire:key="sales-invoice-filter-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach
                             </select>
                         @endif

@@ -40,12 +40,6 @@ class Role extends Model
             ->withTimestamps();
     }
 
-    /** @return HasMany<RoleDataScope, $this> */
-    public function dataScopes(): HasMany
-    {
-        return $this->hasMany(RoleDataScope::class);
-    }
-
     /** @return HasMany<User, $this> */
     public function users(): HasMany
     {
