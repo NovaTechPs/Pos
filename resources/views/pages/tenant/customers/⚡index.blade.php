@@ -2445,6 +2445,19 @@ new class extends Component {
                             class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
                         >
 
+                            @if ($partyId && in_array($type, ['customer', 'both'], true))
+                                @can('customers.edit')
+                                    <button
+                                        type="button"
+                                        x-on:click="$dispatch('open-telegram-link', { partyId: {{ $partyId }} }); $wire.closeModal()"
+                                        class="me-auto px-4 py-2 border border-sky-200 dark:border-sky-800 rounded-lg text-sm font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"
+                                        data-customer-telegram-link
+                                    >
+                                        ✈️ ربط تيليجرام
+                                    </button>
+                                @endcan
+                            @endif
+
                             <button
                                 type="button"
                                 wire:click="closeModal"

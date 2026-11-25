@@ -220,6 +220,8 @@ test('the daily summary goes to staff who asked for it', function (): void {
 test('staff create a customer link from the customers page', function (): void {
     $this->actingAs($this->owner)->withSession(['active_tenant_id' => $this->tenant->id, 'active_branch_id' => $this->branch->id]);
 
+    Livewire::test('pages::tenant.customers.index')->call('editParty', $this->customer->id)
+        ->assertSeeHtml('data-customer-telegram-link')->assertSee('ربط تيليجرام');
     Livewire::test('pages::tenant.customers.telegram-link')->call('openFor', $this->customer->id)->call('createLink')
         ->assertSet('startUrl', fn (?string $url): bool => str_starts_with((string) $url, 'https://t.me/WaslaPosBot?start='));
 
