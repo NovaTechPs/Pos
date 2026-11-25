@@ -188,3 +188,19 @@ test('invoice pdf downloads receive the current signed account balance', functio
         expect($response->streamedContent())->toBe('%PDF-test');
     }
 })->with(['sales', 'purchase'])->with([true, false]);
+
+test('the delivery details window saves, or saves and prints, whichever the cashier picks', function (string $button, string $action): void {
+    $company = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'شركة التوصيل', 'type' => 'supplier', 'is_active' => true]);
+
+    Livewire::test('pages::tenant.pos.sales')
+        ->call('openDeliveryDetails', 'checkout')
+        ->assertSeeHtml('data-pos-delivery-save')->assertSeeHtml('data-pos-delivery-save-print')->assertSee('حفظ وطباعة')
+        ->set('deliveryCustomerName', 'مستلم')
+        ->set('deliveryCustomerPhone', '0590000000')
+        ->set('deliveryCustomerAddress', 'الخليل')
+        ->call('selectDeliveryCompany', $company->id)
+        ->call('confirmDeliveryDetails', $action)
+        ->assertHasNoErrors()
+        ->assertSet('pendingDeliveryAction', $action)
+        ->assertSet('showDeliveryDetailsModal', false);
+})->with([['save', 'checkout'], ['save and print', 'checkoutAndPrint']]);

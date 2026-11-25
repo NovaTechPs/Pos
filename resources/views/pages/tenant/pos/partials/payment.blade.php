@@ -659,7 +659,7 @@
                 <label class="mt-1.5 block text-[9px] font-black text-slate-600" data-pos-invoice-recipient>
                     اسم المستلم على الفاتورة
                     <input type="text" maxlength="191" autocomplete="off" wire:model.blur="invoiceRecipientName" @disabled($invoiceLocked)
-                        placeholder="{{ $selectedCustomerId ? 'اسم الزبون المحدد' : 'زبون عام' }}"
+                        placeholder="{{ $selectedCustomerId ? 'المستلم: اسم الزبون المحدد' : 'المستلم: زبون عام' }}" title="اسم المستلم على الفاتورة"
                         class="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-900 outline-none focus:border-indigo-500 disabled:bg-slate-100">
                 </label>
             @endif
@@ -1111,7 +1111,14 @@
                     @endif
                     @error('deliveryCompanyId')<span class="mt-1 block text-rose-600">اختر شركة التوصيل.</span>@enderror
                 </div>
-                <button type="button" wire:click="confirmDeliveryDetails" class="mt-4 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700">تأكيد والمتابعة للحفظ</button>
+                <div class="mt-4 grid grid-cols-2 gap-2" data-pos-delivery-actions>
+                    <button type="button" wire:click="confirmDeliveryDetails('checkout')" wire:loading.attr="disabled" wire:target="confirmDeliveryDetails"
+                        data-pos-delivery-save
+                        class="rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">💾 حفظ</button>
+                    <button type="button" wire:click="confirmDeliveryDetails('checkoutAndPrint')" wire:loading.attr="disabled" wire:target="confirmDeliveryDetails"
+                        data-pos-delivery-save-print
+                        class="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50">🖨️ حفظ وطباعة</button>
+                </div>
             </div>
         </div>
     @endif

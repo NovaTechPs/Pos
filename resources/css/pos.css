@@ -109,6 +109,15 @@
     .pos-payment [data-pos-payment-methods] > .grid > button { padding: 0.625rem 0.25rem; font-size: 0.7rem; }
     .pos-payment-totals > div { padding: 0.375rem; }
     .pos-payment-totals input { height: 2.5rem; }
+
+    /* The customer box sets the payment row height: the recipient name sits beside the customer
+       button instead of under it, so the totals tiles stay short and the items cart gets the room. */
+    .pos-payment [data-pos-customer-notes] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: start; column-gap: 0.375rem; }
+    .pos-payment [data-pos-customer-notes] > :not(.pos-customer-pick):not([data-pos-invoice-recipient]) { grid-column: 1 / -1; }
+    .pos-payment [data-pos-customer-notes] > p { margin-block: 0 0.25rem; }
+    .pos-payment [data-pos-invoice-recipient] { display: flex; margin-top: 0; font-size: 0; }
+    .pos-payment [data-pos-invoice-recipient] > input { height: auto; min-height: 2.25rem; margin-top: 0; font-size: 0.75rem; }
+    .pos-payment [data-pos-customer-notes] > .pos-customer-pick { padding-block: 0.375rem; }
 }
 
 @media screen and (max-width: 767px) {

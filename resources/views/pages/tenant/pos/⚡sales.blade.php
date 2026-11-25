@@ -3214,8 +3214,16 @@ new class extends Component {
         return true;
     }
 
-    public function confirmDeliveryDetails(): void
+    /**
+     * Saves the delivery details and continues with the save that opened them, or with the one the
+     * cashier picks in the window: «checkout» saves, «checkoutAndPrint» saves and prints.
+     */
+    public function confirmDeliveryDetails(?string $action = null): void
     {
+        if (in_array($action, ['checkout', 'checkoutAndPrint'], true)) {
+            $this->pendingDeliveryAction = $action;
+        }
+
         $this->validate([
             'deliveryCustomerName' => ['required', 'string', 'max:255'],
             'deliveryCustomerPhone' => ['required', 'string', 'max:40'],

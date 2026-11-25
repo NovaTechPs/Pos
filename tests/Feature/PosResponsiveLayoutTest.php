@@ -117,7 +117,8 @@ test('phone POS shows the app bar, invoice card, item stepper, sticky save bar a
 
     $styles = file_get_contents(resource_path('css/pos.css'));
     expect($styles)->toContain("@media screen and (min-width: 1024px) {\n    .pos-payment-sheet { display: contents; }\n}")
-        ->and($styles)->toContain('.pos-payment-sheet[data-open="true"]');
+        ->and($styles)->toContain('.pos-payment-sheet[data-open="true"]')
+        ->and($styles)->toContain('.pos-payment [data-pos-customer-notes] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);');
 
     $component->call('updateCartField', $lineKey, 'quantity', '2');
     expect((float) $component->get('cart')[$lineKey]['quantity'])->toBe(2.0);
