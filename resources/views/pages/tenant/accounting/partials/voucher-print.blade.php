@@ -129,10 +129,6 @@
                 </div>
             @endif
 
-            <div class="mt-8 border-t border-slate-200 pt-4 text-center text-xs text-slate-400">
-                تم إنشاء السند بواسطة
-                {{ $voucher->creator?->name ?? '-' }}
-            </div>
             <x-invoice-copyright />
         </div>
 

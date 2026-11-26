@@ -498,7 +498,7 @@ test('linked supplier payment above invoice total and balance remains a full pay
         ->and((float) $supplier->fresh()->current_balance)->toBe(-125.0);
 });
 
-test('vouchers can be previewed for printing with their account and creator', function (string $page, string $type): void {
+test('vouchers can be previewed for printing with their account, without the creator', function (string $page, string $type): void {
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'Print account', 'type' => 'both', 'is_active' => true]);
     $voucher = Payment::create([
         'tenant_id' => $this->tenant->id,
@@ -517,7 +517,7 @@ test('vouchers can be previewed for printing with their account and creator', fu
         ->assertSet('showPrintModal', true)
         ->assertSee('PRINT-123')
         ->assertSee('Print account')
-        ->assertSee($this->user->name)
+        ->assertDontSee($this->user->name)
         ->assertSee('11.64')
         ->assertSee('تحويل بنكي')
         ->assertSee('Print voucher note')

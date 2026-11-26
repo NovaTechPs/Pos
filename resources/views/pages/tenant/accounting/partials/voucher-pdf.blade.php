@@ -39,7 +39,6 @@
         @if ($voucher->party)
             <tr><td class="number">{{ number_format((float) $voucher->party->current_balance, 2) }}</td><td class="label">{{ $ar('رصيد الحساب الحالي بعد السند') }}</td></tr>
         @endif
-        <tr><td>{{ $ar($voucher->creator?->name ?: '—') }}</td><td class="label">{{ $ar('أنشئ بواسطة') }}</td></tr>
     </table>
     @if ($voucher->notes)
         <div class="notes">{{ $ar('ملاحظات:') }}<br>{{ $ar($voucher->notes) }}</div>

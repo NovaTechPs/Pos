@@ -114,9 +114,11 @@ test('voucher print and download include the signed account balance', function (
     $party = Party::create(['tenant_id' => $this->tenant->id, 'name' => 'الحساب', 'type' => $type === 'receipt' ? 'customer' : 'supplier', 'current_balance' => $balance]);
     $voucher = Payment::create(['tenant_id' => $this->tenant->id, 'branch_id' => $this->branch->id, 'party_id' => $party->id, 'created_by' => $this->user->id, 'type' => $type, 'amount' => 25, 'payment_method' => 'cash', 'payment_date' => now(), 'voucher_number' => 'V-123']);
     Livewire::test('pages::tenant.accounting.'.($type === 'receipt' ? 'receipts' : 'payment'))
-        ->call('print', $voucher->id)->assertSee('رصيد الحساب الحالي بعد السند')->assertSee(number_format($balance, 2))->assertSee('تنزيل PDF');
+        ->call('print', $voucher->id)->assertSee('رصيد الحساب الحالي بعد السند')->assertSee(number_format($balance, 2))->assertSee('تنزيل PDF')
+        ->assertDontSee('تم إنشاء السند بواسطة');
     $html = view('pages.tenant.accounting.partials.voucher-pdf', ['voucher' => $voucher->load(['party', 'creator', 'branch', 'tenant'])])->render();
-    expect($html)->toContain(number_format($balance, 2), 'V-123');
+    expect($html)->toContain(number_format($balance, 2), 'V-123')
+        ->not->toContain((new \ArPHP\I18N\Arabic)->utf8Glyphs('أنشئ بواسطة', 150, true, true));
     $response = $this->get(route('tenant.vouchers.pdf', ['type' => $type, 'paymentId' => $voucher->id]));
     $response->assertSuccessful();
     expect($response->headers->get('content-disposition'))->toContain("filename*=utf-8''".rawurlencode(($type === 'receipt' ? 'سند قبض' : 'سند صرف').' الحساب - V-123.pdf'));
