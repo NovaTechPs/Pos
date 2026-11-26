@@ -40,7 +40,7 @@
         .party .label { width: 18%; background: #f1f5f9; color: #334155; font-weight: bold; }
 
         .items { width: 100%; }
-        .items th { background: #1e293b; color: #ffffff; padding: 7px 6px; font-weight: bold; text-align: center; border: 1px solid #1e293b; }
+        .items th { background: #f1f5f9; color: #334155; padding: 7px 6px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; }
         .items td { padding: 6px; border: 1px solid #cbd5e1; vertical-align: middle; }
         .items tr.alt td { background: #f8fafc; }
         .items td.name { text-align: right; }
@@ -50,7 +50,7 @@
         .totals, .stats { width: 100%; border: 1px solid #cbd5e1; }
         .totals td, .stats td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
         .totals .label, .stats .label { text-align: right; color: #334155; }
-        .totals tr.final td { background: #047857; color: #ffffff; font-size: 14px; font-weight: bold; border-bottom: 0; }
+        .totals tr.final td { background: #f1f5f9; color: #334155; font-size: 14px; font-weight: bold; border-bottom: 0; }
         .notes { margin-top: 10px; border: 1px dashed #94a3b8; padding: 8px; text-align: right; }
         .footer { margin-top: 18px; text-align: center; color: #64748b; }
     </style>
@@ -114,7 +114,7 @@
             <td style="width: 52%;">
                 <table class="totals">
                     <tr><td class="num">{{ number_format($subtotal, 2) }}</td><td class="label">{!! $ar('المجموع') !!}</td></tr>
-                    <tr class="final"><td class="num">{{ number_format((float) $purchase->total, 2) }}</td><td class="label" style="color: #ffffff;">{!! $ar('الإجمالي النهائي') !!}</td></tr>
+                    <tr class="final"><td class="num">{{ number_format((float) $purchase->total, 2) }}</td><td class="label">{!! $ar('الإجمالي النهائي') !!}</td></tr>
                     <tr><td class="num">{{ number_format((float) $purchase->paid_amount, 2) }}</td><td class="label">{!! $ar('المدفوع') !!}</td></tr>
                     <tr><td class="num">{{ number_format($remaining, 2) }}</td><td class="label">{!! $ar('المتبقي') !!}</td></tr>
                     @if (isset($accountBalance))

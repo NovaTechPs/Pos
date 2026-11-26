@@ -122,3 +122,12 @@ test('sales invoice pdf prints the customer without the cashier or the Telegram 
         ->toContain('.items th { background: #f1f5f9; color: #334155;')
         ->toContain('.totals tr.final td { background: #f1f5f9; color: #334155;');
 });
+
+test('purchase invoice pdf uses the same light table headings as the supplier label', function (): void {
+    $purchase = (object) ['reference_number' => 'PUR-10', 'invoice_date' => now()->toDateString(), 'created_at' => now(), 'total' => 10, 'paid_amount' => 0];
+
+    $html = view('pages.tenant.purchases.partials.invoice-pdf', ['purchase' => $purchase, 'items' => collect(), 'supplierName' => 'المورد', 'storeName' => 'متجر'])->render();
+
+    expect($html)->toContain('.items th { background: #f1f5f9; color: #334155;')
+        ->toContain('.totals tr.final td { background: #f1f5f9; color: #334155;');
+});
