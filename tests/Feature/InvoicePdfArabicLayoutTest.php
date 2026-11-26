@@ -107,3 +107,18 @@ test('invoice prints show only total, discount, payment, previous and new balanc
         ->assertDispatched('print-sales-invoice', fn (string $event, array $params): bool => (float) $params['invoice']['summary']['previous_balance'] === 90.0
             && (float) $params['invoice']['summary']['new_balance'] === 150.0);
 });
+
+test('sales invoice pdf prints the customer without the cashier or the Telegram code, with light table headings', function (): void {
+    $order = new Order(['invoice_number' => 'A1-509', 'type' => 'wholesale', 'customer_name' => 'الصوالحي', 'subtotal' => 10, 'total' => 10, 'discount' => 0, 'paid_amount' => 0]);
+    $order->setRelation('items', collect());
+    $order->setRelation('user', $this->user);
+
+    $html = view('pages.tenant.pos.partials.invoice-pdf', ['order' => $order, 'storeName' => 'فانوس', 'telegramStartUrl' => 'https://t.me/bot?start=x', 'accountBalance' => 50])->render();
+    $arabic = new Arabic;
+
+    expect($html)->toContain($arabic->utf8Glyphs('الزبون', 150, false, true))
+        ->not->toContain($arabic->utf8Glyphs('الكاشير', 150, false, true))
+        ->not->toContain('data-invoice-telegram-qr')
+        ->toContain('.items th { background: #f1f5f9; color: #334155;')
+        ->toContain('.totals tr.final td { background: #f1f5f9; color: #334155;');
+});

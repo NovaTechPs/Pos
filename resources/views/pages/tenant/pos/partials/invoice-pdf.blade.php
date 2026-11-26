@@ -42,7 +42,7 @@
         .party .label { width: 18%; background: #f1f5f9; color: #334155; font-weight: bold; }
 
         .items { width: 100%; }
-        .items th { background: #1e293b; color: #ffffff; padding: 7px 6px; font-weight: bold; text-align: center; border: 1px solid #1e293b; }
+        .items th { background: #f1f5f9; color: #334155; padding: 7px 6px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; }
         .items td { padding: 6px; border: 1px solid #cbd5e1; vertical-align: middle; }
         .items tr.alt td { background: #f8fafc; }
         .items td.name { text-align: right; }
@@ -52,7 +52,7 @@
         .totals { width: 100%; border: 1px solid #cbd5e1; }
         .totals td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
         .totals .label { text-align: right; color: #334155; }
-        .totals tr.final td { background: #047857; color: #ffffff; font-size: 14px; font-weight: bold; border-bottom: 0; }
+        .totals tr.final td { background: #f1f5f9; color: #334155; font-size: 14px; font-weight: bold; border-bottom: 0; }
         .stats { width: 100%; border: 1px solid #cbd5e1; }
         .stats td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
         .stats .label { text-align: right; color: #334155; }
@@ -84,12 +84,10 @@
         </tr>
     </table>
 
-    {{-- الزبون والكاشير --}}
+    {{-- الزبون --}}
     <table class="party">
         <tr>
-            <td style="width: 32%;">{!! $ar($order->user?->name ?? 'الكاشير') !!}</td>
-            <td class="label">{!! $ar('الكاشير') !!}</td>
-            <td style="width: 32%;">{!! $ar($order->customer_name ?: 'زبون عام') !!}</td>
+            <td>{!! $ar($order->customer_name ?: 'زبون عام') !!}</td>
             <td class="label">{!! $ar('الزبون') !!}</td>
         </tr>
     </table>
@@ -130,7 +128,7 @@
                     <tr><td class="num">{{ number_format($summary['payment'], 2) }}</td><td class="label">{!! $ar('دفعة') !!}</td></tr>
                     @if ($summary['previous_balance'] !== null)
                         <tr><td class="num">{{ number_format($summary['previous_balance'], 2) }}</td><td class="label">{!! $ar('رصيد سابق') !!}</td></tr>
-                        <tr class="final"><td class="num">{{ number_format($summary['new_balance'], 2) }}</td><td class="label" style="color: #ffffff;">{!! $ar('رصيد جديد') !!}</td></tr>
+                        <tr class="final"><td class="num">{{ number_format($summary['new_balance'], 2) }}</td><td class="label">{!! $ar('رصيد جديد') !!}</td></tr>
                     @endif
                 </table>
             </td>
@@ -140,12 +138,6 @@
                     <div class="notes" style="margin-top: 0;">
                         <strong>{!! $ar('ملاحظات') !!}</strong><br>
                         {!! $ar($order->notes, 55) !!}
-                    </div>
-                @endif
-                @if (! empty($telegramStartUrl))
-                    <div style="margin-top: 8px; text-align: center;" data-invoice-telegram-qr>
-                        <img src="{{ \App\Services\TelegramQr::dataUri($telegramStartUrl) }}" style="width: 26mm; height: 26mm;" alt="">
-                        <div class="muted" style="font-size: 9px;">{!! $ar('امسح الرمز لتصلك فواتيرك ودفعاتك على تيليجرام') !!}</div>
                     </div>
                 @endif
             </td>

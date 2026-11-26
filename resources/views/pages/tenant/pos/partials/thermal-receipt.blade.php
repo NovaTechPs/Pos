@@ -220,13 +220,6 @@
             @endif
         </div>
 
-        @if (!empty($receipt['telegram_url']))
-            <div class="telegram-qr" data-receipt-telegram-qr>
-                {!! \App\Services\TelegramQr::svg($receipt['telegram_url'], 90) !!}
-                <div>امسح الرمز لتصلك فواتيرك ودفعاتك على تيليجرام</div>
-            </div>
-        @endif
-
         <p class="print-time">
             تاريخ ووقت الطباعة {{ $receipt['date'] ?? '' }} {{ $receipt['time'] ?? '' }}
         </p>
