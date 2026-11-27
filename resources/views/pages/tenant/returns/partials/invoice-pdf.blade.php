@@ -4,7 +4,7 @@
 @endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8">@isset($documentTitle)<title>{{ $documentTitle }}</title>@endisset<style>
-@page { margin: 12mm; } body { font-family: 'DejaVu Sans', sans-serif; direction: rtl; text-align: right; font-size: 12px; color: #0f172a; } h1 {text-align:center} table {width:100%;border-collapse:collapse;margin:18px 0} th,td {border-bottom:1px solid #cbd5e1;padding:9px} th {background:#e2e8f0} .number {direction:ltr;text-align:center} .summary {width:60%;margin-left:auto} .notes {white-space:pre-line}
+@page { margin: 12mm; } body { font-family: 'DejaVu Sans', sans-serif; direction: rtl; text-align: right; font-size: 12px; color: #0f172a; } h1 {text-align:center} table {width:100%;border-collapse:collapse;margin:18px 0} th,td {border-bottom:1px solid #cbd5e1;padding:9px} th {background:#f1f5f9;color:#334155} .number {direction:ltr;text-align:center} .summary {width:60%;margin-left:auto} .notes {white-space:pre-line}
 </style></head><body>
 <h1>{{ $ar($kind === 'sale' ? 'مردود مبيعات' : 'مردود مشتريات') }}</h1>
 <p>{{ $ar($branchName) }}</p>

@@ -131,3 +131,12 @@ test('purchase invoice pdf uses the same light table headings as the supplier la
     expect($html)->toContain('.items th { background: #f1f5f9; color: #334155;')
         ->toContain('.totals tr.final td { background: #f1f5f9; color: #334155;');
 });
+
+test('returns pdf uses the same light table headings as the sales invoice', function (): void {
+    $return = (object) ['invoice_number' => 'RET-1', 'reference_number' => null, 'created_at' => now(), 'subtotal' => 10, 'discount' => 0, 'tax_amount' => 0, 'total' => 10, 'paid_amount' => 0, 'notes' => null];
+
+    $html = view('pages.tenant.returns.partials.invoice-pdf', ['return' => $return, 'items' => collect(), 'party' => null, 'branchName' => 'الفرع', 'kind' => 'sale', 'showTax' => false])->render();
+
+    expect($html)->toContain('th {background:#f1f5f9;color:#334155}')
+        ->not->toContain('#e2e8f0');
+});
