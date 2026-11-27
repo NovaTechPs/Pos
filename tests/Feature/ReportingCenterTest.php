@@ -766,6 +766,16 @@ test('the analytics cards link to the report behind each number, and the reports
         ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-31')->assertSet('branchId', $this->branch->id);
 });
 
+test('report dates keep the range in order and name the fields in arabic', function (): void {
+    Livewire::withQueryParams(['report' => 'movements', 'from' => '2026-10-01', 'to' => '2026-10-31', 'branch_id' => $this->branch->id])
+        ->test('pages::tenant.reports.center')
+        ->assertSeeHtml('x-on:change="if ($event.target.value && $wire.to && $event.target.value > $wire.to) $wire.to = $event.target.value"')
+        ->assertSeeHtml('x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value"');
+
+    expect(fn () => (new ReportingService($this->user, $this->branch->id))->prepare('movements', array_replace($this->filters, ['from' => '2026-11-24', 'to' => '2026-11-16'])))
+        ->toThrow(ValidationException::class, 'إلى تاريخ');
+});
+
 test('pos invoices report lists each pos invoice of the day and opens it', function (): void {
     $walkIn = ($this->makeOrder)(['invoice_number' => 'POS-WALKIN', 'source' => 'pos', 'customer_id' => null, 'total' => 120, 'paid_amount' => 120, 'created_by' => $this->user->id, 'created_at' => '2026-10-15 09:00:00']);
     $registered = ($this->makeOrder)(['invoice_number' => 'POS-CUSTOMER', 'source' => 'pos', 'total' => 80, 'created_at' => '2026-10-15 10:00:00']);

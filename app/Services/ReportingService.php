@@ -25,6 +25,9 @@ class ReportingService
     /** @var array<string, mixed> */
     private array $filters = [];
 
+    /** @var array{from: string, to: string} */
+    private const DATE_ATTRIBUTES = ['from' => 'من تاريخ', 'to' => 'إلى تاريخ'];
+
     public const REPORTS = [
         'statement' => ['كشف حساب زبون / مورد', 'customers.view'],
         'balances' => ['الذمم المدينة والدائنة', 'customers.view'],
@@ -196,7 +199,7 @@ class ReportingService
             'product_view' => ['nullable', Rule::in(['summary', 'detailed'])],
             'voucher_type' => ['nullable', Rule::in(['', 'receipt', 'payment'])],
             'payment_method' => ['nullable', Rule::in(['', 'cash', 'card', 'bank_transfer', 'cheque'])],
-        ])->validate();
+        ], [], self::DATE_ATTRIBUTES)->validate();
         foreach (['party_id' => 'parties', 'product_id' => 'products'] as $key => $table) {
             if (! empty($this->filters[$key])) {
                 abort_unless($this->table($table)->where('id', $this->filters[$key])->exists(), 404);
@@ -749,7 +752,7 @@ class ReportingService
         $this->filters = Validator::make($filters, [
             'from' => ['required', 'date_format:Y-m-d'],
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
-        ])->validate() + ['source' => '', 'sale_kind' => '', 'cost_method' => 'recorded'];
+        ], [], self::DATE_ATTRIBUTES)->validate() + ['source' => '', 'sale_kind' => '', 'cost_method' => 'recorded'];
 
         return [
             'sales' => $this->user->can('reports.sales')
