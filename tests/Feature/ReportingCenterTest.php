@@ -769,7 +769,7 @@ test('the analytics cards link to the report behind each number, and the reports
 test('report dates keep the range in order and name the fields in arabic', function (): void {
     Livewire::withQueryParams(['report' => 'movements', 'from' => '2026-10-01', 'to' => '2026-10-31', 'branch_id' => $this->branch->id])
         ->test('pages::tenant.reports.center')
-        ->assertSeeHtml('x-on:change="if ($event.target.value && $wire.to && $event.target.value > $wire.to) $wire.to = $event.target.value"')
+        ->assertSeeHtml('x-on:change="if ($event.target.value) $wire.to = $event.target.value"')
         ->assertSeeHtml('x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value"');
 
     expect(fn () => (new ReportingService($this->user, $this->branch->id))->prepare('movements', array_replace($this->filters, ['from' => '2026-11-24', 'to' => '2026-11-16'])))

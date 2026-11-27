@@ -19,14 +19,7 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
-    private const NAVIGATION_GROUPS = [
-        'الحسابات' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
-        'المبيعات' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'customer-invoice-profit', 'customer-profit', 'profit', 'shifts'],
-        'المشتريات' => ['purchases'],
-        'المخزون' => ['product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
-        'الموظفون' => ['payroll', 'salary-payments', 'employees'],
-        'المالية' => ['branches', 'tax'],
-    ];
+    private const NAVIGATION_GROUPS = ReportingService::NAVIGATION_GROUPS;
 
     public function selectReport(string $key): void
     {
@@ -617,7 +610,7 @@ new class extends Component {
                 </div>
                 @error('partyId')<p role="alert">{{ $message }}</p>@enderror
             </div>
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value && $wire.to && $event.target.value > $wire.to) $wire.to = $event.target.value" />
+            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value) $wire.to = $event.target.value" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value" />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
@@ -641,7 +634,7 @@ new class extends Component {
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر التقرير<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value && $wire.to && $event.target.value > $wire.to) $wire.to = $event.target.value" />
+            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value) $wire.to = $event.target.value" />
             <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value" />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
