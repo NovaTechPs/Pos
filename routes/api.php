@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\PartyStatementController;
 use App\Http\Controllers\Api\PosController;
 use App\Http\Controllers\Api\PosProductController;
+use App\Http\Controllers\Api\ReportCenterController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\SaleOperationController;
@@ -81,6 +82,10 @@ Route::middleware(['auth:sanctum', 'api.tenant'])->group(function (): void {
     Route::post('/stock/transfers', [StockController::class, 'storeTransfer'])->middleware('can:stock_transfers.create');
 
     Route::get('/reports/summary', [ReportController::class, 'summary'])->middleware('can:reports.analytics');
+    Route::get('/reports', [ReportCenterController::class, 'index'])->middleware('can:reports.analytics');
+    Route::get('/reports/parties', [ReportCenterController::class, 'parties'])->middleware('can:reports.analytics');
+    Route::get('/reports/products', [ReportCenterController::class, 'products'])->middleware('can:reports.analytics');
+    Route::get('/reports/{report}', [ReportCenterController::class, 'show'])->middleware('can:reports.analytics');
 
     Route::get('/employee/profile', [EmployeeApiController::class, 'profile']);
     Route::get('/employees', [EmployeeApiController::class, 'index'])->middleware('can:employees.view');

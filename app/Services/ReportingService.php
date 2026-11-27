@@ -66,6 +66,16 @@ class ReportingService
         'الموظفون' => ['payroll', 'salary-payments'],
     ];
 
+    /** The web report center tabs, also sent to the POS app: every report appears once. */
+    public const NAVIGATION_GROUPS = [
+        'الحسابات' => ['statement', 'balances', 'aging', 'cashflow', 'daily-cash', 'expenses', 'settlements'],
+        'المبيعات' => ['sales', 'pos-invoices', 'product-sales', 'product-profit', 'customer-invoice-profit', 'customer-profit', 'profit', 'shifts'],
+        'المشتريات' => ['purchases'],
+        'المخزون' => ['product-history', 'movements', 'movement-summary', 'inventory', 'stagnant', 'expiring'],
+        'الموظفون' => ['payroll', 'salary-payments', 'employees'],
+        'المالية' => ['branches', 'tax'],
+    ];
+
     /** @var list<string> */
     public const FILTER_KEYS = ['from', 'to', 'party_id', 'product_id', 'search', 'party_type', 'balance_side', 'stock_filter', 'source', 'sale_kind', 'invoice_scope', 'cost_method', 'product_view', 'voucher_type', 'payment_method', 'column_filters'];
 
