@@ -766,11 +766,16 @@ test('the analytics cards link to the report behind each number, and the reports
         ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-31')->assertSet('branchId', $this->branch->id);
 });
 
-test('report dates keep the range in order and name the fields in arabic', function (): void {
+test('report dates change independently and an inverted range is rejected with arabic field names', function (): void {
     Livewire::withQueryParams(['report' => 'movements', 'from' => '2026-10-01', 'to' => '2026-10-31', 'branch_id' => $this->branch->id])
         ->test('pages::tenant.reports.center')
-        ->assertSeeHtml('x-on:change="if ($event.target.value) $wire.to = $event.target.value"')
-        ->assertSeeHtml('x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value"');
+        ->assertSeeHtml('data-report-date-from')
+        ->assertDontSeeHtml('$wire.to = $event.target.value')
+        ->assertDontSeeHtml('$wire.from = $event.target.value')
+        ->set('from', '2026-10-05')
+        ->assertSet('to', '2026-10-31')
+        ->set('to', '2026-10-20')
+        ->assertSet('from', '2026-10-05');
 
     expect(fn () => (new ReportingService($this->user, $this->branch->id))->prepare('movements', array_replace($this->filters, ['from' => '2026-11-24', 'to' => '2026-11-16'])))
         ->toThrow(ValidationException::class, 'إلى تاريخ');

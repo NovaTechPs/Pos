@@ -610,8 +610,8 @@ new class extends Component {
                 </div>
                 @error('partyId')<p role="alert">{{ $message }}</p>@enderror
             </div>
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value) $wire.to = $event.target.value" />
-            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value" />
+            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from />
+            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
@@ -634,8 +634,8 @@ new class extends Component {
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر التقرير<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from x-on:change="if ($event.target.value) $wire.to = $event.target.value" />
-            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to x-on:change="if ($event.target.value && $wire.from && $event.target.value < $wire.from) $wire.from = $event.target.value" />
+            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from />
+            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
