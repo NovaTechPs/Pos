@@ -103,6 +103,8 @@ new class extends Component {
     public ?int $branchId = null;
     public string $from = '';
     public string $to = '';
+    #[Locked]
+    public int $dateRangeDays = 0;
     public ?int $partyId = null;
     public ?int $productId = null;
     public string $search = '';
@@ -161,6 +163,7 @@ new class extends Component {
         if ($this->report === 'expiring' && ! request()->query('to')) {
             $this->to = today()->addDays(30)->toDateString();
         }
+        $this->syncDateRangeDays();
         if (in_array($this->report, ['statement', 'customer-invoice-profit'], true) && request()->integer('party_id') > 0) {
             $this->partyId = Party::query()->where('tenant_id', $this->service()->tenantId)
                 ->whereKey(request()->integer('party_id'))->value('id');
@@ -226,6 +229,26 @@ new class extends Component {
     public function updatedProductView(): void
     {
         $this->columnFilters = [];
+        $this->resetPage();
+    }
+
+    public function updatedFrom(string $value): void
+    {
+        if ($value !== '') {
+            $this->to = (new \DateTimeImmutable($value))->modify('+'.$this->dateRangeDays.' days')->format('Y-m-d');
+        } else {
+            $this->to = '';
+        }
+        $this->resetPage();
+    }
+
+    public function updatedTo(string $value): void
+    {
+        if ($value !== '') {
+            $this->from = (new \DateTimeImmutable($value))->modify('-'.$this->dateRangeDays.' days')->format('Y-m-d');
+        } else {
+            $this->from = '';
+        }
         $this->resetPage();
     }
 
@@ -401,6 +424,7 @@ new class extends Component {
         $this->paymentMethod = '';
         if ($this->report === 'expiring') {
             $this->to = today()->addDays(30)->toDateString();
+            $this->syncDateRangeDays();
         }
     }
 
@@ -423,7 +447,19 @@ new class extends Component {
     public function setPeriod(string $range): void
     {
         [$this->from, $this->to] = $this->periodRanges()[$range] ?? [$this->from, $this->to];
+        $this->syncDateRangeDays();
         $this->resetPage();
+    }
+
+    private function syncDateRangeDays(): void
+    {
+        if ($this->from === '' || $this->to === '') {
+            $this->dateRangeDays = 0;
+
+            return;
+        }
+
+        $this->dateRangeDays = (new \DateTimeImmutable($this->from))->diff(new \DateTimeImmutable($this->to))->days;
     }
 
     public function exportCsv(): mixed
@@ -610,8 +646,8 @@ new class extends Component {
                 </div>
                 @error('partyId')<p role="alert">{{ $message }}</p>@enderror
             </div>
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from />
-            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to />
+            <flux:input type="date" label="من تاريخ" wire:model.live="from" data-report-date-from />
+            <flux:input type="date" label="إلى تاريخ" wire:model.live="to" data-report-date-to />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="statement-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
@@ -634,8 +670,8 @@ new class extends Component {
     <form wire:submit="applyFilters" class="reports-filter space-y-4">
         <details class="reports-filter-details" open data-report-filter-toggle><summary class="reports-section-title"><flux:icon.adjustments-horizontal variant="outline" />فلاتر التقرير<span class="reports-filter-hint">طي / عرض الفلاتر</span></summary><div class="reports-filter-fields">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <flux:input type="date" label="من تاريخ" wire:model="from" data-report-date-from />
-            <flux:input type="date" label="إلى تاريخ" wire:model="to" data-report-date-to />
+            <flux:input type="date" label="من تاريخ" wire:model.live="from" data-report-date-from />
+            <flux:input type="date" label="إلى تاريخ" wire:model.live="to" data-report-date-to />
             @if ($choosesBranch)
                 <flux:select label="الفرع" wire:model.live="branchId">@if ($allBranches)<option value="">كل الفروع</option>@endif @foreach ($branches as $branch)<option wire:key="report-branch-{{ $branch->id }}" value="{{ $branch->id }}">{{ $branch->name }}</option>@endforeach</flux:select>
             @else
